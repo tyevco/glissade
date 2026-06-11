@@ -25,6 +25,7 @@ import dashboard from '../../examples/src/scenes/showcase/dashboard.js';
 import transitions from '../../examples/src/scenes/showcase/transitions.js';
 import micro from '../../examples/src/scenes/showcase/micro.js';
 import typography from '../../examples/src/scenes/golden-typography.js';
+import layoutScene from '../../examples/src/scenes/golden-layout.js';
 import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
@@ -39,6 +40,7 @@ const corpus: Record<string, { mod: SceneModule; path: string }> = {
   transitions: { mod: transitions, path: `${SCENES}/showcase/transitions.ts` },
   micro: { mod: micro, path: `${SCENES}/showcase/micro.ts` },
   typography: { mod: typography, path: `${SCENES}/golden-typography.ts` },
+  layout: { mod: layoutScene, path: `${SCENES}/golden-layout.ts` },
 };
 
 const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURIComponent(path)}`;

@@ -53,3 +53,16 @@ export {
   type SceneInit,
   type SceneModule,
 } from './scene.js';
+
+// the LayoutEngine seam lives in the base entry; the Yoga implementation and
+// Layout node are the separately-budgeted './layout' entry (§3.2)
+export {
+  setLayoutEngine,
+  getLayoutEngine,
+  requireLayoutEngine,
+  LayoutEngineMissingError,
+  type LayoutEngine,
+  type LayoutBox,
+  type LayoutChildSpec,
+  type LayoutContainerSpec,
+} from './layoutEngine.js';

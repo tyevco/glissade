@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./layout": {
+      "types": "./dist/layout.d.ts",
+      "default": "./dist/layout.js"
     }
   },
   "files": [
@@ -19,7 +23,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@glissade/core": "workspace:*"
+    "@glissade/core": "workspace:*",
+    "yoga-layout": "^3.2.1"
   },
   "repository": {
     "type": "git",

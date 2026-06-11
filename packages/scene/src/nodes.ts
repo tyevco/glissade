@@ -6,7 +6,7 @@
 import { signal, type BindableSignal } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
-import { breakLines, quantize } from './text.js';
+import { breakLines, quantize, type TextMeasurer } from './text.js';
 
 export class Group extends Node {
   readonly children: Node[];
@@ -97,6 +97,10 @@ export class Rect extends Shape {
     this.registerTarget('cornerRadius', this.cornerRadius);
   }
 
+  override intrinsicSize(): { w: number; h: number } {
+    return { w: this.width(), h: this.height() };
+  }
+
   // centered at the node origin (Motion Canvas convention)
   protected pathSegs(): PathSeg[] {
     const w = this.width();
@@ -134,6 +138,11 @@ export class Circle extends Shape {
     this.registerTarget('radius', this.radius);
   }
 
+  override intrinsicSize(): { w: number; h: number } {
+    const d = this.radius() * 2;
+    return { w: d, h: d };
+  }
+
   protected pathSegs(): PathSeg[] {
     const r = this.radius();
     return [['E', 0, 0, r, r, 0, 0, Math.PI * 2], ['Z']];
@@ -159,6 +168,10 @@ export class ImageNode extends Node {
     this.height = initProp(signal(0), props.height);
     this.registerTarget('width', this.width);
     this.registerTarget('height', this.height);
+  }
+
+  override intrinsicSize(): { w: number; h: number } {
+    return { w: this.width(), h: this.height() };
   }
 
   protected draw(out: DisplayListBuilder): void {
@@ -280,6 +293,16 @@ export class Text extends Node {
     this.registerTarget('text', this.text);
     this.registerTarget('fill', this.fill);
     this.registerTarget('fontSize', this.fontSize);
+  }
+
+  override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
+    const text = this.text();
+    if (!text) return { w: 0, h: 0 };
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const maxWidth = this.width();
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, measurer);
+    const widest = Math.max(...lines.map((l) => quantize(measurer.measureText(l, font).width)), 0);
+    return { w: maxWidth > 0 ? maxWidth : widest, h: quantize(font.size * this.lineHeight) * lines.length };
   }
 
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {

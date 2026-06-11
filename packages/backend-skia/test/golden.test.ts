@@ -14,6 +14,10 @@ import { SkiaBackend } from '../src/index.js';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
 import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
 import goldenTypography from '../../examples/src/scenes/golden-typography.js';
+import goldenLayout from '../../examples/src/scenes/golden-layout.js';
+import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
+
+await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
 
 // explicit fonts (§3.6): the typography scene's face ships with the repo
 GlobalFonts.registerFromPath(
@@ -31,6 +35,7 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'shapes', mod: goldenShapes },
   { name: 'bounce', mod: goldenBounce },
   { name: 'typography', mod: goldenTypography },
+  { name: 'layout', mod: goldenLayout },
 ];
 
 for (const { name, mod } of CORPUS) {

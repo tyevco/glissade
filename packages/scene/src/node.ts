@@ -123,6 +123,15 @@ export abstract class Node {
   /** Subclass drawing: emit own commands (and children for containers). */
   protected abstract draw(out: DisplayListBuilder, ctx: EvalContext): void;
 
+  /**
+   * Natural size for flex flow (§3.2); null = not flowable (a Layout parent
+   * emits such children absolutely, untouched).
+   */
+  intrinsicSize(measurer: TextMeasurer): { w: number; h: number } | null {
+    void measurer;
+    return null;
+  }
+
   /** §3.5 predicate: composite-as-a-unit when opacity/blend demand it. */
   protected requiresGroup(): boolean {
     return this.opacity() < 1 || this.blend() !== 'source-over';

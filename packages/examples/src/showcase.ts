@@ -12,6 +12,10 @@ import dashboard from './scenes/showcase/dashboard.js';
 import transitions from './scenes/showcase/transitions.js';
 import micro from './scenes/showcase/micro.js';
 import typography from './scenes/golden-typography.js';
+import layoutScene from './scenes/golden-layout.js';
+import { loadYogaLayoutEngine } from '@glissade/scene/layout';
+
+await loadYogaLayoutEngine();
 
 const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   spinners: { mod: spinners, blurb: 'Six loading spinners from nothing but circles, rects, and a timeline — orbits are just a parent group rotating.' },
@@ -20,6 +24,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   transitions: { mod: transitions, blurb: 'Screen-to-screen patterns between two mock screens: slide, wipe, and fade-through-black.' },
   micro: { mod: micro, blurb: 'Micro-interactions: toggle, checkbox, button ripple, and a toast — the spring-and-stagger vocabulary of UI motion.' },
   typography: { mod: typography, blurb: 'Explicit fonts + our line breaker: the wrap width is an animated track, re-breaking live as it tweens — and these exact glyphs are byte-compared in CI.' },
+  layout: { mod: layoutScene, blurb: 'Yoga flexbox behind the LayoutEngine seam: gap and tile size are animated tracks, and the same wasm computes these boxes headlessly — byte-compared in CI.' },
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;

@@ -75,6 +75,15 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // line breaking measures with the rasterizer that will draw (§3.2)
   scene.setTextMeasurer(backend);
 
+  // flexbox scenes need the wasm engine loaded before evaluation (§3.2)
+  const hasLayout = [...scene.nodes.values()].some(
+    (n) => (n.constructor as { isLayoutNode?: boolean }).isLayoutNode === true,
+  );
+  if (hasLayout) {
+    const { loadYogaLayoutEngine } = await import('@glissade/scene/layout');
+    await loadYogaLayoutEngine();
+  }
+
   // Warm timeline assets before evaluation (§2.5 readiness precondition).
   const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
