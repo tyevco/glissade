@@ -135,3 +135,34 @@ describe('Layout node (§3.2, Yoga behind the LayoutEngine seam)', () => {
     }
   });
 });
+
+describe('anchor-aware flow (Text baseline origins)', () => {
+  it('left-aligned text labels in a column share a true left edge', async () => {
+    await loadYogaLayoutEngine();
+    const scene = createScene({
+      size: { w: 640, h: 360 },
+      children: [
+        new Layout({
+          id: 'col',
+          width: 300,
+          height: 200,
+          direction: 'column',
+          justify: 'start',
+          align: 'start',
+          padding: 10,
+          children: [
+            new Text({ id: 'short', text: 'hi', fontSize: 16 }),
+            new Text({ id: 'long', text: 'a much longer label', fontSize: 16 }),
+          ],
+        }),
+      ],
+    });
+    const list = evaluate(scene, timeline({ duration: 1 }), 0);
+    const translates = list.commands
+      .filter((c): c is Extract<typeof c, { op: 'transform' }> => c.op === 'transform')
+      .filter((m) => m.m[0] === 1 && m.m[3] === 1)
+      .map((c) => c.m[4]);
+    // both text origins at the box left edge: -150 + 10 padding = -140
+    expect(translates.filter((x) => x === -140)).toHaveLength(2);
+  });
+});

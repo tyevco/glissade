@@ -305,6 +305,16 @@ export class Text extends Node {
     return { w: maxWidth > 0 ? maxWidth : widest, h: quantize(font.size * this.lineHeight) * lines.length };
   }
 
+  /** Text draws from a baseline origin at its align edge, not a center (§3.6). */
+  override flowOffset(measurer: TextMeasurer): { x: number; y: number } {
+    const size = this.intrinsicSize(measurer);
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, measurer)[0] ?? '';
+    const ascent = measurer.measureText(firstLine, font).ascent;
+    const x = this.align === 'left' ? 0 : this.align === 'center' ? -size.w / 2 : -size.w;
+    return { x, y: -ascent };
+  }
+
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
     const text = this.text();
     if (!text) return;

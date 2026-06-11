@@ -132,6 +132,16 @@ export abstract class Node {
     return null;
   }
 
+  /**
+   * Vector from the node origin to its intrinsic box's TOP-LEFT, so Layout
+   * can place any anchor correctly. Default: center-anchored (every shape).
+   * Text overrides — it draws from a left/center/right baseline origin.
+   */
+  flowOffset(measurer: TextMeasurer): { x: number; y: number } {
+    const size = this.intrinsicSize(measurer) ?? { w: 0, h: 0 };
+    return { x: -size.w / 2, y: -size.h / 2 };
+  }
+
   /** §3.5 predicate: composite-as-a-unit when opacity/blend demand it. */
   protected requiresGroup(): boolean {
     return this.opacity() < 1 || this.blend() !== 'source-over';
