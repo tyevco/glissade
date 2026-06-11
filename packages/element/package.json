@@ -1,0 +1,32 @@
+{
+  "name": "@glissade/element",
+  "version": "0.0.0",
+  "description": "glissade <gs-player> custom element: zero-framework embedding with minimal, CSS-part themable controls.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/core": "workspace:*",
+    "@glissade/player": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/element"
+  }
+}

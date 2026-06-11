@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>glissade — &lt;gs-player&gt; embed</title>
+    <style>
+      body { background: #0f1014; color: #e8e8ea; font: 14px system-ui, sans-serif;
+             display: grid; place-items: center; min-height: 100vh; margin: 0; }
+      gs-player { width: min(720px, 92vw); }
+      /* CSS-part theming */
+      gs-player::part(button) { background: #e6a700; border: 0; border-radius: 6px; padding: 4px 14px; }
+      gs-player::part(scrubber) { accent-color: #e6a700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>zero-framework embed: <code>&lt;gs-player controls loop autoplay&gt;</code></p>
+      <gs-player id="p" controls loop autoplay></gs-player>
+    </main>
+    <script type="module">
+      import '@glissade/element';
+      import bounce from '/src/scenes/golden-bounce.ts';
+      document.querySelector('#p').scene = bounce;
+    </script>
+  </body>
+</html>

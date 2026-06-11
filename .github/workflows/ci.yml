@@ -19,6 +19,8 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: node scripts/check-deps.mjs
+      - run: node scripts/check-size.mjs
 
   browser-suites:
     runs-on: ubuntu-latest

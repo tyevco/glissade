@@ -13,6 +13,7 @@ import { DEFAULT_EASE, type EaseSpec } from './easing.js';
 import { spring as springFactory } from './spring.js';
 import {
   compileTimeline,
+  emitDevWarning,
   timeline as makeTimeline,
   TimelineValidationError,
   type ChildEntry,
@@ -26,15 +27,17 @@ import { inferValueType } from './valueTypes.js';
 
 export type Position = number | string;
 
-export interface TweenOpts {
+export interface TweenOpts<T = unknown> {
   duration?: number;
   ease?: EaseSpec;
   at?: Position;
+  /** Explicit start value — sugar for fromTo; required ergonomics for string targets. */
+  from?: T;
 }
 
 export interface TimelineBuilder {
-  to<T>(target: TweenTarget, value: T, opts?: TweenOpts): TimelineBuilder;
-  fromTo<T>(target: TweenTarget, from: T, to: T, opts?: TweenOpts): TimelineBuilder;
+  to<T>(target: TweenTarget, value: T, opts?: TweenOpts<T>): TimelineBuilder;
+  fromTo<T>(target: TweenTarget, from: T, to: T, opts?: TweenOpts<T>): TimelineBuilder;
   /** Hold key: the value snaps at the resolved position (§2.6). */
   set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
@@ -124,7 +127,7 @@ export function buildTimeline(
         );
       }
       const start = resolvePosition(opts.at);
-      insertions.push({
+      const ins: Insertion = {
         kind: 'tween',
         target: resolveTweenTarget(target),
         value,
@@ -134,7 +137,9 @@ export function buildTimeline(
         baseValue: peekBase(target),
         editable: false,
         start,
-      });
+      };
+      if (opts.from !== undefined) ins.explicitFrom = opts.from;
+      insertions.push(ins);
       prevStart = start;
       prevEnd = start + duration;
       return builder;
@@ -216,6 +221,13 @@ export function buildTimeline(
     const keys: Key[] = [];
     const editable = list.some((i) => i.editable);
     let prevValue: unknown = list.find((i) => i.baseValue !== undefined)?.baseValue;
+    const first = list[0]!;
+    if (first.kind === 'tween' && first.explicitFrom === undefined && prevValue === undefined) {
+      emitDevWarning(
+        `'${target}': first tween has no resolvable from-value (string targets have no base) — ` +
+          `the track sits at its end state before the tween. Anchor it with { from }, fromTo(), or set(..., { at: 0 }).`,
+      );
+    }
     for (const ins of list) {
       if (ins.kind === 'set') {
         keys.push({ t: ins.start, value: ins.value, interp: 'hold' });

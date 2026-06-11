@@ -159,6 +159,7 @@ export class SkiaBackend {
           ctx.font = fontString(cmd.font);
           ctx.fillStyle = cmd.paint.color;
           ctx.textBaseline = 'alphabetic';
+          ctx.textAlign = cmd.align ?? 'left';
           ctx.fillText(cmd.text, cmd.x, cmd.y);
           break;
         }

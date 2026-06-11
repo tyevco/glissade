@@ -11,6 +11,7 @@ export default defineConfig({
       '@glissade/scene': src('scene'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/export-web': src('export-web'),
+      '@glissade/element': src('element'),
       '@glissade/player': src('player'),
     },
   },

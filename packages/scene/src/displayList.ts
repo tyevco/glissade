@@ -74,7 +74,7 @@ export type DrawCommand =
   | { op: 'clip'; path: ResourceId; rule?: 'nonzero' | 'evenodd' }
   | { op: 'fillPath'; path: ResourceId; paint: Paint }
   | { op: 'strokePath'; path: ResourceId; paint: Paint; stroke: StrokeStyle }
-  | { op: 'fillText'; text: string; font: FontSpec; paint: Paint; x: number; y: number }
+  | { op: 'fillText'; text: string; font: FontSpec; paint: Paint; x: number; y: number; align?: 'left' | 'center' | 'right' }
   | { op: 'drawImage'; image: ResourceId; src?: Rect; dst: Rect; smoothing?: boolean }
   | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[]; cacheKey?: string }
   | { op: 'popGroup' };

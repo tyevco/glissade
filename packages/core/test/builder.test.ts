@@ -226,3 +226,25 @@ describe('builder semantics', () => {
     expect(types).toEqual({ 'n/a': 'number', 'n/b': 'vec2', 'n/c': 'color', 'n/d': 'string' });
   });
 });
+
+describe('string-target from-values (dogfooding fixes)', () => {
+  it('to() accepts an explicit from', () => {
+    const doc = timeline((tl) => {
+      tl.to('n/x', 100, { duration: 1, from: 0 });
+    });
+    expect(doc.tracks[0]!.keys[0]).toMatchObject({ t: 0, value: 0 });
+    const compiled = compileTimeline(doc);
+    expect(sampleTrack(compiled.tracks.get('n/x')!, 0)).toBe(0);
+  });
+
+  it('warns when the first tween on a string target is unanchorable', async () => {
+    const { setDevWarning } = await import('../src/index.js');
+    const warnings: string[] = [];
+    setDevWarning((m) => warnings.push(m));
+    timeline((tl) => {
+      tl.to('n/y', 100, { duration: 1 });
+    });
+    setDevWarning(() => {});
+    expect(warnings.some((w) => w.includes("'n/y'") && w.includes('from'))).toBe(true);
+  });
+});

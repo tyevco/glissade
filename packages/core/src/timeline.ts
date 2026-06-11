@@ -128,6 +128,11 @@ export function setDevWarning(fn: DevWarning): void {
   devWarn = fn;
 }
 
+/** Internal: emit through the configurable dev-warning channel. */
+export function emitDevWarning(message: string): void {
+  devWarn(message);
+}
+
 function rebaseKeys(keys: Key[], at: number, timeScale: number): Key[] {
   return keys.map((k) => ({ ...k, t: at + k.t / timeScale }));
 }
