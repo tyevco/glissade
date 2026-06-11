@@ -25,8 +25,10 @@ describe('showcase gallery', () => {
       expect(compiled.duration).toBeLessThanOrEqual(10);
 
       const backend = new SkiaBackend(scene.size.w, scene.size.h);
-      // skip t=0/t=end: loop-closing scenes legitimately start from black
-      for (const f of [0.18, 0.42, 0.66, 0.9]) {
+      // mid-duration samples only: loop-closing scenes legitimately fade to
+      // black near 0/1, and caption-only fade frames are font-dependent
+      // across machines (system sans-serif varies)
+      for (const f of [0.2, 0.45, 0.7]) {
         const t = f * compiled.duration;
         backend.render(evaluate(scene, mod.timeline, t));
         const px = backend.readPixels();

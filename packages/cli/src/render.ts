@@ -110,9 +110,25 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
   const isWebm = /\.webm$/i.test(outAbs);
-  const codec = isWebm
-    ? ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32']
-    : ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-movflags', '+faststart'];
+  const container = isWebm ? ('webm' as const) : ('mp4' as const);
+
+  // pick encoders from what THIS ffmpeg build actually offers (§5.2)
+  const { pickEncoder } = await import('./encoders.js');
+  const videoEnc = pickEncoder('video', container);
+  if (videoEnc.note) process.stderr.write(`note: ${videoEnc.note}\n`);
+  // quality flags are per-encoder: crf (x264/vpx), bitrate (openh264), q:v (mpeg4)
+  const VIDEO_QUALITY: Record<string, string[]> = {
+    'libx264': ['-crf', '18'],
+    'libvpx-vp9': ['-b:v', '0', '-crf', '32'],
+    'libvpx': ['-b:v', '2M'],
+    'libopenh264': ['-b:v', '4M'],
+    'mpeg4': ['-q:v', '3'],
+  };
+  const codec = [
+    '-c:v', videoEnc.name,
+    ...(VIDEO_QUALITY[videoEnc.name] ?? []),
+    ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
+  ];
 
   const { planAudioMix } = await import('./audioMix.js');
   const mix = planAudioMix(compiled.audio, opts.modulePath, duration);
@@ -120,13 +136,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
   }
   const audioInputs = mix ? mix.inputs.flatMap((p) => ['-i', p]) : [];
-  const audioArgs = mix
-    ? [
-        '-filter_complex', mix.filterComplex,
-        '-map', '0:v', '-map', '[aout]',
-        ...(isWebm ? ['-c:a', 'libopus'] : ['-c:a', 'aac', '-b:a', '192k']),
-      ]
-    : [];
+  const audioEnc = mix ? pickEncoder('audio', container) : null;
+  const audioArgs =
+    mix && audioEnc
+      ? [
+          '-filter_complex', mix.filterComplex,
+          '-map', '0:v', '-map', '[aout]',
+          '-c:a', audioEnc.name,
+          ...(container === 'mp4' ? ['-b:a', '192k'] : []),
+        ]
+      : [];
 
   const args = [
     '-y',

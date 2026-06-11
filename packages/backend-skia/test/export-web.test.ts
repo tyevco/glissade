@@ -78,13 +78,19 @@ describe.runIf(ENABLED)('in-browser WebCodecs export', () => {
   }, 120_000);
 
   it('a scene embedding video exports through the Mediabunny decode path (§5.4)', async () => {
-    // produce the embedded source with our own CLI, served by the vite root
+    // produce the embedded source with our own CLI, served by the vite root.
+    // free ffmpeg builds may fall back to mpeg4 for .mp4, which browsers
+    // cannot decode — use webm/vp9 as the source container in that case.
     const assetDir = fileURLToPath(new URL('../../examples/.tmp-test', import.meta.url));
-    const { render } = await import('@glissade/cli');
+    const { render, pickEncoder } = await import('@glissade/cli');
+    const ext = pickEncoder('video', 'mp4').name === 'mpeg4' ? 'webm' : 'mp4';
     const bounceModule = fileURLToPath(new URL('../../examples/src/scenes/golden-bounce.ts', import.meta.url));
-    await render({ modulePath: bounceModule, out: join(assetDir, 'source.mp4'), fps: 30 });
+    await render({ modulePath: bounceModule, out: join(assetDir, `source.${ext}`), fps: 30 });
 
-    const result = await page.evaluate(() => window.__exportWithVideo('/.tmp-test/source.mp4', 30));
+    const result = await page.evaluate(
+      (src) => window.__exportWithVideo(src, 30),
+      `/.tmp-test/source.${ext}`,
+    );
     expect(result.frames).toBe(60);
     const path = join(outDir, `embedded.${result.format}`);
     writeFileSync(path, Buffer.from(result.bytesBase64, 'base64'));
