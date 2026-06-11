@@ -21,8 +21,9 @@ export interface LayoutChildSpec {
 }
 
 export interface LayoutContainerSpec {
-  width: number;
-  height: number;
+  /** 'auto': size the axis from content (Yoga computes it). */
+  width: number | 'auto';
+  height: number | 'auto';
   direction: 'row' | 'column';
   gap: number;
   padding: number;
@@ -30,9 +31,17 @@ export interface LayoutContainerSpec {
   align: 'start' | 'center' | 'end' | 'stretch';
 }
 
+export interface LayoutResult {
+  /** Resolved container size — equals the spec on fixed axes, content-driven on 'auto'. */
+  width: number;
+  height: number;
+  /** Child boxes (top-left relative to the container's top-left). */
+  boxes: LayoutBox[];
+}
+
 export interface LayoutEngine {
-  /** Pure: child boxes (top-left relative to the container's top-left). */
-  compute(container: LayoutContainerSpec, children: LayoutChildSpec[]): LayoutBox[];
+  /** Pure: resolved container size + child boxes. */
+  compute(container: LayoutContainerSpec, children: LayoutChildSpec[]): LayoutResult;
 }
 
 export class LayoutEngineMissingError extends Error {

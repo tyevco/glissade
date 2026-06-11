@@ -62,35 +62,45 @@ const mod: SceneModule = {
       settingRow('row2', 'Golden-frame CI', true),
       settingRow('row3', 'Generator functions', false),
     ];
+    // the panel sizes itself from content (height: 'auto'); the background is
+    // a computed signal over computedSize — no hand-synced height tracks
+    const panel = new Layout({
+      id: 'panel',
+      width: 480,
+      height: 'auto',
+      direction: 'column',
+      gap: 10,
+      padding: 24,
+      justify: 'start',
+      align: 'center',
+      position: [330, 225],
+      children: [
+        new Text({ id: 'title', text: 'Settings', fill: INK, fontFamily: FAMILY, fontSize: 22 }),
+        new Text({
+          id: 'blurb',
+          text: 'Every box on this screen is a Yoga flex item; the gaps, paddings, and row heights below are ordinary animated tracks.',
+          fill: MUTED,
+          fontFamily: FAMILY,
+          fontSize: 13,
+          lineHeight: 1.45,
+          width: 400,
+        }),
+        ...rows,
+      ],
+    });
     return createScene({
       size: { w: 800, h: 450 },
       children: [
         new Rect({ id: 'bg', width: 800, height: 450, position: [400, 225], fill: '#0f1014' }),
-        new Rect({ id: 'panelBg', width: 480, height: 360, cornerRadius: 18, position: [330, 225], fill: '#181b22' }),
-        new Layout({
-          id: 'panel',
+        new Rect({
+          id: 'panelBg',
           width: 480,
-          height: 360,
-          direction: 'column',
-          gap: 10,
-          padding: 24,
-          justify: 'start',
-          align: 'center',
+          height: () => panel.computedSize().h,
+          cornerRadius: 18,
           position: [330, 225],
-          children: [
-            new Text({ id: 'title', text: 'Settings', fill: INK, fontFamily: FAMILY, fontSize: 22 }),
-            new Text({
-              id: 'blurb',
-              text: 'Every box on this screen is a Yoga flex item; the gaps, paddings, and row heights below are ordinary animated tracks.',
-              fill: MUTED,
-              fontFamily: FAMILY,
-              fontSize: 13,
-              lineHeight: 1.45,
-              width: 400,
-            }),
-            ...rows,
-          ],
+          fill: '#181b22',
         }),
+        panel,
         new Layout({
           id: 'rail',
           width: 120,
@@ -114,13 +124,10 @@ const mod: SceneModule = {
   },
   timeline: timeline(
     (tl) => {
-      // the panel grows to contain its busiest moment (content peaks ~420px:
-      // grown row + reflowed blurb + widened gaps) and shrinks back to close
-      // the loop — the background tracks the layout with identical keys
-      tl.to('panel/height', 432, { duration: 1.0, ease: 'easeInOutSine', at: 0.5, from: 360 })
-        .to('panel/height', 360, { duration: 0.9, ease: 'easeInOutSine', at: 3.5 })
-        .to('panelBg/height', 432, { duration: 1.0, ease: 'easeInOutSine', at: 0.5, from: 360 })
-        .to('panelBg/height', 360, { duration: 0.9, ease: 'easeInOutSine', at: 3.5 })
+      // no height tracks anywhere: the panel is height-auto, so it grows when
+      // a row grows or the blurb reflows, and panelBg derives its height from
+      // computedSize — the original hand-synced track pair is gone
+      tl
         // the panel breathes: padding and gap are layout inputs, so the whole
         // column restacks as they tween
         .to('panel/gap', 26, { duration: 1.6, ease: 'easeInOutSine', at: 0.4, from: 10 })

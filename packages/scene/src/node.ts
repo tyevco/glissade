@@ -85,6 +85,13 @@ export abstract class Node {
   /** v2 §C.3: explicit hit-shape override in node-local coordinates. */
   hitArea: HitArea | undefined;
 
+  /**
+   * Injected by createScene: the scene's CURRENT TextMeasurer (§3.2), so
+   * derived-size bindings (e.g. a background tracking Layout.computedSize)
+   * measure with the same rasterizer the flow uses.
+   */
+  measurerSource: (() => TextMeasurer) | null = null;
+
   readonly localMatrix: ReadonlySignal<Mat2x3>;
   readonly worldMatrix: ReadonlySignal<Mat2x3>;
 

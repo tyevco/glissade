@@ -41,13 +41,14 @@ export class DuplicateNodeIdError extends Error {
   }
 }
 
-function indexNodes(root: Node, into: Map<string, Node>): void {
+function indexNodes(root: Node, into: Map<string, Node>, measurerSource: () => TextMeasurer): void {
+  root.measurerSource = measurerSource;
   if (root.id !== undefined) {
     if (into.has(root.id)) throw new DuplicateNodeIdError(root.id);
     into.set(root.id, root);
   }
   if (root instanceof Group) {
-    for (const child of root.children) indexNodes(child, into);
+    for (const child of root.children) indexNodes(child, into, measurerSource);
   }
 }
 
@@ -68,9 +69,9 @@ export interface SceneModule {
 export function createScene(init: SceneInit): Scene {
   const root = new Group({ id: '__root', children: init.children });
   const nodes = new Map<string, Node>();
-  indexNodes(root, nodes);
   const playhead = createPlayhead();
   let measurer: TextMeasurer = estimatingMeasurer;
+  indexNodes(root, nodes, () => measurer);
   return {
     root,
     nodes,

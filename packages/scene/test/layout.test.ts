@@ -166,3 +166,91 @@ describe('anchor-aware flow (Text baseline origins)', () => {
     expect(translates.filter((x) => x === -140)).toHaveLength(2);
   });
 });
+
+describe('auto-sized containers (Yoga content sizing)', () => {
+  beforeAll(async () => {
+    await loadYogaLayoutEngine();
+  });
+
+  it('a column auto-grows to fit its rows: padding + heights + gaps', () => {
+    const col = new Layout({
+      id: 'col',
+      width: 200,
+      height: 'auto',
+      direction: 'column',
+      gap: 10,
+      padding: 24,
+      justify: 'start',
+      align: 'center',
+      children: [
+        new Rect({ id: 'r1', width: 100, height: 44, fill: '#f00' }),
+        new Rect({ id: 'r2', width: 100, height: 44, fill: '#0f0' }),
+        new Rect({ id: 'r3', width: 100, height: 78, fill: '#00f' }),
+      ],
+    });
+    createScene({ size: { w: 640, h: 360 }, children: [col] });
+    // 24 + 44 + 10 + 44 + 10 + 78 + 24
+    expect(col.computedSize()).toEqual({ w: 200, h: 234 });
+  });
+
+  it('computedSize is a pure pull: a bound sibling tracks a child growing', () => {
+    const row2 = new Rect({ id: 'g2', width: 100, height: 44, fill: '#0f0' });
+    const panel = new Layout({
+      id: 'apanel',
+      width: 200,
+      height: 'auto',
+      direction: 'column',
+      gap: 10,
+      padding: 20,
+      justify: 'start',
+      align: 'center',
+      children: [new Rect({ id: 'g1', width: 100, height: 44, fill: '#f00' }), row2],
+    });
+    const bg = new Rect({ id: 'abg', width: 200, height: () => panel.computedSize().h, fill: '#181b22' });
+    createScene({ size: { w: 640, h: 360 }, children: [bg, panel] });
+    expect(bg.height()).toBe(20 + 44 + 10 + 44 + 20);
+    row2.height.set(78); // the panel grows; the background follows, no hand-synced track
+    expect(bg.height()).toBe(20 + 44 + 10 + 78 + 20);
+    expect(panel.computedSize().h).toBe(bg.height());
+  });
+
+  it('auto width rows size from content; nested auto layouts report computed intrinsicSize', () => {
+    const inner = new Layout({
+      id: 'inner',
+      width: 'auto',
+      height: 'auto',
+      direction: 'row',
+      gap: 6,
+      padding: 4,
+      justify: 'start',
+      align: 'center',
+      children: [
+        new Rect({ id: 'i1', width: 30, height: 20, fill: '#f00' }),
+        new Rect({ id: 'i2', width: 50, height: 28, fill: '#0f0' }),
+      ],
+    });
+    const outer = new Layout({
+      id: 'outer',
+      width: 'auto',
+      height: 'auto',
+      direction: 'column',
+      gap: 8,
+      padding: 10,
+      justify: 'start',
+      align: 'start',
+      children: [inner, new Rect({ id: 'o1', width: 120, height: 16, fill: '#00f' })],
+    });
+    createScene({ size: { w: 640, h: 360 }, children: [outer] });
+    // inner: w = 4+30+6+50+4 = 94, h = 4+28+4 = 36
+    expect(inner.computedSize()).toEqual({ w: 94, h: 36 });
+    // outer: w = 10 + max(94, 120) + 10 = 140, h = 10+36+8+16+10 = 80
+    expect(outer.computedSize()).toEqual({ w: 140, h: 80 });
+  });
+
+  it('fixed-size layouts are untouched: computedSize equals the declared size, engine-free intrinsicSize', () => {
+    const fixed = new Layout({ id: 'fx', width: 300, height: 100, direction: 'row', children: [] });
+    createScene({ size: { w: 640, h: 360 }, children: [fixed] });
+    expect(fixed.computedSize()).toEqual({ w: 300, h: 100 });
+    expect(fixed.intrinsicSize(undefined as never)).toEqual({ w: 300, h: 100 });
+  });
+});

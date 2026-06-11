@@ -12,19 +12,21 @@ import { signal, type BindableSignal } from '@glissade/core';
 import { type DisplayListBuilder } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { Group } from './nodes.js';
+import { estimatingMeasurer, type TextMeasurer } from './text.js';
 import {
   requireLayoutEngine,
   setLayoutEngine,
-  type LayoutBox,
   type LayoutChildSpec,
   type LayoutContainerSpec,
   type LayoutEngine,
+  type LayoutResult,
 } from './layoutEngine.js';
 
 export interface LayoutProps extends NodeProps {
   children?: Node[];
-  width?: PropInit<number>;
-  height?: PropInit<number>;
+  /** 'auto': the axis sizes itself from content (Yoga content sizing). */
+  width?: PropInit<number> | 'auto';
+  height?: PropInit<number> | 'auto';
   direction?: 'row' | 'column';
   gap?: PropInit<number>;
   padding?: PropInit<number>;
@@ -52,14 +54,20 @@ export class Layout extends Group {
   readonly justify: LayoutContainerSpec['justify'];
   readonly align: LayoutContainerSpec['align'];
 
+  /** Content-sized axes ('auto'): the size signal is ignored, Yoga computes it. */
+  readonly autoWidth: boolean;
+  readonly autoHeight: boolean;
+
   // sanctioned memoization (§2.1): pure function of the fingerprinted inputs
   #memoKey = '';
-  #memoBoxes: LayoutBox[] = [];
+  #memoResult: LayoutResult = { width: 0, height: 0, boxes: [] };
 
   constructor(props: LayoutProps = {}) {
     super(props);
-    this.width = initProp(signal(0), props.width);
-    this.height = initProp(signal(0), props.height);
+    this.autoWidth = props.width === 'auto';
+    this.autoHeight = props.height === 'auto';
+    this.width = initProp(signal(0), this.autoWidth ? undefined : (props.width as PropInit<number> | undefined));
+    this.height = initProp(signal(0), this.autoHeight ? undefined : (props.height as PropInit<number> | undefined));
     this.gap = initProp(signal(0), props.gap);
     this.padding = initProp(signal(0), props.padding);
     this.direction = props.direction ?? 'row';
@@ -71,14 +79,33 @@ export class Layout extends Group {
     this.registerTarget('padding', this.padding);
   }
 
-  override intrinsicSize(): { w: number; h: number } {
-    return { w: this.width(), h: this.height() };
+  override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
+    // fixed axes never need the engine (back-compat); auto axes resolve from content
+    if (!this.autoWidth && !this.autoHeight) return { w: this.width(), h: this.height() };
+    return this.#compute(measurer).size;
   }
 
-  protected override draw(out: DisplayListBuilder, ctx: EvalContext): void {
+  /**
+   * The resolved container size — content-driven on 'auto' axes. Pure pull:
+   * reads the same signals the flow reads, so a sibling bound to it
+   * (e.g. panelBg height = () => panel.computedSize().h) tracks every input.
+   * The measurer defaults to the scene-injected one (estimating pre-scene).
+   */
+  computedSize(measurer?: TextMeasurer): { w: number; h: number } {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    return this.#compute(m).size;
+  }
+
+  #compute(measurer: TextMeasurer): {
+    result: LayoutResult;
+    /** Spec-exact on fixed axes (Yoga rounds computed values — goldens are byte-exact); computed on 'auto'. */
+    size: { w: number; h: number };
+    flowable: { node: Node; spec: LayoutChildSpec; index: number }[];
+    absolute: Node[];
+  } {
     const container: LayoutContainerSpec = {
-      width: this.width(),
-      height: this.height(),
+      width: this.autoWidth ? 'auto' : this.width(),
+      height: this.autoHeight ? 'auto' : this.height(),
       direction: this.direction,
       gap: this.gap(),
       padding: this.padding(),
@@ -88,27 +115,36 @@ export class Layout extends Group {
     const flowable: { node: Node; spec: LayoutChildSpec; index: number }[] = [];
     const absolute: Node[] = [];
     this.children.forEach((child, index) => {
-      const size = child.intrinsicSize(ctx.measurer);
+      const size = child.intrinsicSize(measurer);
       if (size) flowable.push({ node: child, spec: { width: size.w, height: size.h }, index });
       else absolute.push(child);
     });
 
     const key = JSON.stringify([container, flowable.map((f) => f.spec)]);
     if (key !== this.#memoKey) {
-      this.#memoBoxes = requireLayoutEngine().compute(
+      this.#memoResult = requireLayoutEngine().compute(
         container,
         flowable.map((f) => f.spec),
       );
       this.#memoKey = key;
     }
-    const boxes = this.#memoBoxes;
+    const size = {
+      w: this.autoWidth ? this.#memoResult.width : (container.width as number),
+      h: this.autoHeight ? this.#memoResult.height : (container.height as number),
+    };
+    return { result: this.#memoResult, size, flowable, absolute };
+  }
+
+  protected override draw(out: DisplayListBuilder, ctx: EvalContext): void {
+    const { result, size, flowable, absolute } = this.#compute(ctx.measurer);
+    const boxes = result.boxes;
 
     // paint zIndex-sorted; positions come from flow (array) order
     const order = [...flowable].sort(
       (a, b) => a.node.zIndex() - b.node.zIndex() || a.index - b.index,
     );
-    const ox = -container.width / 2;
-    const oy = -container.height / 2;
+    const ox = -size.w / 2;
+    const oy = -size.h / 2;
     // absolute children first: their dominant use is backgrounds under the flow
     for (const child of absolute) child.emit(out, ctx);
     for (const entry of order) {
@@ -158,8 +194,9 @@ export async function loadYogaLayoutEngine(): Promise<LayoutEngine> {
     compute(container, children) {
       const root = yoga.Node.create();
       try {
-        root.setWidth(container.width);
-        root.setHeight(container.height);
+        // 'auto' axes: leave the dimension unset so Yoga sizes from content
+        if (container.width !== 'auto') root.setWidth(container.width);
+        if (container.height !== 'auto') root.setHeight(container.height);
         root.setFlexDirection(
           container.direction === 'row' ? FlexDirection.Row : FlexDirection.Column,
         );
@@ -175,18 +212,26 @@ export async function loadYogaLayoutEngine(): Promise<LayoutEngine> {
           if (children[i]!.margin !== undefined) child.setMargin(Edge.All, children[i]!.margin!);
           root.insertChild(child, i);
         }
-        root.calculateLayout(container.width, container.height, Direction.LTR);
-        const boxes: LayoutBox[] = [];
+        root.calculateLayout(
+          container.width === 'auto' ? undefined : container.width,
+          container.height === 'auto' ? undefined : container.height,
+          Direction.LTR,
+        );
+        const result: LayoutResult = {
+          width: root.getComputedWidth(),
+          height: root.getComputedHeight(),
+          boxes: [],
+        };
         for (let i = 0; i < children.length; i++) {
           const child = root.getChild(i);
-          boxes.push({
+          result.boxes.push({
             x: child.getComputedLeft(),
             y: child.getComputedTop(),
             width: child.getComputedWidth(),
             height: child.getComputedHeight(),
           });
         }
-        return boxes;
+        return result;
       } finally {
         root.freeRecursive();
       }
@@ -204,4 +249,5 @@ export {
   type LayoutBox,
   type LayoutChildSpec,
   type LayoutContainerSpec,
+  type LayoutResult,
 } from './layoutEngine.js';
