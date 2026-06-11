@@ -52,9 +52,9 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   const doc = mod.timeline;
   const fps = opts.fps ?? doc.fps ?? 60;
 
-  // duration: evaluate-side compile knows it; cheapest correct source is core
   const { compileTimeline } = await import('@glissade/core');
-  const duration = compileTimeline(doc).duration;
+  const compiled = compileTimeline(doc);
+  const duration = compiled.duration;
   const [from, to] = opts.range ?? [0, duration];
   const firstFrame = Math.round(from * fps);
   const lastFrame = Math.max(firstFrame, Math.ceil(to * fps) - 1);
@@ -80,18 +80,42 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   }
   backend.dispose();
 
-  if (!isVideo) return { frames: total, out: framesDir };
+  if (!isVideo) {
+    if (compiled.audio.length > 0) {
+      process.stderr.write('note: PNG-sequence output ignores timeline audio; render to .mp4/.webm to mix it\n');
+    }
+    return { frames: total, out: framesDir };
+  }
 
   const outAbs = resolve(opts.out);
-  const codec = /\.webm$/i.test(outAbs)
+  const isWebm = /\.webm$/i.test(outAbs);
+  const codec = isWebm
     ? ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32']
     : ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-movflags', '+faststart'];
+
+  const { planAudioMix } = await import('./audioMix.js');
+  const mix = planAudioMix(compiled.audio, opts.modulePath, duration);
+  if (mix?.hasEasedGain) {
+    process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
+  }
+  const audioInputs = mix ? mix.inputs.flatMap((p) => ['-i', p]) : [];
+  const audioArgs = mix
+    ? [
+        '-filter_complex', mix.filterComplex,
+        '-map', '0:v', '-map', '[aout]',
+        ...(isWebm ? ['-c:a', 'libopus'] : ['-c:a', 'aac', '-b:a', '192k']),
+      ]
+    : [];
+
   const args = [
     '-y',
     '-framerate', String(fps),
     '-start_number', String(firstFrame),
     '-i', join(framesDir, 'frame-%05d.png'),
+    ...audioInputs,
+    ...audioArgs,
     ...codec,
+    '-t', String(duration),
     outAbs,
   ];
   const result = spawnSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });

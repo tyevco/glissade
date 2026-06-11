@@ -12,6 +12,7 @@ export default defineConfig({
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/player': src('player'),
       '@glissade/backend-skia': src('backend-skia'),
+      '@glissade/cli': src('cli'),
     },
   },
   test: {

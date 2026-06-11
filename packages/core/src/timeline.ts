@@ -20,6 +20,18 @@ export interface AssetRef {
   url: string;
 }
 
+/** Audio is timeline metadata, never a render product (§5.3). */
+export interface AudioClip {
+  asset: AssetRef; // kind 'audio'
+  /** timeline seconds (frame-quantized at export via sample-position arithmetic) */
+  at: number;
+  /** seconds within the source asset */
+  trim?: { start: number; end: number };
+  /** gain envelope: a Track whose keys are linear gain multipliers */
+  gain?: Track;
+  playbackRate?: number;
+}
+
 export interface ChildEntry {
   timeline: Timeline;
   /** Offset on the parent time axis. */
@@ -43,6 +55,7 @@ export interface Timeline {
   labels?: Record<string, number>;
   markers?: Marker[];
   children?: ChildEntry[];
+  audio?: AudioClip[];
   assets?: Record<string, AssetRef>;
 }
 
@@ -54,6 +67,7 @@ export interface TimelineInit {
   labels?: Record<string, number>;
   markers?: Marker[];
   children?: ChildEntry[];
+  audio?: AudioClip[];
   assets?: Record<string, AssetRef>;
 }
 
@@ -65,6 +79,7 @@ export function timeline(init: TimelineInit): Timeline {
   if (init.labels !== undefined) doc.labels = init.labels;
   if (init.markers !== undefined) doc.markers = init.markers;
   if (init.children !== undefined) doc.children = init.children;
+  if (init.audio !== undefined) doc.audio = init.audio;
   if (init.assets !== undefined) doc.assets = init.assets;
   return doc;
 }
@@ -98,6 +113,8 @@ export interface CompiledTimeline {
   markers: Marker[];
   /** One track per target (§2.2), keys rebased to the root time axis. */
   tracks: Map<string, Track>;
+  /** Audio clips rebased to the root time axis (§5.3); sync timeScale scales playbackRate. */
+  audio: AudioClip[];
 }
 
 export type DevWarning = (message: string) => void;
@@ -198,7 +215,8 @@ export function compileTimeline(doc: Timeline): CompiledTimeline {
   const tracks = coalesce(flat);
   const labels: Record<string, number> = { ...doc.labels };
   const markers: Marker[] = [...(doc.markers ?? [])];
-  // Child labels/markers surface rebased; parent wins label-name collisions.
+  const audio: AudioClip[] = [...(doc.audio ?? [])];
+  // Child labels/markers/audio surface rebased; parent wins label-name collisions.
   const visitChildren = (children: ChildEntry[] | undefined, at: number, scale: number) => {
     for (const child of children ?? []) {
       const base = at + child.at / scale;
@@ -209,10 +227,19 @@ export function compileTimeline(doc: Timeline): CompiledTimeline {
       for (const m of child.timeline.markers ?? []) {
         markers.push({ ...m, t: base + m.t / childScale });
       }
+      for (const clip of child.timeline.audio ?? []) {
+        // a time-scaled sync child speeds the clip itself up
+        audio.push({
+          ...clip,
+          at: base + clip.at / childScale,
+          ...(childScale !== 1 ? { playbackRate: (clip.playbackRate ?? 1) * childScale } : {}),
+        });
+      }
       visitChildren(child.timeline.children, base, childScale);
     }
   };
   visitChildren(doc.children, 0, 1);
   markers.sort((a, b) => a.t - b.t);
-  return { duration: computeDuration(doc), labels, markers, tracks };
+  audio.sort((a, b) => a.at - b.at);
+  return { duration: computeDuration(doc), labels, markers, tracks, audio };
 }

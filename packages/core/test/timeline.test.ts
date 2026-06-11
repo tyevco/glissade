@@ -170,3 +170,25 @@ describe('spring key rule (§2.7)', () => {
     expect(() => compileTimeline(doc)).toThrow(TimelineValidationError);
   });
 });
+
+describe('audio clips (§5.3)', () => {
+  const clip = (at: number) => ({ asset: { kind: 'audio' as const, url: 'x.wav' }, at });
+
+  it('compile surfaces root clips and rebases child clips', () => {
+    const child = timeline({ tracks: [track('c/x', 'number', [key(0, 0), key(1, 1)])], audio: [clip(0.5)] });
+    const doc = timeline({
+      audio: [clip(0)],
+      children: [{ timeline: child, at: 2, mode: 'add' }],
+    });
+    const compiled = compileTimeline(doc);
+    expect(compiled.audio.map((c) => c.at)).toEqual([0, 2.5]);
+  });
+
+  it('sync timeScale rebases clip offset and scales playbackRate', () => {
+    const child = timeline({ tracks: [track('c/x', 'number', [key(0, 0), key(2, 1)])], audio: [clip(1)] });
+    const doc = timeline({ children: [{ timeline: child, at: 1, mode: 'sync', timeScale: 2 }] });
+    const compiled = compileTimeline(doc);
+    expect(compiled.audio[0]!.at).toBe(1.5);
+    expect(compiled.audio[0]!.playbackRate).toBe(2);
+  });
+});

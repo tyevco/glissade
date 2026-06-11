@@ -81,6 +81,7 @@ export {
   type ChildEntry,
   type Marker,
   type AssetRef,
+  type AudioClip,
   type Json,
   type DevWarning,
 } from './timeline.js';
