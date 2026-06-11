@@ -23,7 +23,7 @@ const ALLOWED = {
   'vite-plugin': ['core'],
   'export-web': ['core', 'scene', 'backend-canvas2d'],
   // §C.6: the interactivity layer is opt-in — nothing in the linear pipeline may import it
-  interact: ['core'],
+  interact: ['core', 'scene', 'player'],
   cli: ['core', 'scene', 'backend-skia'],
   studio: ['core', 'scene', 'backend-canvas2d', 'player', 'react', 'vite-plugin'],
   examples: null, // leaf consumer: anything goes

@@ -49,6 +49,11 @@ export interface BindablePropTarget {
   unbindSource(): void;
 }
 
+/** Node-local hit-shape override (v2 §C.3) — fat targets for thin strokes. */
+export type HitArea =
+  | { kind: 'rect'; x: number; y: number; w: number; h: number }
+  | { kind: 'circle'; x: number; y: number; r: number };
+
 function initScalar<T>(sig: BindableSignal<T>, init: PropInit<T> | undefined): BindableSignal<T> {
   if (typeof init === 'function') sig.bindSource(init as () => T);
   else if (init !== undefined) sig.set(init);
@@ -72,6 +77,13 @@ export abstract class Node {
   readonly filters: BindableSignal<FilterSpec[]>;
 
   parent: Node | null = null;
+
+  /** v2 §C.3: participates in hit testing; set implicitly by attaching a listener. */
+  interactive = false;
+  /** v2 §C.3: false prunes this subtree from hit testing (PixiJS's flag). */
+  interactiveChildren = true;
+  /** v2 §C.3: explicit hit-shape override in node-local coordinates. */
+  hitArea: HitArea | undefined;
 
   readonly localMatrix: ReadonlySignal<Mat2x3>;
   readonly worldMatrix: ReadonlySignal<Mat2x3>;

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./audio": {
+      "types": "./dist/audio.d.ts",
+      "default": "./dist/audio.js"
     }
   },
   "files": [
@@ -19,7 +23,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@glissade/core": "workspace:*"
+    "@glissade/core": "workspace:*",
+    "@glissade/player": "workspace:*",
+    "@glissade/scene": "workspace:*"
   },
   "repository": {
     "type": "git",

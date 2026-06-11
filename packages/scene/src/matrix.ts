@@ -36,6 +36,18 @@ export function fromTRS(position: Vec2, rotationDeg: number, scale: Vec2): Mat2x
   return [z(cos * sx), z(sin * sx), z(-sin * sy), z(cos * sy), z(position[0]), z(position[1])];
 }
 
+/** Inverse affine: [A | t]⁻¹ = [A⁻¹ | −A⁻¹t]; null when degenerate (det 0). */
+export function invert(m: Mat2x3): Mat2x3 | null {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (det === 0) return null;
+  const ia = d / det;
+  const ib = -b / det;
+  const ic = -c / det;
+  const id = a / det;
+  return [z(ia), z(ib), z(ic), z(id), z(-(ia * e + ic * f)), z(-(ib * e + id * f))];
+}
+
 export function applyToPoint(m: Mat2x3, p: Vec2): Vec2 {
   return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
 }

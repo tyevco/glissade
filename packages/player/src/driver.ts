@@ -5,15 +5,21 @@
  * interactivity path (§2.9).
  */
 
-export interface Driver {
-  /** Begin writing. Call write(seconds) whenever the driven value changes. */
-  start(write: (t: number) => void, ctx: DriverContext): void;
+export interface InputDriver<T = number> {
+  /** Begin writing. Call write(value) whenever the driven value changes. */
+  start(write: (value: T) => void, ctx: DriverContext): void;
   stop(): void;
 }
 
+/** v1 alias (v2 §C.1): the playhead was always just the T = number case. */
+export type Driver = InputDriver<number>;
+
 export interface DriverContext {
-  /** Timeline duration, for normalization. */
-  duration: number;
+  /**
+   * Timeline duration — present when driving a playhead; ABSENT in input mode
+   * (machines have no duration, v2 §C.1).
+   */
+  duration?: number;
   visibility: () => 'visible' | 'hidden';
 }
 
@@ -57,7 +63,8 @@ export function scrollDriver(opts: ScrollDriverOptions): Driver {
   const el = opts.source;
   return {
     start(write, ctx) {
-      const range = opts.range ?? [0, ctx.duration];
+      // input mode (no duration): write normalized progress 0..1 (v2 §C.1/§C.4)
+      const range = opts.range ?? [0, ctx.duration ?? 1];
       const progress = (): number => {
         if (el instanceof Element) {
           const max = axis === 'y' ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth;

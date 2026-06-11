@@ -18,7 +18,8 @@ const BUDGETS = {
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
-  interact: 6, // v2 §C.6 CI target: machine core ≤ 6 kB gz (opt-in; outside the 35 kB base path)
+  interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
+  'interact/audio': 2, // v2 §C.6: offline audio as a separate export ≤ 2 kB gz
 };
 
 /** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */
@@ -29,7 +30,11 @@ let baseTotal = 0;
 
 for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   const result = await build({
-    entryPoints: [`${root}packages/${pkg}/dist/index.js`],
+    entryPoints: [
+      pkg.includes('/')
+        ? `${root}packages/${pkg.split('/')[0]}/dist/${pkg.split('/')[1]}.js`
+        : `${root}packages/${pkg}/dist/index.js`,
+    ],
     bundle: true,
     minify: true,
     format: 'esm',

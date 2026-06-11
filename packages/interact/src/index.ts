@@ -22,3 +22,12 @@ export {
   type MachineSampler,
   type OffsetCurve,
 } from './handoff.js';
+export { pointerDriver, splitVec2, springFilter, type PointerDriverOptions, type SpringFilter } from './pointer.js';
+export {
+  containsPoint,
+  createListeners,
+  hitTest,
+  type BoolSink,
+  type Listeners,
+  type ListenersOptions,
+} from './listeners.js';

@@ -134,6 +134,12 @@ importers:
       '@glissade/core':
         specifier: workspace:*
         version: link:../core
+      '@glissade/player':
+        specifier: workspace:*
+        version: link:../player
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
 
   packages/player:
     dependencies:

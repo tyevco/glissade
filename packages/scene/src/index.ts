@@ -1,7 +1,7 @@
 // @glissade/scene — node tree, transforms, DisplayList emission (DESIGN.md §3).
 // Depends only on @glissade/core; zero DOM/Node dependencies.
 
-export { IDENTITY, fromTRS, multiply, applyToPoint, matEquals, type Mat2x3 } from './matrix.js';
+export { IDENTITY, fromTRS, multiply, invert, applyToPoint, matEquals, type Mat2x3 } from './matrix.js';
 
 export {
   createDisplayListBuilder,
@@ -19,7 +19,7 @@ export {
   type Rect as RectShape,
 } from './displayList.js';
 
-export { Node, type EvalContext, type NodeProps, type PropInit, type BindablePropTarget } from './node.js';
+export { Node, type EvalContext, type NodeProps, type PropInit, type BindablePropTarget, type HitArea } from './node.js';
 
 export {
   Group,
