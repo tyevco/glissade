@@ -1,0 +1,22 @@
+{
+  "name": "glissade-monorepo",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "tsdown": "^0.12.9",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  }
+}

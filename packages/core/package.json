@@ -1,0 +1,26 @@
+{
+  "name": "@glissade/core",
+  "version": "0.0.0",
+  "description": "glissade core: signals, tracks, timeline document, evaluation, easing, springs, seeded RNG. Zero DOM/Node dependencies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/core"
+  }
+}
