@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.2.0
+
+### Minor Changes
+
+- 1693a55: Record → replay → bake (v2 addendum §A.6/§C.5). `@glissade/interact`: `InputTrace` (event list, raw pre-filter values at raw timestamps), `recordTrace` (transparent tap on input writes), `bakeTrace` (frame-quantized replay through a fresh machine → a plain version-1 linear Timeline, bit-deterministic per trace), `hashMachine` trace identity covering referenced timeline documents, and `MachineSpec` — the scene-module machine declaration. Machines additionally expose `doc`, `hash`, `hasStepped`, and `sampleTargets`. `@glissade/cli`: `gs render --trace/--state/--force` (machines without an export story are a build error), and `gs dev [--record]` — an esbuild-served harness that mounts the module's machines and writes `.trace.json` sidecars on stop.
+
+### Patch Changes
+
+- Updated dependencies [715be32]
+- Updated dependencies [dcb28f2]
+- Updated dependencies [1d2fd20]
+- Updated dependencies [1693a55]
+  - @glissade/interact@0.2.0
+  - @glissade/core@0.2.0
+  - @glissade/player@0.2.0
+  - @glissade/scene@0.2.0
+  - @glissade/backend-skia@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
