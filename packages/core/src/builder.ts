@@ -22,8 +22,7 @@ import {
 } from './timeline.js';
 import { type Key, type Track } from './track.js';
 import { resolveTweenTarget, type TweenTarget } from './targetRef.js';
-import { parseColor } from './color.js';
-import { type ValueTypeId } from './valueTypes.js';
+import { inferValueType } from './valueTypes.js';
 
 export type Position = number | string;
 
@@ -65,23 +64,6 @@ export class PositionError extends Error {
     super(`invalid position '${pos}': ${detail}`);
     this.name = 'PositionError';
   }
-}
-
-function inferValueType(value: unknown): ValueTypeId {
-  if (typeof value === 'number') return 'number';
-  if (typeof value === 'boolean') return 'boolean';
-  if (Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === 'number')) {
-    return 'vec2';
-  }
-  if (typeof value === 'string') {
-    try {
-      parseColor(value);
-      return 'color';
-    } catch {
-      return 'string';
-    }
-  }
-  throw new TimelineValidationError(`cannot infer a value type for ${JSON.stringify(value)}; register a custom type`);
 }
 
 function peekBase(target: TweenTarget): unknown {

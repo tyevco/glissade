@@ -4,7 +4,7 @@
  * (spring overshoot); non-extrapolating types clamp.
  */
 
-import { lerpColor } from './color.js';
+import { lerpColor, parseColor } from './color.js';
 
 export type Vec2 = readonly [number, number];
 
@@ -72,6 +72,31 @@ function discrete<T>(id: string): ValueType<T> {
 
 export const stringType = discrete<string>('string');
 export const booleanType = discrete<boolean>('boolean');
+
+export class ValueTypeInferenceError extends Error {
+  constructor(value: unknown) {
+    super(`cannot infer a value type for ${JSON.stringify(value)}; register a custom type`);
+    this.name = 'ValueTypeInferenceError';
+  }
+}
+
+/** Infer a registered type id from a sample value (builder + bake authoring surfaces). */
+export function inferValueType(value: unknown): ValueTypeId {
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === 'number')) {
+    return 'vec2';
+  }
+  if (typeof value === 'string') {
+    try {
+      parseColor(value);
+      return 'color';
+    } catch {
+      return 'string';
+    }
+  }
+  throw new ValueTypeInferenceError(value);
+}
 
 registerValueType(numberType);
 registerValueType(vec2Type);

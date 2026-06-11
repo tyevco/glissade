@@ -51,7 +51,9 @@ export {
   stringType,
   booleanType,
   vec2Equals,
+  inferValueType,
   UnknownValueTypeError,
+  ValueTypeInferenceError,
   type ValueType,
   type ValueTypeId,
   type Vec2,
@@ -112,3 +114,12 @@ export {
 } from './binding.js';
 
 export { random, type Rng } from './rng.js';
+
+export {
+  bake,
+  bakeCheckpointed,
+  BakeError,
+  type BakeConfig,
+  type CheckpointedBakeConfig,
+  type CheckpointedSim,
+} from './bake.js';
