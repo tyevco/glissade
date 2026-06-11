@@ -115,3 +115,38 @@ export function formatValue(v: unknown): string {
   if (Array.isArray(v)) return v.map((n) => (typeof n === 'number' ? parseFloat(n.toFixed(4)) : n)).join(', ');
   return String(v);
 }
+
+/** A run of keys closer than thresholdFrac of the duration — rendered as one stacked diamond. */
+export interface KeyStack {
+  t: number;
+  keys: Key[];
+}
+
+/**
+ * Group near-coincident keys (the 1 ms zIndex-flip pattern) so the timeline
+ * can show a stack badge instead of silently overdrawing diamonds (§6.2 UX).
+ */
+export function groupStacks(keys: readonly Key[], duration: number, thresholdFrac = 0.006): KeyStack[] {
+  const stacks: KeyStack[] = [];
+  for (const k of keys) {
+    const last = stacks[stacks.length - 1];
+    if (last && (k.t - last.keys[last.keys.length - 1]!.t) / Math.max(duration, 1e-9) < thresholdFrac) {
+      last.keys.push(k);
+    } else {
+      stacks.push({ t: k.t, keys: [k] });
+    }
+  }
+  return stacks;
+}
+
+/** The next member to select when clicking a stack: cycles, starting after the current selection. */
+export function cycleStack(stack: KeyStack, selectedT: number | null): Key {
+  if (selectedT === null) return stack.keys[0]!;
+  const i = stack.keys.findIndex((k) => Math.abs(k.t - selectedT) < 1e-9);
+  return stack.keys[(i + 1) % stack.keys.length]!;
+}
+
+/** True when the key's arriving ease is a spring (its t is intrinsic, §2.7). */
+export function isSpringKey(k: Key): boolean {
+  return k.ease !== undefined && typeof k.ease === 'object' && k.ease.kind === 'spring';
+}

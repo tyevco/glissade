@@ -30,38 +30,37 @@ import {
 import { KeyEditor } from './KeyEditor.js';
 import { type Scene, type SceneModule } from '@glissade/scene';
 import { mount, type Mounted } from '@glissade/player';
-import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
-import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
-import spinners from '../../examples/src/scenes/showcase/spinners.js';
-import loaders from '../../examples/src/scenes/showcase/loaders.js';
-import dashboard from '../../examples/src/scenes/showcase/dashboard.js';
-import transitions from '../../examples/src/scenes/showcase/transitions.js';
-import micro from '../../examples/src/scenes/showcase/micro.js';
-import typography from '../../examples/src/scenes/golden-typography.js';
-import layoutScene from '../../examples/src/scenes/golden-layout.js';
-import flexboard from '../../examples/src/scenes/showcase/flexboard.js';
+// import type ONLY: the plugin's runtime imports vite itself, which must
+// never reach the browser bundle (a value-form import drags it into dep-opt)
+import type { ProjectDoc } from '@glissade/vite-plugin';
 import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
 
-const SCENES = 'packages/examples/src/scenes';
-const corpus: Record<string, { mod: SceneModule; path: string }> = {
-  shapes: { mod: goldenShapes, path: `${SCENES}/golden-shapes.ts` },
-  bounce: { mod: goldenBounce, path: `${SCENES}/golden-bounce.ts` },
-  spinners: { mod: spinners, path: `${SCENES}/showcase/spinners.ts` },
-  loaders: { mod: loaders, path: `${SCENES}/showcase/loaders.ts` },
-  dashboard: { mod: dashboard, path: `${SCENES}/showcase/dashboard.ts` },
-  transitions: { mod: transitions, path: `${SCENES}/showcase/transitions.ts` },
-  micro: { mod: micro, path: `${SCENES}/showcase/micro.ts` },
-  typography: { mod: typography, path: `${SCENES}/golden-typography.ts` },
-  layout: { mod: layoutScene, path: `${SCENES}/golden-layout.ts` },
-  flexboard: { mod: flexboard, path: `${SCENES}/showcase/flexboard.ts` },
-};
+/**
+ * Scene auto-discovery (§6.1): glob the project's scene modules — anything
+ * default-exporting a SceneModule appears in the picker without editing this
+ * file. Names drop the 'golden-' prefix; collisions keep the full basename.
+ */
+const discovered = import.meta.glob('../../examples/src/scenes/**/*.ts', { eager: true }) as Record<
+  string,
+  { default?: Partial<SceneModule> }
+>;
+const corpus: Record<string, { mod: SceneModule; path: string }> = {};
+for (const [globPath, m] of Object.entries(discovered).sort(([a], [b]) => a.localeCompare(b))) {
+  const mod = m.default;
+  if (typeof mod?.createScene !== 'function' || mod.timeline === undefined) continue;
+  const base = globPath.split('/').pop()!.replace(/\.tsx?$/, '');
+  const short = base.replace(/^golden-/, '');
+  const name = short in corpus ? base : short;
+  corpus[name] = { mod: mod as SceneModule, path: globPath.replace(/^(\.\.\/)+/, 'packages/') };
+}
 
 const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURIComponent(path)}`;
 
 export function App() {
-  const [sceneName, setSceneName] = useState('shapes');
+  const [sceneName, setSceneName] = useState(() => ('shapes' in corpus ? 'shapes' : Object.keys(corpus)[0]!));
+  const [project, setProject] = useState<ProjectDoc | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<KeyRef | null>(null);
   const [sidecar, setSidecar] = useState<SidecarDoc | null>(null);
@@ -90,6 +89,19 @@ export function App() {
       };
     }
   }, [entry, sidecar]);
+
+  // glissade.project.json (§6.2): shared markers (+ render presets for the export UI)
+  useEffect(() => {
+    void fetch('/__glissade/project')
+      .then((r) => r.json())
+      .then((doc: ProjectDoc | null) => setProject(doc))
+      .catch(() => setProject(null));
+  }, []);
+
+  const markers = useMemo(
+    () => [...compiled.markers, ...(project?.markers ?? [])].sort((a, b) => a.t - b.t),
+    [compiled, project],
+  );
 
   // load the persisted sidecar when the scene changes
   useEffect(() => {
@@ -141,11 +153,12 @@ export function App() {
    * snapshot and re-selects the edited key by its post-normalize t.
    */
   const writeKeys = useCallback(
-    (target: string, keys: Key[] | null, reselectT?: number) => {
+    (target: string, keys: Key[] | null, reselectT?: number, snapshot = true) => {
       const sourceTrack = compiled.tracks.get(target);
       if (!keys || !sourceTrack) return;
       const current = sidecar ?? emptySidecar();
-      undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
+      // drags snapshot once at their first move, then stream without (one drag = one undo)
+      if (snapshot) undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
       const tracks: Track[] = [
         ...current.tracks.filter((t) => t.target !== target),
         { target, type: sourceTrack.type, keys },
@@ -164,9 +177,9 @@ export function App() {
 
   /** Drag retiming (identity by closest-t — the §6.2 lesson from a vanished key). */
   const editKey = useCallback(
-    (target: string, fromT: number, newT: number) => {
+    (target: string, fromT: number, newT: number, first = true) => {
       const tr = trackOf(target);
-      if (tr) writeKeys(target, retimeKeyAt(tr, fromT, newT), newT);
+      if (tr) writeKeys(target, retimeKeyAt(tr, fromT, newT), newT, first);
     },
     [trackOf, writeKeys],
   );
@@ -288,6 +301,7 @@ export function App() {
           <TimelinePanel
             compiled={compiled}
             player={session.mounted.player}
+            markers={markers}
             onEditKey={editKey}
             onAddKey={addKey}
             selected={selectedKey}

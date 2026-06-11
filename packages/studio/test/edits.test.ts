@@ -97,3 +97,32 @@ describe('value parsing per type', () => {
     expect(parseValue('vec2', formatValue([1.5, -2] as const))).toEqual([1.5, -2]);
   });
 });
+
+describe('key stacking (§6.2 UX): near-coincident keys group; clicks cycle', () => {
+  it('groups runs within the threshold and leaves spaced keys alone', async () => {
+    const { groupStacks } = await import('../src/edits.js');
+    const keys = [key(0, 0), key(1, 1), key(1.001, 2), key(1.002, 3), key(2, 4)];
+    const stacks = groupStacks(keys, 2);
+    expect(stacks.map((s) => s.keys.length)).toEqual([1, 3, 1]);
+    expect(stacks[1]!.t).toBe(1);
+    // long timeline: the same 1 ms gap collapses harder; short: it can resolve
+    expect(groupStacks(keys, 0.5).length).toBeLessThanOrEqual(3);
+  });
+
+  it('cycleStack starts at the first member and wraps', async () => {
+    const { cycleStack, groupStacks } = await import('../src/edits.js');
+    const stack = groupStacks([key(1, 1), key(1.001, 2), key(1.002, 3)], 2)[0]!;
+    const first = cycleStack(stack, null);
+    expect(first.t).toBe(1);
+    const second = cycleStack(stack, first.t);
+    expect(second.t).toBe(1.001);
+    expect(cycleStack(stack, 1.002).t).toBe(1); // wraps
+  });
+
+  it('isSpringKey detects only spring eases', async () => {
+    const { isSpringKey } = await import('../src/edits.js');
+    expect(isSpringKey(key(1, 0, { kind: 'spring', stiffness: 170, damping: 26, mass: 1 }))).toBe(true);
+    expect(isSpringKey(key(1, 0, 'easeOutQuad'))).toBe(false);
+    expect(isSpringKey(key(1, 0))).toBe(false);
+  });
+});

@@ -1,12 +1,13 @@
 import { useCallback, useRef } from 'react';
-import { type CompiledTimeline } from '@glissade/core';
+import { type CompiledTimeline, type Marker } from '@glissade/core';
 import { type Player } from '@glissade/player';
 import { usePlayhead } from '@glissade/react';
-import { type KeyRef } from './edits.js';
+import { cycleStack, groupStacks, isSpringKey, type KeyRef } from './edits.js';
 
 export function TimelinePanel({
   compiled,
   player,
+  markers = [],
   onEditKey,
   onAddKey,
   selected,
@@ -14,8 +15,11 @@ export function TimelinePanel({
 }: {
   compiled: CompiledTimeline;
   player: Player;
-  /** Drag retiming; identity by the key's pre-drag t (closest-t — never a frozen index). */
-  onEditKey?: (target: string, fromT: number, newT: number) => void;
+  /** Timeline + project markers, flagged in the ruler. */
+  markers?: readonly Pick<Marker, 't' | 'name'>[];
+  /** Drag retiming; identity by the key's pre-drag t (closest-t — never a frozen index).
+   * first=true on the drag's first move: the undo snapshot boundary (one drag = one undo). */
+  onEditKey?: (target: string, fromT: number, newT: number, first: boolean) => void;
   /** Double-click a lane: add a key at that t, value sampled from the curve (§6.2). */
   onAddKey?: (target: string, t: number) => void;
   selected?: KeyRef | null;
@@ -27,7 +31,7 @@ export function TimelinePanel({
   // identity over index: every edit re-sorts keys, so a frozen index would
   // silently swap which key is being dragged when it crosses a neighbor
   // (found via a user's sidecar with a vanished key)
-  const drag = useRef<{ target: string; lastT: number } | null>(null);
+  const drag = useRef<{ target: string; lastT: number; moved: boolean } | null>(null);
 
   const laneT = useCallback(
     (e: React.PointerEvent | React.MouseEvent, lane: Element) => {
@@ -42,7 +46,8 @@ export function TimelinePanel({
     (e: React.PointerEvent, lane: Element) => {
       if (!drag.current || !onEditKey) return;
       const newT = laneT(e, lane);
-      onEditKey(drag.current.target, drag.current.lastT, newT);
+      onEditKey(drag.current.target, drag.current.lastT, newT, !drag.current.moved);
+      drag.current.moved = true;
       drag.current.lastT = newT;
     },
     [onEditKey, laneT],
@@ -84,6 +89,16 @@ export function TimelinePanel({
               {t.toFixed(1)}
             </span>
           ))}
+          {markers.map((m, i) => (
+            <span
+              key={`m${i}`}
+              className="marker"
+              style={{ left: `${(m.t / duration) * 100}%` }}
+              title={`${m.name} @ ${m.t.toFixed(2)}s`}
+            >
+              ⚑
+            </span>
+          ))}
           <div className="cursor" style={{ left: `${(time / duration) * 100}%` }} />
         </div>
       </div>
@@ -101,32 +116,48 @@ export function TimelinePanel({
             onDoubleClick={(e) => onAddKey?.(track.target, laneT(e, e.currentTarget))}
           >
             {track.keys.length <= 400 ? (
-              track.keys.map((k, i) => (
-                <span
-                  key={i}
-                  className={`key${k.derived ? ' derived' : ''}${
-                    selected && selected.target === track.target && Math.abs(selected.t - k.t) < 1e-9
-                      ? ' selected'
-                      : ''
-                  }`}
-                  style={{ left: `${(k.t / duration) * 100}%` }}
-                  title={`${track.target} t=${k.t.toFixed(3)} (drag to retime · click to edit)`}
-                  onPointerDown={(e) => {
-                    drag.current = { target: track.target, lastT: k.t };
-                    onSelectKey?.({ target: track.target, t: k.t });
-                    try {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                    } catch {
-                      // synthetic events carry no active pointer
-                    }
-                    e.stopPropagation();
-                  }}
-                  onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget.parentElement!)}
-                  onPointerUp={() => {
-                    drag.current = null;
-                  }}
-                />
-              ))
+              groupStacks(track.keys, duration).map((stack, si) => {
+                const stacked = stack.keys.length > 1;
+                const selectedInStack =
+                  selected && selected.target === track.target
+                    ? (stack.keys.find((k) => Math.abs(k.t - selected.t) < 1e-9) ?? null)
+                    : null;
+                const rep = selectedInStack ?? stack.keys[0]!;
+                const springRep = isSpringKey(rep);
+                const title = stacked
+                  ? `${stack.keys.length} stacked keys @ ${stack.keys.map((k) => k.t.toFixed(3)).join(', ')} — click to cycle`
+                  : springRep
+                    ? `${track.target} t=${rep.t.toFixed(3)} — spring: t is intrinsic, retime the previous key (§2.7)`
+                    : `${track.target} t=${rep.t.toFixed(3)} (drag to retime · click to edit)`;
+                return (
+                  <span
+                    key={si}
+                    className={`key${rep.derived ? ' derived' : ''}${springRep ? ' spring' : ''}${
+                      selectedInStack ? ' selected' : ''
+                    }`}
+                    style={{ left: `${(rep.t / duration) * 100}%` }}
+                    title={title}
+                    onPointerDown={(e) => {
+                      // stacks cycle selection per click; the armed member is what a drag moves
+                      const member = stacked ? cycleStack(stack, selectedInStack?.t ?? null) : rep;
+                      drag.current = { target: track.target, lastT: member.t, moved: false };
+                      onSelectKey?.({ target: track.target, t: member.t });
+                      try {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      } catch {
+                        // synthetic events carry no active pointer
+                      }
+                      e.stopPropagation();
+                    }}
+                    onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget.parentElement!)}
+                    onPointerUp={() => {
+                      drag.current = null;
+                    }}
+                  >
+                    {stacked && <span className="stack-badge">{stack.keys.length}</span>}
+                  </span>
+                );
+              })
             ) : (
               <span className="name">{track.keys.length} keys (baked)</span>
             )}

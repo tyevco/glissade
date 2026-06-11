@@ -31,6 +31,7 @@ export default defineConfig({
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/player': src('player'),
       '@glissade/react': src('react'),
+      '@glissade/interact': src('interact'),
     },
   },
 });

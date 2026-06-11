@@ -207,6 +207,9 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+      '@glissade/vite-plugin':
+        specifier: workspace:*
+        version: link:../vite-plugin
       react:
         specifier: ^19.1.0
         version: 19.2.7

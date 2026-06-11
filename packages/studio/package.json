@@ -2,7 +2,7 @@
   "name": "@glissade/studio",
   "private": true,
   "version": "0.0.0",
-  "description": "glissade studio: React editor over the open core (DESIGN.md §6).",
+  "description": "glissade studio: React editor over the open core (DESIGN.md \u00a76).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -16,6 +16,7 @@
     "@glissade/player": "workspace:*",
     "@glissade/react": "workspace:*",
     "@glissade/scene": "workspace:*",
+    "@glissade/vite-plugin": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
