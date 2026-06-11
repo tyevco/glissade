@@ -38,10 +38,41 @@ export const estimatingMeasurer: TextMeasurer = {
   },
 };
 
+// Segmentation via Intl.Segmenter when available (correct CJK/emoji word
+// boundaries — the pretext approach); whitespace regex as fallback. ICU
+// differences are per-engine, consistent with the §5.5 determinism scope.
+let wordSegmenter: Intl.Segmenter | null | undefined;
+
+function segmentWords(text: string): string[] {
+  if (wordSegmenter === undefined) {
+    wordSegmenter =
+      typeof Intl !== 'undefined' && 'Segmenter' in Intl
+        ? new Intl.Segmenter(undefined, { granularity: 'word' })
+        : null;
+  }
+  if (wordSegmenter) {
+    const raw = [...wordSegmenter.segment(text)].map((s) => s.segment);
+    // no break before punctuation: glue punctuation-only segments (no
+    // letters/digits/whitespace) to their predecessor — 'replay,' stays one
+    // unit, and CJK closing marks hang on their preceding character
+    const glued: string[] = [];
+    for (const seg of raw) {
+      if (glued.length > 0 && /^[^\p{L}\p{N}\s]+$/u.test(seg)) {
+        glued[glued.length - 1] += seg;
+      } else {
+        glued.push(seg);
+      }
+    }
+    return glued;
+  }
+  return text.split(/(\s+)/).filter((w) => w.length > 0);
+}
+
 /**
- * Greedy line breaking: explicit '\n' always breaks; otherwise words flow
- * until maxWidth is exceeded. A word wider than maxWidth gets its own line
- * (no intra-word breaking in v1).
+ * Greedy line breaking: explicit '\n' always breaks; otherwise word segments
+ * flow until maxWidth is exceeded (Intl.Segmenter boundaries, so CJK wraps
+ * without spaces). A segment wider than maxWidth gets its own line (no
+ * intra-word breaking in v1).
  */
 export function breakLines(
   text: string,
@@ -54,7 +85,7 @@ export function breakLines(
 
   const lines: string[] = [];
   for (const para of paragraphs) {
-    const words = para.split(/(\s+)/).filter((w) => w.length > 0);
+    const words = segmentWords(para);
     let line = '';
     for (const word of words) {
       const candidate = line + word;

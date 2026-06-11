@@ -34,3 +34,24 @@ describe('line breaking (§3.6)', () => {
     expect(quantize(10.24)).toBe(10);
   });
 });
+
+describe('CJK wrapping (Intl.Segmenter boundaries)', () => {
+  it('Chinese text wraps without spaces', () => {
+    // 12 CJK chars at 10px each, 60px max → must break into multiple lines
+    const lines = breakLines('动画是数据时间的纯函数无需重放', font, 60, fixed);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(fixed.measureText(line, font).width).toBeLessThanOrEqual(60);
+    }
+    expect(lines.join('')).toBe('动画是数据时间的纯函数无需重放');
+  });
+});
+
+describe('no break before punctuation', () => {
+  it('a line never starts with punctuation', () => {
+    const lines = breakLines('time needs no replay, so every frame is addressable.', font, 100, fixed);
+    for (const line of lines) {
+      expect(/^[^\p{L}\p{N}]/u.test(line), `line starts with punctuation: '${line}'`).toBe(false);
+    }
+  });
+});
