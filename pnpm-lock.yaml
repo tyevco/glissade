@@ -129,6 +129,12 @@ importers:
         specifier: ^1.0.0
         version: 1.46.0
 
+  packages/interact:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/player:
     dependencies:
       '@glissade/backend-canvas2d':

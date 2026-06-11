@@ -86,6 +86,7 @@ export {
 export {
   compileTimeline,
   setDevWarning,
+  emitDevWarning,
   TimelineValidationError,
   type Timeline,
   type TimelineInit,

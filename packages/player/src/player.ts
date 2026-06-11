@@ -28,6 +28,28 @@ export interface PlayerInit {
   /** Injected clock; defaults to the rAF clockDriver. Tests pass a manual driver. */
   driver?: Driver;
   visibility?: () => 'visible' | 'hidden';
+  /** Track targets of the bound timeline — the v2 §A.1 disjointness set for attach(). */
+  targets?: Iterable<string>;
+}
+
+/**
+ * The structural shape of an attached machine (v2 addendum §A.5). Defined
+ * structurally so @glissade/player never imports @glissade/interact (§7.1).
+ */
+export interface AttachedMachine {
+  step(now: number): void;
+  readonly targets?: ReadonlySet<string>;
+}
+
+/** §A.1: machine and Player track-target sets must be statically disjoint. */
+export class TargetOverlapError extends Error {
+  constructor(overlaps: string[]) {
+    super(
+      `machine targets overlap an already-bound target set: ${overlaps.join(', ')} — ` +
+        'concurrent writers to one property is the silent last-writer-wins §2.2 exists to kill',
+    );
+    this.name = 'TargetOverlapError';
+  }
 }
 
 export interface Player {
@@ -41,6 +63,12 @@ export interface Player {
   seek(t: number): void;
   /** Register a marker callback; fired only when continuous playback crosses it. */
   onMarker(name: string, cb: (marker: Marker) => void): () => void;
+  /**
+   * Wire a machine to the host clock (v2 §A.5): step(now) on every tick, in
+   * attach order, before evaluation — even while linear playback is paused.
+   * Returns detach. Throws TargetOverlapError on a non-disjoint target set.
+   */
+  attach(machine: AttachedMachine): () => void;
   dispose(): void;
 }
 
@@ -54,6 +82,8 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   let rate = opts.rate ?? 1;
   let playing = false;
   let driverRunning = false;
+  const ownTargets = new Set(init.targets ?? []);
+  const machines: AttachedMachine[] = [];
 
   // playback math: t = base + (elapsed - elapsedOrigin) * rate
   let base = 0;
@@ -84,6 +114,9 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
 
   function onElapsed(elapsed: number): void {
     lastElapsed = elapsed;
+    // machines step on every host tick, even while linear playback is paused —
+    // a paused ambient timeline must not kill button hover (§A.5)
+    for (const m of machines) m.step(elapsed);
     if (!playing) return;
     elapsedOrigin ??= elapsed;
     const prev = playhead.peek();
@@ -173,6 +206,22 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
       elapsedOrigin = playing ? lastElapsed : null;
       playhead.set(base);
     },
+    attach(machine) {
+      if (machine.targets) {
+        const overlaps: string[] = [];
+        for (const t of machine.targets) {
+          if (ownTargets.has(t)) overlaps.push(`'${t}' (player timeline)`);
+          else if (machines.some((m) => m.targets?.has(t))) overlaps.push(`'${t}' (another machine)`);
+        }
+        if (overlaps.length > 0) throw new TargetOverlapError(overlaps);
+      }
+      machines.push(machine);
+      ensureDriver(); // machines need ticks before any play()
+      return () => {
+        const i = machines.indexOf(machine);
+        if (i >= 0) machines.splice(i, 1);
+      };
+    },
     onMarker(name, cb) {
       let set = callbacks.get(name);
       if (!set) {
@@ -184,6 +233,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     },
     dispose() {
       if (playing) settle(false);
+      machines.length = 0;
       if (driverRunning) driver.stop();
       driverRunning = false;
     },

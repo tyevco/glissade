@@ -18,7 +18,11 @@ const BUDGETS = {
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
+  interact: 6, // v2 §C.6 CI target: machine core ≤ 6 kB gz (opt-in; outside the 35 kB base path)
 };
+
+/** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */
+const BASE = new Set(['core', 'scene', 'backend-canvas2d', 'player']);
 
 let failed = false;
 let baseTotal = 0;
@@ -37,7 +41,7 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   });
   const gz = gzipSync(result.outputFiles[0].contents).length / 1024;
   const ok = gz <= budgetKb;
-  if (pkg !== 'element') baseTotal += gz;
+  if (BASE.has(pkg)) baseTotal += gz;
   if (!ok) failed = true;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${pkg.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB)`);
 }

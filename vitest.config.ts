@@ -15,6 +15,7 @@ export default defineConfig({
       '@glissade/backend-skia': src('backend-skia'),
       '@glissade/cli': src('cli'),
       '@glissade/export-web': src('export-web'),
+      '@glissade/interact': src('interact'),
     },
   },
   test: {

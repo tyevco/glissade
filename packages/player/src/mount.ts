@@ -27,7 +27,12 @@ export function mount(
   const backend = new Canvas2DBackend(canvas);
   scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
   const player = createPlayer(
-    { playhead: scene.playhead, duration: compiled.duration, markers: compiled.markers },
+    {
+      playhead: scene.playhead,
+      duration: compiled.duration,
+      markers: compiled.markers,
+      targets: compiled.tracks.keys(), // v2 §A.1: attach() validates machine disjointness against these
+    },
     opts,
   );
 
