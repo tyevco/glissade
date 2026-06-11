@@ -2,7 +2,7 @@
 
 glissade is a TypeScript framework for programmatic motion graphics: animations are **data**, evaluation is a **pure function of time**, and the same scene runs real-time in a page, renders frame-exact in CI, and opens in a visual studio.
 
-> Status: pre-release. Packages are not yet published to npm; clone the repo and use the workspace.
+> Status: 0.x — APIs settling, published to npm with provenance. `npm i @glissade/core @glissade/scene @glissade/player` (and `@glissade/interact` for state machines, `-D @glissade/cli` for headless rendering).
 
 ## A scene in sixty seconds
 

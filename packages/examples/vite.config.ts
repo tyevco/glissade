@@ -5,6 +5,18 @@ import { defineConfig } from 'vite';
 const src = (pkg: string) => fileURLToPath(new URL(`../${pkg}/src/index.ts`, import.meta.url));
 
 export default defineConfig({
+  // hosted showcase (GitHub Pages): multi-page build of every harness page
+  build: {
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)), // the showcase gallery
+        demo: fileURLToPath(new URL('./demo.html', import.meta.url)),
+        embed: fileURLToPath(new URL('./embed.html', import.meta.url)),
+        interact: fileURLToPath(new URL('./interact.html', import.meta.url)),
+      },
+    },
+  },
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@glissade/core': src('core'),

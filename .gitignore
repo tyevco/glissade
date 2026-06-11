@@ -13,3 +13,6 @@ coverage/
 .claude/scheduled_tasks.lock
 .tmp-test/
 *.take*.trace.json
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+site/
