@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
 
-// Tests run against package sources, never stale dist builds.
-const src = (pkg: string) => fileURLToPath(new URL(`./packages/${pkg}/src/index.ts`, import.meta.url));
+// Dev runs against package sources for instant HMR across the workspace.
+const src = (pkg: string) => fileURLToPath(new URL(`../${pkg}/src/index.ts`, import.meta.url));
 
 export default defineConfig({
   resolve: {
@@ -12,8 +12,5 @@ export default defineConfig({
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/player': src('player'),
     },
-  },
-  test: {
-    include: ['packages/*/test/**/*.test.ts'],
   },
 });

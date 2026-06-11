@@ -9,3 +9,4 @@ coverage/
 .turbo/
 .vite/
 *.tsbuildinfo
+.playwright-mcp/

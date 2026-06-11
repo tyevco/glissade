@@ -21,7 +21,47 @@ importers:
         specifier: ^3.2.3
         version: 3.2.6(jiti@2.7.0)
 
+  packages/backend-canvas2d:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+
   packages/core: {}
+
+  packages/examples:
+    dependencies:
+      '@glissade/backend-canvas2d':
+        specifier: workspace:*
+        version: link:../backend-canvas2d
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+      '@glissade/player':
+        specifier: workspace:*
+        version: link:../player
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+    devDependencies:
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.5(jiti@2.7.0)
+
+  packages/player:
+    dependencies:
+      '@glissade/backend-canvas2d':
+        specifier: workspace:*
+        version: link:../backend-canvas2d
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
 
   packages/scene:
     dependencies:
