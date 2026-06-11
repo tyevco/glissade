@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # jiti-loaded scene modules resolve workspace deps to built dist/
+      - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium-headless-shell
       - run: sudo apt-get install -y ffmpeg
       - run: PARITY=1 pnpm vitest run packages/backend-skia/test/parity.test.ts
