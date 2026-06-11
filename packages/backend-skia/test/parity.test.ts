@@ -1,0 +1,97 @@
+/**
+ * Browser↔Skia SSIM parity (DESIGN.md §3.4/§7.3 tier 3 — the M2 exit
+ * criterion). Chromium renders golden-corpus frames via Canvas2DBackend;
+ * SkiaBackend renders the same DisplayLists headlessly; frames must clear an
+ * SSIM floor. Never byte-equality across the seam (GPU vs CPU Skia,
+ * antialiasing coverage differs).
+ *
+ * Gated behind PARITY=1: needs a Playwright chromium-headless-shell.
+ *   PARITY=1 pnpm vitest run packages/backend-canvas2d/test/parity.test.ts
+ */
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { evaluate, type SceneModule } from '@glissade/scene';
+import { ssim } from './ssim.js';
+
+const ENABLED = process.env['PARITY'] === '1';
+
+const FRAMES = [0, 60, 120, 179];
+const FPS = 60;
+const SSIM_FLOOR = 0.97;
+
+describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
+  let server: import('vite').ViteDevServer;
+  let browser: import('playwright-core').Browser;
+  let page: import('playwright-core').Page;
+  let SkiaBackend: typeof import('@glissade/backend-skia').SkiaBackend;
+  let loadImage: typeof import('@napi-rs/canvas').loadImage;
+  let createCanvas: typeof import('@napi-rs/canvas').createCanvas;
+  let corpus: Record<string, SceneModule>;
+
+  beforeAll(async () => {
+    const { createServer } = await import('vite');
+    server = await createServer({
+      root: fileURLToPath(new URL('../../examples', import.meta.url)),
+      server: { port: 0 },
+      logLevel: 'silent',
+    });
+    await server.listen();
+
+    const { chromium } = await import('playwright');
+    browser = await chromium.launch();
+    page = await browser.newPage();
+    const port = server.config.server.port === 0 ? server.httpServer!.address() : null;
+    const addr = typeof port === 'object' && port ? port.port : server.config.server.port;
+    await page.goto(`http://localhost:${addr}/parity.html`);
+    await page.waitForFunction(() => (window as unknown as { __parityReady?: boolean }).__parityReady);
+
+    ({ SkiaBackend } = await import('@glissade/backend-skia'));
+    ({ loadImage, createCanvas } = await import('@napi-rs/canvas'));
+    corpus = {
+      shapes: (await import('../../examples/src/scenes/golden-shapes.js')).default,
+      bounce: (await import('../../examples/src/scenes/golden-bounce.js')).default,
+    };
+  }, 60_000);
+
+  afterAll(async () => {
+    await browser?.close();
+    await server?.close();
+  });
+
+  async function browserPixels(name: string, t: number): Promise<Uint8ClampedArray> {
+    const dataUrl = await page.evaluate(
+      ([n, time]) => (window as unknown as { __parityRender(n: string, t: number): string }).__parityRender(n as string, time as number),
+      [name, t] as const,
+    );
+    const img = await loadImage(Buffer.from(dataUrl.split(',')[1]!, 'base64'));
+    const c = createCanvas(640, 360);
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return ctx.getImageData(0, 0, 640, 360).data;
+  }
+
+  for (const name of ['shapes', 'bounce']) {
+    it(`'${name}' clears SSIM ≥ ${SSIM_FLOOR} at ${FRAMES.length} frames`, async () => {
+      const mod = corpus[name]!;
+      const scene = mod.createScene();
+      const skia = new SkiaBackend(640, 360);
+      for (const frame of FRAMES) {
+        const t = frame / FPS;
+        skia.render(evaluate(scene, mod.timeline, t));
+        const skiaPixels = skia.readPixels();
+        const chromePixels = await browserPixels(name, t);
+        const score = ssim(chromePixels, new Uint8ClampedArray(skiaPixels), 640, 360);
+        // eslint-disable-next-line no-console
+        console.log(`parity ${name} f${frame}: SSIM ${score.toFixed(5)}`);
+        expect(score, `${name} frame ${frame}`).toBeGreaterThanOrEqual(SSIM_FLOOR);
+      }
+    }, 60_000);
+  }
+});
+
+describe.runIf(!ENABLED)('browser↔Skia SSIM parity (skipped)', () => {
+  it('set PARITY=1 with a Playwright chromium installed to run the parity suite', () => {
+    expect(true).toBe(true);
+  });
+});
