@@ -1,6 +1,6 @@
 # glissade v2 — Interactivity: State Machines & Input Drivers (Design Addendum)
 
-**Status:** Draft for review — no implementation until approved
+**Status:** Decisions ratified 2026-06-11 — approved for implementation
 **Date:** 2026-06-11
 
 ## Executive summary
@@ -421,19 +421,19 @@ const doc = machineBuilder('button')
 
 ---
 
-## Open Questions for Tyler
+## Decision Record (open questions resolved 2026-06-11)
 
-The following were resolved in this revision and are now **decisions**, recorded inline: condition nesting (flat, tree reserved — §A.3), bake fidelity (per-frame, splice reserved with hash-match — §A.6), overshoot clamp (ported, non-optional — §B.1), default handoff spring (`{stiffness: 170, damping: 26, mass: 1}` — §B.3), capture surface (API + `gs dev --record` — §C.5), step ownership (`player.attach` — §A.5), cascading (one per step — §A.3), re-entry (`onEnter`, default restart — §A.1), vec2 (fan-out, type reserved — §A.2/§C.1), machine-vs-Player validation (§A.1), `interruptible` semantics (§B.4), handoff enum + type-class defaults (§A.4/§B.1), trace schema (§C.5). Three questions genuinely survive:
+The following were resolved in this revision and are now **decisions**, recorded inline: condition nesting (flat, tree reserved — §A.3), bake fidelity (per-frame, splice reserved with hash-match — §A.6), overshoot clamp (ported, non-optional — §B.1), default handoff spring (`{stiffness: 170, damping: 26, mass: 1}` — §B.3), capture surface (API + `gs dev --record` — §C.5), step ownership (`player.attach` — §A.5), cascading (one per step — §A.3), re-entry (`onEnter`, default restart — §A.1), vec2 (fan-out, type reserved — §A.2/§C.1), machine-vs-Player validation (§A.1), `interruptible` semantics (§B.4), handoff enum + type-class defaults (§A.4/§B.1), trace schema (§C.5). The three surviving questions were resolved with the project author, each on the recommended option:
 
-**1. Crossfade for phase-aligned loops (was OPEN B-1).**
+**1. Crossfade for phase-aligned loops — DECIDED: defer to v2.x.**
 *Options:* (a) ship dual-playhead weighted crossfade in v2.0 alongside offset decay; (b) defer to v2.x, keeping the §4.7 dual-playhead reservation and the reserved-not-valid `'crossfade'` enum member (§A.4).
 *Recommendation:* **(b).** Crossfade only pays off with synced looping states (walk→run), which require a phase-sync primitive we haven't designed; shipping it now invites the stacking-sources interruption hole that motivated rejecting it. Revisit when looping animation states land. This is the only question with a genuine unbuilt dependency.
 
-**2. Declarative machine mounting in `<gs-player>`.**
+**2. Declarative machine mounting in `<gs-player>` — DECIDED: JS-only in v2.0.**
 *Options:* (a) auto-instantiate machines found in a scene bundle, with declarative input-mapping attributes (Rive's `stateMachines:` option); (b) JS-only in v2.0 — `createMachine` + `player.attach`, with the element attribute surface designed in its own pass.
 *Recommendation:* **(b).** The JS wiring is fully specified in §A.5; the attribute surface would freeze names into the embed API and deserves dedicated design. The `machine` attribute is reserved, not shipped (§C.6).
 
-**3. Pixel-accurate hit testing, when it comes.**
+**3. Pixel-accurate hit testing — DECIDED: per-node containsPoint opt-in (when it comes, v2.x).**
 *Options:* (a) per-node `containsPoint()` alpha-test override (PixiJS model: opt-in test against the node's own geometry); (b) Konva-style offscreen hit canvas behind a flag.
 *Recommendation:* **(a)** — per-node opt-in keeps cost where the need is and requires no backend changes; (b) only if editor-grade picking eventually demands it. Note v2.0 already ships *geometric* shape tests (rect/circle/path fill-rule, §C.3); only alpha/pixel testing is deferred.
 
