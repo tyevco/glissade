@@ -16,6 +16,8 @@ export {
   type TransitionDoc,
 } from './doc.js';
 export { createMachine, UnknownInputError, type Machine, type MachineOptions } from './machine.js';
+export { machineBuilder, MachineBuilder, pose, type TransitionOpts } from './builder.js';
+export { hoverMachine, pressMachine, type PoseMachineOptions } from './presets.js';
 export {
   DEFAULT_HANDOFF_SPRING,
   solveOffset,

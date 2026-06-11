@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { type ReadonlySignal } from '@glissade/core';
+import { type ReadonlySignal, type Signal } from '@glissade/core';
 import { type Player } from '@glissade/player';
 
 /** Subscribe a component to a signal; re-renders only when the value actually changes. */
@@ -24,4 +24,24 @@ export function usePlayhead(player: Player): number {
 export function usePlayerState(player: Player): { playing: boolean; time: number; duration: number } {
   const time = usePlayhead(player);
   return { playing: player.playing, time, duration: player.duration };
+}
+
+/**
+ * Machine hooks (v2 §C.6): the machine's active state and inputs are signals,
+ * so the §4.3 contract already covers them. Typed structurally — react never
+ * imports @glissade/interact; any object with this shape works.
+ */
+export function useMachineState(machine: { current: ReadonlySignal<string> }): string {
+  return useSignalValue(machine.current);
+}
+
+/** A machine input as React state: [value, set]. */
+export function useInput<T extends boolean | number>(
+  machine: { input(name: string): Signal<T> },
+  name: string,
+): [T, (value: T) => void] {
+  const sig = machine.input(name); // stable: machines return the same signal per name
+  const value = useSignalValue(sig);
+  const set = useCallback((v: T) => sig.set(v), [sig]);
+  return [value, set];
 }

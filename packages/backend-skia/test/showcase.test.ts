@@ -14,11 +14,12 @@ import dashboard from '../../examples/src/scenes/showcase/dashboard.js';
 import transitions from '../../examples/src/scenes/showcase/transitions.js';
 import micro from '../../examples/src/scenes/showcase/micro.js';
 import flexboard from '../../examples/src/scenes/showcase/flexboard.js';
+import interactive from '../../examples/src/scenes/showcase/interactive.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine();
 
-const GALLERY: Record<string, SceneModule> = { spinners, loaders, dashboard, transitions, micro, flexboard };
+const GALLERY: Record<string, SceneModule> = { spinners, loaders, dashboard, transitions, micro, flexboard, interactive };
 
 describe('showcase gallery', () => {
   for (const [name, mod] of Object.entries(GALLERY)) {

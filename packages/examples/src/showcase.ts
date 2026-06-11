@@ -14,6 +14,8 @@ import micro from './scenes/showcase/micro.js';
 import typography from './scenes/golden-typography.js';
 import layoutScene from './scenes/golden-layout.js';
 import flexboard from './scenes/showcase/flexboard.js';
+import interactive from './scenes/showcase/interactive.js';
+import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
 await loadYogaLayoutEngine();
@@ -27,6 +29,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   typography: { mod: typography, blurb: 'Explicit fonts + our line breaker: the wrap width is an animated track, re-breaking live as it tweens — and these exact glyphs are byte-compared in CI.' },
   layout: { mod: layoutScene, blurb: 'Yoga flexbox behind the LayoutEngine seam: gap and tile size are animated tracks, and the same wasm computes these boxes headlessly — byte-compared in CI.' },
   flexboard: { mod: flexboard, blurb: 'A settings panel built entirely from nested Layouts: toggles are tiny flex containers, the description reflows as its wrap width tweens, and a growing row pushes its siblings.' },
+  interactive: { mod: interactive, blurb: 'REAL toggles: click them — mid-flight clicks reverse the knob with its velocity intact (machine handoffs). The third toggle and the glow stay on the scrubbable ambient timeline; the button is two one-liner presets.' },
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
@@ -39,14 +42,34 @@ const blurb = document.querySelector<HTMLParagraphElement>('#blurb')!;
 let current: Mounted | null = null;
 let unsubscribe: (() => void) | null = null;
 let scrubbing = false;
+let machineTeardowns: Array<() => void> = [];
 
 function show(name: string): void {
   unsubscribe?.();
+  for (const td of machineTeardowns) td();
+  machineTeardowns = [];
   current?.dispose();
   const entry = gallery[name]!;
   const scene = entry.mod.createScene();
   current = mount(scene, entry.mod.timeline, canvas, { loop: true });
   void current.player.play();
+  // v2: mount the module's machines — attach to the host clock, repaint on
+  // machine steps, run the module's own listener wiring (§A.5/§C.3)
+  const mounted = current;
+  for (const spec of (entry.mod as { machines?: MachineSpec[] }).machines ?? []) {
+    const machine = createMachine(spec.doc, {
+      resolve: scene.resolveTarget,
+      ...(spec.timelines ? { timelines: spec.timelines } : {}),
+    });
+    mounted.player.attach(machine);
+    const unsub = machine.clock.subscribe(() => mounted.render());
+    const undo = spec.wire?.({ scene, machine, element: canvas });
+    machineTeardowns.push(() => {
+      undo?.();
+      unsub();
+      machine.dispose();
+    });
+  }
   blurb.textContent = entry.blurb;
   playpause.textContent = 'Pause';
   for (const b of Array.from(picker.querySelectorAll('button'))) {

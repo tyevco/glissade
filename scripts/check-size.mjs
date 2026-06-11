@@ -25,16 +25,37 @@ const BUDGETS = {
 /** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */
 const BASE = new Set(['core', 'scene', 'backend-canvas2d', 'player']);
 
+/**
+ * §C.6 measures interact "per entry point": the 6 kB target covers machine +
+ * listeners + hitTest + pointerDriver, and builder/preset/trace tooling must
+ * TREE-SHAKE out of bundles that don't call it. Bundling a subset entry
+ * verifies that claim on every PR instead of asserting it.
+ */
+const SUBSET_EXPORTS = {
+  interact: ['createMachine', 'createListeners', 'hitTest', 'pointerDriver', 'splitVec2', 'springFilter'],
+};
+
 let failed = false;
 let baseTotal = 0;
 
 for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
+  const subset = SUBSET_EXPORTS[pkg];
   const result = await build({
-    entryPoints: [
-      pkg.includes('/')
-        ? `${root}packages/${pkg.split('/')[0]}/dist/${pkg.split('/')[1]}.js`
-        : `${root}packages/${pkg}/dist/index.js`,
-    ],
+    ...(subset
+      ? {
+          stdin: {
+            contents: `export { ${subset.join(', ')} } from './packages/${pkg}/dist/index.js';`,
+            resolveDir: root,
+            sourcefile: 'subset-entry.js',
+          },
+        }
+      : {
+          entryPoints: [
+            pkg.includes('/')
+              ? `${root}packages/${pkg.split('/')[0]}/dist/${pkg.split('/')[1]}.js`
+              : `${root}packages/${pkg}/dist/index.js`,
+          ],
+        }),
     bundle: true,
     minify: true,
     format: 'esm',
