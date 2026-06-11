@@ -12,3 +12,4 @@ coverage/
 .playwright-mcp/
 .claude/scheduled_tasks.lock
 .tmp-test/
+*.take*.trace.json

@@ -14,6 +14,7 @@ export default defineConfig({
       '@glissade/export-web': src('export-web'),
       '@glissade/element': src('element'),
       '@glissade/player': src('player'),
+      '@glissade/interact': src('interact'),
     },
   },
 });

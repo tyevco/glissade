@@ -22,9 +22,12 @@
   },
   "dependencies": {
     "@glissade/backend-skia": "workspace:*",
-    "@napi-rs/canvas": "^0.1.65",
     "@glissade/core": "workspace:*",
+    "@glissade/interact": "workspace:*",
+    "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*",
+    "@napi-rs/canvas": "^0.1.65",
+    "esbuild": "^0.28.0",
     "jiti": "^2.4.2"
   },
   "repository": {

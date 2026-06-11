@@ -28,7 +28,14 @@ import {
   type ValueType,
   velocityAt,
 } from '@glissade/core';
-import { MachineValidationError, validateMachineDoc, type StateId, type StateMachineDoc, type TransitionDoc } from './doc.js';
+import {
+  hashMachine,
+  MachineValidationError,
+  validateMachineDoc,
+  type StateId,
+  type StateMachineDoc,
+  type TransitionDoc,
+} from './doc.js';
 import { DEFAULT_HANDOFF_SPRING, solveOffset, type MachineSampler } from './handoff.js';
 
 export class UnknownInputError extends Error {
@@ -49,17 +56,29 @@ export interface MachineOptions {
 
 export interface Machine {
   readonly id: string;
+  /** The validated source document — recordTrace/bakeTrace read inputs and identity from it. */
+  readonly doc: StateMachineDoc;
+  /** Trace identity (§C.5): doc + referenced timeline documents. */
+  readonly hash: string;
   /** Observable, NOT writable (§A.2). */
   readonly current: ReadonlySignal<StateId>;
   /** Machine-clock signal; every composite transition binding depends on it. */
   readonly clock: ReadonlySignal<number>;
   /** Union of every state's track targets — the §A.1 disjointness set. */
   readonly targets: ReadonlySet<string>;
+  /** True once step() has run — bakeTrace requires a fresh machine (§A.6). */
+  readonly hasStepped: boolean;
   input<T extends boolean | number = boolean | number>(name: string): Signal<T>;
   /** Enqueue a trigger; consumed during the next step (§A.2: triggers are not signals). */
   fire(name: string): void;
   /** Host tick (§A.5): drain triggers, take at most one transition, advance clocks. */
   step(now: number): void;
+  /**
+   * Analytic sample of every machine-bound target at machine time t — the
+   * per-frame sampling surface bakeTrace consumes (§A.6). Valid at the
+   * current step's time; reads the live binding samplers, never the signals.
+   */
+  sampleTargets(t: number): Map<string, { value: unknown; type: string }>;
   dispose(): void;
 }
 
@@ -88,6 +107,7 @@ export function createMachine(doc: StateMachineDoc, opts: MachineOptions): Machi
   validateMachineDoc(doc);
 
   const states = new Map<StateId, StateRec>();
+  const refTimelines: Record<string, Timeline> = {};
   for (const [id, s] of Object.entries(doc.states)) {
     const tl = 'ref' in s.timeline ? opts.timelines?.[s.timeline.ref] : s.timeline;
     if (!tl) {
@@ -95,6 +115,7 @@ export function createMachine(doc: StateMachineDoc, opts: MachineOptions): Machi
         `state '${id}' references timeline '${(s.timeline as { ref: string }).ref}' but no document was provided in options.timelines`,
       );
     }
+    if ('ref' in s.timeline) refTimelines[s.timeline.ref] = tl;
     states.set(id, {
       id,
       compiled: compileTimeline(tl),
@@ -352,9 +373,19 @@ export function createMachine(doc: StateMachineDoc, opts: MachineOptions): Machi
 
   const machine: Machine = {
     id: doc.id,
+    doc,
+    hash: hashMachine(doc, refTimelines),
     current: computed(() => currentSig()),
     clock: computed(() => clock()),
     targets,
+    get hasStepped() {
+      return stepped;
+    },
+    sampleTargets(t) {
+      const out = new Map<string, { value: unknown; type: string }>();
+      for (const [target, b] of bindings) out.set(target, { value: b.sampler.value(t), type: b.vt.id });
+      return out;
+    },
     input<T extends boolean | number>(name: string): Signal<T> {
       const sig = inputSigs.get(name);
       if (!sig) {

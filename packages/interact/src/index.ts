@@ -4,6 +4,7 @@
  */
 
 export {
+  hashMachine,
   MachineValidationError,
   validateMachineDoc,
   type Condition,
@@ -23,6 +24,17 @@ export {
   type OffsetCurve,
 } from './handoff.js';
 export { pointerDriver, splitVec2, springFilter, type PointerDriverOptions, type SpringFilter } from './pointer.js';
+export {
+  bakeTrace,
+  recordTrace,
+  TraceHashMismatchError,
+  type BakeTraceOptions,
+  type InputTrace,
+  type MachineSpec,
+  type RecordOptions,
+  type TraceEvent,
+  type TraceRecorder,
+} from './trace.js';
 export {
   containsPoint,
   createListeners,

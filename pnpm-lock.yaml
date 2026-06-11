@@ -65,12 +65,21 @@ importers:
       '@glissade/core':
         specifier: workspace:*
         version: link:../core
+      '@glissade/interact':
+        specifier: workspace:*
+        version: link:../interact
+      '@glissade/player':
+        specifier: workspace:*
+        version: link:../player
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
       '@napi-rs/canvas':
         specifier: ^0.1.65
         version: 0.1.100
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       jiti:
         specifier: ^2.4.2
         version: 2.7.0
@@ -103,6 +112,9 @@ importers:
       '@glissade/export-web':
         specifier: workspace:*
         version: link:../export-web
+      '@glissade/interact':
+        specifier: workspace:*
+        version: link:../interact
       '@glissade/player':
         specifier: workspace:*
         version: link:../player
@@ -140,6 +152,19 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+    devDependencies:
+      '@glissade/cli':
+        specifier: workspace:*
+        version: link:../cli
+      playwright:
+        specifier: ^1.60.0
+        version: 1.60.0
+      playwright-core:
+        specifier: ^1.60.0
+        version: 1.60.0
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.5(@types/node@25.9.2)(jiti@2.7.0)
 
   packages/player:
     dependencies:

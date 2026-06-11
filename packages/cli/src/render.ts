@@ -19,6 +19,12 @@ export interface RenderOptions {
   fps?: number;
   /** seconds; defaults to [0, duration] */
   range?: [number, number];
+  /** InputTrace file: replay → bake → render (v2 §A.6 route 2). */
+  trace?: string;
+  /** Render one machine state's timeline linearly (route 3). */
+  state?: string;
+  /** Downgrade a trace hash mismatch to a warning. */
+  force?: boolean;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -49,7 +55,13 @@ export function ffmpegAvailable(): boolean {
 export async function render(opts: RenderOptions): Promise<{ frames: number; out: string }> {
   const mod = await loadSceneModule(opts.modulePath);
   const scene = mod.createScene();
-  const doc = mod.timeline;
+  // machine export routes (v2 §A.6): machines render via --trace/--state or error
+  const { resolveRenderDoc } = await import('./machines.js');
+  const doc = resolveRenderDoc(mod, scene, {
+    ...(opts.trace !== undefined ? { trace: opts.trace } : {}),
+    ...(opts.state !== undefined ? { state: opts.state } : {}),
+    ...(opts.force !== undefined ? { force: opts.force } : {}),
+  });
   const fps = opts.fps ?? doc.fps ?? 60;
 
   const { compileTimeline } = await import('@glissade/core');

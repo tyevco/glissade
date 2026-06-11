@@ -31,5 +31,11 @@
     "type": "git",
     "url": "git+https://github.com/tyevco/glissade.git",
     "directory": "packages/interact"
+  },
+  "devDependencies": {
+    "@glissade/cli": "workspace:*",
+    "playwright": "^1.60.0",
+    "playwright-core": "^1.60.0",
+    "vite": "^7.0.0"
   }
 }
