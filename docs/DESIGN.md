@@ -1,11 +1,11 @@
-# gliss (glide & slide) — Architecture & Design
+# glissade (glide & slide) — Architecture & Design
 
 **Status:** Draft — open questions resolved with the author 2026-06-11 (§8)
 **Date:** 2026-06-10
 **License:** Apache-2.0
 
 **Executive summary.**
-gliss (long-form "glide & slide") is an Apache-2.0, TypeScript-first framework for programmatic motion graphics: realtime-first in any web page, with deterministic headless export as a second consumer of the same substrate. The entire system rests on one contract — `evaluate(scene, timeline, t)` is pure — so the same scene scrubs at 60fps in a `<canvas>`, renders frame-exact in CI, and opens in a visual studio. Animations are data: node properties are pull-based signals; animations are serializable keyframe `Track`s inside a versioned `Timeline` document; a fluent GSAP-style builder compiles to that document rather than executing at play time. There are no generator coroutines and no promise-chained sequencing — promises appear only as completion notifications. Rendering is split through a flat `DisplayList` IR consumed by pluggable backends: `Canvas2DBackend` (browser) and `SkiaBackend` (`@napi-rs/canvas`, headless CLI) ship in v1; a WebGPU effect layer is architecturally reserved. Determinism is enforced (runtime guards, lint, golden-frame CI), and honestly scoped: byte-exact per path on a pinned toolchain, perceptual (SSIM) parity across the browser/Skia seam. Stateful simulation enters only via `bake()`, which compiles physics into ordinary tracks. The studio is a same-license React app over the open core, persisting edits to a sidecar document merged at track granularity. Target users, in order: realtime web-animation embedders, the orphaned Motion Canvas community, Remotion license refugees, and manim refugees. Package scope is `@gliss/*` (decided; npm org creation is the remaining verification step); CLI binary `gs`; custom element `<gs-player>`; repo `tyevco/gliss`.
+glissade (long-form "glide & slide") is an Apache-2.0, TypeScript-first framework for programmatic motion graphics: realtime-first in any web page, with deterministic headless export as a second consumer of the same substrate. The entire system rests on one contract — `evaluate(scene, timeline, t)` is pure — so the same scene scrubs at 60fps in a `<canvas>`, renders frame-exact in CI, and opens in a visual studio. Animations are data: node properties are pull-based signals; animations are serializable keyframe `Track`s inside a versioned `Timeline` document; a fluent GSAP-style builder compiles to that document rather than executing at play time. There are no generator coroutines and no promise-chained sequencing — promises appear only as completion notifications. Rendering is split through a flat `DisplayList` IR consumed by pluggable backends: `Canvas2DBackend` (browser) and `SkiaBackend` (`@napi-rs/canvas`, headless CLI) ship in v1; a WebGPU effect layer is architecturally reserved. Determinism is enforced (runtime guards, lint, golden-frame CI), and honestly scoped: byte-exact per path on a pinned toolchain, perceptual (SSIM) parity across the browser/Skia seam. Stateful simulation enters only via `bake()`, which compiles physics into ordinary tracks. The studio is a same-license React app over the open core, persisting edits to a sidecar document merged at track granularity. Target users, in order: realtime web-animation embedders, the orphaned Motion Canvas community, Remotion license refugees, and manim refugees. Package scope is `@glissade/*` (decided; npm org creation is the remaining verification step); CLI binary `gs`; custom element `<gs-player>`; repo `tyevco/glissade`.
 
 ## Table of contents
 
@@ -24,7 +24,7 @@ gliss (long-form "glide & slide") is an Apache-2.0, TypeScript-first framework f
 
 ### 1.1 Pitch
 
-**gliss** ("glide & slide") is an Apache-2.0, TypeScript-first framework for programmatic motion graphics that runs in real time in any web page and also exports deterministic video headlessly. Animations are authored as **signals + keyframe tracks**: node properties are reactive signals, animations are serializable `Track`s bound to them, and a fluent GSAP-style builder compiles to that document. The entire system is built on one contract — `evaluate(scene, timeline, t)` is pure — so one scene scrubs at 60fps in a `<canvas>`, opens in a visual studio, and renders frame-exact in CI on Skia: it runs in any web page first, and everything else falls out of the same substrate.
+**glissade** ("glide & slide") is an Apache-2.0, TypeScript-first framework for programmatic motion graphics that runs in real time in any web page and also exports deterministic video headlessly. Animations are authored as **signals + keyframe tracks**: node properties are reactive signals, animations are serializable `Track`s bound to them, and a fluent GSAP-style builder compiles to that document. The entire system is built on one contract — `evaluate(scene, timeline, t)` is pure — so one scene scrubs at 60fps in a `<canvas>`, opens in a visual studio, and renders frame-exact in CI on Skia: it runs in any web page first, and everything else falls out of the same substrate.
 
 ### 1.2 Target users
 
@@ -55,7 +55,7 @@ WebCodecs browser export is **v1 scope (M3)**, not a non-goal: the PNG-sequence 
 
 ### 1.5 Ecosystem positioning
 
-| | **gliss** | Motion Canvas | Remotion | Theatre.js | GSAP | Rive |
+| | **glissade** | Motion Canvas | Remotion | Theatre.js | GSAP | Rive |
 |---|---|---|---|---|---|---|
 | **License** | Apache-2.0 | MIT | Source-available; paid for companies >3 people | core Apache-2.0, studio **AGPL-3.0** | Free incl. commercial (Webflow, since Apr 2025) | Proprietary editor; open-source runtimes |
 | **Time model** | Pure `evaluate(scene, timeline, t)`; signals + keyframe tracks; builder compiles to document | Generator coroutines (seek = re-run from 0) | React render per frame (pure function of frame) | Keyframe sequence document + playhead | Imperative tweens/timelines, runtime-built | Editor-authored state machines |
@@ -373,7 +373,7 @@ Canvas 2D gives no layout for free; Motion Canvas had to build a flexbox `Layout
 
 **Decision: Yoga behind a `LayoutEngine` interface.** Determinism demands the *same* layout engine in browser preview and headless export — which rules out delegating to the browser's flexbox via hidden DOM (no DOM in the CLI path; browser-version layout drift would break parity anyway). The interface seam (`measure(tree) → boxes`) keeps Taffy adoptable later. Layout results are memoized as a computed signal keyed on inputs, so layout reruns only when a participating signal changes.
 
-**Bundle consequence (budget reconciliation, §4.4):** Yoga's wasm (~95 KB raw, roughly 30–40 KB gzipped) cannot fit the 35 kB embed budget. `Layout` therefore ships as a **separate entry point, `@gliss/scene/layout`, with its own budget**; the base embed path never pays for it.
+**Bundle consequence (budget reconciliation, §4.4):** Yoga's wasm (~95 KB raw, roughly 30–40 KB gzipped) cannot fit the 35 kB embed budget. `Layout` therefore ships as a **separate entry point, `@glissade/scene/layout`, with its own budget**; the base embed path never pays for it.
 
 **Text measurement without upward imports:** `scene` cannot depend on a backend (§7.1 dependency rule). `scene` declares a `TextMeasurer` interface; every `RenderBackend` implements it; `mount()` and the CLI inject the active backend's measurer into Layout (Yoga `setMeasureFunc`) and the line breaker (§3.6) — so layout and rasterization always agree, and the package graph stays acyclic.
 
@@ -433,8 +433,8 @@ interface RenderBackend extends TextMeasurer {
 
 **v1 backends:**
 
-- **`Canvas2DBackend`** (`@gliss/backend-canvas2d`) — browser; targets `HTMLCanvasElement` or `OffscreenCanvas`. **Threading:** export always runs it in a Worker (§5.1); realtime playback runs on the main thread by default — scenes without `Video` nodes may opt into Worker playback. (A `<video>` element does not exist in a Worker, so worker-side realtime Video preview would force the decoder path or per-frame bitmap relays; rather than hand-wave that cost, main-thread playback is the spec'd default.)
-- **`SkiaBackend`** (`@gliss/backend-skia`) — headless CLI over **@napi-rs/canvas**: Skia-backed, prebuilt N-API binaries, fastest of the Node canvas options in current benchmarks; raw RGBA piped to FFmpeg.
+- **`Canvas2DBackend`** (`@glissade/backend-canvas2d`) — browser; targets `HTMLCanvasElement` or `OffscreenCanvas`. **Threading:** export always runs it in a Worker (§5.1); realtime playback runs on the main thread by default — scenes without `Video` nodes may opt into Worker playback. (A `<video>` element does not exist in a Worker, so worker-side realtime Video preview would force the decoder path or per-frame bitmap relays; rather than hand-wave that cost, main-thread playback is the spec'd default.)
+- **`SkiaBackend`** (`@glissade/backend-skia`) — headless CLI over **@napi-rs/canvas**: Skia-backed, prebuilt N-API binaries, fastest of the Node canvas options in current benchmarks; raw RGBA piped to FFmpeg.
 
 **The parity argument, stated honestly.** Chrome's Canvas 2D is rasterized by Skia; @napi-rs/canvas *is* Skia — same rasterizer family, so preview and export are very close. But they are **not pixel-identical across the seam**: Chrome GPU-rasterizes (Ganesh/Graphite) while @napi-rs/canvas is CPU Skia (antialiasing coverage differs); Chrome's text path uses the platform font stack (DirectWrite/CoreText/FreeType per OS) while @napi-rs/canvas bundles FreeType; Skia versions differ. The honest claims, used consistently in this document: **(a) per-path byte-exactness** — same path, same pinned toolchain ⇒ same bytes (the Skia CLI path is the CI-grade one); **(b) browser↔Skia *perceptual* parity** with a stated SSIM floor, enforced by the §7.3 parity suite. **Rejected:** node-canvas (Cairo — a different rasterizer, guaranteeing visible preview≠export drift in antialiasing, dashes, gradients) and skia-canvas (also Skia, but slower and heavier).
 
@@ -530,20 +530,20 @@ Three tiers, all wrapping one vanilla primitive:
 
 ```ts
 // Tier 1 — vanilla (the real API; everything else is sugar)
-import { mount } from '@gliss/core';
-import { Canvas2DBackend } from '@gliss/backend-canvas2d';
+import { mount } from '@glissade/core';
+import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 const handle = mount(scene, canvasEl, { backend: Canvas2DBackend });
 handle.player.play();
 handle.dispose();
 ```
 
 ```html
-<!-- Tier 2 — zero-framework custom element (its own package, @gliss/element) -->
+<!-- Tier 2 — zero-framework custom element (its own package, @glissade/element) -->
 <gs-player src="./hero.bundle.mjs" loop autoplay controls></gs-player>
 ```
 
 ```tsx
-// Tier 3 — React adapter (@gliss/react): thin, no React in core
+// Tier 3 — React adapter (@glissade/react): thin, no React in core
 const playhead = usePlayhead(player);          // useSyncExternalStore over the signal
 const width    = useSignal(node.width);        // any Signal<T> → React state
 <ScenePlayer scene={scene} loop controls onFinished={...} />
@@ -555,13 +555,13 @@ const width    = useSignal(node.width);        // any Signal<T> → React state
 
 ### 4.4 Bundle posture
 
-**Budget: base embed path (`@gliss/core` + `@gliss/scene` without Layout + `@gliss/backend-canvas2d` + Player) ≤ 35 kB gzipped.** Sub-budgets: signals+evaluate ≤ 8 kB, scene-graph nodes ≤ 12 kB, canvas2d backend ≤ 8 kB, Player+drivers ≤ 4 kB, slack 3 kB. Justification: anime.js does timelines in ~10 kB; Diffusion Studio's full compositing engine is 75 kB; a scene graph + evaluator should land between. Separately budgeted entry points: **`@gliss/scene/layout`** (includes Yoga wasm, ~30–40 kB gzipped on its own — the reason it is excluded from the base budget, §3.2) ≤ 50 kB additional; **`@gliss/element`** controls ≤ 5 kB additional. Enforced by `size-limit` in CI per entry point, failing the build.
+**Budget: base embed path (`@glissade/core` + `@glissade/scene` without Layout + `@glissade/backend-canvas2d` + Player) ≤ 35 kB gzipped.** Sub-budgets: signals+evaluate ≤ 8 kB, scene-graph nodes ≤ 12 kB, canvas2d backend ≤ 8 kB, Player+drivers ≤ 4 kB, slack 3 kB. Justification: anime.js does timelines in ~10 kB; Diffusion Studio's full compositing engine is 75 kB; a scene graph + evaluator should land between. Separately budgeted entry points: **`@glissade/scene/layout`** (includes Yoga wasm, ~30–40 kB gzipped on its own — the reason it is excluded from the base budget, §3.2) ≤ 50 kB additional; **`@glissade/element`** controls ≤ 5 kB additional. Enforced by `size-limit` in CI per entry point, failing the build.
 
 Hard rules making the budget achievable: every node type, easing, and driver is an ES-module export (a Rect-only embed shouldn't pay for Path/Video); the builder compiles away when you ship a pre-compiled `.timeline.json`; **editor, export pipeline (WebCodecs/Mediabunny), and SkiaBackend are separate packages the embed path can never transitively import** — verified by a CI dependency-graph check, not convention.
 
 ### 4.5 Hot reload (dev)
 
-Vite HMR accept handler in `@gliss/vite-plugin`: on scene-module change, re-run the scene function → new Timeline document → `player.swap(newTimeline)`. Because the Playhead is just a number and `evaluate()` is pure, `swap` preserves the playhead and the next frame reflects the edit — no replay-to-frame (Motion Canvas must re-run its generator to the current frame; we diff documents instead). `bake()`d tracks re-bake on swap (seeded, so reproducible); labels that vanished log a warning rather than throwing.
+Vite HMR accept handler in `@glissade/vite-plugin`: on scene-module change, re-run the scene function → new Timeline document → `player.swap(newTimeline)`. Because the Playhead is just a number and `evaluate()` is pure, `swap` preserves the playhead and the next frame reflects the edit — no replay-to-frame (Motion Canvas must re-run its generator to the current frame; we diff documents instead). `bake()`d tracks re-bake on swap (seeded, so reproducible); labels that vanished log a warning rather than throwing.
 
 ### 4.6 Determinism: same evaluate, different drivers
 
@@ -693,10 +693,10 @@ gs render scene.ts --format png-seq --out frames/   # lossless / alpha
 
 The studio ships as two packages, neither ever imported by an embed:
 
-- **`@gliss/vite-plugin`** — dev-server integration: serves the user's project with HMR, injects the studio entry, exposes a write endpoint for persisting sidecar documents to disk (the role Motion Canvas's vite-plugin plays for `.meta` files).
-- **`@gliss/studio`** — the React app: **viewport** (renders through the *same* `Canvas2DBackend` as the embed player, so preview is pixel-true by construction), **timeline panel** (tracks, keyframes, labels, scrub bar writing the Playhead), **inspector** (live signal values for the selected node; editable per §6.2), and **outline panel** (scene-graph tree + selection; structural node *creation* from the editor is deferred — node existence is code-owned per §6.2 rule 4, and a structural-edit channel is out of v1 scope).
+- **`@glissade/vite-plugin`** — dev-server integration: serves the user's project with HMR, injects the studio entry, exposes a write endpoint for persisting sidecar documents to disk (the role Motion Canvas's vite-plugin plays for `.meta` files).
+- **`@glissade/studio`** — the React app: **viewport** (renders through the *same* `Canvas2DBackend` as the embed player, so preview is pixel-true by construction), **timeline panel** (tracks, keyframes, labels, scrub bar writing the Playhead), **inspector** (live signal values for the selected node; editable per §6.2), and **outline panel** (scene-graph tree + selection; structural node *creation* from the editor is deferred — node existence is code-owned per §6.2 rule 4, and a structural-edit channel is out of v1 scope).
 
-**Signals → React** uses the `@gliss/react` adapter from §4.3 (`useSignal` = `useSyncExternalStore(sig.subscribe, sig.peek, sig.peek)`) — not a second implementation. Notifications are coalesced per ticker tick (Theatre's `dataverse` Ticker pattern), so a scrub frame that dirties 200 signals produces one React commit. The viewport does **not** go through React — it subscribes to the Playhead and re-rasterizes the DisplayList directly; React renders only chrome.
+**Signals → React** uses the `@glissade/react` adapter from §4.3 (`useSignal` = `useSyncExternalStore(sig.subscribe, sig.peek, sig.peek)`) — not a second implementation. Notifications are coalesced per ticker tick (Theatre's `dataverse` Ticker pattern), so a scrub frame that dirties 200 signals produces one React commit. The viewport does **not** go through React — it subscribes to the Playhead and re-rasterizes the DisplayList directly; React renders only chrome.
 
 ### 6.2 Code-state vs editor-state: the hybrid
 
@@ -773,7 +773,7 @@ interface StudioHost {
 }
 ```
 
-In the Vite dev setup this is a direct in-process implementation, but every call is structured-clone-safe by design, so the same interface runs over `postMessage` or WebSocket later. In the remote case the viewport cannot share an in-process backend — the remote runtime streams serialized `DisplayList`s (exactly what §3.3's IR was designed to allow) and the local studio rasterizes them. The runtime's studio surface is a separate entry point (`@gliss/core/studio-host`), so tree-shaking keeps every byte of editor support out of the embed bundle.
+In the Vite dev setup this is a direct in-process implementation, but every call is structured-clone-safe by design, so the same interface runs over `postMessage` or WebSocket later. In the remote case the viewport cannot share an in-process backend — the remote runtime streams serialized `DisplayList`s (exactly what §3.3's IR was designed to allow) and the local studio rasterizes them. The runtime's studio surface is a separate entry point (`@glissade/core/studio-host`), so tree-shaking keeps every byte of editor support out of the embed bundle.
 
 ### 6.5 HMR interplay and stable IDs
 
@@ -828,7 +828,7 @@ Dependency rule, enforced via `dependency-cruiser` in CI: `core ← scene ← ba
 
 `glide_and_slide` is not a viable npm identity (underscores are nonidiomatic; bare `glide` and `slide` are both **taken**, verified against the registry). Scoped packages are the answer regardless.
 
-**Decided (2026-06-11, see §8): scope `@gliss`** (glide+slide portmanteau), with **gliss** adopted as the project's short name and repo name (`tyevco/gliss`): `@gliss/core`, `@gliss/scene`, `@gliss/backend-canvas2d`, `@gliss/backend-skia`, `@gliss/player`, `@gliss/element`, `@gliss/react`, `@gliss/vite-plugin`, `@gliss/studio`, with **`gs`** as the CLI binary and **`<gs-player>`** as the custom element tag. Verified: no packages exist under `@gliss/*`; however, the bare package `gliss` exists (v1.0.2), so a user of that name may exist and **scope availability must be verified by attempting org creation on npmjs.com before any code lands** — usernames reserve scopes. Fallbacks in preference order: `@glide-and-slide/*` (verbose but exact, almost certainly free) and `@ottercoders/*` (org-branded; weakest for discoverability). Rejected: `@glide/*` and `@slide/*` (near-certain collisions with existing identities); `glissade` (free, verified 404 — back-pocket alias for `player`).
+**Decided (2026-06-11, see §8): project name and scope `glissade`** — a gliding dance step, the literal union of glide and slide. Repo `tyevco/glissade`; packages `@glissade/core`, `@glissade/scene`, `@glissade/backend-canvas2d`, `@glissade/backend-skia`, `@glissade/player`, `@glissade/element`, `@glissade/react`, `@glissade/vite-plugin`, `@glissade/studio`; **`gs`** as the CLI binary and **`<gs-player>`** as the custom element tag. Verified against the registry: the bare package name `glissade` is free (reserved as the unscoped umbrella/CLI package) and no `@glissade/*` packages exist; org creation on npmjs.com is the final confirmation step. History: the original choice, `@gliss` (portmanteau), was found **taken** when org creation was attempted — exactly the squatting-user risk this section had flagged. Fallbacks considered at that point: `@glissjs/*` (keep the gliss name, vuejs-style scope), `@glide-and-slide/*` (verbose but exact), `@ottercoders/*` (org-branded, weakest discoverability); the full rename to glissade won on being ownable everywhere, including the bare npm name. Rejected earlier: `@glide/*` and `@slide/*` (near-certain collisions with existing identities).
 
 ### 7.3 TypeScript, build, and testing posture
 
@@ -842,7 +842,7 @@ Dependency rule, enforced via `dependency-cruiser` in CI: `core ← scene ← ba
 
 ### 7.4 Versioning, releases, license hygiene
 
-- **Pre-1.0 policy:** all packages versioned in lockstep at `0.x`; minor = breaking allowed, patch = safe. A `BREAKING.md` log plus codemods (`@gliss/codemod`) once `studio` users exist. Two schemas are versioned independently of the API, with a stricter stability promise: the **Timeline document** (`version` field, §2.3 — the interchange format) and the **SidecarDoc** (`sidecarVersion` field, §6.2 — the editor persistence layer). Break either and you orphan users' files.
+- **Pre-1.0 policy:** all packages versioned in lockstep at `0.x`; minor = breaking allowed, patch = safe. A `BREAKING.md` log plus codemods (`@glissade/codemod`) once `studio` users exist. Two schemas are versioned independently of the API, with a stricter stability promise: the **Timeline document** (`version` field, §2.3 — the interchange format) and the **SidecarDoc** (`sidecarVersion` field, §6.2 — the editor persistence layer). Break either and you orphan users' files.
 - **Releases: changesets** + GitHub Actions publish with npm provenance. Rejected semantic-release (commit-message-driven versioning fights monorepo reality).
 - **Apache-2.0 specifics:** `LICENSE` at root; `NOTICE` crediting conceptual lineage ("includes concepts inspired by Motion Canvas (MIT, © 2022 motion-canvas)") and any vendored MIT code with headers preserved. **DCO over CLA** (`Signed-off-by` enforced by bot): CLAs depress OSS contribution and we're courting a community burned by a commercial pivot (Revideo→Midrender) — "no relicensing rug-pull" is strategic. No per-file headers; `SPDX-License-Identifier: Apache-2.0` in `package.json` fields and root files. Apache-2.0 over the research's MIT recommendation is a **locked decision** (explicit patent grant; the `@theatre/core` precedent).
 - **Clean-room policy (operationalizing §1.2):** CONTRIBUTING records that Remotion's source-available code must never be read or ported for implementation work; Remotion may be referenced only via public documentation, issues, and blog posts (citations like discussion #4373 / issue #7803 are fine). This makes "clean-room" a process, not a slogan.
@@ -869,9 +869,9 @@ WebCodecs ordering (decided): the M2→M3 order below is deliberate — golden-t
 All open questions from the draft were resolved with the project author on 2026-06-11. Everything else raised in earlier drafts had already been promoted to a decision in place (track addressing §2.2; overlapping tracks §2.6; transition blending §4.7; measurement drift §3.6; write-back §6.2; WebCodecs milestone ordering §7.5; filter-set enumeration §3.4/M2; Rive marketing posture §1.5).
 
 1. **Export segment join strategy (§5.6) — DECIDED: GOP-aligned concat.** Per-shard encodes with a forced keyframe at each range start and identical encoder settings, joined by the FFmpeg concat demuxer. `--lossless-intermediate` (FFV1/rawvideo shards + single final encode) remains as the escape hatch. Frame-level determinism is satisfied by both paths.
-2. **Sidecar granularity (§6.2) — DECIDED: per-scene + project file.** One `*.edits.json` per scene module, plus a minimal `gliss.project.json` for shared editor state, initially scoped to shared markers and render presets only. Panel layouts and other studio UI state stay out of it until proven needed.
+2. **Sidecar granularity (§6.2) — DECIDED: per-scene + project file.** One `*.edits.json` per scene module, plus a minimal `glissade.project.json` for shared editor state, initially scoped to shared markers and render presets only. Panel layouts and other studio UI state stay out of it until proven needed.
 3. **`<gs-player>` controls inventory (§4.3, §4.4) — DECIDED: play/pause + scrubber + time readout.** Everything else (loop, rate, volume) via attributes/JS API, CSS parts, and slots — never default chrome. Accessibility spec still needs a design pass before M1's demo page hardens into API.
 4. **Video scope in v1 (§3.8, §5.4, M4) — DECIDED: keep, as M4.** Video ships in v1 as its own milestone and is explicitly the first de-scope candidate if v1 slips; the `VideoFrameSource` seam means cutting it removes a milestone, not an architecture.
 5. **Deterministic transcendental math (§2.5, §5.5) — DECIDED: same-engine scope.** Bit-exactness is guaranteed per engine + pinned toolchain; cross-engine parity stays perceptual (SSIM). fdlibm-style math revisited only if cross-engine content-addressed render caching becomes a real feature.
 6. **Rive table verification (§1.5) — ASSIGNED to the M6 launch checklist.** The Rive row must be fact-checked against Rive's current licensing/editor model before this document or the positioning table is published.
-7. **Naming — DECIDED.** Repo: `github.com/tyevco/gliss` (project short name **gliss**; "glide & slide" is the long-form name). npm scope `@gliss/*` (no conflicting scoped packages exist; org creation on npmjs.com is the remaining verification step), CLI binary `gs`, custom element `<gs-player>`.
+7. **Naming — DECIDED (revised same day).** Project name **glissade** ("glide & slide" remains the long-form name); repo `github.com/tyevco/glissade`; npm scope `@glissade/*` with the free bare name `glissade` reserved as the unscoped umbrella/CLI package; CLI binary `gs`; custom element `<gs-player>`. History: the first choice, **gliss** / `@gliss/*`, was reverted within hours when the `@gliss` npm scope turned out to be taken (org creation attempt failed); rather than a mismatched scope (`@glissjs`), the project took the full rename to a name ownable everywhere. See §7.2.

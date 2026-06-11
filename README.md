@@ -1,4 +1,4 @@
-# gliss
+# glissade
 
 *(glide & slide)* — a TypeScript-first framework for programmatic motion graphics: realtime-first in any web page, with deterministic headless video export from the same code.
 
@@ -12,7 +12,7 @@
 - **Stateful simulation without breaking purity.** `bake()` compiles physics/particles into ordinary tracks via fixed-dt, seeded pre-simulation.
 - **Editor-ready.** A React-based studio (timeline, inspector, keyframe editing) is planned over the open core — same license as everything else.
 
-Planned packages live under the `@gliss/*` scope (`@gliss/core`, `@gliss/player`, `@gliss/react`, …), with `gs` as the CLI and `<gs-player>` as the embeddable element.
+Planned packages live under the `@glissade/*` scope (`@glissade/core`, `@glissade/player`, `@glissade/react`, …), with `gs` as the CLI and `<gs-player>` as the embeddable element.
 
 Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion. This project is a clean-room design: no Remotion code is referenced or used.
 
