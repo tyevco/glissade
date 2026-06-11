@@ -48,6 +48,14 @@ One contract underneath everything: `evaluate(scene, timeline, t)` is a **pure f
 
 Determinism is CI-enforced: golden frames byte-compare across machines on the pinned toolchain — an agent can write a scene and a headless test can assert frame 120.
 
+## Showcase
+
+A gallery of widget patterns — six spinners, loaders with shimmer skeletons, a self-assembling mock dashboard, screen transitions (slide/wipe/fade), and micro-interactions (toggle, checkbox, ripple, toast) — all plain nodes + timelines:
+
+```sh
+pnpm --filter @glissade/examples dev   # open /showcase.html
+```
+
 ## Docs
 
 [Getting started](docs/getting-started.md) · [Core concepts](docs/concepts.md) · [Migrating from Motion Canvas](docs/migrating-from-motion-canvas.md) · [Architecture & design](docs/DESIGN.md) · [Contributing](CONTRIBUTING.md)
