@@ -62,6 +62,9 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+      '@napi-rs/canvas':
+        specifier: ^0.1.65
+        version: 0.1.100
       jiti:
         specifier: ^2.4.2
         version: 2.7.0

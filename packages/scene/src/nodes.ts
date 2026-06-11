@@ -111,6 +111,108 @@ export class Circle extends Shape {
   }
 }
 
+export interface ImageProps extends NodeProps {
+  /** Asset id from the Timeline manifest (§2.3). */
+  assetId: string;
+  width?: PropInit<number>;
+  height?: PropInit<number>;
+}
+
+export class ImageNode extends Node {
+  readonly assetId: string;
+  readonly width: BindableSignal<number>;
+  readonly height: BindableSignal<number>;
+
+  constructor(props: ImageProps) {
+    super(props);
+    this.assetId = props.assetId;
+    this.width = initProp(signal(0), props.width);
+    this.height = initProp(signal(0), props.height);
+    this.registerTarget('width', this.width);
+    this.registerTarget('height', this.height);
+  }
+
+  protected draw(out: DisplayListBuilder): void {
+    const w = this.width();
+    const h = this.height();
+    if (w <= 0 || h <= 0) return;
+    const image = out.resource({ kind: 'image', assetId: this.assetId });
+    out.push({ op: 'drawImage', image, dst: { x: -w / 2, y: -h / 2, w, h } });
+  }
+}
+
+export interface VideoProps extends NodeProps {
+  /** Asset id from the Timeline manifest (kind 'video'). */
+  assetId: string;
+  /** Timeline second at which the clip starts (§3.8). */
+  at?: number;
+  /** Seconds into the source where playback begins. */
+  trimStart?: number;
+  playbackRate?: number;
+  /** Clip length on the timeline (seconds); defaults to rest-of-source. */
+  clipDuration?: number;
+  /**
+   * Source frame rate; when set, mediaT is quantized to the source grid in
+   * the IR itself (§3.8) so equal-frame times emit identical DisplayLists.
+   * Unset: backends quantize at resolve time (pixels identical, IR not).
+   */
+  sourceFps?: number;
+  width?: PropInit<number>;
+  height?: PropInit<number>;
+}
+
+/**
+ * Pure given a warmed VideoFrameSource (§3.8): emit() does only the
+ * frame-indexed media-time arithmetic — mediaT = trimStart + (t - at) * rate —
+ * and references the exact source-grid frame; backends resolve it.
+ */
+export class Video extends Node {
+  readonly assetId: string;
+  readonly at: number;
+  readonly trimStart: number;
+  readonly playbackRate: number;
+  readonly clipDuration: number | undefined;
+  readonly sourceFps: number | undefined;
+  readonly width: BindableSignal<number>;
+  readonly height: BindableSignal<number>;
+
+  constructor(props: VideoProps) {
+    super(props);
+    this.assetId = props.assetId;
+    this.at = props.at ?? 0;
+    this.trimStart = props.trimStart ?? 0;
+    this.playbackRate = props.playbackRate ?? 1;
+    this.clipDuration = props.clipDuration;
+    this.sourceFps = props.sourceFps;
+    this.width = initProp(signal(0), props.width);
+    this.height = initProp(signal(0), props.height);
+    this.registerTarget('width', this.width);
+    this.registerTarget('height', this.height);
+  }
+
+  /** Frame-indexed media time for timeline time t; null when outside the clip. */
+  mediaTime(t: number): number | null {
+    const local = (t - this.at) * this.playbackRate;
+    if (local < 0) return null;
+    if (this.clipDuration !== undefined && t - this.at >= this.clipDuration) return null;
+    const mediaT = this.trimStart + local;
+    if (this.sourceFps !== undefined) {
+      return Math.floor(mediaT * this.sourceFps + 1e-9) / this.sourceFps;
+    }
+    return mediaT;
+  }
+
+  protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
+    const mediaT = this.mediaTime(ctx.time);
+    if (mediaT === null) return;
+    const w = this.width();
+    const h = this.height();
+    if (w <= 0 || h <= 0) return;
+    const image = out.resource({ kind: 'videoFrame', assetId: this.assetId, mediaT });
+    out.push({ op: 'drawImage', image, dst: { x: -w / 2, y: -h / 2, w, h } });
+  }
+}
+
 export interface TextProps extends NodeProps {
   text?: PropInit<string>;
   fill?: PropInit<string>;

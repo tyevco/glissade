@@ -23,7 +23,9 @@ export type PathSeg =
 
 export type Resource =
   | { kind: 'path'; segs: PathSeg[] }
-  | { kind: 'image'; assetId: string };
+  | { kind: 'image'; assetId: string }
+  /** One source-grid video frame: backends resolve via their VideoFrameSource registry (§3.8). */
+  | { kind: 'videoFrame'; assetId: string; mediaT: number };
 
 export type BlendMode =
   | 'source-over'

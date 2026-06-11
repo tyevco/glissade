@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@glissade/backend-skia": "workspace:*",
+    "@napi-rs/canvas": "^0.1.65",
     "@glissade/core": "workspace:*",
     "@glissade/scene": "workspace:*",
     "jiti": "^2.4.2"

@@ -21,7 +21,20 @@ export {
 
 export { Node, type EvalContext, type NodeProps, type PropInit, type BindablePropTarget } from './node.js';
 
-export { Group, Rect, Circle, Text, type ShapeProps, type TextProps } from './nodes.js';
+export {
+  Group,
+  Rect,
+  Circle,
+  Text,
+  ImageNode,
+  Video,
+  type ShapeProps,
+  type TextProps,
+  type ImageProps,
+  type VideoProps,
+} from './nodes.js';
+
+export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 
 export {
   createScene,

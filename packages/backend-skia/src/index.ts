@@ -6,13 +6,17 @@
  * drift until then.
  */
 
-import { createCanvas, Path2D, type Canvas, type SKRSContext2D } from '@napi-rs/canvas';
+import { createCanvas, Path2D, type Canvas, type Image, type SKRSContext2D } from '@napi-rs/canvas';
 import {
+  ColdAssetError,
   type DisplayList,
   type FontSpec,
   type PathSeg,
   type Resource,
+  type VideoFrameSource,
 } from '@glissade/scene';
+
+type Drawable = Canvas | Image;
 
 export interface TextMetricsLite {
   width: number;
@@ -64,9 +68,33 @@ export class SkiaBackend {
   private readonly canvas: Canvas;
   private readonly pool: Canvas[] = [];
   private pathCache = new WeakMap<object, Path2D>();
+  private readonly images = new Map<string, Drawable>();
+  private readonly videos = new Map<string, VideoFrameSource>();
 
   constructor(width: number, height: number) {
     this.canvas = createCanvas(width, height);
+  }
+
+  setImageAsset(assetId: string, image: Drawable): void {
+    this.images.set(assetId, image);
+  }
+
+  setVideoAsset(assetId: string, source: VideoFrameSource): void {
+    this.videos.set(assetId, source);
+  }
+
+  private resolveDrawable(res: Resource, id: number): Drawable {
+    if (res.kind === 'image') {
+      const img = this.images.get(res.assetId);
+      if (!img) throw new ColdAssetError(res.assetId, 'no decoded image registered');
+      return img;
+    }
+    if (res.kind === 'videoFrame') {
+      const source = this.videos.get(res.assetId);
+      if (!source) throw new ColdAssetError(res.assetId, 'no VideoFrameSource registered');
+      return source.getFrameSync(res.mediaT) as Drawable;
+    }
+    throw new Error(`resource ${id} is not drawable`);
   }
 
   measureText(text: string, font: FontSpec): TextMetricsLite {
@@ -128,8 +156,20 @@ export class SkiaBackend {
           ctx.fillText(cmd.text, cmd.x, cmd.y);
           break;
         }
-        case 'drawImage':
-          break; // image assets land with the M2+ asset table
+        case 'drawImage': {
+          const res = list.resources[cmd.image];
+          if (!res) throw new Error(`drawImage references missing resource ${cmd.image}`);
+          const drawable = this.resolveDrawable(res, cmd.image);
+          const ctx = ctxOf();
+          if (cmd.smoothing !== undefined) ctx.imageSmoothingEnabled = cmd.smoothing;
+          const { x, y, w: dw, h: dh } = cmd.dst;
+          if (cmd.src) {
+            ctx.drawImage(drawable, cmd.src.x, cmd.src.y, cmd.src.w, cmd.src.h, x, y, dw, dh);
+          } else {
+            ctx.drawImage(drawable, x, y, dw, dh);
+          }
+          break;
+        }
         case 'pushGroup': {
           const parent = ctxOf();
           const layerCanvas = this.acquire(w, h);
