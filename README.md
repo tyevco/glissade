@@ -1,6 +1,6 @@
-# glide_and_slide
+# gliss
 
-A TypeScript-first framework for programmatic motion graphics: realtime-first in any web page, with deterministic headless video export from the same code.
+*(glide & slide)* — a TypeScript-first framework for programmatic motion graphics: realtime-first in any web page, with deterministic headless video export from the same code.
 
 **Status:** design phase — no code yet. Start with the [Architecture & Design document](docs/DESIGN.md).
 
@@ -11,6 +11,8 @@ A TypeScript-first framework for programmatic motion graphics: realtime-first in
 - **Renderer-agnostic core.** Evaluation produces a `DisplayList` IR consumed by pluggable backends — Canvas 2D in the browser and Skia (`@napi-rs/canvas`) headless on the CLI, with pixel parity; a WebGPU effect layer is architecturally reserved.
 - **Stateful simulation without breaking purity.** `bake()` compiles physics/particles into ordinary tracks via fixed-dt, seeded pre-simulation.
 - **Editor-ready.** A React-based studio (timeline, inspector, keyframe editing) is planned over the open core — same license as everything else.
+
+Planned packages live under the `@gliss/*` scope (`@gliss/core`, `@gliss/player`, `@gliss/react`, …), with `gs` as the CLI and `<gs-player>` as the embeddable element.
 
 Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion. This project is a clean-room design: no Remotion code is referenced or used.
 
