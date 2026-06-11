@@ -1,0 +1,34 @@
+{
+  "name": "@glissade/cli",
+  "version": "0.0.0",
+  "description": "glissade CLI: headless rendering via backend-skia (+ FFmpeg mux).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "gs": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-skia": "workspace:*",
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*",
+    "jiti": "^2.4.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/cli"
+  }
+}

@@ -30,4 +30,5 @@ export {
   DuplicateNodeIdError,
   type Scene,
   type SceneInit,
+  type SceneModule,
 } from './scene.js';

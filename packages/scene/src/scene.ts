@@ -49,6 +49,15 @@ export interface SceneInit {
   children: Node[];
 }
 
+/**
+ * The scene-module convention: what `gs render`, the golden harness, and the
+ * studio load. createScene is a factory — every consumer gets a fresh graph.
+ */
+export interface SceneModule {
+  createScene(): Scene;
+  timeline: Timeline;
+}
+
 export function createScene(init: SceneInit): Scene {
   const root = new Group({ id: '__root', children: init.children });
   const nodes = new Map<string, Node>();

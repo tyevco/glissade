@@ -14,6 +14,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/node": "^25.9.2",
     "tsdown": "^0.12.9",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3",
