@@ -93,7 +93,7 @@ export function Inspector({
 }) {
   const ids = [...scene.nodes.keys()].filter((id) => id !== '__root');
   const node: Node | undefined = selected ? scene.nodes.get(selected) : undefined;
-  const props = node
+  const props: Array<{ name: string; sig: ReadonlySignal<unknown> }> = node
     ? INSPECTABLE.flatMap((name) => {
         const candidate = (node as unknown as Record<string, unknown>)[name];
         return isSignal(candidate) ? [{ name, sig: candidate }] : [];
