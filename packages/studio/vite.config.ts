@@ -22,6 +22,7 @@ const serveExamplesAssets = {
 };
 
 export default defineConfig({
+  worker: { format: 'es' }, // module workers (export.worker.ts) in code-split builds
   plugins: [react(), serveExamplesAssets, glissade({ root: fileURLToPath(new URL('../..', import.meta.url)) })],
   resolve: {
     alias: {
@@ -32,6 +33,7 @@ export default defineConfig({
       '@glissade/player': src('player'),
       '@glissade/react': src('react'),
       '@glissade/interact': src('interact'),
+      '@glissade/export-web': src('export-web'),
     },
   },
 });

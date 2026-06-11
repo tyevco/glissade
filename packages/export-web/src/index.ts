@@ -13,6 +13,8 @@ import {
   BufferTarget,
   CanvasSource,
   AudioBufferSource,
+  AudioSample,
+  AudioSampleSource,
   getFirstEncodableVideoCodec,
   getFirstEncodableAudioCodec,
   type VideoCodec,
@@ -31,7 +33,19 @@ export interface WebExportOptions {
   format?: 'mp4' | 'webm' | 'auto';
   videoBitrate?: number;
   audioBitrate?: number;
+  /**
+   * Pre-mixed PCM from the main thread (raw planar f32 channels). Workers
+   * have no OfflineAudioContext, so the worker path premixes there and
+   * transfers the channels (§5.1 worker posture).
+   */
+  premixedAudio?: PremixedAudio;
   onProgress?: (frame: number, total: number) => void;
+}
+
+/** Raw mixed audio: one Float32Array per channel, transferable to a Worker. */
+export interface PremixedAudio {
+  sampleRate: number;
+  channelData: Float32Array[];
 }
 
 export interface WebExportResult {
@@ -84,8 +98,8 @@ async function pickCodecs(
   throw new ExportUnsupportedError(`format '${format}'${needAudio ? ' with audio' : ''}`);
 }
 
-/** Mix timeline audio clips sample-accurately (§5.3 browser path). */
-async function mixAudio(clips: AudioClip[], duration: number, sampleRate = 48000): Promise<AudioBuffer> {
+/** Mix timeline audio clips sample-accurately (§5.3 browser path). Window-only (OfflineAudioContext). */
+export async function mixAudio(clips: AudioClip[], duration: number, sampleRate = 48000): Promise<AudioBuffer> {
   const ctx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
   for (const clip of clips) {
     if (clip.at >= duration) continue;
@@ -117,6 +131,15 @@ async function mixAudio(clips: AudioClip[], duration: number, sampleRate = 48000
     else node.start(Math.max(0, clip.at), offset);
   }
   return ctx.startRendering();
+}
+
+/** Main-thread premix for the worker path: mixAudio flattened to transferable channels. */
+export async function premixTimelineAudio(clips: AudioClip[], duration: number): Promise<PremixedAudio> {
+  const buf = await mixAudio(clips, duration);
+  const channelData: Float32Array[] = [];
+  // slice(): each channel gets its own ArrayBuffer so the set is transferable
+  for (let i = 0; i < buf.numberOfChannels; i++) channelData.push(buf.getChannelData(i).slice());
+  return { sampleRate: buf.sampleRate, channelData };
 }
 
 /** Export a scene + timeline to a video Blob, entirely in the browser. */
@@ -189,18 +212,41 @@ export async function exportVideo(
   const videoSource = new CanvasSource(canvas, { codec: picked.video, bitrate: videoBitrate });
   output.addVideoTrack(videoSource, { frameRate: fps });
 
-  let audioSource: AudioBufferSource | null = null;
+  let feedAudio: (() => Promise<void>) | null = null;
   if (picked.audio) {
-    audioSource = new AudioBufferSource({ codec: picked.audio, bitrate: opts.audioBitrate ?? 192e3 });
-    output.addAudioTrack(audioSource);
+    const bitrate = opts.audioBitrate ?? 192e3;
+    const premixed = opts.premixedAudio;
+    if (premixed) {
+      // worker path: raw planar f32 channels, no OfflineAudioContext needed here
+      const source = new AudioSampleSource({ codec: picked.audio, bitrate });
+      output.addAudioTrack(source);
+      feedAudio = async () => {
+        const frames = premixed.channelData[0]?.length ?? 0;
+        const data = new Float32Array(frames * premixed.channelData.length);
+        premixed.channelData.forEach((ch, i) => data.set(ch, i * frames));
+        await source.add(
+          new AudioSample({
+            data,
+            format: 'f32-planar',
+            numberOfChannels: premixed.channelData.length,
+            sampleRate: premixed.sampleRate,
+            timestamp: 0,
+          }),
+        );
+        source.close();
+      };
+    } else {
+      const source = new AudioBufferSource({ codec: picked.audio, bitrate });
+      output.addAudioTrack(source);
+      feedAudio = async () => {
+        await source.add(await mixAudio(compiled.audio, duration));
+        source.close();
+      };
+    }
   }
 
   await output.start();
-
-  if (audioSource) {
-    await audioSource.add(await mixAudio(compiled.audio, duration));
-    audioSource.close();
-  }
+  if (feedAudio) await feedAudio();
 
   for (let f = 0; f < total; f++) {
     await renderFrame(f / fps);
@@ -240,3 +286,11 @@ export async function exportPngFrames(
   }
   return { frames: total };
 }
+
+export {
+  requestWorkerExport,
+  serveExportRequest,
+  type ExportWorkerRequest,
+  type ExportWorkerResponse,
+  type WorkerExportHandle,
+} from './workerProtocol.js';

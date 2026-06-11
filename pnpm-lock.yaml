@@ -198,6 +198,9 @@ importers:
       '@glissade/core':
         specifier: workspace:*
         version: link:../core
+      '@glissade/export-web':
+        specifier: workspace:*
+        version: link:../export-web
       '@glissade/player':
         specifier: workspace:*
         version: link:../player

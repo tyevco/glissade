@@ -33,6 +33,7 @@ import { mount, type Mounted } from '@glissade/player';
 // import type ONLY: the plugin's runtime imports vite itself, which must
 // never reach the browser bundle (a value-form import drags it into dep-opt)
 import type { ProjectDoc } from '@glissade/vite-plugin';
+import { ExportPanel } from './ExportPanel.js';
 import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
@@ -46,14 +47,14 @@ const discovered = import.meta.glob('../../examples/src/scenes/**/*.ts', { eager
   string,
   { default?: Partial<SceneModule> }
 >;
-const corpus: Record<string, { mod: SceneModule; path: string }> = {};
+const corpus: Record<string, { mod: SceneModule; path: string; globKey: string }> = {};
 for (const [globPath, m] of Object.entries(discovered).sort(([a], [b]) => a.localeCompare(b))) {
   const mod = m.default;
   if (typeof mod?.createScene !== 'function' || mod.timeline === undefined) continue;
   const base = globPath.split('/').pop()!.replace(/\.tsx?$/, '');
   const short = base.replace(/^golden-/, '');
   const name = short in corpus ? base : short;
-  corpus[name] = { mod: mod as SceneModule, path: globPath.replace(/^(\.\.\/)+/, 'packages/') };
+  corpus[name] = { mod: mod as SceneModule, path: globPath.replace(/^(\.\.\/)+/, 'packages/'), globKey: globPath };
 }
 
 const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURIComponent(path)}`;
@@ -254,6 +255,7 @@ export function App() {
           ))}
         </select>
         <canvas ref={canvasRef} width={640} height={360} />
+        <ExportPanel sceneKey={entry.globKey} sceneName={sceneName} timeline={merged} project={project} />
       </div>
       {session && <Transport player={session.mounted.player} />}
       {sidecarError && (

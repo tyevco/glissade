@@ -112,3 +112,72 @@ document.querySelector('#go')?.addEventListener('click', () => {
     a.click();
   });
 });
+
+// Worker path (§5.1): same scenes through new Worker + the export protocol,
+// with a main-thread responsiveness meter — the whole point of the worker.
+declare global {
+  interface Window {
+    __exportVideoWorker(name: string): Promise<{
+      bytesBase64: string;
+      format: string;
+      videoCodec: string;
+      audioCodec: string | null;
+      frames: number;
+      ms: number;
+      /** Longest gap between rAF ticks during the export (ms) — jank metric. */
+      maxFrameGap: number;
+      progressEvents: number;
+    }>;
+  }
+}
+
+window.__exportVideoWorker = async (name) => {
+  const { requestWorkerExport } = await import('@glissade/export-web');
+  const mod = corpus[name];
+  if (!mod) throw new Error(`unknown export scene '${name}'`);
+  const worker = new Worker(new URL('./export-worker.ts', import.meta.url), { type: 'module' });
+
+  // jank meter: rAF must keep ticking on the main thread while the worker encodes
+  let maxFrameGap = 0;
+  let last = performance.now();
+  let metering = true;
+  const meter = () => {
+    const now = performance.now();
+    maxFrameGap = Math.max(maxFrameGap, now - last);
+    last = now;
+    if (metering) requestAnimationFrame(meter);
+  };
+  requestAnimationFrame(meter);
+
+  let progressEvents = 0;
+  const started = performance.now();
+  try {
+    const result = await requestWorkerExport(worker, {
+      sceneKey: name,
+      timeline: mod.timeline,
+      options: { fps: 30 },
+      onProgress: () => progressEvents++,
+    }).result;
+    const ms = performance.now() - started;
+    metering = false;
+    const bytes = new Uint8Array(await result.blob.arrayBuffer());
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return {
+      bytesBase64: btoa(bin),
+      format: result.format,
+      videoCodec: result.videoCodec,
+      audioCodec: result.audioCodec,
+      frames: result.frames,
+      ms,
+      maxFrameGap,
+      progressEvents,
+    };
+  } finally {
+    metering = false;
+    worker.terminate();
+  }
+};

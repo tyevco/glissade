@@ -104,6 +104,30 @@ describe.runIf(ENABLED)('in-browser WebCodecs export', () => {
 
     rmSync(assetDir, { recursive: true, force: true });
   }, 180_000);
+
+  describe('worker-wrapped export (§5.1: the main thread stays interactive)', () => {
+    it('shapes exports through the Worker with progress and a responsive main thread', async () => {
+      const result = await page.evaluate(() => window.__exportVideoWorker('shapes'));
+      expect(result.frames).toBe(90);
+      expect(result.progressEvents).toBeGreaterThan(10); // progress streamed across the boundary
+      // the jank metric: rAF kept ticking on the main thread throughout
+      expect(result.maxFrameGap).toBeLessThan(250);
+      const path = join(outDir, `worker-shapes.${result.format}`);
+      writeFileSync(path, Buffer.from(result.bytesBase64, 'base64'));
+      const info = probe(path);
+      expect(info.streams.map((s) => s.codec_type)).toEqual(['video']);
+      expect(parseFloat(info.format.duration)).toBeCloseTo(3, 0);
+    }, 120_000);
+
+    it('audio scenes premix on the main thread and transfer PCM (no OfflineAudioContext in workers)', async () => {
+      const result = await page.evaluate(() => window.__exportVideoWorker('audio'));
+      const path = join(outDir, `worker-audio.${result.format}`);
+      writeFileSync(path, Buffer.from(result.bytesBase64, 'base64'));
+      const info = probe(path);
+      expect(info.streams.map((s) => s.codec_type).sort()).toEqual(['audio', 'video']);
+      expect(parseFloat(info.format.duration)).toBeCloseTo(3, 0);
+    }, 120_000);
+  });
 });
 
 describe.runIf(!ENABLED)('in-browser WebCodecs export (skipped)', () => {
