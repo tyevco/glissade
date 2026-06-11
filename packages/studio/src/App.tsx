@@ -10,6 +10,8 @@ import {
   compileTimeline,
   emptySidecar,
   mergeSidecar,
+  normalizeEditedKeys,
+  type CompiledTimeline,
   type SidecarDoc,
   type Track,
 } from '@glissade/core';
@@ -50,8 +52,24 @@ export function App() {
   const lastTime = useRef(0);
 
   const entry = corpus[sceneName]!;
-  const merged = useMemo(() => mergeSidecar(entry.mod.timeline, sidecar), [entry, sidecar]);
-  const compiled = useMemo(() => compileTimeline(merged), [merged]);
+  // an invalid sidecar must degrade to the code baseline with a visible
+  // warning (§6.2: surfaced, never a crash and never silently dropped)
+  const { merged, compiled, sidecarError } = useMemo((): {
+    merged: ReturnType<typeof mergeSidecar>;
+    compiled: CompiledTimeline;
+    sidecarError: string | null;
+  } => {
+    const candidate = mergeSidecar(entry.mod.timeline, sidecar);
+    try {
+      return { merged: candidate, compiled: compileTimeline(candidate), sidecarError: null };
+    } catch (e) {
+      return {
+        merged: entry.mod.timeline,
+        compiled: compileTimeline(entry.mod.timeline),
+        sidecarError: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }, [entry, sidecar]);
 
   // load the persisted sidecar when the scene changes
   useEffect(() => {
@@ -103,8 +121,11 @@ export function App() {
       if (!sourceTrack) return;
       const current = sidecar ?? emptySidecar();
       undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
-      const keys = sourceTrack.keys.map((k, i) => (i === keyIndex ? { ...k, t: newT } : { ...k }));
-      keys.sort((a, b) => a.t - b.t);
+      // normalize: sorts, and re-pins spring-eased keys whose t is intrinsic
+      // (dragging a spring key snaps back; dragging its predecessor carries it)
+      const keys = normalizeEditedKeys(
+        sourceTrack.keys.map((k, i) => (i === keyIndex ? { ...k, t: newT } : k)),
+      );
       const tracks: Track[] = [
         ...current.tracks.filter((t) => t.target !== target),
         { target, type: sourceTrack.type, keys },
@@ -150,6 +171,17 @@ export function App() {
         <canvas ref={canvasRef} width={640} height={360} />
       </div>
       {session && <Transport player={session.mounted.player} />}
+      {sidecarError && (
+        <div
+          style={{
+            position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)',
+            background: '#5b2330', color: '#ffd7dd', padding: '6px 14px',
+            borderRadius: 8, zIndex: 10, maxWidth: '70vw', fontSize: 12,
+          }}
+        >
+          sidecar rejected — showing the code baseline: {sidecarError}
+        </div>
+      )}
       <div className="inspector">
         {session && (
           <Inspector scene={session.scene} selected={selectedNode} onSelect={setSelectedNode} />

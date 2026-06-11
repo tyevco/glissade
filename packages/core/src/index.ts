@@ -125,4 +125,4 @@ export {
   type CheckpointedSim,
 } from './bake.js';
 
-export { mergeSidecar, emptySidecar, SidecarVersionError, type SidecarDoc } from './sidecar.js';
+export { mergeSidecar, emptySidecar, normalizeEditedKeys, SidecarVersionError, type SidecarDoc } from './sidecar.js';

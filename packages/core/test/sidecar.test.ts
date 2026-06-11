@@ -69,3 +69,31 @@ describe('sidecar merge (§6.2)', () => {
     ).toThrow(SidecarVersionError);
   });
 });
+
+describe('normalizeEditedKeys (§2.7 under editing)', () => {
+  const cfg = { stiffness: 170, damping: 14, mass: 1 };
+
+  it('re-pins a dragged spring key to prev.t + spring.duration', async () => {
+    const { spring, normalizeEditedKeys } = await import('../src/index.js');
+    const d = spring.duration(cfg);
+    const keys = [key(0, 0), key(0.78, 300, spring(cfg))]; // dragged off-grid
+    const fixed = normalizeEditedKeys(keys);
+    expect(fixed[1]!.t).toBeCloseTo(d, 9);
+  });
+
+  it('retiming the predecessor carries the spring key along', async () => {
+    const { spring, normalizeEditedKeys } = await import('../src/index.js');
+    const d = spring.duration(cfg);
+    const keys = [key(0.5, 0), key(d, 300, spring(cfg))]; // prev moved to 0.5
+    const fixed = normalizeEditedKeys(keys);
+    expect(fixed[1]!.t).toBeCloseTo(0.5 + d, 9);
+  });
+
+  it('sorts retimed keys and the result passes document validation', async () => {
+    const { spring, normalizeEditedKeys, compileTimeline, timeline } = await import('../src/index.js');
+    const keys = normalizeEditedKeys([key(2, 1), key(0.3, 0), key(2.5, 5, spring(cfg))]);
+    expect(keys.map((k) => k.t)).toEqual([...keys.map((k) => k.t)].sort((a, b) => a - b));
+    const doc = timeline({ tracks: [{ target: 'a/x', type: 'number', keys }] });
+    expect(() => compileTimeline(doc)).not.toThrow();
+  });
+});

@@ -5,8 +5,9 @@
  * independently of the API (§7.4) — breaking it orphans users' files.
  */
 
+import { spring as springFactory } from './spring.js';
 import { type Timeline } from './timeline.js';
-import { type Track } from './track.js';
+import { type Key, type Track } from './track.js';
 
 export interface SidecarDoc {
   sidecarVersion: 1;
@@ -25,6 +26,35 @@ export class SidecarVersionError extends Error {
 
 export function emptySidecar(): SidecarDoc {
   return { sidecarVersion: 1, tracks: [] };
+}
+
+/**
+ * Editor-edit normalization (§2.7 invariant): a spring-eased key's t is
+ * intrinsic — prev.t + spring.duration(cfg) — so after any retime, sort and
+ * re-pin spring keys to their predecessors. Dragging a spring key itself
+ * therefore snaps back; retiming its predecessor carries it along. Returns a
+ * new array; coincident keys keep the later entry.
+ */
+export function normalizeEditedKeys(keys: Key[]): Key[] {
+  const out = keys
+    .map((k) => ({ ...k }))
+    .sort((a, b) => a.t - b.t);
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 1; i < out.length; i++) {
+      const ease = out[i]!.ease;
+      if (ease && typeof ease === 'object' && ease.kind === 'spring') {
+        out[i]!.t = out[i - 1]!.t + springFactory.duration(ease);
+      }
+    }
+    out.sort((a, b) => a.t - b.t);
+  }
+  const deduped: Key[] = [];
+  for (const k of out) {
+    const last = deduped[deduped.length - 1];
+    if (last && Math.abs(last.t - k.t) < 1e-9) deduped[deduped.length - 1] = k;
+    else deduped.push(k);
+  }
+  return deduped;
 }
 
 /**
