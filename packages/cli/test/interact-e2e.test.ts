@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bakeTrace, createMachine, type InputTrace } from '../src/index.js';
+import { bakeTrace, createMachine, type InputTrace } from '@glissade/interact';
 
 const ENABLED = process.env['INTERACT'] === '1';
 const MODULE = fileURLToPath(new URL('../../examples/src/scenes/interactive-button.ts', import.meta.url));
@@ -84,7 +84,7 @@ describe.runIf(ENABLED)('interact e2e: record in Chromium → bake → gs render
     // and the CLI route: gs render --trace on the SAME module + take
     const tracePath = join(outDir, 'take.trace.json');
     writeFileSync(tracePath, JSON.stringify(trace));
-    const { render } = await import('@glissade/cli');
+    const { render } = await import('../src/render.js');
     const framesDir = join(outDir, 'frames');
     const result = await render({
       modulePath: MODULE,

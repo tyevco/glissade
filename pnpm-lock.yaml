@@ -152,19 +152,6 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
-    devDependencies:
-      '@glissade/cli':
-        specifier: workspace:*
-        version: link:../cli
-      playwright:
-        specifier: ^1.60.0
-        version: 1.60.0
-      playwright-core:
-        specifier: ^1.60.0
-        version: 1.60.0
-      vite:
-        specifier: ^7.0.0
-        version: 7.3.5(@types/node@25.9.2)(jiti@2.7.0)
 
   packages/player:
     dependencies:
