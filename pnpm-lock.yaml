@@ -23,6 +23,12 @@ importers:
 
   packages/core: {}
 
+  packages/scene:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@babel/generator@7.29.7':
