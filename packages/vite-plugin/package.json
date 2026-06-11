@@ -1,0 +1,35 @@
+{
+  "name": "@glissade/vite-plugin",
+  "version": "0.0.0",
+  "description": "glissade dev-server integration: sidecar read/write endpoint for the studio (DESIGN.md §6.1).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/vite-plugin"
+  }
+}

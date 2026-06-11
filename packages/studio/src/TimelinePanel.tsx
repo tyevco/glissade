@@ -3,10 +3,29 @@ import { type CompiledTimeline } from '@glissade/core';
 import { type Player } from '@glissade/player';
 import { usePlayhead } from '@glissade/react';
 
-export function TimelinePanel({ compiled, player }: { compiled: CompiledTimeline; player: Player }) {
+export function TimelinePanel({
+  compiled,
+  player,
+  onEditKey,
+}: {
+  compiled: CompiledTimeline;
+  player: Player;
+  onEditKey?: (target: string, keyIndex: number, newT: number) => void;
+}) {
   const time = usePlayhead(player);
   const duration = Math.max(compiled.duration, 1e-9);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ target: string; keyIndex: number } | null>(null);
+
+  const dragTo = useCallback(
+    (e: React.PointerEvent, lane: Element) => {
+      if (!drag.current || !onEditKey) return;
+      const rect = lane.getBoundingClientRect();
+      const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      onEditKey(drag.current.target, drag.current.keyIndex, p * duration);
+    },
+    [onEditKey, duration],
+  );
 
   const seekFromPointer = useCallback(
     (e: React.PointerEvent) => {
@@ -54,14 +73,33 @@ export function TimelinePanel({ compiled, player }: { compiled: CompiledTimeline
           <div className="name" title={track.target}>
             {track.target}
           </div>
-          <div className="lane">
+          <div
+            className="lane"
+            onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget)}
+            onPointerUp={() => {
+              drag.current = null;
+            }}
+          >
             {track.keys.length <= 400 ? (
               track.keys.map((k, i) => (
                 <span
                   key={i}
                   className={`key${k.derived ? ' derived' : ''}`}
                   style={{ left: `${(k.t / duration) * 100}%` }}
-                  title={`t=${k.t.toFixed(3)}`}
+                  title={`${track.target} t=${k.t.toFixed(3)} (drag to retime)`}
+                  onPointerDown={(e) => {
+                    drag.current = { target: track.target, keyIndex: i };
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // synthetic events carry no active pointer
+                    }
+                    e.stopPropagation();
+                  }}
+                  onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget.parentElement!)}
+                  onPointerUp={() => {
+                    drag.current = null;
+                  }}
                 />
               ))
             ) : (

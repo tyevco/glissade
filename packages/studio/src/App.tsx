@@ -1,12 +1,18 @@
 /**
- * Studio alpha (DESIGN.md §6, slice 1 — read-only): viewport on
- * Canvas2DBackend, transport with scrub, timeline panel rendering the
- * compiled document, inspector with live signal values. Keyframe editing and
- * sidecar persistence land in slice 2.
+ * Studio (DESIGN.md §6): slice 2 adds editing — the studio owns keyframe data
+ * persisted as a per-scene sidecar (`<module>.edits.json`, §6.2) merged at
+ * track granularity over the code baseline. Edits survive code edits + HMR:
+ * the sidecar lives on disk, the baseline in code, and the merge re-runs.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { compileTimeline } from '@glissade/core';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  compileTimeline,
+  emptySidecar,
+  mergeSidecar,
+  type SidecarDoc,
+  type Track,
+} from '@glissade/core';
 import { type Scene, type SceneModule } from '@glissade/scene';
 import { mount, type Mounted } from '@glissade/player';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
@@ -15,32 +21,108 @@ import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
 
-const corpus: Record<string, SceneModule> = {
-  shapes: goldenShapes,
-  bounce: goldenBounce,
+const corpus: Record<string, { mod: SceneModule; path: string }> = {
+  shapes: { mod: goldenShapes, path: 'packages/examples/src/scenes/golden-shapes.ts' },
+  bounce: { mod: goldenBounce, path: 'packages/examples/src/scenes/golden-bounce.ts' },
 };
+
+const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURIComponent(path)}`;
 
 export function App() {
   const [sceneName, setSceneName] = useState('shapes');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [sidecar, setSidecar] = useState<SidecarDoc | null>(null);
+  const [sidecarLoaded, setSidecarLoaded] = useState(false);
+  const undoStack = useRef<SidecarDoc[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [session, setSession] = useState<{ scene: Scene; mounted: Mounted } | null>(null);
+  const lastTime = useRef(0);
 
-  const mod = corpus[sceneName]!;
-  const compiled = useMemo(() => compileTimeline(mod.timeline), [mod]);
+  const entry = corpus[sceneName]!;
+  const merged = useMemo(() => mergeSidecar(entry.mod.timeline, sidecar), [entry, sidecar]);
+  const compiled = useMemo(() => compileTimeline(merged), [merged]);
 
+  // load the persisted sidecar when the scene changes
+  useEffect(() => {
+    setSidecarLoaded(false);
+    setSidecar(null);
+    undoStack.current = [];
+    void fetch(sidecarUrl(entry.path))
+      .then((r) => r.json())
+      .then((doc: SidecarDoc | null) => {
+        setSidecar(doc);
+        setSidecarLoaded(true);
+      });
+  }, [entry]);
+
+  // (re)mount on scene/document change, preserving the playhead position
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const scene = mod.createScene();
-    const mounted = mount(scene, mod.timeline, canvas, { loop: true });
+    if (!canvas || !sidecarLoaded) return;
+    const scene = entry.mod.createScene();
+    const mounted = mount(scene, merged, canvas, { loop: true });
+    mounted.player.seek(Math.min(lastTime.current, mounted.player.duration));
+    const stopTracking = scene.playhead.subscribe(() => {
+      lastTime.current = scene.playhead.peek();
+    });
     setSession({ scene, mounted });
-    setSelectedNode(null);
     return () => {
+      stopTracking();
       mounted.dispose();
       setSession(null);
     };
-  }, [mod]);
+  }, [entry, merged, sidecarLoaded]);
+
+  // debounced persistence
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persist = useCallback(
+    (doc: SidecarDoc) => {
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+      persistTimer.current = setTimeout(() => {
+        void fetch(sidecarUrl(entry.path), { method: 'POST', body: JSON.stringify(doc) });
+      }, 300);
+    },
+    [entry],
+  );
+
+  /** Move a key: copy the (merged) track into the sidecar with the new t. */
+  const editKey = useCallback(
+    (target: string, keyIndex: number, newT: number) => {
+      const sourceTrack = compiled.tracks.get(target);
+      if (!sourceTrack) return;
+      const current = sidecar ?? emptySidecar();
+      undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
+      const keys = sourceTrack.keys.map((k, i) => (i === keyIndex ? { ...k, t: newT } : { ...k }));
+      keys.sort((a, b) => a.t - b.t);
+      const tracks: Track[] = [
+        ...current.tracks.filter((t) => t.target !== target),
+        { target, type: sourceTrack.type, keys },
+      ];
+      const next: SidecarDoc = { ...current, tracks };
+      setSidecar(next);
+      persist(next);
+    },
+    [compiled, sidecar, persist],
+  );
+
+  const undo = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (prev === undefined) return;
+    const restored = prev.tracks.length === 0 && !prev.labels ? null : prev;
+    setSidecar(restored);
+    persist(restored ?? emptySidecar());
+  }, [persist]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo]);
 
   return (
     <div className="studio">
@@ -63,7 +145,9 @@ export function App() {
         )}
       </div>
       <div className="timeline">
-        {session && <TimelinePanel compiled={compiled} player={session.mounted.player} />}
+        {session && (
+          <TimelinePanel compiled={compiled} player={session.mounted.player} onEditKey={editKey} />
+        )}
       </div>
     </div>
   );

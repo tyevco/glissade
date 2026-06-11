@@ -1,11 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { glissade } from '../vite-plugin/src/index.js';
 
 const src = (pkg: string) => fileURLToPath(new URL(`../${pkg}/src/index.ts`, import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), glissade({ root: fileURLToPath(new URL('../..', import.meta.url)) })],
   resolve: {
     alias: {
       '@glissade/core': src('core'),

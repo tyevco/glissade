@@ -179,6 +179,16 @@ importers:
         specifier: ^7.0.0
         version: 7.3.5(@types/node@25.9.2)(jiti@2.7.0)
 
+  packages/vite-plugin:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.5(@types/node@25.9.2)(jiti@2.7.0)
+
 packages:
 
   '@babel/code-frame@7.29.7':
