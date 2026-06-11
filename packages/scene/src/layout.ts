@@ -36,7 +36,8 @@ export interface LayoutProps extends NodeProps {
  * Flexbox container (center-anchored like every node). Flowable children
  * (intrinsicSize ≠ null) are placed by the engine — each child's center lands
  * in its box center, with the child's own transform applying on top.
- * Non-flowable children emit untouched (absolute). Paint order stays
+ * Non-flowable children (e.g. Groups) emit untouched at the layout origin,
+ * BEFORE the flow — their dominant use is backgrounds. Flowed paint order is
  * zIndex-sorted; flow order is array order.
  */
 export class Layout extends Group {
@@ -107,6 +108,8 @@ export class Layout extends Group {
     );
     const ox = -container.width / 2;
     const oy = -container.height / 2;
+    // absolute children first: their dominant use is backgrounds under the flow
+    for (const child of absolute) child.emit(out, ctx);
     for (const entry of order) {
       const box = boxes[flowable.indexOf(entry)]!;
       out.push({ op: 'save' });
@@ -117,7 +120,6 @@ export class Layout extends Group {
       entry.node.emit(out, ctx);
       out.push({ op: 'restore' });
     }
-    for (const child of absolute) child.emit(out, ctx);
   }
 }
 
