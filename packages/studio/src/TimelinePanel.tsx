@@ -2,15 +2,24 @@ import { useCallback, useRef } from 'react';
 import { type CompiledTimeline } from '@glissade/core';
 import { type Player } from '@glissade/player';
 import { usePlayhead } from '@glissade/react';
+import { type KeyRef } from './edits.js';
 
 export function TimelinePanel({
   compiled,
   player,
   onEditKey,
+  onAddKey,
+  selected,
+  onSelectKey,
 }: {
   compiled: CompiledTimeline;
   player: Player;
-  onEditKey?: (target: string, keyIndex: number, newT: number) => void;
+  /** Drag retiming; identity by the key's pre-drag t (closest-t — never a frozen index). */
+  onEditKey?: (target: string, fromT: number, newT: number) => void;
+  /** Double-click a lane: add a key at that t, value sampled from the curve (§6.2). */
+  onAddKey?: (target: string, t: number) => void;
+  selected?: KeyRef | null;
+  onSelectKey?: (ref: KeyRef | null) => void;
 }) {
   const time = usePlayhead(player);
   const duration = Math.max(compiled.duration, 1e-9);
@@ -20,39 +29,33 @@ export function TimelinePanel({
   // (found via a user's sidecar with a vanished key)
   const drag = useRef<{ target: string; lastT: number } | null>(null);
 
+  const laneT = useCallback(
+    (e: React.PointerEvent | React.MouseEvent, lane: Element) => {
+      const rect = lane.getBoundingClientRect();
+      const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      return p * duration;
+    },
+    [duration],
+  );
+
   const dragTo = useCallback(
     (e: React.PointerEvent, lane: Element) => {
       if (!drag.current || !onEditKey) return;
-      const track = compiled.tracks.get(drag.current.target);
-      if (!track) return;
-      const rect = lane.getBoundingClientRect();
-      const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      const newT = p * duration;
-      let keyIndex = 0;
-      let best = Infinity;
-      track.keys.forEach((k, i) => {
-        const d = Math.abs(k.t - drag.current!.lastT);
-        if (d < best) {
-          best = d;
-          keyIndex = i;
-        }
-      });
+      const newT = laneT(e, lane);
+      onEditKey(drag.current.target, drag.current.lastT, newT);
       drag.current.lastT = newT;
-      onEditKey(drag.current.target, keyIndex, newT);
     },
-    [onEditKey, duration, compiled],
+    [onEditKey, laneT],
   );
 
   const seekFromPointer = useCallback(
     (e: React.PointerEvent) => {
       const lane = bodyRef.current?.querySelector('.lane');
       if (!lane) return;
-      const rect = lane.getBoundingClientRect();
-      const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
       player.pause();
-      player.seek(p * duration);
+      player.seek(laneT(e, lane));
     },
-    [player, duration],
+    [player, laneT],
   );
 
   const ticks = [];
@@ -95,16 +98,22 @@ export function TimelinePanel({
             onPointerUp={() => {
               drag.current = null;
             }}
+            onDoubleClick={(e) => onAddKey?.(track.target, laneT(e, e.currentTarget))}
           >
             {track.keys.length <= 400 ? (
               track.keys.map((k, i) => (
                 <span
                   key={i}
-                  className={`key${k.derived ? ' derived' : ''}`}
+                  className={`key${k.derived ? ' derived' : ''}${
+                    selected && selected.target === track.target && Math.abs(selected.t - k.t) < 1e-9
+                      ? ' selected'
+                      : ''
+                  }`}
                   style={{ left: `${(k.t / duration) * 100}%` }}
-                  title={`${track.target} t=${k.t.toFixed(3)} (drag to retime)`}
+                  title={`${track.target} t=${k.t.toFixed(3)} (drag to retime · click to edit)`}
                   onPointerDown={(e) => {
                     drag.current = { target: track.target, lastT: k.t };
+                    onSelectKey?.({ target: track.target, t: k.t });
                     try {
                       e.currentTarget.setPointerCapture(e.pointerId);
                     } catch {

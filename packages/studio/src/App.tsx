@@ -10,11 +10,24 @@ import {
   compileTimeline,
   emptySidecar,
   mergeSidecar,
-  normalizeEditedKeys,
   type CompiledTimeline,
+  type EaseSpec,
+  type Key,
   type SidecarDoc,
   type Track,
 } from '@glissade/core';
+import {
+  addKeyAt,
+  closestIndex,
+  deleteKeyAt,
+  parseValue,
+  retimeKeyAt,
+  setEaseAt,
+  setValueAt,
+  upsertKeyAt,
+  type KeyRef,
+} from './edits.js';
+import { KeyEditor } from './KeyEditor.js';
 import { type Scene, type SceneModule } from '@glissade/scene';
 import { mount, type Mounted } from '@glissade/player';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
@@ -50,6 +63,7 @@ const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURICompo
 export function App() {
   const [sceneName, setSceneName] = useState('shapes');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<KeyRef | null>(null);
   const [sidecar, setSidecar] = useState<SidecarDoc | null>(null);
   const [sidecarLoaded, setSidecarLoaded] = useState(false);
   const undoStack = useRef<SidecarDoc[]>([]);
@@ -81,6 +95,7 @@ export function App() {
   useEffect(() => {
     setSidecarLoaded(false);
     setSidecar(null);
+    setSelectedKey(null);
     undoStack.current = [];
     void fetch(sidecarUrl(entry.path))
       .then((r) => r.json())
@@ -120,18 +135,17 @@ export function App() {
     [entry],
   );
 
-  /** Move a key: copy the (merged) track into the sidecar with the new t. */
-  const editKey = useCallback(
-    (target: string, keyIndex: number, newT: number) => {
+  /**
+   * Every edit is "replace one track's keys in the sidecar" (§6.2): the ops
+   * in edits.ts return normalized key arrays; this commits them with an undo
+   * snapshot and re-selects the edited key by its post-normalize t.
+   */
+  const writeKeys = useCallback(
+    (target: string, keys: Key[] | null, reselectT?: number) => {
       const sourceTrack = compiled.tracks.get(target);
-      if (!sourceTrack) return;
+      if (!keys || !sourceTrack) return;
       const current = sidecar ?? emptySidecar();
       undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
-      // normalize: sorts, and re-pins spring-eased keys whose t is intrinsic
-      // (dragging a spring key snaps back; dragging its predecessor carries it)
-      const keys = normalizeEditedKeys(
-        sourceTrack.keys.map((k, i) => (i === keyIndex ? { ...k, t: newT } : k)),
-      );
       const tracks: Track[] = [
         ...current.tracks.filter((t) => t.target !== target),
         { target, type: sourceTrack.type, keys },
@@ -139,8 +153,51 @@ export function App() {
       const next: SidecarDoc = { ...current, tracks };
       setSidecar(next);
       persist(next);
+      if (reselectT !== undefined && keys.length > 0) {
+        setSelectedKey({ target, t: keys[closestIndex(keys, reselectT)]!.t });
+      }
     },
     [compiled, sidecar, persist],
+  );
+
+  const trackOf = useCallback((target: string) => compiled.tracks.get(target), [compiled]);
+
+  /** Drag retiming (identity by closest-t — the §6.2 lesson from a vanished key). */
+  const editKey = useCallback(
+    (target: string, fromT: number, newT: number) => {
+      const tr = trackOf(target);
+      if (tr) writeKeys(target, retimeKeyAt(tr, fromT, newT), newT);
+    },
+    [trackOf, writeKeys],
+  );
+
+  const addKey = useCallback(
+    (target: string, t: number) => {
+      const tr = trackOf(target);
+      if (tr) writeKeys(target, addKeyAt(tr, t), t);
+    },
+    [trackOf, writeKeys],
+  );
+
+  const deleteSelected = useCallback(() => {
+    if (!selectedKey) return;
+    const tr = trackOf(selectedKey.target);
+    if (!tr) return;
+    writeKeys(selectedKey.target, deleteKeyAt(tr, selectedKey.t));
+    setSelectedKey(null);
+  }, [selectedKey, trackOf, writeKeys]);
+
+  /** Inspector write-at-playhead: update the key under the cursor or insert one. */
+  const setValueAtPlayhead = useCallback(
+    (target: string, raw: string) => {
+      const tr = trackOf(target);
+      if (!tr || !session) return;
+      const value = parseValue(tr.type, raw);
+      if (value === null) return;
+      const t = session.scene.playhead.peek();
+      writeKeys(target, upsertKeyAt(tr, t, value), t);
+    },
+    [trackOf, session, writeKeys],
   );
 
   const undo = useCallback(() => {
@@ -148,6 +205,7 @@ export function App() {
     if (prev === undefined) return;
     const restored = prev.tracks.length === 0 && !prev.labels ? null : prev;
     setSidecar(restored);
+    setSelectedKey(null); // the snapshot may not contain the selected key
     persist(restored ?? emptySidecar());
   }, [persist]);
 
@@ -156,11 +214,19 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         undo();
+        return;
+      }
+      const typing = (e.target as HTMLElement | null)?.tagName === 'INPUT';
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
+        e.preventDefault();
+        deleteSelected();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo]);
+  }, [undo, deleteSelected]);
+
+  const selectedTrack = selectedKey ? trackOf(selectedKey.target) : undefined;
 
   return (
     <div className="studio">
@@ -190,12 +256,43 @@ export function App() {
       )}
       <div className="inspector">
         {session && (
-          <Inspector scene={session.scene} selected={selectedNode} onSelect={setSelectedNode} />
+          <Inspector
+            scene={session.scene}
+            selected={selectedNode}
+            onSelect={setSelectedNode}
+            hasTrack={(target) => compiled.tracks.has(target)}
+            onEditValue={setValueAtPlayhead}
+          />
         )}
       </div>
       <div className="timeline">
+        {selectedKey && selectedTrack && (
+          <KeyEditor
+            track={selectedTrack}
+            selected={selectedKey}
+            onRetime={(raw) => {
+              const t = parseFloat(raw);
+              if (Number.isFinite(t)) editKey(selectedKey.target, selectedKey.t, t);
+            }}
+            onValue={(raw) => {
+              const value = parseValue(selectedTrack.type, raw);
+              if (value !== null) writeKeys(selectedKey.target, setValueAt(selectedTrack, selectedKey.t, value), selectedKey.t);
+            }}
+            onEase={(ease: EaseSpec | undefined, hold?: boolean) =>
+              writeKeys(selectedKey.target, setEaseAt(selectedTrack, selectedKey.t, ease, hold), selectedKey.t)
+            }
+            onDelete={deleteSelected}
+          />
+        )}
         {session && (
-          <TimelinePanel compiled={compiled} player={session.mounted.player} onEditKey={editKey} />
+          <TimelinePanel
+            compiled={compiled}
+            player={session.mounted.player}
+            onEditKey={editKey}
+            onAddKey={addKey}
+            selected={selectedKey}
+            onSelectKey={setSelectedKey}
+          />
         )}
       </div>
     </div>
