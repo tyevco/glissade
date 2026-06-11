@@ -52,6 +52,56 @@ window.__exportVideo = async (name) => {
     ms,
   };
 };
+// M4 browser path: export a scene embedding a video asset, and verify
+// backward/random scrub through the MediabunnyVideoFrameSource directly.
+declare global {
+  interface Window {
+    __exportWithVideo(url: string, sourceFps: number): ReturnType<Window['__exportVideo']>;
+    __scrubVideo(url: string): Promise<{ backward: boolean; forward: boolean }>;
+  }
+}
+
+window.__exportWithVideo = async (url, sourceFps) => {
+  const { timeline } = await import('@glissade/core');
+  const { createScene, Rect, Video } = await import('@glissade/scene');
+  const scene = createScene({
+    size: { w: 640, h: 360 },
+    children: [
+      new Rect({ id: 'bg', width: 640, height: 360, position: [320, 180], fill: '#220033' }),
+      new Video({ id: 'tv', assetId: 'clip', at: 0.25, sourceFps, width: 320, height: 180, position: [320, 180] }),
+    ],
+  });
+  const doc = timeline({ duration: 2, fps: 30, assets: { clip: { kind: 'video', url } } });
+  const started = performance.now();
+  const result = await exportVideo(scene, doc, { fps: 30 });
+  const ms = performance.now() - started;
+  const bytes = new Uint8Array(await result.blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return {
+    bytesBase64: btoa(bin),
+    format: result.format,
+    videoCodec: result.videoCodec,
+    audioCodec: result.audioCodec,
+    frames: result.frames,
+    ms,
+  };
+};
+
+window.__scrubVideo = async (url) => {
+  const { MediabunnyVideoFrameSource } = await import('@glissade/export-web');
+  const source = await MediabunnyVideoFrameSource.open(url);
+  // forward then BACKWARD random access — O(GOP) keyframe seek, must succeed
+  await source.warm(2.0, 2.0);
+  const late = source.getFrameSync(2.0);
+  await source.warm(0.4, 0.4);
+  const early = source.getFrameSync(0.4);
+  source.close();
+  return { forward: late instanceof Object, backward: early instanceof Object };
+};
+
 window.__exportReady = true;
 
 document.querySelector('#go')?.addEventListener('click', () => {

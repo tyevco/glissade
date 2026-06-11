@@ -11,3 +11,4 @@ coverage/
 *.tsbuildinfo
 .playwright-mcp/
 .claude/scheduled_tasks.lock
+.tmp-test/

@@ -7,7 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createJiti } from 'jiti';
 import { evaluate, type SceneModule } from '@glissade/scene';
@@ -108,6 +108,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   }
 
   const outAbs = resolve(opts.out);
+  mkdirSync(dirname(outAbs), { recursive: true });
   const isWebm = /\.webm$/i.test(outAbs);
   const codec = isWebm
     ? ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32']

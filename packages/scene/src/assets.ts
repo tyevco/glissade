@@ -28,11 +28,19 @@ export interface VideoFrameSource {
 export type ImageHandle = unknown;
 
 export class ColdAssetError extends Error {
-  constructor(assetId: string, detail: string) {
+  readonly assetId: string;
+  readonly detail: string;
+  /** Media time that was requested cold, when known — drives demand warming. */
+  readonly mediaT: number | undefined;
+
+  constructor(assetId: string, detail: string, mediaT?: number) {
     super(
       `asset '${assetId}' not ready: ${detail}. evaluate() never awaits — warm assets ` +
         'before evaluating (§2.5 readiness precondition)',
     );
     this.name = 'ColdAssetError';
+    this.assetId = assetId;
+    this.detail = detail;
+    this.mediaT = mediaT;
   }
 }

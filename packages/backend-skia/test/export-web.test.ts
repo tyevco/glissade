@@ -76,6 +76,28 @@ describe.runIf(ENABLED)('in-browser WebCodecs export', () => {
     expect(result.audioCodec).toBeTruthy();
     expect(parseFloat(info.format.duration)).toBeCloseTo(3, 0);
   }, 120_000);
+
+  it('a scene embedding video exports through the Mediabunny decode path (§5.4)', async () => {
+    // produce the embedded source with our own CLI, served by the vite root
+    const assetDir = fileURLToPath(new URL('../../examples/.tmp-test', import.meta.url));
+    const { render } = await import('@glissade/cli');
+    const bounceModule = fileURLToPath(new URL('../../examples/src/scenes/golden-bounce.ts', import.meta.url));
+    await render({ modulePath: bounceModule, out: join(assetDir, 'source.mp4'), fps: 30 });
+
+    const result = await page.evaluate(() => window.__exportWithVideo('/.tmp-test/source.mp4', 30));
+    expect(result.frames).toBe(60);
+    const path = join(outDir, `embedded.${result.format}`);
+    writeFileSync(path, Buffer.from(result.bytesBase64, 'base64'));
+    const info = probe(path);
+    expect(info.streams.map((s) => s.codec_type)).toEqual(['video']);
+    expect(parseFloat(info.format.duration)).toBeCloseTo(2, 0);
+
+    // M4 exit criterion: scrubs both directions through the decoder seam
+    const scrub = await page.evaluate(() => window.__scrubVideo('/.tmp-test/source.mp4'));
+    expect(scrub).toEqual({ forward: true, backward: true });
+
+    rmSync(assetDir, { recursive: true, force: true });
+  }, 180_000);
 });
 
 describe.runIf(!ENABLED)('in-browser WebCodecs export (skipped)', () => {

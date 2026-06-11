@@ -19,8 +19,11 @@ import {
   type AudioCodec,
 } from 'mediabunny';
 import { compileTimeline, sampleTrack, type AudioClip, type Timeline } from '@glissade/core';
-import { evaluate, type Scene } from '@glissade/scene';
+import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { MediabunnyVideoFrameSource } from './videoSource.js';
+
+export { MediabunnyVideoFrameSource } from './videoSource.js';
 
 export interface WebExportOptions {
   fps?: number;
@@ -133,6 +136,40 @@ export async function exportVideo(
 
   const canvas = new OffscreenCanvas(w, h);
   const backend = new Canvas2DBackend(canvas);
+
+  // Open and register timeline assets (§3.8); video sources warm on demand below.
+  const videoSources = new Map<string, VideoFrameSource>();
+  for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
+    if (ref.kind === 'image') {
+      const resp = await fetch(ref.url);
+      if (!resp.ok) throw new Error(`image asset fetch failed (${resp.status}): ${ref.url}`);
+      backend.setImageAsset(assetId, await createImageBitmap(await resp.blob()));
+    } else if (ref.kind === 'video') {
+      const source = await MediabunnyVideoFrameSource.open(ref.url, assetId);
+      backend.setVideoAsset(assetId, source);
+      videoSources.set(assetId, source);
+    }
+  }
+
+  /** Render one frame, demand-warming any cold video source and retrying (§2.5). */
+  const renderFrame = async (t: number): Promise<void> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        backend.render(evaluate(scene, doc, t));
+        return;
+      } catch (e) {
+        if (e instanceof ColdAssetError && e.mediaT !== undefined && attempt < 3) {
+          const source = videoSources.get(e.assetId);
+          if (source) {
+            await source.warm(e.mediaT, e.mediaT);
+            continue;
+          }
+        }
+        throw e;
+      }
+    }
+  };
+
   const output = new Output({
     format: picked.format === 'mp4' ? new Mp4OutputFormat() : new WebMOutputFormat(),
     target: new BufferTarget(),
@@ -154,12 +191,13 @@ export async function exportVideo(
   }
 
   for (let f = 0; f < total; f++) {
-    backend.render(evaluate(scene, doc, f / fps));
+    await renderFrame(f / fps);
     await videoSource.add(f / fps, 1 / fps);
     opts.onProgress?.(f + 1, total);
   }
   videoSource.close();
   await output.finalize();
+  for (const source of videoSources.values()) source.close();
 
   const buffer = (output.target as BufferTarget).buffer;
   if (!buffer) throw new Error('muxer produced no output');

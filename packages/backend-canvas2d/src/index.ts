@@ -94,8 +94,14 @@ export class Canvas2DBackend {
     }
     if (res.kind === 'videoFrame') {
       const source = this.videos.get(res.assetId);
-      if (!source) throw new ColdAssetError(res.assetId, 'no VideoFrameSource registered');
-      return source.getFrameSync(res.mediaT) as Drawable;
+      if (!source) throw new ColdAssetError(res.assetId, 'no VideoFrameSource registered', res.mediaT);
+      try {
+        return source.getFrameSync(res.mediaT) as Drawable;
+      } catch (e) {
+        // re-key on the asset id + requested time so callers can demand-warm
+        if (e instanceof ColdAssetError) throw new ColdAssetError(res.assetId, e.detail, res.mediaT);
+        throw e;
+      }
     }
     throw new Error(`resource ${id} is not drawable`);
   }
