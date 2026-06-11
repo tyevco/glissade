@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>glissade — M1 demo</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+             background: #15161a; color: #e8e8ea; font: 14px/1.5 system-ui, sans-serif; }
+      main { display: grid; gap: 12px; }
+      canvas { border-radius: 12px; background: #1d1f24; box-shadow: 0 12px 40px #0008; }
+      .controls { display: flex; gap: 10px; align-items: center; }
+      button { background: #2b2e36; color: inherit; border: 0; border-radius: 8px;
+               padding: 6px 14px; cursor: pointer; font: inherit; }
+      button:hover { background: #383c46; }
+      input[type='range'] { flex: 1; accent-color: #e6a700; }
+      #time { font-variant-numeric: tabular-nums; opacity: 0.7; min-width: 9ch; text-align: right; }
+      #verify { font-size: 12px; opacity: 0.65; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="stage" width="800" height="450"></canvas>
+      <div class="controls">
+        <button id="playpause">Play</button>
+        <label><input type="checkbox" id="loop" /> loop</label>
+        <input type="range" id="scrub" min="0" max="1" step="0.0001" value="0" />
+        <span id="time">0.000s</span>
+      </div>
+      <div id="verify">verifying…</div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -17,13 +17,24 @@ import { type Scene, type SceneModule } from '@glissade/scene';
 import { mount, type Mounted } from '@glissade/player';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
 import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
+import spinners from '../../examples/src/scenes/showcase/spinners.js';
+import loaders from '../../examples/src/scenes/showcase/loaders.js';
+import dashboard from '../../examples/src/scenes/showcase/dashboard.js';
+import transitions from '../../examples/src/scenes/showcase/transitions.js';
+import micro from '../../examples/src/scenes/showcase/micro.js';
 import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
 
+const SCENES = 'packages/examples/src/scenes';
 const corpus: Record<string, { mod: SceneModule; path: string }> = {
-  shapes: { mod: goldenShapes, path: 'packages/examples/src/scenes/golden-shapes.ts' },
-  bounce: { mod: goldenBounce, path: 'packages/examples/src/scenes/golden-bounce.ts' },
+  shapes: { mod: goldenShapes, path: `${SCENES}/golden-shapes.ts` },
+  bounce: { mod: goldenBounce, path: `${SCENES}/golden-bounce.ts` },
+  spinners: { mod: spinners, path: `${SCENES}/showcase/spinners.ts` },
+  loaders: { mod: loaders, path: `${SCENES}/showcase/loaders.ts` },
+  dashboard: { mod: dashboard, path: `${SCENES}/showcase/dashboard.ts` },
+  transitions: { mod: transitions, path: `${SCENES}/showcase/transitions.ts` },
+  micro: { mod: micro, path: `${SCENES}/showcase/micro.ts` },
 };
 
 const sidecarUrl = (path: string) => `/__glissade/sidecar?scene=${encodeURIComponent(path)}`;

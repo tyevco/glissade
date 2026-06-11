@@ -53,7 +53,7 @@ Determinism is CI-enforced: golden frames byte-compare across machines on the pi
 A gallery of widget patterns — six spinners, loaders with shimmer skeletons, a self-assembling mock dashboard, screen transitions (slide/wipe/fade), and micro-interactions (toggle, checkbox, ripple, toast) — all plain nodes + timelines:
 
 ```sh
-pnpm --filter @glissade/examples dev   # open /showcase.html
+pnpm --filter @glissade/examples dev   # the showcase is the landing page; minimal demo at /demo.html
 ```
 
 ## Docs
