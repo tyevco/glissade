@@ -8,6 +8,7 @@ import {
   computed,
   signal,
   vec2Signal,
+  TARGET_PATH,
   type BindableSignal,
   type ReadonlySignal,
   type Vec2,
@@ -106,6 +107,10 @@ export abstract class Node {
 
   protected registerTarget(path: string, sig: BindablePropTarget): void {
     this.targets.set(path, sig);
+    // builder targets (§2.6): a prop signal of an id-bearing node carries its path
+    if (this.id !== undefined) {
+      (sig as unknown as Record<symbol, string>)[TARGET_PATH] = `${this.id}/${path}`;
+    }
   }
 
   resolveTarget(path: string): BindablePropTarget | undefined {

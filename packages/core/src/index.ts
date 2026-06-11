@@ -70,7 +70,6 @@ export {
 } from './track.js';
 
 export {
-  timeline,
   compileTimeline,
   setDevWarning,
   TimelineValidationError,
@@ -83,6 +82,24 @@ export {
   type Json,
   type DevWarning,
 } from './timeline.js';
+
+export {
+  timeline,
+  buildTimeline,
+  getTimelineCallbacks,
+  PositionError,
+  type TimelineBuilder,
+  type TweenOpts,
+  type Position,
+} from './builder.js';
+
+export {
+  TARGET_PATH,
+  resolveTweenTarget,
+  UnresolvableTargetError,
+  type TweenTarget,
+  type TargetCarrier,
+} from './targetRef.js';
 
 export {
   createPlayhead,
