@@ -11,6 +11,7 @@
   "dependencies": {
     "@glissade/backend-canvas2d": "workspace:*",
     "@glissade/core": "workspace:*",
+    "@glissade/export-web": "workspace:*",
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*"
   },

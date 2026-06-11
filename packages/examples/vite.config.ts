@@ -10,6 +10,7 @@ export default defineConfig({
       '@glissade/core': src('core'),
       '@glissade/scene': src('scene'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
+      '@glissade/export-web': src('export-web'),
       '@glissade/player': src('player'),
     },
   },

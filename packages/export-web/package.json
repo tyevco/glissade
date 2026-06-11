@@ -1,0 +1,32 @@
+{
+  "name": "@glissade/export-web",
+  "version": "0.0.0",
+  "description": "glissade in-browser export: WebCodecs VideoEncoder + Mediabunny muxing, OfflineAudioContext audio mix. Frame-accurate, faster than realtime, no server.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*",
+    "mediabunny": "^1.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/export-web"
+  }
+}

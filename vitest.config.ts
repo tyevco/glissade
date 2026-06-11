@@ -13,6 +13,7 @@ export default defineConfig({
       '@glissade/player': src('player'),
       '@glissade/backend-skia': src('backend-skia'),
       '@glissade/cli': src('cli'),
+      '@glissade/export-web': src('export-web'),
     },
   },
   test: {
