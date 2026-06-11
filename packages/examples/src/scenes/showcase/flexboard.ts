@@ -114,9 +114,16 @@ const mod: SceneModule = {
   },
   timeline: timeline(
     (tl) => {
-      // the panel breathes: padding and gap are layout inputs, so the whole
-      // column restacks as they tween
-      tl.to('panel/gap', 26, { duration: 1.6, ease: 'easeInOutSine', at: 0.4, from: 10 })
+      // the panel grows to contain its busiest moment (content peaks ~420px:
+      // grown row + reflowed blurb + widened gaps) and shrinks back to close
+      // the loop — the background tracks the layout with identical keys
+      tl.to('panel/height', 432, { duration: 1.0, ease: 'easeInOutSine', at: 0.5, from: 360 })
+        .to('panel/height', 360, { duration: 0.9, ease: 'easeInOutSine', at: 3.5 })
+        .to('panelBg/height', 432, { duration: 1.0, ease: 'easeInOutSine', at: 0.5, from: 360 })
+        .to('panelBg/height', 360, { duration: 0.9, ease: 'easeInOutSine', at: 3.5 })
+        // the panel breathes: padding and gap are layout inputs, so the whole
+        // column restacks as they tween
+        .to('panel/gap', 26, { duration: 1.6, ease: 'easeInOutSine', at: 0.4, from: 10 })
         .to('panel/gap', 10, { duration: 1.6, ease: 'easeInOutSine', at: '>' })
         // a row grows and pushes its siblings down
         .to('row2/height', 78, { duration: 1.2, ease: 'easeInOutCubic', at: 0.8, from: 44 })
