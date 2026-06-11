@@ -6,7 +6,7 @@
  */
 
 import { beginReadPhase, endReadPhase, signal, type BindableSignal } from './signal.js';
-import { sampleTrack, type Track } from './track.js';
+import { sampleTrack, velocityAt, type Track } from './track.js';
 import { type CompiledTimeline } from './timeline.js';
 
 export type Playhead = BindableSignal<number>;
@@ -27,8 +27,19 @@ export interface BindTarget {
   unbindSource(): void;
 }
 
+/** Analytic value/velocity access to one bound target (v2 addendum §B.6). */
+export interface CurveSampler {
+  readonly track: Track;
+  /** Pure sample at local timeline time t. */
+  value(t: number): unknown;
+  /** Analytic derivative per §B.3 conventions; null for types without operators. */
+  velocity(t: number): unknown | null;
+}
+
 export interface BoundTimeline {
   playhead: Playhead;
+  /** Per-target analytic samplers (additive, v2 §B.6); machines read these. */
+  samplers: ReadonlyMap<string, CurveSampler>;
   /** Detach every track binding, freezing signals at their last values. */
   unbind(): void;
 }
@@ -44,14 +55,21 @@ export function bindTimeline(
   playhead: Playhead = createPlayhead(),
 ): BoundTimeline {
   const bound: BindTarget[] = [];
+  const samplers = new Map<string, CurveSampler>();
   for (const [target, tr] of compiled.tracks) {
     const sig = resolve(target);
     if (!sig) throw new UnboundTargetError(target);
     sig.bindSource(() => sampleTrack(tr as Track, playhead()));
     bound.push(sig);
+    samplers.set(target, {
+      track: tr as Track,
+      value: (t) => sampleTrack(tr as Track, t),
+      velocity: (t) => velocityAt(tr as Track, t),
+    });
   }
   return {
     playhead,
+    samplers,
     unbind: () => {
       for (const sig of bound) sig.unbindSource();
     },

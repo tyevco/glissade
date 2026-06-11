@@ -4,6 +4,7 @@
  * coalescing (last-insertion-wins, §2.2), duration computation, validation.
  */
 
+import { emitDevWarning as devWarn } from './devWarning.js';
 import { spring as springFactory } from './spring.js';
 import { validateTrack, type Key, type Track } from './track.js';
 
@@ -117,21 +118,7 @@ export interface CompiledTimeline {
   audio: AudioClip[];
 }
 
-export type DevWarning = (message: string) => void;
-
-// core has no DOM lib; console may not exist in exotic embedders
-let devWarn: DevWarning = (msg) => {
-  (globalThis as { console?: { warn(m: string): void } }).console?.warn(`[glissade] ${msg}`);
-};
-
-export function setDevWarning(fn: DevWarning): void {
-  devWarn = fn;
-}
-
-/** Internal: emit through the configurable dev-warning channel. */
-export function emitDevWarning(message: string): void {
-  devWarn(message);
-}
+export { setDevWarning, emitDevWarning, type DevWarning } from './devWarning.js';
 
 function rebaseKeys(keys: Key[], at: number, timeScale: number): Key[] {
   return keys.map((k) => ({ ...k, t: at + k.t / timeScale }));

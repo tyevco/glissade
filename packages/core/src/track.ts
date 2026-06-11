@@ -4,8 +4,16 @@
  * identical to a cold search (property-tested).
  */
 
-import { namedEasing, cubicBezier, type EaseSpec, type EasingFn } from './easing.js';
-import { springEasing } from './spring.js';
+import {
+  cubicBezier,
+  cubicBezierDerivative,
+  easingDerivatives,
+  namedEasing,
+  type EaseSpec,
+  type EasingFn,
+} from './easing.js';
+import { springEasing, springEasingDerivative } from './spring.js';
+import { emitDevWarning } from './devWarning.js';
 import { getValueType, type ValueTypeId } from './valueTypes.js';
 
 export interface Key<T = unknown> {
@@ -99,6 +107,32 @@ export function resolveEase(spec: EaseSpec | undefined): EasingFn {
   return springEasing(spec);
 }
 
+const warnedNumericDerivative = new Set<string>();
+
+/**
+ * Analytic d(u) for an ease spec (§B.6). Custom-registered eases without a
+ * derivative fall back to a symmetric difference with a one-time dev warning.
+ */
+export function resolveEaseDerivative(spec: EaseSpec | undefined): EasingFn {
+  if (spec === undefined) return easingDerivatives['linear']!;
+  if (typeof spec === 'string') {
+    const d = easingDerivatives[spec];
+    if (d) return d;
+    const fn = namedEasing(spec); // throws on unknown names, same as resolveEase
+    if (!warnedNumericDerivative.has(spec)) {
+      warnedNumericDerivative.add(spec);
+      emitDevWarning(
+        `easing '${spec}' has no registered derivative; velocity uses a numeric fallback — ` +
+          'register one in easingDerivatives for exact interruption handoff',
+      );
+    }
+    const h = 1e-5;
+    return (u) => (fn(Math.min(1, u + h)) - fn(Math.max(0, u - h))) / (Math.min(1, u + h) - Math.max(0, u - h));
+  }
+  if (spec.kind === 'cubicBezier') return cubicBezierDerivative(...spec.pts);
+  return springEasingDerivative(spec);
+}
+
 interface SamplerState {
   /** Index of the segment's arrival key last used; hint only. */
   cursor: number;
@@ -146,6 +180,35 @@ function findSegment(keys: Key[], t: number, hint: number): number {
     else hi = mid;
   }
   return lo;
+}
+
+/**
+ * Analytic track derivative at time t, in value-units per second of local
+ * track time (v2 addendum §B.3/§B.6 conventions, pinned):
+ * (a) at a key boundary, velocity is the RIGHT derivative;
+ * (b) hold segments and the clamped regions outside the keys have v = 0;
+ * (c) types without sub/scale operators return null (no kinetic velocity).
+ */
+export function velocityAt<T>(tr: Track<T>, t: number): T | null {
+  const vt = getValueType<T>(tr.type);
+  if (!vt.sub || !vt.scale) return null;
+  const keys = tr.keys as Key<T>[];
+  const n = keys.length;
+  const s = state(tr as Track);
+  const i = findSegment(keys as Key[], t, s.cursor);
+  const zero = vt.scale(vt.sub(keys[0]!.value, keys[0]!.value), 0);
+  if (i === 0 || i >= n) return zero; // clamped regions
+  const arrival = keys[i]!;
+  if (arrival.interp === 'hold') return zero;
+  const prev = keys[i - 1]!;
+  const segDur = arrival.t - prev.t;
+  const p = (t - prev.t) / segDur;
+  if (!vt.extrapolates) {
+    const eased = easeFor(tr as Track, s, i)(p);
+    if (eased < 0 || eased > 1) return zero; // clamped value is locally constant
+  }
+  const d = resolveEaseDerivative(arrival.ease)(p);
+  return vt.scale(vt.sub(arrival.value, prev.value), d / segDur);
 }
 
 /** Pure sample of a track at time t (§2.4). */

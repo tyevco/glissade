@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
-  core: 10, // raised from the spec's 8: core gained builder+springs+OKLab+bake; total stays 35
+  core: 11, // raised 8→10→11 (v2 §B.6: derivative registry + retarget math; tree-shaken out of real embeds); total stays 35
   scene: 12,
   'backend-canvas2d': 8,
   player: 4,

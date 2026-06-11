@@ -21,7 +21,9 @@ export { vec2Signal, type Vec2Signal } from './vec2Signal.js';
 
 export {
   easings,
+  easingDerivatives,
   cubicBezier,
+  cubicBezierDerivative,
   namedEasing,
   DEFAULT_EASE,
   UnknownEasingError,
@@ -29,7 +31,14 @@ export {
   type EaseSpec,
 } from './easing.js';
 
-export { spring, springEasing, type SpringConfig, type SpringEase } from './spring.js';
+export {
+  spring,
+  springEasing,
+  springEasingDerivative,
+  type SpringConfig,
+  type SpringEase,
+  type RetargetSpring,
+} from './spring.js';
 
 export {
   parseColor,
@@ -54,6 +63,7 @@ export {
   inferValueType,
   UnknownValueTypeError,
   ValueTypeInferenceError,
+  type HandoffKind,
   type ValueType,
   type ValueTypeId,
   type Vec2,
@@ -63,8 +73,10 @@ export {
   key,
   track,
   sampleTrack,
+  velocityAt,
   validateTrack,
   resolveEase,
+  resolveEaseDerivative,
   TrackValidationError,
   type Key,
   type KeyOpts,
@@ -112,6 +124,7 @@ export {
   type Playhead,
   type BindTarget,
   type BoundTimeline,
+  type CurveSampler,
 } from './binding.js';
 
 export { random, type Rng } from './rng.js';
