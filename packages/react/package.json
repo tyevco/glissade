@@ -1,0 +1,37 @@
+{
+  "name": "@glissade/react",
+  "version": "0.0.0",
+  "description": "glissade React bindings: signals via useSyncExternalStore, player hooks.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/core": "workspace:*",
+    "@glissade/player": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "react": "^19.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/react"
+  }
+}

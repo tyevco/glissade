@@ -231,3 +231,20 @@ describe('vec2Signal (§2.1 compound)', () => {
     expect(p()).toEqual([999, 20]);
   });
 });
+
+describe('reentrant subscribers (useSyncExternalStore pattern)', () => {
+  it('a subscriber that synchronously re-reads during invalidation terminates', () => {
+    const t = signal(0);
+    const derived = computed(() => t() * 2);
+    let reads = 0;
+    derived(); // establish dependency edges
+    derived.subscribe(() => {
+      reads++;
+      derived(); // synchronous re-read mid-cascade, like React's store check
+    });
+    t.set(1);
+    t.set(2);
+    expect(derived()).toBe(4);
+    expect(reads).toBeLessThan(10); // explosion would loop unbounded
+  });
+});

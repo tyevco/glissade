@@ -148,7 +148,9 @@ class SignalNode<T> {
   }
 
   private invalidateDependents(level: State): void {
-    for (const d of this.dependents) d.markStale(level);
+    // snapshot: a subscriber may synchronously re-read (useSyncExternalStore
+    // does), recomputing dependents and mutating these sets mid-cascade
+    for (const d of [...this.dependents]) d.markStale(level);
     if (this.subscribers.size > 0) {
       for (const cb of [...this.subscribers]) cb();
     }

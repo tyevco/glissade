@@ -1,0 +1,99 @@
+:root {
+  color-scheme: dark;
+  --bg: #15161a;
+  --panel: #1d1f24;
+  --panel-2: #23262d;
+  --line: #2e323b;
+  --text: #e8e8ea;
+  --muted: #9aa0ab;
+  --accent: #e6a700;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 system-ui, sans-serif;
+}
+
+.studio {
+  display: grid;
+  grid-template:
+    'viewport inspector' 1fr
+    'transport inspector' auto
+    'timeline timeline' 240px / 1fr 280px;
+  height: 100vh;
+  gap: 1px;
+  background: var(--line);
+}
+
+.viewport {
+  grid-area: viewport;
+  background: var(--panel);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+.viewport canvas { max-width: 95%; max-height: 90%; border-radius: 8px; box-shadow: 0 8px 30px #0008; }
+.viewport .scene-picker { position: absolute; top: 10px; left: 10px; }
+
+.transport {
+  grid-area: transport;
+  background: var(--panel-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.transport button {
+  background: var(--line); color: var(--text); border: 0; border-radius: 6px;
+  padding: 5px 14px; cursor: pointer; font: inherit;
+}
+.transport button:hover { background: #3a3f4a; }
+.transport input[type='range'] { flex: 1; accent-color: var(--accent); }
+.transport .time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 11ch; text-align: right; }
+
+.inspector {
+  grid-area: inspector;
+  background: var(--panel);
+  padding: 12px;
+  overflow-y: auto;
+}
+.inspector h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.inspector .node {
+  padding: 4px 8px; border-radius: 6px; cursor: pointer;
+}
+.inspector .node:hover { background: var(--panel-2); }
+.inspector .node.selected { background: var(--line); }
+.inspector table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.inspector td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.inspector td.value { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); }
+
+.timeline {
+  grid-area: timeline;
+  background: var(--panel);
+  overflow-y: auto;
+  position: relative;
+  user-select: none;
+}
+.timeline .ruler {
+  position: sticky; top: 0; height: 22px; background: var(--panel-2);
+  border-bottom: 1px solid var(--line); cursor: pointer; z-index: 2;
+}
+.timeline .ruler .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line); padding-left: 3px; color: var(--muted); font-size: 10px; }
+.timeline .row { display: flex; height: 26px; border-bottom: 1px solid var(--line); align-items: center; }
+.timeline .row .name { width: 200px; flex: none; padding: 0 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline .row .lane { position: relative; flex: 1; height: 100%; }
+.timeline .key {
+  position: absolute; top: 50%; width: 8px; height: 8px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--accent); border-radius: 1px;
+}
+.timeline .key.derived { background: var(--muted); }
+.timeline .cursor {
+  position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent);
+  pointer-events: none; z-index: 3;
+}

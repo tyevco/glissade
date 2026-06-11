@@ -1,0 +1,28 @@
+{
+  "name": "@glissade/studio",
+  "private": true,
+  "version": "0.0.0",
+  "description": "glissade studio: React editor over the open core (DESIGN.md §6).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/core": "workspace:*",
+    "@glissade/player": "workspace:*",
+    "@glissade/react": "workspace:*",
+    "@glissade/scene": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "vite": "^7.0.0"
+  }
+}
