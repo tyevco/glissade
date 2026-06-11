@@ -97,3 +97,13 @@ describe('normalizeEditedKeys (§2.7 under editing)', () => {
     expect(() => compileTimeline(doc)).not.toThrow();
   });
 });
+
+describe('normalizeEditedKeys: collisions nudge, never delete', () => {
+  it('a key dragged onto another keeps both (1ms nudge)', async () => {
+    const { normalizeEditedKeys } = await import('../src/index.js');
+    const fixed = normalizeEditedKeys([key(1.5, -1), key(1.5, 1, { interp: 'hold' })]);
+    expect(fixed).toHaveLength(2);
+    expect(fixed[1]!.t).toBeCloseTo(1.501, 9);
+    expect(fixed.map((k) => k.value)).toEqual([-1, 1]);
+  });
+});

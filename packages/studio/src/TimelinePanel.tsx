@@ -15,16 +15,32 @@ export function TimelinePanel({
   const time = usePlayhead(player);
   const duration = Math.max(compiled.duration, 1e-9);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ target: string; keyIndex: number } | null>(null);
+  // identity over index: every edit re-sorts keys, so a frozen index would
+  // silently swap which key is being dragged when it crosses a neighbor
+  // (found via a user's sidecar with a vanished key)
+  const drag = useRef<{ target: string; lastT: number } | null>(null);
 
   const dragTo = useCallback(
     (e: React.PointerEvent, lane: Element) => {
       if (!drag.current || !onEditKey) return;
+      const track = compiled.tracks.get(drag.current.target);
+      if (!track) return;
       const rect = lane.getBoundingClientRect();
       const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      onEditKey(drag.current.target, drag.current.keyIndex, p * duration);
+      const newT = p * duration;
+      let keyIndex = 0;
+      let best = Infinity;
+      track.keys.forEach((k, i) => {
+        const d = Math.abs(k.t - drag.current!.lastT);
+        if (d < best) {
+          best = d;
+          keyIndex = i;
+        }
+      });
+      drag.current.lastT = newT;
+      onEditKey(drag.current.target, keyIndex, newT);
     },
-    [onEditKey, duration],
+    [onEditKey, duration, compiled],
   );
 
   const seekFromPointer = useCallback(
@@ -88,7 +104,7 @@ export function TimelinePanel({
                   style={{ left: `${(k.t / duration) * 100}%` }}
                   title={`${track.target} t=${k.t.toFixed(3)} (drag to retime)`}
                   onPointerDown={(e) => {
-                    drag.current = { target: track.target, keyIndex: i };
+                    drag.current = { target: track.target, lastT: k.t };
                     try {
                       e.currentTarget.setPointerCapture(e.pointerId);
                     } catch {

@@ -33,7 +33,8 @@ export function emptySidecar(): SidecarDoc {
  * intrinsic — prev.t + spring.duration(cfg) — so after any retime, sort and
  * re-pin spring keys to their predecessors. Dragging a spring key itself
  * therefore snaps back; retiming its predecessor carries it along. Returns a
- * new array; coincident keys keep the later entry.
+ * new array. Colliding keys are NUDGED apart (+1ms), never deleted — an
+ * editor must not silently destroy keyframe data on an exact-t collision.
  */
 export function normalizeEditedKeys(keys: Key[]): Key[] {
   const out = keys
@@ -48,13 +49,10 @@ export function normalizeEditedKeys(keys: Key[]): Key[] {
     }
     out.sort((a, b) => a.t - b.t);
   }
-  const deduped: Key[] = [];
-  for (const k of out) {
-    const last = deduped[deduped.length - 1];
-    if (last && Math.abs(last.t - k.t) < 1e-9) deduped[deduped.length - 1] = k;
-    else deduped.push(k);
+  for (let i = 1; i < out.length; i++) {
+    if (out[i]!.t <= out[i - 1]!.t) out[i]!.t = out[i - 1]!.t + 0.001;
   }
-  return deduped;
+  return out;
 }
 
 /**
