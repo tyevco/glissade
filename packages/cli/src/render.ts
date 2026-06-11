@@ -72,12 +72,18 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   mkdirSync(framesDir, { recursive: true });
 
   const backend = new SkiaBackend(scene.size.w, scene.size.h);
+  // line breaking measures with the rasterizer that will draw (§3.2)
+  scene.setTextMeasurer(backend);
 
   // Warm timeline assets before evaluation (§2.5 readiness precondition).
   const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
     const { resolveAssetPath } = await import('./audioMix.js');
-    if (ref.kind === 'image') {
+    if (ref.kind === 'font') {
+      // convention: the asset id IS the font family name (§3.6 explicit fonts)
+      const { GlobalFonts } = await import('@napi-rs/canvas');
+      GlobalFonts.registerFromPath(resolveAssetPath(ref.url, opts.modulePath), assetId);
+    } else if (ref.kind === 'image') {
       const { loadImage } = await import('@napi-rs/canvas');
       backend.setImageAsset(assetId, await loadImage(resolveAssetPath(ref.url, opts.modulePath)));
     } else if (ref.kind === 'video') {

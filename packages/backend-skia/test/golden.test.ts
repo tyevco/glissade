@@ -8,10 +8,18 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { GlobalFonts } from '@napi-rs/canvas';
 import { evaluate, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '../src/index.js';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
 import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
+import goldenTypography from '../../examples/src/scenes/golden-typography.js';
+
+// explicit fonts (§3.6): the typography scene's face ships with the repo
+GlobalFonts.registerFromPath(
+  fileURLToPath(new URL('../../examples/assets/fonts/DejaVuSans.ttf', import.meta.url)),
+  'DejaVu Sans',
+);
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 const UPDATE = process.env['GOLDEN_UPDATE'] === '1';
@@ -22,12 +30,14 @@ const FPS = 60;
 const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'shapes', mod: goldenShapes },
   { name: 'bounce', mod: goldenBounce },
+  { name: 'typography', mod: goldenTypography },
 ];
 
 for (const { name, mod } of CORPUS) {
   describe(`golden frames: ${name}`, () => {
     const scene = mod.createScene();
     const backend = new SkiaBackend(640, 360);
+    scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
 
     for (const frame of FRAMES) {
       it(`frame ${frame} matches the committed golden PNG byte-for-byte`, () => {
@@ -63,6 +73,7 @@ for (const { name, mod } of CORPUS) {
     it('a fresh scene + random-order evaluation produces the same pixels (purity, §2.5)', () => {
       const sceneB = mod.createScene();
       const backendB = new SkiaBackend(640, 360);
+      sceneB.setTextMeasurer(backendB);
       const ts = [2.9, 0.4, 1.5, 2.0, 0.0];
       for (const t of ts) {
         backend.render(evaluate(scene, mod.timeline, t));

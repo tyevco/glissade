@@ -37,6 +37,14 @@ export {
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 
 export {
+  breakLines,
+  quantize,
+  estimatingMeasurer,
+  type TextMeasurer,
+  type TextMetricsLite,
+} from './text.js';
+
+export {
   createScene,
   bindScene,
   evaluate,

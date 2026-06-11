@@ -19,6 +19,7 @@ import {
   type DisplayListBuilder,
   type FilterSpec,
 } from './displayList.js';
+import { type TextMeasurer } from './text.js';
 import { fromTRS, multiply, matEquals, IDENTITY, type Mat2x3 } from './matrix.js';
 
 export interface EvalContext {
@@ -26,6 +27,8 @@ export interface EvalContext {
   readonly time: number;
   /** Derived: round(time * fps) when the timeline carries an fps advisory; -1 otherwise. */
   readonly frame: number;
+  /** Injected by mount()/CLI/exporters (§3.2): the active backend's measurer. */
+  readonly measurer: TextMeasurer;
 }
 
 /** A property initializer: a value, or a computed source (§2.1). */

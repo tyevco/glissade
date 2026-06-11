@@ -136,11 +136,23 @@ export async function exportVideo(
 
   const canvas = new OffscreenCanvas(w, h);
   const backend = new Canvas2DBackend(canvas);
+  scene.setTextMeasurer(backend); // §3.2
 
   // Open and register timeline assets (§3.8); video sources warm on demand below.
   const videoSources = new Map<string, VideoFrameSource>();
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
-    if (ref.kind === 'image') {
+    if (ref.kind === 'font') {
+      // frame-exact export awaits every declared face before frame 0 (§3.6)
+      const face = new FontFace(assetId, `url(${ref.url})`);
+      // FontFaceSet lives on document.fonts (main thread) or self.fonts (worker)
+      const g = globalThis as unknown as {
+        document?: { fonts?: { add(f: FontFace): void } };
+        fonts?: { add(f: FontFace): void };
+      };
+      const fontSet = g.document?.fonts ?? g.fonts;
+      fontSet?.add(face);
+      await face.load();
+    } else if (ref.kind === 'image') {
       const resp = await fetch(ref.url);
       if (!resp.ok) throw new Error(`image asset fetch failed (${resp.status}): ${ref.url}`);
       backend.setImageAsset(assetId, await createImageBitmap(await resp.blob()));

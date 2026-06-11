@@ -25,6 +25,7 @@ export function mount(
 ): Mounted {
   const compiled = compileTimeline(doc);
   const backend = new Canvas2DBackend(canvas);
+  scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
   const player = createPlayer(
     { playhead: scene.playhead, duration: compiled.duration, markers: compiled.markers },
     opts,
@@ -42,6 +43,18 @@ export function mount(
     });
   };
   const unsubscribe = scene.playhead.subscribe(schedule);
+
+  // explicit fonts (§3.6): register declared font assets; realtime embeds
+  // paint immediately and re-render when each face arrives (the export
+  // paths await instead — frame-exactness lives there)
+  if (typeof FontFace !== 'undefined') {
+    for (const [family, ref] of Object.entries(doc.assets ?? {})) {
+      if (ref.kind !== 'font') continue;
+      const face = new FontFace(family, `url(${ref.url})`);
+      (document.fonts as unknown as { add(f: FontFace): void }).add(face);
+      void face.load().then(() => renderNow(), () => undefined);
+    }
+  }
 
   renderNow(); // first paint at the current playhead
   if (opts.autoplay) player.play();

@@ -15,6 +15,7 @@ import {
   type Timeline,
 } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
+import { estimatingMeasurer, type TextMeasurer } from './text.js';
 import { type BindablePropTarget, type EvalContext, Node } from './node.js';
 import { Group } from './nodes.js';
 
@@ -25,6 +26,12 @@ export interface Scene {
   /** Per-scene playhead; players and evaluate() write it. */
   readonly playhead: Playhead;
   resolveTarget(target: string): BindablePropTarget | undefined;
+  /**
+   * Inject the active backend's TextMeasurer (§3.2) so line breaking always
+   * measures with the rasterizer that will draw. Defaults to an estimator.
+   */
+  setTextMeasurer(measurer: TextMeasurer): void;
+  readonly textMeasurer: TextMeasurer;
 }
 
 export class DuplicateNodeIdError extends Error {
@@ -63,6 +70,7 @@ export function createScene(init: SceneInit): Scene {
   const nodes = new Map<string, Node>();
   indexNodes(root, nodes);
   const playhead = createPlayhead();
+  let measurer: TextMeasurer = estimatingMeasurer;
   return {
     root,
     nodes,
@@ -73,6 +81,12 @@ export function createScene(init: SceneInit): Scene {
       if (slash < 0) return undefined;
       const node = nodes.get(target.slice(0, slash));
       return node?.resolveTarget(target.slice(slash + 1));
+    },
+    setTextMeasurer: (m) => {
+      measurer = m;
+    },
+    get textMeasurer() {
+      return measurer;
     },
   };
 }
@@ -110,7 +124,11 @@ export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
 export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList {
   bindScene(scene, doc);
   const fps = doc.fps;
-  const ctx: EvalContext = { time: t, frame: fps !== undefined ? Math.round(t * fps) : -1 };
+  const ctx: EvalContext = {
+    time: t,
+    frame: fps !== undefined ? Math.round(t * fps) : -1,
+    measurer: scene.textMeasurer,
+  };
   return evaluateAt(scene.playhead, t, () => {
     const out = createDisplayListBuilder(scene.size);
     scene.root.emit(out, ctx);

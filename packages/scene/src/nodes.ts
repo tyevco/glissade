@@ -6,6 +6,7 @@
 import { signal, type BindableSignal } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
+import { breakLines, quantize } from './text.js';
 
 export class Group extends Node {
   readonly children: Node[];
@@ -249,6 +250,10 @@ export interface TextProps extends NodeProps {
   fontWeight?: number;
   /** Horizontal alignment about the node position; default 'left'. */
   align?: 'left' | 'center' | 'right';
+  /** Wrap width in px; unset = no wrapping (explicit \n still breaks). */
+  width?: PropInit<number>;
+  /** Line height as a multiple of fontSize; default 1.25. */
+  lineHeight?: number;
 }
 
 export class Text extends Node {
@@ -258,6 +263,8 @@ export class Text extends Node {
   readonly fontFamily: string;
   readonly fontWeight: number;
   readonly align: 'left' | 'center' | 'right';
+  readonly width: BindableSignal<number>;
+  readonly lineHeight: number;
 
   constructor(props: TextProps = {}) {
     super(props);
@@ -267,24 +274,33 @@ export class Text extends Node {
     this.fontFamily = props.fontFamily ?? 'sans-serif';
     this.fontWeight = props.fontWeight ?? 400;
     this.align = props.align ?? 'left';
+    this.width = initProp(signal(0), props.width);
+    this.lineHeight = props.lineHeight ?? 1.25;
+    this.registerTarget('width', this.width);
     this.registerTarget('text', this.text);
     this.registerTarget('fill', this.fill);
     this.registerTarget('fontSize', this.fontSize);
   }
 
-  protected draw(out: DisplayListBuilder): void {
+  protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
     const text = this.text();
     if (!text) return;
     const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
-    // M1: single line at the node origin; line breaking lands with TextMeasurer (§3.6)
-    out.push({
-      op: 'fillText',
-      text,
-      font,
-      paint: { kind: 'color', color: this.fill() },
-      x: 0,
-      y: 0,
-      ...(this.align !== 'left' ? { align: this.align } : {}),
-    });
+    const maxWidth = this.width();
+    // line breaking is ours (§3.6), measured by the injected backend measurer
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, ctx.measurer);
+    const step = quantize(font.size * this.lineHeight);
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i]) continue;
+      out.push({
+        op: 'fillText',
+        text: lines[i]!,
+        font,
+        paint: { kind: 'color', color: this.fill() },
+        x: 0,
+        y: i * step,
+        ...(this.align !== 'left' ? { align: this.align } : {}),
+      });
+    }
   }
 }
