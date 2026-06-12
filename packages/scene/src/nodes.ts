@@ -6,7 +6,7 @@
 import { signal, type BindableSignal, type PathValue } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
-import { breakLines, estimatingMeasurer, quantize, segmentWords, type TextMeasurer } from './text.js';
+import { breakLines, fallbackMeasurer, quantize, segmentWords, type TextMeasurer } from './text.js';
 
 /** Rounded-rect path segments — Rect's outline, shared with Highlight. */
 export function roundedRectSegs(x: number, y: number, w: number, h: number, r: number): PathSeg[] {
@@ -421,7 +421,7 @@ export class Text extends Node {
 
   /** Text draws from a baseline origin at its align edge, not a center (§3.6). */
   override drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const size = this.intrinsicSize(m);
     const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
     const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, m)[0] ?? '';
@@ -436,7 +436,7 @@ export class Text extends Node {
    * text dimensions (e.g. underline width = () => title.measuredSize().w).
    */
   measuredSize(measurer?: TextMeasurer): { w: number; h: number } {
-    return this.intrinsicSize(measurer ?? this.measurerSource?.() ?? estimatingMeasurer);
+    return this.intrinsicSize(measurer ?? this.measurerSource?.() ?? fallbackMeasurer());
   }
 
   /**
@@ -447,7 +447,7 @@ export class Text extends Node {
    * reveals, selections.
    */
   lineBoxes(measurer?: TextMeasurer): LineBox[] {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
@@ -475,7 +475,7 @@ export class Text extends Node {
    * karaoke; draw your own rects for sub-line multi-color token work.
    */
   wordBoxes(measurer?: TextMeasurer): WordBox[] {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
@@ -493,11 +493,17 @@ export class Text extends Node {
       const h = met.ascent + met.descent;
       let prefix = '';
       for (const seg of segmentWords(line)) {
-        const before = prefix === '' ? 0 : m.measureText(prefix, font).width;
+        const start = prefix;
         prefix += seg;
-        if (seg.trim() === '') continue; // whitespace advances, but has no ink
-        const after = m.measureText(prefix, font).width;
-        boxes.push({ text: seg, line: i, x: lineX + before, y, w: after - before, h });
+        const word = seg.trim();
+        if (word === '') continue; // whitespace advances, but has no ink
+        // punctuation gluing can fold ADJACENT whitespace into a segment
+        // (' $' from '… $48,200'); the box covers only the ink, so trim the
+        // surrounding whitespace advance off both ends
+        const lead = seg.length - seg.trimStart().length;
+        const before = m.measureText(start + seg.slice(0, lead), font).width;
+        const after = m.measureText(start + seg.trimEnd(), font).width;
+        boxes.push({ text: word, line: i, x: lineX + before, y, w: after - before, h });
       }
     }
     return boxes;

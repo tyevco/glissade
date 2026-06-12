@@ -21,7 +21,7 @@ import {
   type FilterSpec,
   type ShaderRef,
 } from './displayList.js';
-import { estimatingMeasurer, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import { fromTRS, multiply, matEquals, IDENTITY, type Mat2x3 } from './matrix.js';
 
 /**
@@ -221,7 +221,7 @@ export abstract class Node {
    * left/center/right baseline origin; Path from author-positioned bounds.
    */
   drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const size = this.intrinsicSize(m) ?? { w: 0, h: 0 };
     return { x: -size.w / 2, y: -size.h / 2 };
   }
@@ -232,7 +232,7 @@ export abstract class Node {
    * (−ax·w, −ay·h); the center default reproduces (−w/2, −h/2).
    */
   flowOffset(measurer?: TextMeasurer): { x: number; y: number } {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const d = this.drawOffset(m);
     const [sx, sy] = this.anchorShift(m);
     return { x: d.x + sx, y: d.y + sy };
@@ -250,7 +250,7 @@ export abstract class Node {
   protected anchorShift(measurer?: TextMeasurer): Vec2 {
     if (!this.hasAnchor) return [0, 0];
     const [ax, ay] = this.anchor;
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const size = this.intrinsicSize(m);
     if (!size) {
       if (!this.#warnedAnchor) {

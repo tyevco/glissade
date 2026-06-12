@@ -9,8 +9,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setDevWarning } from '@glissade/core';
 import { applyToPoint, fromTRS, matEquals } from '../src/matrix.js';
 import { Group, Rect, Text, type LineBox } from '../src/nodes.js';
+import { createScene } from '../src/scene.js';
 import { highlight, Highlight } from '../src/highlight.js';
-import { estimatingMeasurer } from '../src/text.js';
+import { estimatingMeasurer, setDefaultMeasurer } from '../src/text.js';
 import type { DisplayListBuilder } from '../src/displayList.js';
 import type { EvalContext } from '../src/node.js';
 
@@ -237,5 +238,41 @@ describe('Text.wordBoxes', () => {
   it('blank lines keep their slot in the numbering', () => {
     const t = new Text({ text: 'ab\n\ncd', fontSize: 10 });
     expect(t.wordBoxes(estimatingMeasurer).map((b) => b.line)).toEqual([0, 2]);
+  });
+});
+
+describe('wordBoxes: whitespace glue trim (downstream report #3)', () => {
+  it("'$48,200' boxes start at the '$', not the preceding space", () => {
+    const t = new Text({ text: 'Budget approved: $48,200 per year', fontSize: 10 });
+    const boxes = t.wordBoxes(estimatingMeasurer);
+    const dollar = boxes.find((b) => b.text.startsWith('$'))!;
+    expect(dollar.text).toBe('$'); // no leading space in the text either
+    // 'Budget approved: ' = 17 chars → 88.4 at 5.2/char
+    expect(dollar.x).toBeCloseTo(17 * 5.2, 9);
+    for (const b of boxes) expect(b.text).toBe(b.text.trim());
+  });
+});
+
+describe('setDefaultMeasurer: factory-time measurement', () => {
+  afterEach(() => setDefaultMeasurer(null));
+
+  it('Text pulls use the default before any scene exists; estimator only as last resort', () => {
+    const tenPerChar = { measureText: (s: string) => ({ width: s.length * 10, ascent: 9, descent: 1 }) };
+    setDefaultMeasurer(tenPerChar);
+    const t = new Text({ text: 'hello', fontSize: 10 });
+    expect(t.measuredSize().w).toBe(50);
+    setDefaultMeasurer(null);
+    expect(t.measuredSize().w).toBe(26); // estimating fallback
+  });
+
+  it('un-injected scenes resolve through the default; injected backends still win', () => {
+    const tenPerChar = { measureText: (s: string) => ({ width: s.length * 10, ascent: 9, descent: 1 }) };
+    setDefaultMeasurer(tenPerChar);
+    const t = new Text({ id: 'label', text: 'hello', fontSize: 10 });
+    const scene = createScene({ size: { w: 100, h: 100 }, children: [t] });
+    expect(scene.textMeasurer.measureText('hello', { family: 'x', size: 10 }).width).toBe(50);
+    expect(t.measuredSize().w).toBe(50); // measurerSource chain sees it too
+    scene.setTextMeasurer(estimatingMeasurer);
+    expect(t.measuredSize().w).toBe(26); // the injected measurer wins
   });
 });

@@ -6,7 +6,7 @@
  * Text node — they live in the timeline JSON and golden-frame CI covers them.
  */
 
-import { key, track, type AssetRef, type AudioClip, type Track } from '@glissade/core';
+import { key, track, type AssetRef, type AudioClip, type Key, type Track } from '@glissade/core';
 import { glow, Text, type FilterSpec } from '@glissade/scene';
 
 // ---- the authored script (committed next to the scene module) ----
@@ -187,6 +187,71 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
     position: [size.w / 2, Math.round(size.h * (1 - inset))],
     filters: style.filters ?? glow('#000000cc', 3, 1),
   });
+}
+
+// ---- ducking: a music-bed gain envelope derived from the narration ----
+
+export interface DuckOptions {
+  /** gain while narration speaks; default 0.25 */
+  duck?: number;
+  /** gain elsewhere; default 1 */
+  base?: number;
+  /** ramp-down seconds before a segment starts; default 0.15 */
+  attack?: number;
+  /** ramp-up seconds after a segment ends; default 0.4 */
+  release?: number;
+  /**
+   * Windows whose gap (after attack/release) is smaller than this stay
+   * ducked through — no pumping between close segments. Default 0.5.
+   */
+  mergeGap?: number;
+  /** the music clip's `at` on the timeline; gain keys are CLIP-local. Default 0. */
+  clipAt?: number;
+}
+
+/**
+ * The bed-ducking envelope every narrated video needs: duck windows are the
+ * narration segments, with attack/release ramps and near-window merging.
+ * Pure function of the committed manifest — re-narrate and the ducking
+ * re-flows. Returns a keys-only gain envelope for AudioClip.gain.
+ */
+export function duckEnvelope(timing: NarrationTiming, opts: DuckOptions = {}): { keys: Key<number>[] } {
+  const duck = opts.duck ?? 0.25;
+  const base = opts.base ?? 1;
+  const attack = opts.attack ?? 0.15;
+  const release = opts.release ?? 0.4;
+  const mergeGap = opts.mergeGap ?? 0.5;
+  const clipAt = opts.clipAt ?? 0;
+
+  // merge segments whose silence would be shorter than ramps + mergeGap
+  const windows: { start: number; end: number }[] = [];
+  for (const s of [...timing.segments].sort((a, b) => a.start - b.start)) {
+    const last = windows[windows.length - 1];
+    if (last && s.start - last.end < attack + release + mergeGap) {
+      last.end = Math.max(last.end, s.start + s.duration);
+    } else {
+      windows.push({ start: s.start, end: s.start + s.duration });
+    }
+  }
+
+  const keys: Key<number>[] = [];
+  for (const w of windows) {
+    const rampStart = w.start - attack - clipAt;
+    const down = w.start - clipAt;
+    const up = w.end - clipAt;
+    const rampEnd = w.end + release - clipAt;
+    if (rampEnd <= 0) continue; // window entirely before the clip starts
+    // hold base until the ramp; clamp pre-clip ramps to an immediate duck
+    if (rampStart > 0) keys.push(key(rampStart, base));
+    if (down > 0) keys.push(key(down, duck));
+    else if (keys.length === 0) keys.push(key(0, duck));
+    keys.push(key(Math.max(up, 1e-6), duck));
+    keys.push(key(rampEnd, base));
+  }
+  if (keys.length === 0) keys.push(key(0, base));
+  // a leading base key so the bed starts at full level before the first ramp
+  if (keys[0]!.t > 0) keys.unshift(key(0, base));
+  return { keys };
 }
 
 // ---- sidecar exports: cues match the burned-in track by construction ----

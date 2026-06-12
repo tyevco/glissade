@@ -79,3 +79,14 @@ describe.runIf(ffmpegAvailable())('end-to-end audio mux', () => {
     expect(parseFloat(info.format.duration)).toBeCloseTo(3, 0);
   }, 60_000);
 });
+
+describe('keys-only gain envelopes (downstream report #4)', () => {
+  it('a bare { keys } works — no meaningless target string required', () => {
+    const mix = planAudioMix(
+      [{ asset: { kind: 'audio', url: 'tone.wav' }, at: 0, gain: { keys: [key(0, 1), key(2, 0)] } }],
+      '/x/mod.ts',
+      3,
+    );
+    expect(mix!.filterComplex).toContain('volume=');
+  });
+});

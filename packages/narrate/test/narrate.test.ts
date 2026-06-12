@@ -5,10 +5,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { sampleTrack, type Track } from '@glissade/core';
+import { sampleTrack, type AudioClip, type Track } from '@glissade/core';
 import {
   captionNode,
   captionTrack,
+  duckEnvelope,
   narration,
   NarrationError,
   toSrt,
@@ -161,5 +162,45 @@ describe('sidecar formats', () => {
     for (const s of TIMING.segments) {
       expect(tr.keys.some((k) => k.t === s.start && k.value === s.text)).toBe(true);
     }
+  });
+});
+
+describe('duckEnvelope: the music-bed gain from the narration manifest', () => {
+  // TIMING gaps (0.35, 0.4) are inside the default merge threshold → ONE window
+  it('default options merge close segments into one duck window', () => {
+    const env = duckEnvelope(TIMING);
+    expect(env.keys).toEqual([
+      { t: 0, value: 1 },
+      { t: 0.1, value: 1 }, // 0.25 − attack 0.15
+      { t: 0.25, value: 0.25 },
+      { t: 5.5, value: 0.25 },
+      { t: 5.9, value: 1 }, // 5.5 + release 0.4
+    ]);
+  });
+
+  it('tight ramps + mergeGap 0 keep the windows separate (three duck dips)', () => {
+    const env = duckEnvelope(TIMING, { attack: 0.05, release: 0.05, mergeGap: 0 });
+    const dips = env.keys.filter((k) => k.value === 0.25);
+    expect(dips).toHaveLength(6); // down+up per window
+    for (let i = 1; i < env.keys.length; i++) {
+      expect(env.keys[i]!.t).toBeGreaterThan(env.keys[i - 1]!.t);
+    }
+  });
+
+  it('clipAt shifts keys to clip-local time; pre-clip ramps clamp to an immediate duck', () => {
+    const env = duckEnvelope(TIMING, { clipAt: 2 });
+    expect(env.keys[0]).toEqual({ t: 0, value: 0.25 }); // already ducked when the clip starts
+    const last = env.keys[env.keys.length - 1]!;
+    expect(last.t).toBeCloseTo(3.9, 9); // 5.5 + release − clipAt
+    expect(last.value).toBe(1);
+  });
+
+  it('plugs straight into AudioClip.gain (keys-only envelopes are accepted)', () => {
+    const clip: AudioClip = {
+      asset: { kind: 'audio', url: 'bed.wav' },
+      at: 0,
+      gain: duckEnvelope(TIMING, { duck: 0.3 }),
+    };
+    expect(clip.gain!.keys.length).toBeGreaterThan(0);
   });
 });

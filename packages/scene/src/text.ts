@@ -28,6 +28,25 @@ export function quantize(v: number): number {
  * (e.g. evaluating for IR-level tests). Deterministic but not metrically
  * faithful; mount(), the CLI, and exporters always inject the real one.
  */
+let defaultMeasurer: TextMeasurer | null = null;
+
+/**
+ * Process-wide fallback measurer for FACTORY-TIME measurement — component
+ * factories run before any scene exists, so Text pulls (measuredSize,
+ * lineBoxes, wordBoxes) and createScene fall back here before the estimator.
+ * Node consumers: `setDefaultMeasurer(createMeasurer({ fonts }))` from
+ * @glissade/backend-skia gives factory code the rasterizer's real metrics.
+ * Scene-injected measurers (mount/CLI/golden harness) always win.
+ */
+export function setDefaultMeasurer(m: TextMeasurer | null): void {
+  defaultMeasurer = m;
+}
+
+/** The default-or-estimating chain end; internal fallback for measurer pulls. */
+export function fallbackMeasurer(): TextMeasurer {
+  return defaultMeasurer ?? estimatingMeasurer;
+}
+
 export const estimatingMeasurer: TextMeasurer = {
   measureText(text, font) {
     return {

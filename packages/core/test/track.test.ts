@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { key, sampleTrack, track, TrackValidationError, type Track, type Vec2 } from '../src/index.js';
+import { key, sampleTrack, spring, springTo, track, TrackValidationError, type Track, type Vec2 } from '../src/index.js';
 
 const demo = () =>
   track('circle/opacity', 'number', [
@@ -84,5 +84,28 @@ describe('sampling (§2.4)', () => {
     const c = track('a/fill', 'color', [key(0, '#000000'), key(1, '#ffffff')]);
     expect(sampleTrack(c, 0)).toBe('#000000');
     expect(sampleTrack(c, 1)).toBe('#ffffff');
+  });
+});
+
+describe('springTo (§2.7 beat-anchored authoring)', () => {
+  const cfg = { stiffness: 120, damping: 14 };
+
+  it('returns the [launch, settle] pair with the duration arithmetic done', () => {
+    const d = spring.duration(cfg);
+    const [launch, settle] = springTo(3, 0, 100, cfg);
+    expect(launch).toEqual({ t: 3 - d, value: 0 });
+    expect(settle.t).toBe(3);
+    expect(settle.value).toBe(100);
+    expect(settle.ease).toEqual(spring(cfg));
+  });
+
+  it('the pair spreads straight into a valid raw track', () => {
+    const tr = track('x/width', 'number', [...springTo(3, 0, 100, cfg)]);
+    expect(tr.keys).toHaveLength(2);
+    expect(sampleTrack(tr, 3)).toBeCloseTo(100, 6);
+  });
+
+  it('an endT earlier than the settle duration fails with a clear message', () => {
+    expect(() => springTo(0.1, 0, 1, cfg)).toThrow(/needs .*s to settle/);
   });
 });

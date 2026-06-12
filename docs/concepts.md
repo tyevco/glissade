@@ -40,7 +40,17 @@ new Rect({ anchor: 'left', position: [40, 60], height: 22 });
 // track('bar/width', …) — the left edge stays pinned, growth goes right
 ```
 
-Text exposes its own layout, so dimensions never need hand-calculation: `text.measuredSize()` is the wrapped `{w, h}` (the same numbers Layout flows with), `text.lineBoxes()` returns per-line ink boxes, and `text.wordBoxes()` goes one level deeper — per-word boxes within each laid-out line, from the same segmentation the breaker flows (Intl.Segmenter boundaries, punctuation glued), positioned by cumulative prefix advances so word widths sum exactly to the line. All pull-based, re-measuring when text, font, or wrap width animate, using whatever measurer the active backend injected. For sub-line, multi-color token work (syntax-style highlights, per-word emphasis), draw your own rects from `wordBoxes()`; for word-synced karaoke, pair them index-wise with a narration manifest's `segments[].words` timestamps.
+Text exposes its own layout, so dimensions never need hand-calculation: `text.measuredSize()` is the wrapped `{w, h}` (the same numbers Layout flows with), `text.lineBoxes()` returns per-line ink boxes, and `text.wordBoxes()` goes one level deeper — per-word boxes within each laid-out line, from the same segmentation the breaker flows (Intl.Segmenter boundaries, punctuation glued), positioned by cumulative prefix advances so word widths sum exactly to the line. All pull-based, re-measuring when text, font, or wrap width animate, using whatever measurer the active backend injected. For FACTORY-TIME measurement (component factories run before any scene exists), bless the process once:
+
+```ts
+import { createMeasurer } from '@glissade/backend-skia';
+import { setDefaultMeasurer } from '@glissade/scene';
+setDefaultMeasurer(createMeasurer({ fonts: { 'DejaVu Sans': fontPath } }));
+// every Text pull now measures with the rasterizer's real metrics;
+// scene-injected measurers (mount, gs render, goldens) still win
+```
+
+For sub-line, multi-color token work (syntax-style highlights, per-word emphasis), draw your own rects from `wordBoxes()`; for word-synced karaoke, pair them index-wise with a narration manifest's `segments[].words` timestamps.
 
 `highlight(text, opts)` builds on those: a marker-style highlight node (place it as the sibling *before* the text) that sweeps per-line rounded rects across the laid-out lines via one 0→1 `progress` track, in reading order at width-weighted constant speed. `blend: 'multiply'` gives real highlighter ink. For karaoke, key `progress` from the word timestamps in a narration timing manifest.
 

@@ -117,3 +117,17 @@ track('idx/width', 'number', seg.words!.map((w, i) => key(w.start, i, { interp: 
 ```
 
 For a sweeping (rather than jumping) karaoke marker, drive `highlight()`'s `progress` with keys at word starts instead, valued at each word's cumulative width share.
+
+## Ducking the music bed
+
+`duckEnvelope(timing, opts)` derives the bed-ducking gain from the narration manifest — duck windows are the segments, with attack/release ramps and near-window merging (no pumping between close segments). Re-narrate and the ducking re-flows:
+
+```ts
+const bed: AudioClip = {
+  asset: { kind: 'audio', url: './stems/bed.wav' },
+  at: 0,
+  gain: duckEnvelope(timing, { duck: 0.25, attack: 0.15, release: 0.4 }),
+};
+```
+
+Gain envelopes are keys-only (`{ keys }`); a full `track()` still works but its target string carries no meaning on a clip.

@@ -149,13 +149,17 @@ async function main(): Promise<void> {
       ...(flags.has('force') ? { force: true } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       onProgress: (n, total) => {
-        if (n % 30 === 0 || n === total) {
-          process.stderr.write(`\rrendering ${n}/${total} frames`);
+        // TTY: live \r line; piped/CI: sparse newline-terminated updates
+        if (process.stderr.isTTY) {
+          if (n % 30 === 0 || n === total) process.stderr.write(`\rrendering ${n}/${total} frames`);
+        } else if (n % 300 === 0 || n === total) {
+          process.stderr.write(`rendering ${n}/${total} frames\n`);
         }
       },
     });
     const secs = ((performance.now() - started) / 1000).toFixed(2);
-    process.stderr.write(`\rrendered ${result.frames} frames in ${secs}s → ${result.out}\n`);
+    const cr = process.stderr.isTTY ? '\r' : '';
+    process.stderr.write(`${cr}rendered ${result.frames} frames in ${secs}s → ${result.out}\n`);
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
   }

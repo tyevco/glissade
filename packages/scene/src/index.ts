@@ -72,6 +72,7 @@ export {
   segmentWords,
   quantize,
   estimatingMeasurer,
+  setDefaultMeasurer,
   type TextMeasurer,
   type TextMetricsLite,
 } from './text.js';

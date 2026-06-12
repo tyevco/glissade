@@ -12,7 +12,7 @@ import { signal, type BindableSignal } from '@glissade/core';
 import { type DisplayListBuilder } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { Group } from './nodes.js';
-import { estimatingMeasurer, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import {
   requireLayoutEngine,
   setLayoutEngine,
@@ -92,7 +92,7 @@ export class Layout extends Group {
    * The measurer defaults to the scene-injected one (estimating pre-scene).
    */
   computedSize(measurer?: TextMeasurer): { w: number; h: number } {
-    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     return this.#compute(m).size;
   }
 

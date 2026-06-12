@@ -6,13 +6,14 @@
  * plus headless concerns (PNG encode, sync readPixels, text measurement).
  */
 
-import { createCanvas, Path2D, type Canvas, type Image } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, Path2D, type Canvas, type Image } from '@napi-rs/canvas';
 import {
   Raster2D,
   fontString,
   type Ctx2DLike,
   type DisplayList,
   type FontSpec,
+  type TextMeasurer,
   type TextMetricsLite,
   type VideoFrameSource,
 } from '@glissade/scene';
@@ -20,6 +21,24 @@ import {
 type Drawable = Canvas | Image;
 
 export type { TextMetricsLite } from '@glissade/scene';
+
+/**
+ * Factory-time measurement (§3.6): component factories run before any scene
+ * exists, so give the process a real measurer up front —
+ *   setDefaultMeasurer(createMeasurer({ fonts: { 'DejaVu Sans': fontPath } }))
+ * Text pulls (measuredSize/lineBoxes/wordBoxes) and un-injected scenes then
+ * measure with the SAME rasterizer metrics gs render and the golden harness
+ * use; scene-injected measurers still win. The backing canvas is lazy.
+ */
+export function createMeasurer(opts: { fonts?: Record<string, string> } = {}): TextMeasurer {
+  for (const [family, path] of Object.entries(opts.fonts ?? {})) {
+    GlobalFonts.registerFromPath(path, family);
+  }
+  let backend: SkiaBackend | null = null;
+  return {
+    measureText: (text, font) => (backend ??= new SkiaBackend(8, 8)).measureText(text, font),
+  };
+}
 
 export class SkiaBackend {
   private readonly canvas: Canvas;

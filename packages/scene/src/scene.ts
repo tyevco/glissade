@@ -15,7 +15,7 @@ import {
   type Timeline,
 } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
-import { estimatingMeasurer, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import { type BindablePropTarget, type EvalContext, Node } from './node.js';
 import { Group } from './nodes.js';
 
@@ -70,8 +70,10 @@ export function createScene(init: SceneInit): Scene {
   const root = new Group({ id: '__root', children: init.children });
   const nodes = new Map<string, Node>();
   const playhead = createPlayhead();
-  let measurer: TextMeasurer = estimatingMeasurer;
-  indexNodes(root, nodes, () => measurer);
+  // un-injected scenes fall back through the process default (factory-time
+  // measurement, §3.6) before the estimator
+  let measurer: TextMeasurer | null = null;
+  indexNodes(root, nodes, () => measurer ?? fallbackMeasurer());
   return {
     root,
     nodes,
@@ -87,7 +89,7 @@ export function createScene(init: SceneInit): Scene {
       measurer = m;
     },
     get textMeasurer() {
-      return measurer;
+      return measurer ?? fallbackMeasurer();
     },
   };
 }

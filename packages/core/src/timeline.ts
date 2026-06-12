@@ -21,6 +21,15 @@ export interface AssetRef {
   url: string;
 }
 
+/**
+ * A gain envelope: keys of linear gain multipliers on the clip's local time
+ * axis. A full Track satisfies it structurally, but its target/type carry no
+ * meaning here — `{ keys: [...] }` is all a clip needs.
+ */
+export interface GainEnvelope {
+  keys: Key[];
+}
+
 /** Audio is timeline metadata, never a render product (§5.3). */
 export interface AudioClip {
   asset: AssetRef; // kind 'audio'
@@ -28,8 +37,7 @@ export interface AudioClip {
   at: number;
   /** seconds within the source asset */
   trim?: { start: number; end: number };
-  /** gain envelope: a Track whose keys are linear gain multipliers */
-  gain?: Track;
+  gain?: GainEnvelope;
   playbackRate?: number;
 }
 

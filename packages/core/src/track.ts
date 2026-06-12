@@ -12,7 +12,7 @@ import {
   type EaseSpec,
   type EasingFn,
 } from './easing.js';
-import { springEasing, springEasingDerivative } from './spring.js';
+import { spring as springFactory, springEasing, springEasingDerivative, type SpringConfig } from './spring.js';
 import { emitDevWarning } from './devWarning.js';
 import { getValueType, type ValueTypeId } from './valueTypes.js';
 
@@ -84,6 +84,24 @@ export function key<T>(t: number, value: T, easeOrOpts?: EaseSpec | KeyOpts<T>):
   if (opts.id !== undefined) k.id = opts.id;
   if (opts.derived !== undefined) k.derived = opts.derived;
   return k;
+}
+
+/**
+ * The settle-ON-the-beat helper: a spring key must sit at prev.t +
+ * spring.duration(cfg) (§2.7), so beat-anchored authoring otherwise means
+ * hand-computing the launch time. springTo returns the [launch, settle] key
+ * pair with the arithmetic done — spread it into a raw track():
+ *   track('x/width', 'number', [...springTo(beats.start('drop'), 0, 320, cfg)])
+ */
+export function springTo<T>(endT: number, from: T, to: T, cfg: SpringConfig): [Key<T>, Key<T>] {
+  const d = springFactory.duration(cfg);
+  if (endT - d < 0) {
+    throw new TrackValidationError(
+      'springTo',
+      `this spring needs ${d.toFixed(3)}s to settle — endT must be ≥ its duration (got ${endT})`,
+    );
+  }
+  return [key(endT - d, from), key(endT, to, springFactory(cfg))];
 }
 
 export function track<T>(

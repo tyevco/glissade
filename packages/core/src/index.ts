@@ -75,6 +75,7 @@ export {
 export {
   key,
   track,
+  springTo,
   sampleTrack,
   velocityAt,
   validateTrack,
@@ -97,6 +98,7 @@ export {
   type ChildEntry,
   type Marker,
   type AssetRef,
+  type GainEnvelope,
   type AudioClip,
   type Json,
   type DevWarning,

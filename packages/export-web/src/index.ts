@@ -20,7 +20,7 @@ import {
   type VideoCodec,
   type AudioCodec,
 } from 'mediabunny';
-import { compileTimeline, sampleTrack, type AudioClip, type Timeline } from '@glissade/core';
+import { compileTimeline, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
 import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { MediabunnyVideoFrameSource } from './videoSource.js';
@@ -116,9 +116,11 @@ export async function mixAudio(clips: AudioClip[], duration: number, sampleRate 
       // linear-ramp automation from gain-track keys (clip-local seconds);
       // eased keys are approximated linearly, mirroring the CLI mix
       const keys = clip.gain.keys;
+      // gain envelopes are keys-only; build a sampling track around them
+      const gainTrack: Track = { target: 'clip/gain', type: 'number', keys };
       gainNode.gain.setValueAtTime(Number(keys[0]!.value), Math.max(0, clip.at));
       for (const k of keys) {
-        gainNode.gain.linearRampToValueAtTime(Number(sampleTrack(clip.gain, k.t)), clip.at + k.t);
+        gainNode.gain.linearRampToValueAtTime(Number(sampleTrack(gainTrack, k.t)), clip.at + k.t);
       }
       tail.connect(gainNode);
       tail = gainNode;
