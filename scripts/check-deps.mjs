@@ -22,6 +22,8 @@ const ALLOWED = {
   react: ['core', 'scene', 'backend-canvas2d', 'player'],
   'vite-plugin': ['core'],
   'export-web': ['core', 'scene', 'backend-canvas2d'],
+  // §3.7: browser-only shader runner — cli/backend-skia must NEVER appear in its dependents
+  'effects-webgpu': ['core', 'scene', 'backend-canvas2d'],
   // §C.6: the interactivity layer is opt-in — nothing in the linear pipeline may import it
   interact: ['core', 'scene', 'player'],
   lottie: ['core', 'scene'],

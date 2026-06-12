@@ -52,3 +52,32 @@ describe('showcase gallery', () => {
     });
   }
 });
+
+describe('caps.shaders (§3.7): headless degradation, never GPU', () => {
+  it('a ShaderEffect renders as passthrough with one warning on Skia', async () => {
+    const { setDevWarning, timeline } = await import('@glissade/core');
+    const { createScene, Circle, ShaderEffect } = await import('@glissade/scene');
+    const warnings: string[] = [];
+    setDevWarning((m) => warnings.push(m));
+    const scene = createScene({
+      size: { w: 60, h: 60 },
+      children: [
+        new ShaderEffect({
+          id: 'fx',
+          wgsl: '@fragment fn effect(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.0, 1.0); }',
+          children: [new Circle({ id: 'dot', radius: 20, fill: '#ff0000', position: [30, 30] })],
+        }),
+      ],
+    });
+    const backend = new SkiaBackend(60, 60);
+    backend.render(evaluate(scene, timeline({ duration: 1 }), 0));
+    backend.render(evaluate(scene, timeline({ duration: 1 }), 0.5));
+    // passthrough: the circle still drew (no GPU here, no crash, no blank)
+    const px = backend.readPixels();
+    const center = (30 * 60 + 30) * 4;
+    expect(px[center]).toBeGreaterThan(200); // red circle visible
+    // exactly one warning, naming the policy
+    expect(warnings.filter((w) => w.includes('ShaderEffect pass skipped')).length).toBe(1);
+    setDevWarning(() => {});
+  });
+});

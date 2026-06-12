@@ -20,6 +20,7 @@ const BUDGETS = {
   element: 5,
   interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
   'interact/audio': 2, // v2 §C.6: offline audio as a separate export ≤ 2 kB gz
+  'effects-webgpu': 4, // §3.7 browser-only shader runner (incl. built-in WGSL strings)
 };
 
 /** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */

@@ -18,6 +18,7 @@ import {
   type BlendMode,
   type DisplayListBuilder,
   type FilterSpec,
+  type ShaderRef,
 } from './displayList.js';
 import { type TextMeasurer } from './text.js';
 import { fromTRS, multiply, matEquals, IDENTITY, type Mat2x3 } from './matrix.js';
@@ -168,15 +169,29 @@ export abstract class Node {
     return this.opacity() < 1 || this.blend() !== 'source-over' || this.filters().length > 0;
   }
 
+  /** §3.7: a subtree-level shader pass; ShaderEffect overrides. */
+  protected groupShader(): ShaderRef | undefined {
+    return undefined;
+  }
+
   emit(out: DisplayListBuilder, ctx: EvalContext): void {
     const opacity = this.opacity();
     if (opacity <= 0) return;
     const local = this.localMatrix();
     const isIdentity = matEquals(local, IDENTITY);
-    const group = this.requiresGroup();
+    const shader = this.groupShader();
+    const group = this.requiresGroup() || shader !== undefined;
     out.push({ op: 'save' });
     if (!isIdentity) out.push({ op: 'transform', m: local });
-    if (group) out.push({ op: 'pushGroup', opacity, blend: this.blend(), filters: this.filters() });
+    if (group) {
+      out.push({
+        op: 'pushGroup',
+        opacity,
+        blend: this.blend(),
+        filters: this.filters(),
+        ...(shader !== undefined ? { shader } : {}),
+      });
+    }
     this.draw(out, ctx);
     if (group) out.push({ op: 'popGroup' });
     out.push({ op: 'restore' });

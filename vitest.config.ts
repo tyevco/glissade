@@ -16,6 +16,7 @@ export default defineConfig({
       '@glissade/cli': src('cli'),
       '@glissade/export-web': src('export-web'),
       '@glissade/interact': src('interact'),
+      '@glissade/effects-webgpu': src('effects-webgpu'),
       '@glissade/lottie': src('lottie'),
     },
   },

@@ -12,9 +12,26 @@ import {
   type DisplayList,
   type DrawCommand,
   type FontSpec,
+  type ShaderCaps,
+  type ShaderRef,
   type TextMetricsLite,
   type VideoFrameSource,
 } from '@glissade/scene';
+
+/**
+ * §3.7 shader runner seam: @glissade/effects-webgpu registers here at load
+ * time (the loadYogaLayoutEngine pattern). This package never imports GPU
+ * code — headless paths stay clean by construction.
+ */
+export interface ShaderRunner {
+  apply(layer: AnyCanvas, shader: ShaderRef, w: number, h: number): Drawable | null;
+}
+
+let shaderRunner: ShaderRunner | null = null;
+
+export function setShaderRunner(runner: ShaderRunner | null): void {
+  shaderRunner = runner;
+}
 
 type Drawable = Exclude<CanvasImageSource, SVGImageElement>;
 
@@ -27,15 +44,19 @@ export class Canvas2DBackend {
   private readonly target: AnyCanvas;
   private readonly raster: Raster2D<AnyCanvas, Path2D, Drawable>;
 
-  constructor(target: AnyCanvas) {
+  constructor(target: AnyCanvas, opts: { shaderCaps?: ShaderCaps } = {}) {
     this.target = target;
-    this.raster = new Raster2D<AnyCanvas, Path2D, Drawable>({
-      // one structural cast at the seam: the DOM context satisfies Ctx2DLike
-      // (fillStyle/getTransform widen to unknown); behavior is golden/SSIM-tested
-      context: (c) => this.context(c) as unknown as Ctx2DLike<Path2D, Drawable>,
-      createCanvas: (w, h) => new OffscreenCanvas(w, h),
-      newPath: () => new Path2D(),
-    });
+    this.raster = new Raster2D<AnyCanvas, Path2D, Drawable>(
+      {
+        // one structural cast at the seam: the DOM context satisfies Ctx2DLike
+        // (fillStyle/getTransform widen to unknown); behavior is golden/SSIM-tested
+        context: (c) => this.context(c) as unknown as Ctx2DLike<Path2D, Drawable>,
+        createCanvas: (w, h) => new OffscreenCanvas(w, h),
+        newPath: () => new Path2D(),
+        applyShader: (layer, shader, w, h) => shaderRunner?.apply(layer, shader, w, h) ?? null,
+      },
+      opts.shaderCaps ?? 'warn',
+    );
   }
 
   /** Register a decoded still (kind 'image' assets). */

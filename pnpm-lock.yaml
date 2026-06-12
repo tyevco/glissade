@@ -92,6 +92,19 @@ importers:
 
   packages/core: {}
 
+  packages/effects-webgpu:
+    dependencies:
+      '@glissade/backend-canvas2d':
+        specifier: workspace:*
+        version: link:../backend-canvas2d
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.40
+        version: 0.1.70
+
   packages/element:
     dependencies:
       '@glissade/backend-canvas2d':
@@ -115,6 +128,9 @@ importers:
       '@glissade/core':
         specifier: workspace:*
         version: link:../core
+      '@glissade/effects-webgpu':
+        specifier: workspace:*
+        version: link:../effects-webgpu
       '@glissade/export-web':
         specifier: workspace:*
         version: link:../export-web
@@ -1586,6 +1602,9 @@ packages:
 
   '@vueuse/shared@12.8.2':
     resolution: {integrity: sha512-dznP38YzxZoNloI0qpEfpkms8knDtaoQ6Y/sfS0L7Yki4zh40LFHEhur0odJC6xTHG5dxWVPiUWBXn+wCG2s5w==}
+
+  '@webgpu/types@0.1.70':
+    resolution: {integrity: sha512-LFiNHHKMvmAEvwVew3JLJmTdShhbdwRFSImUshGhE2mGE8ybQzIo63l5uRp+YKnNx+8Qno8Kf6gN+DKMreIJCA==}
 
   algoliasearch@5.53.0:
     resolution: {integrity: sha512-OGW1q6b91CRSSeiOnM8LxuR5NYJ2esvw66jUZ4IIvdv+ItNkx3pwLuyR+jaCdbGee4ov5WgUnyPryyh11xvByQ==}
@@ -3695,6 +3714,8 @@ snapshots:
       vue: 3.5.35(typescript@5.9.3)
     transitivePeerDependencies:
       - typescript
+
+  '@webgpu/types@0.1.70': {}
 
   algoliasearch@5.53.0:
     dependencies:

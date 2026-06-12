@@ -27,6 +27,7 @@ export default defineConfig({
       '@glissade/element': src('element'),
       '@glissade/player': src('player'),
       '@glissade/interact': src('interact'),
+      '@glissade/effects-webgpu': src('effects-webgpu'),
     },
   },
 });

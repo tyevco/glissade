@@ -19,6 +19,7 @@ export {
   validateFilters,
   filtersToCanvasFilter,
   glow,
+  type ShaderRef,
   type BlendMode,
   type Rect as RectShape,
 } from './displayList.js';
@@ -41,6 +42,7 @@ export {
 } from './nodes.js';
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
+export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';
 export {
   Raster2D,
   fontString,
@@ -48,6 +50,7 @@ export {
   type Ctx2DLike,
   type PathLike,
   type Raster2DHost,
+  type ShaderCaps,
 } from './raster2d.js';
 
 export {

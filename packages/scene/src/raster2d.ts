@@ -6,9 +6,17 @@
  * the golden + SSIM suites verify the refactor preserved every byte.
  */
 
+import { emitDevWarning } from '@glissade/core';
 import { ColdAssetError } from './assets.js';
 import type { VideoFrameSource } from './assets.js';
-import { filtersToCanvasFilter, type DisplayList, type FontSpec, type PathSeg, type Resource } from './displayList.js';
+import {
+  filtersToCanvasFilter,
+  type DisplayList,
+  type FontSpec,
+  type PathSeg,
+  type Resource,
+  type ShaderRef,
+} from './displayList.js';
 export { type TextMetricsLite } from './text.js';
 
 /** The structural path surface buildPath drives — DOM Path2D and @napi-rs Path2D both satisfy it. */
@@ -71,7 +79,17 @@ export interface Raster2DHost<TCanvas extends CanvasLike, TPath extends PathLike
   context(canvas: TCanvas): Ctx2DLike<TPath, TDrawable>;
   createCanvas(w: number, h: number): TCanvas;
   newPath(): TPath;
+  /**
+   * §3.7 shader pass: run the WGSL effect over the group layer and return a
+   * drawable replacement, or null when unavailable. Absent/null → the layer
+   * composites unfiltered per caps.shaders (warn by default, error opt-in).
+   * Only browser hosts wire this (via @glissade/effects-webgpu); headless
+   * backends stay GPU-free by construction.
+   */
+  applyShader?(layer: TCanvas, shader: ShaderRef, w: number, h: number): TDrawable | null;
 }
+
+export type ShaderCaps = 'warn' | 'error';
 
 export function fontString(font: FontSpec): string {
   const style = font.style === 'italic' ? 'italic ' : '';
@@ -85,6 +103,7 @@ interface Layer<TPath extends PathLike, TDrawable, TCanvas extends CanvasLike> {
   opacity: number;
   blend: string;
   filter?: string; // compiled canvas filter for the composite draw (§3.4)
+  shader?: ShaderRef; // §3.7 effect pass, applied before the composite
 }
 
 export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawable> {
@@ -92,8 +111,13 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
   private readonly pathCache = new WeakMap<object, TPath>();
   private readonly images = new Map<string, TDrawable>();
   private readonly videos = new Map<string, VideoFrameSource>();
+  private warnedShaders = false;
 
-  constructor(private readonly host: Raster2DHost<TCanvas, TPath, TDrawable>) {}
+  constructor(
+    private readonly host: Raster2DHost<TCanvas, TPath, TDrawable>,
+    /** caps.shaders (§3.7): what happens when a shader can't run here. */
+    private readonly shaderCaps: ShaderCaps = 'warn',
+  ) {}
 
   /** Register a decoded still (kind 'image' assets). */
   setImageAsset(assetId: string, image: TDrawable): void {
@@ -263,6 +287,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             opacity: cmd.opacity,
             blend: cmd.blend,
             filter: filtersToCanvasFilter(cmd.filters),
+            ...(cmd.shader !== undefined ? { shader: cmd.shader } : {}),
           });
           break;
         }
@@ -276,7 +301,23 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           // group filters (§3.4): applied on the composite draw; save/restore scopes it
           if (layer.filter !== undefined && layer.filter !== 'none') parent.filter = layer.filter;
           parent.globalCompositeOperation = layer.blend;
-          parent.drawImage(layer.canvas as unknown as TDrawable, 0, 0);
+          let drawable: TDrawable = layer.canvas as unknown as TDrawable;
+          if (layer.shader !== undefined) {
+            const replaced = this.host.applyShader?.(layer.canvas, layer.shader, w, h) ?? null;
+            if (replaced !== null) drawable = replaced;
+            else if (this.shaderCaps === 'error') {
+              throw new Error(
+                'a ShaderEffect reached a backend without a shader runner (§3.7) — ' +
+                  'load @glissade/effects-webgpu in the browser, or accept passthrough with caps.shaders: warn',
+              );
+            } else if (!this.warnedShaders) {
+              this.warnedShaders = true;
+              emitDevWarning(
+                'ShaderEffect pass skipped: no shader runner here (headless or webgpu-less browser) — subtree composites unfiltered (§3.7 caps.shaders)',
+              );
+            }
+          }
+          parent.drawImage(drawable, 0, 0);
           parent.restore();
           this.release(layer.canvas);
           break;

@@ -144,6 +144,20 @@ export interface Rect {
   h: number;
 }
 
+/**
+ * Shader effect pass (§3.7): runs over the group's rasterized texture.
+ * EXPLICITLY outside the determinism guarantee — GPU/driver per-pixel
+ * variance breaks distributed reproducibility; export with shaders is
+ * best-effort, single machine. Uniform VALUES are resolved at emit time
+ * (they ride on signals), so the IR stays a plain serializable snapshot.
+ */
+export interface ShaderRef {
+  /** WGSL fragment module: declare `struct Uniforms` + `@fragment fn effect(@location(0) uv: vec2f) -> @location(0) vec4f`. */
+  wgsl: string;
+  /** Scalar uniforms, packed as f32 in SORTED KEY ORDER into the Uniforms struct. */
+  uniforms: Record<string, number>;
+}
+
 export type DrawCommand =
   | { op: 'save' }
   | { op: 'restore' }
@@ -153,7 +167,7 @@ export type DrawCommand =
   | { op: 'strokePath'; path: ResourceId; paint: Paint; stroke: StrokeStyle }
   | { op: 'fillText'; text: string; font: FontSpec; paint: Paint; x: number; y: number; align?: 'left' | 'center' | 'right' }
   | { op: 'drawImage'; image: ResourceId; src?: Rect; dst: Rect; smoothing?: boolean }
-  | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[]; cacheKey?: string }
+  | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[]; shader?: ShaderRef; cacheKey?: string }
   | { op: 'popGroup' };
 
 export interface DisplayList {

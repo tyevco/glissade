@@ -1,0 +1,33 @@
+{
+  "name": "@glissade/effects-webgpu",
+  "version": "0.3.0",
+  "description": "glissade WebGPU shader effects (§3.7): the browser-only runner for ShaderEffect nodes. Never imported by the headless pipeline; outside the determinism guarantee.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.40"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/effects-webgpu"
+  }
+}
