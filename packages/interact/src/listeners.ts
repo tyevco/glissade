@@ -7,7 +7,7 @@
  * stakes — a circular button must not hit-test as its bounding square.
  */
 
-import { type Vec2 } from '@glissade/core';
+import { type PathValue, type Vec2 } from '@glissade/core';
 import {
   applyToPoint,
   Circle,
@@ -15,6 +15,7 @@ import {
   ImageNode,
   invert,
   Node,
+  Path,
   Rect,
   Text,
   Video,
@@ -32,9 +33,57 @@ function hitAreaContains(area: HitArea, p: Vec2): boolean {
   return p[0] >= area.x && p[0] <= area.x + area.w && p[1] >= area.y && p[1] <= area.y + area.h;
 }
 
+/** Fixed flattening for hit tests: 16 samples per cubic — deterministic and plenty at pointer scale. */
+const FLATTEN = 16;
+
+function flattenContour(c: PathValue[number]): Vec2[] {
+  const pts: Vec2[] = [];
+  const n = c.v.length;
+  if (n === 0) return pts;
+  const cubic = (i: number, j: number): void => {
+    const p0 = c.v[i]!;
+    const p1: Vec2 = [p0[0] + c.out[i]![0], p0[1] + c.out[i]![1]];
+    const p3 = c.v[j]!;
+    const p2: Vec2 = [p3[0] + c.in[j]![0], p3[1] + c.in[j]![1]];
+    for (let s = 1; s <= FLATTEN; s++) {
+      const t = s / FLATTEN;
+      const u = 1 - t;
+      pts.push([
+        u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+        u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1],
+      ]);
+    }
+  };
+  pts.push(c.v[0]!);
+  for (let i = 0; i < n - 1; i++) cubic(i, i + 1);
+  if (c.closed && n > 1) cubic(n - 1, 0);
+  return pts; // open contours close implicitly for the fill test, like canvas fill()
+}
+
+/** Nonzero-winding fill test over flattened contours (§C.3: a path fills as a path). */
+function pathContains(value: PathValue, p: Vec2): boolean {
+  let winding = 0;
+  for (const c of value) {
+    const poly = flattenContour(c);
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      if (a[1] <= p[1]) {
+        if (b[1] > p[1] && (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]) > 0) winding++;
+      } else if (b[1] <= p[1] && (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]) < 0) {
+        winding--;
+      }
+    }
+  }
+  return winding !== 0;
+}
+
 /** Geometric shape test in node-local coordinates; hitArea overrides the geometry. */
 export function containsPoint(node: Node, p: Vec2, measurer: TextMeasurer): boolean {
   if (node.hitArea) return hitAreaContains(node.hitArea, p);
+  if (node instanceof Path) {
+    return pathContains(node.data(), p);
+  }
   if (node instanceof Circle) {
     const r = node.radius();
     return p[0] * p[0] + p[1] * p[1] <= r * r;

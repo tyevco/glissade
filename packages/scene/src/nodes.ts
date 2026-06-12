@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { signal, type BindableSignal } from '@glissade/core';
+import { signal, type BindableSignal, type PathValue } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { breakLines, quantize, type TextMeasurer } from './text.js';
@@ -146,6 +146,97 @@ export class Circle extends Shape {
   protected pathSegs(): PathSeg[] {
     const r = this.radius();
     return [['E', 0, 0, r, r, 0, 0, Math.PI * 2], ['Z']];
+  }
+}
+
+export interface PathProps extends ShapeProps {
+  /** The geometry (§2.2 'path' value): bezier contours in vertex form, animatable via a track on '<id>/d'. */
+  data?: PropInit<PathValue>;
+}
+
+/**
+ * Arbitrary bezier geometry — the Lottie-import landing spot and the target
+ * of native path morphs. Coordinates are node-local (the node origin is
+ * wherever the author put 0,0); flow placement uses the control-point bounds.
+ */
+export class Path extends Shape {
+  readonly data: BindableSignal<PathValue>;
+
+  constructor(props: PathProps = {}) {
+    super(props);
+    this.data = initProp(signal<PathValue>([]), props.data);
+    this.registerTarget('d', this.data);
+  }
+
+  /** Control-point bounding box (conservative: contains the true curve). */
+  bounds(): { minX: number; minY: number; maxX: number; maxY: number } {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const c of this.data()) {
+      for (let i = 0; i < c.v.length; i++) {
+        const vx = c.v[i]![0];
+        const vy = c.v[i]![1];
+        const candidates = [
+          [vx, vy],
+          [vx + c.in[i]![0], vy + c.in[i]![1]],
+          [vx + c.out[i]![0], vy + c.out[i]![1]],
+        ];
+        for (const p of candidates) {
+          if (p[0]! < minX) minX = p[0]!;
+          if (p[1]! < minY) minY = p[1]!;
+          if (p[0]! > maxX) maxX = p[0]!;
+          if (p[1]! > maxY) maxY = p[1]!;
+        }
+      }
+    }
+    if (minX > maxX) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    return { minX, minY, maxX, maxY };
+  }
+
+  override intrinsicSize(): { w: number; h: number } {
+    const b = this.bounds();
+    return { w: b.maxX - b.minX, h: b.maxY - b.minY };
+  }
+
+  /** Geometry is node-local, not center-anchored: offset to the box's actual top-left. */
+  override flowOffset(): { x: number; y: number } {
+    const b = this.bounds();
+    return { x: b.minX, y: b.minY };
+  }
+
+  protected pathSegs(): PathSeg[] {
+    const segs: PathSeg[] = [];
+    for (const c of this.data()) {
+      const n = c.v.length;
+      if (n === 0) continue;
+      segs.push(['M', c.v[0]![0], c.v[0]![1]]);
+      for (let i = 0; i < n - 1; i++) {
+        segs.push([
+          'C',
+          c.v[i]![0] + c.out[i]![0],
+          c.v[i]![1] + c.out[i]![1],
+          c.v[i + 1]![0] + c.in[i + 1]![0],
+          c.v[i + 1]![1] + c.in[i + 1]![1],
+          c.v[i + 1]![0],
+          c.v[i + 1]![1],
+        ]);
+      }
+      if (c.closed && n > 1) {
+        segs.push([
+          'C',
+          c.v[n - 1]![0] + c.out[n - 1]![0],
+          c.v[n - 1]![1] + c.out[n - 1]![1],
+          c.v[0]![0] + c.in[0]![0],
+          c.v[0]![1] + c.in[0]![1],
+          c.v[0]![0],
+          c.v[0]![1],
+        ]);
+        segs.push(['Z']);
+      }
+    }
+    return segs;
   }
 }
 

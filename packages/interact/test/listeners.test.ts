@@ -190,3 +190,54 @@ describe('createListeners (§C.3): pointer events → machine inputs', () => {
     expect(el.handlers.size).toBe(0);
   });
 });
+
+describe('Path hit testing (§C.3): fill-rule, not bounding box', () => {
+  it('a star hits in its body, misses in the concave notches inside its bbox', async () => {
+    const { Path } = await import('@glissade/scene');
+    const v: [number, number][] = [];
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 === 0 ? 80 : 30;
+      v.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    const zero = v.map(() => [0, 0] as [number, number]);
+    const node = new Path({
+      id: 'star',
+      data: [{ closed: true, v, in: zero, out: zero }],
+      fill: '#fff',
+      position: [100, 100],
+    });
+    const scene = createScene({ size: { w: 200, h: 200 }, children: [node] });
+    node.interactive = true;
+    expect(hitTest(scene, 100, 100)).toBe(node); // center
+    expect(hitTest(scene, 100, 100 - 70)).toBe(node); // up the arm at vertex 0
+    // halfway between two arms at radius 60: inside the bbox, outside the fill
+    const notch = ((1.5 / 10) * Math.PI * 2) - Math.PI / 2;
+    expect(hitTest(scene, 100 + Math.cos(notch) * 60, 100 + Math.sin(notch) * 60)).toBeNull();
+  });
+
+  it('a reversed inner contour cuts a nonzero-winding hole', async () => {
+    const { Path } = await import('@glissade/scene');
+    const ringOf = (r: number, reverse: boolean) => {
+      const v: [number, number][] = [];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        v.push([Math.cos(a) * r, Math.sin(a) * r] as [number, number]);
+      }
+      if (reverse) v.reverse();
+      const zero = v.map(() => [0, 0] as [number, number]);
+      return { closed: true, v, in: zero, out: zero };
+    };
+    const node = new Path({
+      id: 'ring',
+      data: [ringOf(80, false), ringOf(40, true)],
+      fill: '#fff',
+      position: [100, 100],
+    });
+    const scene = createScene({ size: { w: 200, h: 200 }, children: [node] });
+    node.interactive = true;
+    expect(hitTest(scene, 160, 100)).toBe(node); // on the band
+    expect(hitTest(scene, 100, 100)).toBeNull(); // in the hole
+    expect(hitTest(scene, 195, 100)).toBeNull(); // outside entirely
+  });
+});
