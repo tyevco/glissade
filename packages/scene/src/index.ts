@@ -38,6 +38,14 @@ export {
 } from './nodes.js';
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
+export {
+  Raster2D,
+  fontString,
+  type CanvasLike,
+  type Ctx2DLike,
+  type PathLike,
+  type Raster2DHost,
+} from './raster2d.js';
 
 export {
   breakLines,
