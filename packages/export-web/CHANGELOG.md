@@ -1,5 +1,21 @@
 # @glissade/export-web
 
+## 0.3.0
+
+### Minor Changes
+
+- 32ce88d: Worker-wrapped export (§5.1): `serveExportRequest` (the entire worker body — resolve the scene from a host registry key, export, stream progress, transfer the result) and `requestWorkerExport` (main-thread side with cancel). Audio premixes on the main thread — workers have no `OfflineAudioContext` — and transfers raw planar PCM, fed through mediabunny's `AudioSampleSource`; `exportVideo` gains a `premixedAudio` option and `mixAudio`/`premixTimelineAudio` are exported. Workers loading flexbox scenes pull the Yoga engine themselves.
+
+### Patch Changes
+
+- Updated dependencies [fbb12ca]
+- Updated dependencies [ab8ca37]
+- Updated dependencies [bc9add6]
+- Updated dependencies [e89c3d0]
+  - @glissade/scene@0.3.0
+  - @glissade/backend-canvas2d@0.3.0
+  - @glissade/core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

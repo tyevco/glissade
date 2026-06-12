@@ -2,7 +2,7 @@
   "name": "@glissade/studio",
   "private": true,
   "version": "0.0.0",
-  "description": "glissade studio: React editor over the open core (DESIGN.md \u00a76).",
+  "description": "glissade studio: React editor over the open core (DESIGN.md §6).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

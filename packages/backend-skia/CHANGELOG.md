@@ -1,5 +1,21 @@
 # @glissade/backend-skia
 
+## 0.3.0
+
+### Minor Changes
+
+- fbb12ca: Group filters (§3.4): `FilterSpec` is now a closed, validated union — `blur`, `drop-shadow`, `brightness`, `contrast`, `saturate` — never a CSS passthrough string. Nodes take `filters` as a prop (it's a signal, so a computed binding animates a blur radius from ordinary tracks), filtered subtrees composite as a unit, and both backends apply the compiled filter on the group's composite draw. Skia output is golden-pinned per filter; browser↔Skia parity measured at SSIM ≥ 0.9992 on the filters corpus — no per-filter exclusions needed.
+
+### Patch Changes
+
+- bc9add6: The shared `Raster2D` interpreter: one DisplayList command walk in `@glissade/scene`, generic over the host's canvas/path/drawable flavor. Both backends become thin adapters (context acquisition + a path constructor + a layer-canvas factory), so the twin rasterizers structurally cannot drift. Behavior-identical: every golden frame byte-matches through the refactor and the SSIM parity suite is unchanged. `Raster2D`, `fontString`, and the host interfaces are exported for future backends.
+- Updated dependencies [fbb12ca]
+- Updated dependencies [ab8ca37]
+- Updated dependencies [bc9add6]
+- Updated dependencies [e89c3d0]
+  - @glissade/scene@0.3.0
+  - @glissade/core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
