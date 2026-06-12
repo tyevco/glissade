@@ -42,6 +42,8 @@ export interface NodeProps {
   opacity?: PropInit<number>;
   blend?: PropInit<BlendMode>;
   zIndex?: PropInit<number>;
+  /** Group filters (§3.4): the subtree composites as a unit through them. */
+  filters?: PropInit<FilterSpec[]>;
 }
 
 export interface BindablePropTarget {
@@ -106,7 +108,7 @@ export abstract class Node {
     this.opacity = initScalar(signal(1), props.opacity);
     this.blend = initScalar(signal<BlendMode>('source-over'), props.blend);
     this.zIndex = initScalar(signal(0), props.zIndex);
-    this.filters = initScalar(signal<FilterSpec[]>([]), undefined);
+    this.filters = initScalar(signal<FilterSpec[]>([]), props.filters);
 
     this.localMatrix = computed(() => fromTRS(this.position(), this.rotation(), this.scale()), {
       equals: matEquals,
@@ -161,9 +163,9 @@ export abstract class Node {
     return { x: -size.w / 2, y: -size.h / 2 };
   }
 
-  /** §3.5 predicate: composite-as-a-unit when opacity/blend demand it. */
+  /** §3.5 predicate: composite-as-a-unit when opacity/blend/filters demand it. */
   protected requiresGroup(): boolean {
-    return this.opacity() < 1 || this.blend() !== 'source-over';
+    return this.opacity() < 1 || this.blend() !== 'source-over' || this.filters().length > 0;
   }
 
   emit(out: DisplayListBuilder, ctx: EvalContext): void {

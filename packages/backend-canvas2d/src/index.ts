@@ -12,6 +12,7 @@ import {
   type PathSeg,
   type Resource,
   type VideoFrameSource,
+  filtersToCanvasFilter,
 } from '@glissade/scene';
 
 type Drawable = Exclude<CanvasImageSource, SVGImageElement>;
@@ -63,6 +64,7 @@ interface Layer {
   canvas: AnyCanvas | null; // null for the base layer
   opacity: number;
   blend: GlobalCompositeOperation;
+  filter?: string; // compiled canvas filter for the composite draw (§3.4)
 }
 
 export class Canvas2DBackend {
@@ -197,6 +199,7 @@ export class Canvas2DBackend {
             canvas: layerCanvas,
             opacity: cmd.opacity,
             blend: cmd.blend as GlobalCompositeOperation,
+            filter: filtersToCanvasFilter(cmd.filters),
           });
           break;
         }
@@ -207,6 +210,8 @@ export class Canvas2DBackend {
           parent.save();
           parent.resetTransform();
           parent.globalAlpha = layer.opacity;
+          // group filters (§3.4): applied on the composite draw; save/restore scopes it
+          if (layer.filter !== undefined && layer.filter !== 'none') parent.filter = layer.filter;
           parent.globalCompositeOperation = layer.blend;
           parent.drawImage(layer.canvas, 0, 0);
           parent.restore();

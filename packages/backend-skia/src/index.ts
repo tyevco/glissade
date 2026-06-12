@@ -14,6 +14,7 @@ import {
   type PathSeg,
   type Resource,
   type VideoFrameSource,
+  filtersToCanvasFilter,
 } from '@glissade/scene';
 
 type Drawable = Canvas | Image;
@@ -62,6 +63,7 @@ interface Layer {
   canvas: Canvas | null;
   opacity: number;
   blend: string;
+  filter?: string; // compiled canvas filter for the composite draw (§3.4)
 }
 
 export class SkiaBackend {
@@ -184,7 +186,13 @@ export class SkiaBackend {
           layerCtx.resetTransform();
           layerCtx.clearRect(0, 0, w, h);
           layerCtx.setTransform(parent.getTransform());
-          layers.push({ ctx: layerCtx, canvas: layerCanvas, opacity: cmd.opacity, blend: cmd.blend });
+          layers.push({
+            ctx: layerCtx,
+            canvas: layerCanvas,
+            opacity: cmd.opacity,
+            blend: cmd.blend,
+            filter: filtersToCanvasFilter(cmd.filters),
+          });
           break;
         }
         case 'popGroup': {
@@ -194,6 +202,8 @@ export class SkiaBackend {
           parent.save();
           parent.resetTransform();
           parent.globalAlpha = layer.opacity;
+          // group filters (§3.4): applied on the composite draw; save/restore scopes it
+          if (layer.filter !== undefined && layer.filter !== 'none') parent.filter = layer.filter;
           parent.globalCompositeOperation = layer.blend as never;
           parent.drawImage(layer.canvas, 0, 0);
           parent.restore();

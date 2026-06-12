@@ -9,10 +9,12 @@ import { evaluate, type SceneModule } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import goldenShapes from './scenes/golden-shapes.js';
 import goldenBounce from './scenes/golden-bounce.js';
+import goldenFilters from './scenes/golden-filters.js';
 
 const corpus: Record<string, SceneModule> = {
   shapes: goldenShapes,
   bounce: goldenBounce,
+  filters: goldenFilters,
 };
 
 const scenes = new Map<string, ReturnType<SceneModule['createScene']>>();

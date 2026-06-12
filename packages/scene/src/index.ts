@@ -15,6 +15,9 @@ export {
   type StrokeStyle,
   type FontSpec,
   type FilterSpec,
+  FilterValidationError,
+  validateFilters,
+  filtersToCanvasFilter,
   type BlendMode,
   type Rect as RectShape,
 } from './displayList.js';

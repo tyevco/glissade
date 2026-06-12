@@ -18,7 +18,11 @@ const ENABLED = process.env['PARITY'] === '1';
 
 const FRAMES = [0, 60, 120, 179];
 const FPS = 60;
-const SSIM_FLOOR = 0.97;
+// Per-scene floors. Filters were expected to be the divergent case (different
+// Gaussian kernels) but measured ≥ 0.9992 across all frames — Chromium and
+// @napi-rs/canvas both implement canvas filters on Skia-family rasterizers.
+// The shared 0.97 floor holds with wide margin; no per-filter exclusions.
+const SSIM_FLOORS: Record<string, number> = { shapes: 0.97, bounce: 0.97, filters: 0.97 };
 
 describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
   let server: import('vite').ViteDevServer;
@@ -51,6 +55,7 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
     corpus = {
       shapes: (await import('../../examples/src/scenes/golden-shapes.js')).default,
       bounce: (await import('../../examples/src/scenes/golden-bounce.js')).default,
+      filters: (await import('../../examples/src/scenes/golden-filters.js')).default,
     };
   }, 60_000);
 
@@ -71,8 +76,8 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
     return ctx.getImageData(0, 0, 640, 360).data;
   }
 
-  for (const name of ['shapes', 'bounce']) {
-    it(`'${name}' clears SSIM ≥ ${SSIM_FLOOR} at ${FRAMES.length} frames`, async () => {
+  for (const [name, floor] of Object.entries(SSIM_FLOORS)) {
+    it(`'${name}' clears SSIM ≥ ${floor} at ${FRAMES.length} frames`, async () => {
       const mod = corpus[name]!;
       const scene = mod.createScene();
       const skia = new SkiaBackend(640, 360);
@@ -84,7 +89,7 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
         const score = ssim(chromePixels, new Uint8ClampedArray(skiaPixels), 640, 360);
         // eslint-disable-next-line no-console
         console.log(`parity ${name} f${frame}: SSIM ${score.toFixed(5)}`);
-        expect(score, `${name} frame ${frame}`).toBeGreaterThanOrEqual(SSIM_FLOOR);
+        expect(score, `${name} frame ${frame}`).toBeGreaterThanOrEqual(floor);
       }
     }, 60_000);
   }

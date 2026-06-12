@@ -15,6 +15,7 @@ import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
 import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
 import goldenTypography from '../../examples/src/scenes/golden-typography.js';
 import goldenLayout from '../../examples/src/scenes/golden-layout.js';
+import goldenFilters from '../../examples/src/scenes/golden-filters.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -36,6 +37,7 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'bounce', mod: goldenBounce },
   { name: 'typography', mod: goldenTypography },
   { name: 'layout', mod: goldenLayout },
+  { name: 'filters', mod: goldenFilters },
 ];
 
 for (const { name, mod } of CORPUS) {
