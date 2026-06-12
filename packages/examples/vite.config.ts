@@ -28,6 +28,8 @@ export default defineConfig({
       '@glissade/player': src('player'),
       '@glissade/interact': src('interact'),
       '@glissade/effects-webgpu': src('effects-webgpu'),
+      // pure entry only — './providers' is Node-side and must never resolve here
+      '@glissade/narrate': src('narrate'),
     },
   },
 });
