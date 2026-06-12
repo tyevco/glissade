@@ -8,7 +8,7 @@
  */
 
 import { key, timeline, track, type Vec2 } from '@glissade/core';
-import { Circle, createScene, Rect, Text, type SceneModule } from '@glissade/scene';
+import { Circle, createScene, glow, Rect, Text, type SceneModule } from '@glissade/scene';
 import { createListeners, hoverMachine, machineBuilder, pose, pressMachine, type MachineSpec } from '@glissade/interact';
 
 const INK = '#cdd3de';
@@ -38,8 +38,17 @@ function toggleSpec(id: string, startOn: boolean): MachineSpec {
       const L = createListeners({ scene, element });
       const pillNode = scene.nodes.get(`${id}-pill`)!;
       pillNode.hitArea = { kind: 'rect', x: -40, y: -22, w: 80, h: 44 }; // fat target (§C.3)
+      // glow follows the machine: the fill is machine-animated, and filters
+      // are signals, so the glow color/strength tracks the handoff live
+      const pill = pillNode as InstanceType<typeof Rect>;
+      pill.filters.bindSource(() =>
+        machine.current() === 'on' ? glow(pill.fill(), 8, 2) : [],
+      );
       L.click(pillNode, () => machine.input('on').set(!(machine.input('on')() as boolean)));
-      return () => L.dispose();
+      return () => {
+        pill.filters.unbindSource();
+        L.dispose();
+      };
     },
   };
 }

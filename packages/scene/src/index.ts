@@ -18,6 +18,7 @@ export {
   FilterValidationError,
   validateFilters,
   filtersToCanvasFilter,
+  glow,
   type BlendMode,
   type Rect as RectShape,
 } from './displayList.js';

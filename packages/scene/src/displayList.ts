@@ -124,6 +124,19 @@ export function filtersToCanvasFilter(filters: readonly FilterSpec[]): string {
     .join(' ');
 }
 
+/**
+ * Outer glow as stacked zero-offset drop-shadows — the classic recipe, fully
+ * deterministic on both backends (it is just filters). intensity stacks more
+ * layers; pair with a signal binding to follow an animated fill.
+ */
+export function glow(color: string, radius = 16, intensity = 2): FilterSpec[] {
+  const layers: FilterSpec[] = [];
+  for (let i = 0; i < Math.max(1, intensity); i++) {
+    layers.push({ kind: 'drop-shadow', dx: 0, dy: 0, blur: radius * (1 + i * 1.5), color });
+  }
+  return layers;
+}
+
 export interface Rect {
   x: number;
   y: number;

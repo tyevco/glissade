@@ -68,3 +68,16 @@ describe('FilterSpec (§3.4): a closed, validated union — never a CSS passthro
     expect(list2.commands.some((c) => c.op === 'pushGroup')).toBe(false);
   });
 });
+
+describe('glow() (the want behind the WebGPU card, deliverable as filters)', () => {
+  it('builds stacked zero-offset drop-shadows that validate and compile', async () => {
+    const { glow } = await import('../src/index.js');
+    const g = glow('#4ea1ff', 10, 2);
+    expect(g).toEqual([
+      { kind: 'drop-shadow', dx: 0, dy: 0, blur: 10, color: '#4ea1ff' },
+      { kind: 'drop-shadow', dx: 0, dy: 0, blur: 25, color: '#4ea1ff' },
+    ]);
+    expect(() => validateFilters(g)).not.toThrow();
+    expect(filtersToCanvasFilter(glow('#fff', 8, 1))).toBe('drop-shadow(0px 0px 8px #fff)');
+  });
+});
