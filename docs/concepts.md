@@ -54,6 +54,8 @@ For sub-line, multi-color token work (syntax-style highlights, per-word emphasis
 
 `highlight(text, opts)` builds on those: a marker-style highlight node (place it as the sibling *before* the text) that sweeps per-line rounded rects across the laid-out lines via one 0→1 `progress` track, in reading order at width-weighted constant speed. `blend: 'multiply'` gives real highlighter ink. For karaoke, key `progress` from the word timestamps in a narration timing manifest.
 
+`tokenHighlight(text, { ranges })` is the sub-line, multi-color sibling: each range matches a token (whitespace-insensitive consecutive word-box runs, boundary-exact — or `[wordIndex, wordIndex]` directly) and gets its OWN animatable `fill`/`opacity`/`progress`/`scale` targets (`'<id>/<rangeId>/fill'`), so four category colors with independent flips are four tracks, not four nodes. Ranges validate at construction and **throw on copy drift at draw** — edited text that no longer matches fails the build, not the render farm; `rematch: true` opts animated text into per-frame re-resolution. A range spanning a wrap produces one rect per line segment.
+
 ## The DisplayList and backends
 
 Nodes never touch a rendering context. `evaluate` emits a flat, serializable command stream (`fillPath`, `fillText`, `pushGroup`/`popGroup` for group opacity and blends, `drawImage` against an asset registry). Backends rasterize it: Canvas 2D in the browser, Skia (`@napi-rs/canvas`) headless — both Skia-family rasterizers, so preview and export agree (byte-exact per path; perceptual SSIM across the seam).

@@ -24,6 +24,7 @@ export default defineConfig({
           { text: 'Concepts', link: '/concepts' },
           { text: 'Interactivity (v2)', link: '/interactivity' },
           { text: 'Narration & captions', link: '/narration' },
+          { text: 'Music & the beat grid', link: '/music' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },

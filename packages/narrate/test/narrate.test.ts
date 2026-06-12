@@ -10,10 +10,12 @@ import {
   captionNode,
   captionTrack,
   duckEnvelope,
+  music,
   narration,
   NarrationError,
   toSrt,
   toVtt,
+  type MusicTiming,
   type NarrationTiming,
 } from '../src/index.js';
 
@@ -202,5 +204,68 @@ describe('duckEnvelope: the music-bed gain from the narration manifest', () => {
       gain: duckEnvelope(TIMING, { duck: 0.3 }),
     };
     expect(clip.gain!.keys.length).toBeGreaterThan(0);
+  });
+});
+
+describe('music(): beat-grid anchors over the tempo manifest', () => {
+  const M: MusicTiming = {
+    musicVersion: 1,
+    bpm: 96,
+    beatsPerCycle: 4,
+    cycles: 8,
+    cps: 0.4,
+    durationSec: 20,
+    stem: 'pipeline-test.wav',
+    gainDb: -3,
+  };
+  const beatLen = 60 / 96; // 0.625
+
+  it('beat 0 = clip at + offsetSec (the sample-0 invariant); the grid derives from bpm', () => {
+    const m = music(M);
+    expect(m.beat(0)).toBe(0);
+    expect(m.beat(4)).toBeCloseTo(4 * beatLen, 12);
+    expect(m.cycle(2)).toBeCloseTo(8 * beatLen, 12);
+    expect(m.beatLen).toBe(beatLen);
+    const shifted = music({ ...M, offsetSec: 0.5 }, 2);
+    expect(shifted.beat(0)).toBe(2.5);
+    expect(shifted.grid()).toEqual({ bpm: 96, offsetSec: 2.5 });
+  });
+
+  it('nearestBeat snaps either way; nextBeat quantizes forward (and is idempotent on the grid)', () => {
+    const m = music(M);
+    expect(m.nearestBeat(0.7)).toBeCloseTo(beatLen, 12);
+    expect(m.nearestBeat(0.2)).toBe(0);
+    expect(m.nextBeat(0.01)).toBeCloseTo(beatLen, 12);
+    expect(m.nextBeat(beatLen)).toBeCloseTo(beatLen, 12); // already on the grid
+  });
+
+  it('cps must agree with bpm/beatsPerCycle', () => {
+    expect(() => music({ ...M, cps: 0.5 })).toThrow(/cps .* disagrees/);
+    expect(() => music({ ...M, musicVersion: 2 as never })).toThrow(/musicVersion/);
+  });
+
+  it('clip(): stem default, gainDb scaling, narration ducking composed clip-locally', () => {
+    const m = music(M, 1);
+    const plain = m.clip();
+    expect(plain.asset.url).toBe('pipeline-test.wav');
+    expect(plain.at).toBe(1);
+    // gainDb −3 → constant envelope scaled to 10^(−3/20)
+    expect(plain.gain!.keys).toHaveLength(1);
+    expect(plain.gain!.keys[0]!.value).toBeCloseTo(Math.pow(10, -3 / 20), 12);
+
+    const ducked = m.clip('bed.wav', { gainDb: 0, duckUnder: TIMING, duckOpts: { duck: 0.2 } });
+    // duckEnvelope with clipAt = 1: ramp at 0.25−0.15−1 < 0 → immediate duck
+    expect(ducked.gain!.keys[0]!.value).toBe(0.2);
+    expect(ducked.gain!.keys[ducked.gain!.keys.length - 1]!.value).toBe(1);
+
+    const scaledDuck = m.clip('bed.wav', { duckUnder: TIMING, duckOpts: { duck: 0.2 } });
+    // manifest gainDb −3 scales the WHOLE envelope (duck stays relative to bed)
+    expect(scaledDuck.gain!.keys[0]!.value).toBeCloseTo(0.2 * Math.pow(10, -3 / 20), 12);
+
+    const { stem: _stem, ...noStem } = M;
+    expect(() => music(noStem).clip()).toThrow(/needs a url/);
+    // zero gain + no duck → no envelope at all
+    const { gainDb: _g, ...noGain } = M;
+    expect(music(noGain).clip('x.wav').gain).toBeUndefined();
   });
 });

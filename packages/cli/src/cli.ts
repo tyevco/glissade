@@ -57,6 +57,7 @@ render options:
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
   --captions <m>   burn (default) | sidecar | off; burn/sidecar also write .srt/.vtt
+  --music <m>      auto (default): mix a sibling *.music.timing.json bed, ducked under narration | off
 
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
+      music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),
       onProgress: (n, total) => {
         // TTY: live \r line; piped/CI: sparse newline-terminated updates
         if (process.stderr.isTTY) {

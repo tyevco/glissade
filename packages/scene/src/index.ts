@@ -54,6 +54,14 @@ export {
 } from './nodes.js';
 
 export { Highlight, highlight, type HighlightProps } from './highlight.js';
+export {
+  TokenHighlight,
+  tokenHighlight,
+  matchTokenRun,
+  TokenMatchError,
+  type TokenHighlightProps,
+  type TokenRange,
+} from './tokenHighlight.js';
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';

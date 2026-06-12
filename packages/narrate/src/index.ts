@@ -254,6 +254,113 @@ export function duckEnvelope(timing: NarrationTiming, opts: DuckOptions = {}): {
   return { keys };
 }
 
+// ---- music: the tempo sibling of the narration manifest ----
+
+/**
+ * `<name>.music.timing.json` — committed next to its stem. The load-bearing
+ * invariant: BEAT 0 IS SAMPLE 0 of the stem (the prepare step trims the
+ * recording to the downbeat); `offsetSec` exists for stems that can't be
+ * trimmed (count-ins). Everything derives from bpm/beatsPerCycle — no
+ * per-beat marker arrays. Shape blessed from downstream production
+ * (TidalCycles render step), where `cps` is the native unit: when present it
+ * must agree with bpm/beatsPerCycle.
+ */
+export interface MusicTiming {
+  musicVersion: 1;
+  name?: string;
+  bpm: number;
+  beatsPerCycle: number;
+  cycles?: number;
+  /** cycles per second — TidalCycles-native; must equal bpm / (60 · beatsPerCycle) */
+  cps?: number;
+  durationSec: number;
+  /** seconds into the stem where beat 0 sits; default 0 (trimmed-to-downbeat) */
+  offsetSec?: number;
+  /** stem audio file, relative to the manifest — required for render auto-mix */
+  stem?: string;
+  /** bed level in dB applied to the clip gain (auto-mix and clip()); default 0 */
+  gainDb?: number;
+  /** provenance (e.g. the .tidal pattern source) */
+  source?: string;
+}
+
+export interface MusicClipOptions {
+  /** bed level in dB; overrides the manifest's gainDb */
+  gainDb?: number;
+  /** auto-duck under this narration (windows from its segments) */
+  duckUnder?: NarrationTiming;
+  duckOpts?: Omit<DuckOptions, 'clipAt'>;
+}
+
+export interface MusicAnchors {
+  /** timeline second of beat n (beat 0 = clip at + offsetSec) */
+  beat(n: number): number;
+  /** timeline second of cycle n (beatsPerCycle beats each) */
+  cycle(n: number): number;
+  /** quantize t to the closest beat */
+  nearestBeat(t: number): number;
+  /** quantize t forward to the next beat (what choreography reaches for) */
+  nextBeat(t: number): number;
+  readonly beatLen: number;
+  readonly durationSec: number;
+  /** the grid parameters, for external quantizers */
+  grid(): { bpm: number; offsetSec: number };
+  /** the stem as an AudioClip, with bed gain and optional narration ducking composed */
+  clip(url?: string, opts?: MusicClipOptions): AudioClip;
+}
+
+export function validateMusicTiming(timing: MusicTiming): void {
+  if (timing.musicVersion !== 1) {
+    throw new NarrationError(`unsupported musicVersion ${String(timing.musicVersion)}`);
+  }
+  if (!(timing.bpm > 0) || !(timing.beatsPerCycle > 0)) {
+    throw new NarrationError('music timing needs bpm > 0 and beatsPerCycle > 0');
+  }
+  if (timing.cps !== undefined) {
+    const expected = timing.bpm / (60 * timing.beatsPerCycle);
+    if (Math.abs(timing.cps - expected) > 1e-9) {
+      throw new NarrationError(
+        `music timing cps (${timing.cps}) disagrees with bpm/beatsPerCycle (expected ${expected})`,
+      );
+    }
+  }
+}
+
+/** Beat-grid anchors over a music manifest; `at` places the clip on the timeline. */
+export function music(timing: MusicTiming, at = 0): MusicAnchors {
+  validateMusicTiming(timing);
+  const beatLen = 60 / timing.bpm;
+  const beat0 = at + (timing.offsetSec ?? 0);
+  return {
+    beat: (n) => beat0 + n * beatLen,
+    cycle: (n) => beat0 + n * timing.beatsPerCycle * beatLen,
+    nearestBeat: (t) => beat0 + Math.round((t - beat0) / beatLen) * beatLen,
+    nextBeat: (t) => beat0 + Math.ceil((t - beat0 - 1e-9) / beatLen) * beatLen,
+    beatLen,
+    durationSec: timing.durationSec,
+    grid: () => ({ bpm: timing.bpm, offsetSec: beat0 }),
+    clip: (url, opts = {}) => {
+      const src = url ?? timing.stem;
+      if (!src) throw new NarrationError('music clip needs a url (or a stem field in the manifest)');
+      const gainDb = opts.gainDb ?? timing.gainDb ?? 0;
+      const scale = Math.pow(10, gainDb / 20);
+      let keys: Key<number>[] | null = null;
+      if (opts.duckUnder) {
+        keys = duckEnvelope(opts.duckUnder, { ...opts.duckOpts, clipAt: at }).keys;
+      } else if (gainDb !== 0) {
+        keys = [key(0, 1)];
+      }
+      return {
+        asset: { kind: 'audio', url: src },
+        at,
+        ...(keys !== null
+          ? { gain: { keys: keys.map((k) => ({ ...k, value: k.value * scale })) } }
+          : {}),
+      };
+    },
+  };
+}
+
 // ---- sidecar exports: cues match the burned-in track by construction ----
 
 function srtTime(t: number, sep: ',' | '.'): string {

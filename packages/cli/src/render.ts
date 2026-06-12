@@ -27,6 +27,8 @@ export interface RenderOptions {
   force?: boolean;
   /** burn (default): captions render in-frame; sidecar/off hide the caption node. */
   captions?: 'burn' | 'sidecar' | 'off';
+  /** auto (default): mix a sibling *.music.timing.json bed, ducked under narration. */
+  music?: 'auto' | 'off';
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -184,8 +186,23 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
 
+  // music auto-mix (narration parity): a sibling manifest with a stem joins
+  // the mix, auto-ducked when a narration manifest also sits next to the scene
+  const audioClips = [...compiled.audio];
+  if ((opts.music ?? 'auto') === 'auto') {
+    const { buildMusicClip, musicPathFor } = await import('./music.js');
+    const musicPath = musicPathFor(opts.modulePath);
+    if (musicPath) {
+      const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
+      if (bed) {
+        audioClips.push(bed.clip);
+        process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+      }
+    }
+  }
+
   const { planAudioMix } = await import('./audioMix.js');
-  const mix = planAudioMix(compiled.audio, opts.modulePath, duration);
+  const mix = planAudioMix(audioClips, opts.modulePath, duration);
   if (mix?.hasEasedGain) {
     process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
   }
