@@ -12,11 +12,13 @@ import type { VideoFrameSource } from './assets.js';
 import {
   filtersToCanvasFilter,
   type DisplayList,
+  type FilterSpec,
   type FontSpec,
   type PathSeg,
   type Resource,
   type ShaderRef,
 } from './displayList.js';
+import { IDENTITY, multiply, type Mat2x3 } from './matrix.js';
 export { type TextMetricsLite } from './text.js';
 
 /** The structural path surface buildPath drives — DOM Path2D and @napi-rs Path2D both satisfy it. */
@@ -42,6 +44,7 @@ export interface Ctx2DLike<TPath, TDrawable> {
   fill(path: TPath): void;
   stroke(path: TPath): void;
   fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { width: number };
   drawImage(image: TDrawable, x: number, y: number, w?: number, h?: number): void;
   drawImage(
     image: TDrawable,
@@ -103,12 +106,95 @@ interface Layer<TPath extends PathLike, TDrawable, TCanvas extends CanvasLike> {
   opacity: number;
   blend: string;
   filter?: string; // compiled canvas filter for the composite draw (§3.4)
+  filters?: FilterSpec[]; // the specs behind `filter`, for outset computation
   shader?: ShaderRef; // §3.7 effect pass, applied before the composite
+  /** device-space box of everything painted into this layer; null = nothing yet */
+  bounds: Bounds | null;
+  /** true once content can't be conservatively boxed → never clip, parent inherits */
+  unbounded: boolean;
+}
+
+interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * How far a filter chain can paint beyond its input (device px). Each stage
+ * feeds the next, so outsets ADD. Gaussian reach: Skia truncates at 3σ and
+ * the CSS blur/shadow radii are ≥ σ, so 3× the radius over-covers either
+ * convention. Color-only filters map transparent → transparent: zero outset.
+ */
+function filterOutset(filters: FilterSpec[] | undefined): number {
+  let total = 0;
+  for (const f of filters ?? []) {
+    if (f.kind === 'blur') total += 3 * f.radius;
+    else if (f.kind === 'drop-shadow') total += Math.max(Math.abs(f.dx), Math.abs(f.dy)) + 3 * f.blur;
+  }
+  return total;
+}
+
+function growBounds(b: Bounds | null, x: number, y: number): Bounds {
+  if (!b) return { minX: x, minY: y, maxX: x, maxY: y };
+  if (x < b.minX) b.minX = x;
+  if (y < b.minY) b.minY = y;
+  if (x > b.maxX) b.maxX = x;
+  if (y > b.maxY) b.maxY = y;
+  return b;
+}
+
+/** Local-space rect (already outset) → device-space box under m. */
+function accumulateRect(
+  layer: { bounds: Bounds | null },
+  m: Mat2x3,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as const) {
+    layer.bounds = growBounds(layer.bounds, m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]);
+  }
+}
+
+/** Control-point box of a path — curves and rotated ellipses stay inside it. */
+function segsBounds(segs: PathSeg[]): Bounds | null {
+  let b: Bounds | null = null;
+  const pt = (x: number, y: number) => {
+    b = growBounds(b, x, y);
+  };
+  for (const seg of segs) {
+    switch (seg[0]) {
+      case 'M':
+      case 'L':
+        pt(seg[1], seg[2]);
+        break;
+      case 'C':
+        pt(seg[1], seg[2]);
+        pt(seg[3], seg[4]);
+        pt(seg[5], seg[6]);
+        break;
+      case 'Q':
+        pt(seg[1], seg[2]);
+        pt(seg[3], seg[4]);
+        break;
+      case 'E': {
+        const r = Math.max(seg[3], seg[4]);
+        pt(seg[1] - r, seg[2] - r);
+        pt(seg[1] + r, seg[2] + r);
+        break;
+      }
+    }
+  }
+  return b;
 }
 
 export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawable> {
   private readonly pool: TCanvas[] = [];
   private readonly pathCache = new WeakMap<object, TPath>();
+  private readonly pathBoundsCache = new WeakMap<object, Bounds | null>();
   private readonly images = new Map<string, TDrawable>();
   private readonly videos = new Map<string, VideoFrameSource>();
   private warnedShaders = false;
@@ -164,6 +250,13 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
     return p;
   }
 
+  private pathBounds(resources: Resource[], id: number): Bounds | null {
+    const res = resources[id];
+    if (!res || res.kind !== 'path') return null;
+    if (!this.pathBoundsCache.has(res)) this.pathBoundsCache.set(res, segsBounds(res.segs));
+    return this.pathBoundsCache.get(res) ?? null;
+  }
+
   private buildPath(segs: PathSeg[]): TPath {
     const p = this.host.newPath();
     for (const seg of segs) {
@@ -215,28 +308,41 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
     base.clearRect(0, 0, w, h);
 
     const layers: Layer<TPath, TDrawable, TCanvas>[] = [
-      { ctx: base, canvas: null, opacity: 1, blend: 'source-over' },
+      { ctx: base, canvas: null, opacity: 1, blend: 'source-over', bounds: null, unbounded: false },
     ];
     const ctxOf = () => layers[layers.length - 1]!.ctx;
+    const top = () => layers[layers.length - 1]!;
+
+    // Mirror of the canonical transform state, for device-space bounds
+    // tracking. One stack suffices across layers: pushGroup copies the
+    // parent's transform and popGroup composites outside the command stream.
+    let mat: Mat2x3 = IDENTITY;
+    const matStack: Mat2x3[] = [];
 
     for (const cmd of list.commands) {
       switch (cmd.op) {
         case 'save':
+          matStack.push(mat);
           ctxOf().save();
           break;
         case 'restore':
+          mat = matStack.pop() ?? mat;
           ctxOf().restore();
           break;
         case 'transform':
+          mat = multiply(mat, cmd.m);
           ctxOf().transform(cmd.m[0], cmd.m[1], cmd.m[2], cmd.m[3], cmd.m[4], cmd.m[5]);
           break;
         case 'clip':
+          // shrinks the painted region — ignoring it keeps bounds conservative
           ctxOf().clip(this.path(list.resources, cmd.path), cmd.rule ?? 'nonzero');
           break;
         case 'fillPath': {
           const ctx = ctxOf();
           ctx.fillStyle = cmd.paint.color;
           ctx.fill(this.path(list.resources, cmd.path));
+          const b = this.pathBounds(list.resources, cmd.path);
+          if (b) accumulateRect(top(), mat, b.minX, b.minY, b.maxX, b.maxY);
           break;
         }
         case 'strokePath': {
@@ -248,6 +354,12 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           if (cmd.stroke.dash) ctx.setLineDash(cmd.stroke.dash);
           ctx.stroke(this.path(list.resources, cmd.path));
           if (cmd.stroke.dash) ctx.setLineDash([]);
+          const b = this.pathBounds(list.resources, cmd.path);
+          if (b) {
+            // miter joins reach up to miterLimit (default 10) × width/2 = 5w
+            const o = cmd.stroke.width * ((cmd.stroke.join ?? 'miter') === 'miter' ? 5 : 1);
+            accumulateRect(top(), mat, b.minX - o, b.minY - o, b.maxX + o, b.maxY + o);
+          }
           break;
         }
         case 'fillText': {
@@ -257,6 +369,16 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           ctx.textBaseline = 'alphabetic';
           ctx.textAlign = cmd.align ?? 'left';
           ctx.fillText(cmd.text, cmd.x, cmd.y);
+          try {
+            const width = ctx.measureText(cmd.text).width;
+            const align = cmd.align ?? 'left';
+            const x0 = align === 'center' ? cmd.x - width / 2 : align === 'right' ? cmd.x - width : cmd.x;
+            // generous em-margins absorb overhang/ascent/descent of any sane face
+            const m = cmd.font.size;
+            accumulateRect(top(), mat, x0 - m, cmd.y - 1.5 * m, x0 + width + m, cmd.y + 0.75 * m);
+          } catch {
+            top().unbounded = true;
+          }
           break;
         }
         case 'drawImage': {
@@ -271,6 +393,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           } else {
             ctx.drawImage(drawable, x, y, dw, dh);
           }
+          accumulateRect(top(), mat, x, y, x + dw, y + dh);
           break;
         }
         case 'pushGroup': {
@@ -287,7 +410,10 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             opacity: cmd.opacity,
             blend: cmd.blend,
             filter: filtersToCanvasFilter(cmd.filters),
+            filters: cmd.filters,
             ...(cmd.shader !== undefined ? { shader: cmd.shader } : {}),
+            bounds: null,
+            unbounded: false,
           });
           break;
         }
@@ -295,17 +421,17 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           const layer = layers.pop();
           if (!layer || layer.canvas === null) throw new Error('popGroup without matching pushGroup');
           const parent = ctxOf();
-          parent.save();
-          parent.resetTransform();
-          parent.globalAlpha = layer.opacity;
-          // group filters (§3.4): applied on the composite draw; save/restore scopes it
-          if (layer.filter !== undefined && layer.filter !== 'none') parent.filter = layer.filter;
-          parent.globalCompositeOperation = layer.blend;
           let drawable: TDrawable = layer.canvas as unknown as TDrawable;
+          let shaderReplaced = false;
           if (layer.shader !== undefined) {
             const replaced = this.host.applyShader?.(layer.canvas, layer.shader, w, h) ?? null;
-            if (replaced !== null) drawable = replaced;
-            else if (this.shaderCaps === 'error') {
+            if (replaced !== null) {
+              drawable = replaced;
+              // a shader can move pixels anywhere in the layer (displacement)
+              shaderReplaced = true;
+              layer.bounds = { minX: 0, minY: 0, maxX: w, maxY: h };
+              layer.unbounded = false;
+            } else if (this.shaderCaps === 'error') {
               throw new Error(
                 'a ShaderEffect reached a backend without a shader runner (§3.7) — ' +
                   'load @glissade/effects-webgpu in the browser, or accept passthrough with caps.shaders: warn',
@@ -317,6 +443,64 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
               );
             }
           }
+
+          const hasFilter = layer.filter !== undefined && layer.filter !== 'none';
+          const outset = hasFilter ? filterOutset(layer.filters) : 0;
+
+          // propagate this layer's painted box to the parent. Anything other
+          // than source-over can touch destination pixels OUTSIDE the drawn
+          // content (copy/in/out modes clear them) — treat as unboundable.
+          const parentLayer = top();
+          if (layer.unbounded || layer.blend !== 'source-over') {
+            parentLayer.unbounded = true;
+          } else if (layer.bounds) {
+            accumulateRect(
+              parentLayer,
+              IDENTITY,
+              layer.bounds.minX - outset,
+              layer.bounds.minY - outset,
+              layer.bounds.maxX + outset,
+              layer.bounds.maxY + outset,
+            );
+          }
+
+          // The composite draws the full-canvas layer, so ctx.filter pays for
+          // every destination pixel — clip to the painted box + filter reach
+          // (16× on software rasterizers). Pixel-snapped: identical inside,
+          // provably untouched outside. Only safe under source-over.
+          const clippable =
+            hasFilter && !shaderReplaced && !layer.unbounded && layer.blend === 'source-over';
+          if (clippable && layer.bounds === null) {
+            // nothing was painted; a filtered source-over composite is a no-op
+            this.release(layer.canvas);
+            break;
+          }
+
+          parent.save();
+          parent.resetTransform();
+          if (clippable && layer.bounds) {
+            const x0 = Math.max(0, Math.floor(layer.bounds.minX - outset));
+            const y0 = Math.max(0, Math.floor(layer.bounds.minY - outset));
+            const x1 = Math.min(w, Math.ceil(layer.bounds.maxX + outset));
+            const y1 = Math.min(h, Math.ceil(layer.bounds.maxY + outset));
+            if (x0 >= x1 || y0 >= y1) {
+              // painted entirely offscreen; the filter can't reach back in
+              parent.restore();
+              this.release(layer.canvas);
+              break;
+            }
+            const clip = this.host.newPath();
+            clip.moveTo(x0, y0);
+            clip.lineTo(x1, y0);
+            clip.lineTo(x1, y1);
+            clip.lineTo(x0, y1);
+            clip.closePath();
+            parent.clip(clip, 'nonzero');
+          }
+          parent.globalAlpha = layer.opacity;
+          // group filters (§3.4): applied on the composite draw; save/restore scopes it
+          if (hasFilter) parent.filter = layer.filter!;
+          parent.globalCompositeOperation = layer.blend;
           parent.drawImage(drawable, 0, 0);
           parent.restore();
           this.release(layer.canvas);
