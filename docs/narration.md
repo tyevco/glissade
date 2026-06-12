@@ -92,4 +92,28 @@ gs render my-scene.ts --out video.mp4 --captions off      # neither
 
 - `gs render` never contacts a provider; with committed narration artifacts it runs fully offline, byte-stable across runs.
 - The `fake` provider is a pure function of the request, so narration fixtures in the repo regenerate identically on any machine.
-- Word-level timestamps land in the manifest when the provider supplies them (`segments[].words`) — segment-level is the v1 caption granularity; word-level karaoke highlighting is the reserved next step.
+- Word-level timestamps land in the manifest when the provider supplies them (`segments[].words`) — segment-level is the v1 caption granularity.
+
+## Karaoke (word-synced highlights)
+
+`Text.wordBoxes()` + the manifest's word timestamps make word-level sync pure data — geometry from the text, timing from the narration, one hold-key track joining them:
+
+```ts
+const seg = timing.segments.find((s) => s.id === 'intro')!;
+const line = new Text({ id: 'line', text: seg.text, fontFamily: 'DejaVu Sans', fontSize: 24 });
+const boxes = () => line.wordBoxes(); // index-aligned with seg.words
+
+// a marker that jumps word-to-word on the narration's clock
+const marker = new Rect({ id: 'marker', anchor: 'left', height: 30, fill: '#ffd83d', blend: 'multiply' });
+marker.position.bindSource(() => {
+  const i = wordIndex(); // animate 'idx/width' below
+  const b = boxes()[Math.min(i, boxes().length - 1)]!;
+  return [b.x - 2, b.y + b.h / 2];
+});
+marker.width.bindSource(() => boxes()[Math.min(wordIndex(), boxes().length - 1)]!.w + 4);
+
+// hold keys at each word's start time, straight from the manifest
+track('idx/width', 'number', seg.words!.map((w, i) => key(w.start, i, { interp: 'hold' })));
+```
+
+For a sweeping (rather than jumping) karaoke marker, drive `highlight()`'s `progress` with keys at word starts instead, valued at each word's cumulative width share.

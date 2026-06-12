@@ -6,7 +6,7 @@
 import { signal, type BindableSignal, type PathValue } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
-import { breakLines, estimatingMeasurer, quantize, type TextMeasurer } from './text.js';
+import { breakLines, estimatingMeasurer, quantize, segmentWords, type TextMeasurer } from './text.js';
 
 /** Rounded-rect path segments — Rect's outline, shared with Highlight. */
 export function roundedRectSegs(x: number, y: number, w: number, h: number, r: number): PathSeg[] {
@@ -358,6 +358,17 @@ export interface LineBox {
   h: number;
 }
 
+/** One word's ink box within a laid-out line, in the Text node's draw space. */
+export interface WordBox {
+  text: string;
+  /** laid-out line index (blank lines keep their slot in the numbering) */
+  line: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface TextProps extends NodeProps {
   text?: PropInit<string>;
   fill?: PropInit<string>;
@@ -451,6 +462,43 @@ export class Text extends Node {
       const w = quantize(met.width);
       const x = this.align === 'left' ? 0 : this.align === 'center' ? -w / 2 : -w;
       boxes.push({ text: line, x, y: i * step - met.ascent, w, h: met.ascent + met.descent });
+    }
+    return boxes;
+  }
+
+  /**
+   * Per-word ink boxes within each laid-out line — the SAME segmentation the
+   * breaker flows (Intl.Segmenter boundaries, punctuation glued), positioned
+   * by cumulative prefix advances so cross-word kerning is exact and word
+   * widths sum to the line's width. Whitespace contributes advance but no
+   * box. Pair index-wise with a narration manifest's word timestamps for
+   * karaoke; draw your own rects for sub-line multi-color token work.
+   */
+  wordBoxes(measurer?: TextMeasurer): WordBox[] {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const text = this.text();
+    if (!text) return [];
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const maxWidth = this.width();
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
+    const step = quantize(font.size * this.lineHeight);
+    const boxes: WordBox[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const met = m.measureText(line, font);
+      const lineW = quantize(met.width);
+      const lineX = this.align === 'left' ? 0 : this.align === 'center' ? -lineW / 2 : -lineW;
+      const y = i * step - met.ascent;
+      const h = met.ascent + met.descent;
+      let prefix = '';
+      for (const seg of segmentWords(line)) {
+        const before = prefix === '' ? 0 : m.measureText(prefix, font).width;
+        prefix += seg;
+        if (seg.trim() === '') continue; // whitespace advances, but has no ink
+        const after = m.measureText(prefix, font).width;
+        boxes.push({ text: seg, line: i, x: lineX + before, y, w: after - before, h });
+      }
     }
     return boxes;
   }

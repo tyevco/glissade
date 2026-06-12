@@ -45,6 +45,7 @@ export {
   Video,
   roundedRectSegs,
   type LineBox,
+  type WordBox,
   type ShapeProps,
   type PathProps,
   type TextProps,
@@ -68,6 +69,7 @@ export {
 
 export {
   breakLines,
+  segmentWords,
   quantize,
   estimatingMeasurer,
   type TextMeasurer,

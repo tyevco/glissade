@@ -43,7 +43,12 @@ export const estimatingMeasurer: TextMeasurer = {
 // differences are per-engine, consistent with the §5.5 determinism scope.
 let wordSegmenter: Intl.Segmenter | null | undefined;
 
-function segmentWords(text: string): string[] {
+/**
+ * The draw-path word segmentation (Intl.Segmenter boundaries, punctuation
+ * glued to its predecessor) — exported so Text.wordBoxes() boxes EXACTLY the
+ * units the breaker flows.
+ */
+export function segmentWords(text: string): string[] {
   if (wordSegmenter === undefined) {
     wordSegmenter =
       typeof Intl !== 'undefined' && 'Segmenter' in Intl

@@ -195,3 +195,47 @@ describe('lineBoxes ↔ highlight integration shape', () => {
     expect(Object.keys(box).sort()).toEqual(['h', 'text', 'w', 'x', 'y']);
   });
 });
+
+describe('Text.wordBoxes', () => {
+  it('one box per word, positioned by prefix advance; whitespace advances boxlessly', () => {
+    const t = new Text({ text: 'ab cd', fontSize: 10 });
+    const boxes = t.wordBoxes(estimatingMeasurer);
+    // estimating: 5.2/char. 'ab' [0, 10.4); space advances 5.2; 'cd' at 15.6
+    expect(boxes.map((b) => b.text)).toEqual(['ab', 'cd']);
+    expect(boxes[0]).toEqual({ text: 'ab', line: 0, x: 0, y: -8, w: 10.4, h: 10 });
+    expect(boxes[1]!.x).toBeCloseTo(15.6, 9);
+    expect(boxes[1]!.w).toBeCloseTo(10.4, 9);
+  });
+
+  it('word advances span exactly the line box (the acceptance sum)', () => {
+    const t = new Text({ text: 'one two three', fontSize: 10 });
+    const line = t.lineBoxes(estimatingMeasurer)[0]!;
+    const words = t.wordBoxes(estimatingMeasurer);
+    const last = words[words.length - 1]!;
+    expect(words[0]!.x).toBe(line.x);
+    expect(last.x + last.w).toBeCloseTo(line.x + line.w, 0.5); // within quantization
+  });
+
+  it('punctuation glues to its word — the draw segmentation, not naive splitting', () => {
+    const t = new Text({ text: 'no replay, ever.', fontSize: 10 });
+    expect(t.wordBoxes(estimatingMeasurer).map((b) => b.text)).toEqual(['no', 'replay,', 'ever.']);
+  });
+
+  it('wrapped lines carry their line index; align offsets the whole line', () => {
+    const t = new Text({ text: 'aaaa bbbb', fontSize: 10, width: 25, align: 'center' });
+    const boxes = t.wordBoxes(estimatingMeasurer);
+    // 'aaaa bbbb' at 5.2/char exceeds 25 → one word per line
+    expect(boxes.map((b) => [b.text, b.line])).toEqual([
+      ['aaaa', 0],
+      ['bbbb', 1],
+    ]);
+    // centered: each line's first word starts at −quantize(lineW)/2
+    expect(boxes[0]!.x).toBe(-21 / 2); // 4·5.2 = 20.8 → quantized 21
+    expect(boxes[1]!.y).toBe(12.5 - 8);
+  });
+
+  it('blank lines keep their slot in the numbering', () => {
+    const t = new Text({ text: 'ab\n\ncd', fontSize: 10 });
+    expect(t.wordBoxes(estimatingMeasurer).map((b) => b.line)).toEqual([0, 2]);
+  });
+});
