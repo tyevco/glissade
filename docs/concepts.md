@@ -31,6 +31,19 @@ Pure, total, deterministic: same inputs → same DisplayList, in any call order.
 
 Assets are warmed *before* evaluation (`evaluate` never awaits); a cold video source throws a structured `ColdAssetError` that drivers catch to warm-and-retry.
 
+## Anchors, measured text, and highlights
+
+Nodes are center-anchored by default, but an explicit `anchor` pins `position` to any fraction of the node's intrinsic box — presets (`'left'`, `'top-left'`, `'bottom'`, …) or a raw `[ax, ay]` pair — and is also the rotation/scale pivot (the Lottie anchor model). Grow direction falls out: a `'left'`-anchored rect's width track sweeps rightward, an `[0, 1]`-anchored bar grows upward, no position bookkeeping.
+
+```ts
+new Rect({ anchor: 'left', position: [40, 60], height: 22 });
+// track('bar/width', …) — the left edge stays pinned, growth goes right
+```
+
+Text exposes its own layout, so dimensions never need hand-calculation: `text.measuredSize()` is the wrapped `{w, h}` (the same numbers Layout flows with), and `text.lineBoxes()` returns per-line ink boxes from the same line-break pass that draws — both pull-based, re-measuring when text, font, or wrap width animate, using whatever measurer the active backend injected.
+
+`highlight(text, opts)` builds on those: a marker-style highlight node (place it as the sibling *before* the text) that sweeps per-line rounded rects across the laid-out lines via one 0→1 `progress` track, in reading order at width-weighted constant speed. `blend: 'multiply'` gives real highlighter ink. For karaoke, key `progress` from the word timestamps in a narration timing manifest.
+
 ## The DisplayList and backends
 
 Nodes never touch a rendering context. `evaluate` emits a flat, serializable command stream (`fillPath`, `fillText`, `pushGroup`/`popGroup` for group opacity and blends, `drawImage` against an asset registry). Backends rasterize it: Canvas 2D in the browser, Skia (`@napi-rs/canvas`) headless — both Skia-family rasterizers, so preview and export agree (byte-exact per path; perceptual SSIM across the seam).

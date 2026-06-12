@@ -95,9 +95,11 @@ export function containsPoint(node: Node, p: Vec2, measurer: TextMeasurer): bool
     return Math.abs(p[0]) <= node.width() / 2 && Math.abs(p[1]) <= node.height() / 2;
   }
   if (node instanceof Text) {
-    // text draws from a baseline origin at its align edge (§3.6): box = flowOffset + intrinsicSize
+    // text draws from a baseline origin at its align edge (§3.6). drawOffset,
+    // not flowOffset: the inverse worldMatrix already lands the point in DRAW
+    // space, where any anchor shift has been applied.
     const size = node.intrinsicSize(measurer);
-    const off = node.flowOffset(measurer);
+    const off = node.drawOffset(measurer);
     return p[0] >= off.x && p[0] <= off.x + size.w && p[1] >= off.y && p[1] <= off.y + size.h;
   }
   return false; // Group/unknown nodes need an explicit hitArea to be hittable

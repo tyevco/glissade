@@ -19,6 +19,7 @@ import goldenFilters from '../../examples/src/scenes/golden-filters.js';
 import goldenPaths from '../../examples/src/scenes/golden-paths.js';
 import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
 import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
+import goldenMarker from '../../examples/src/scenes/golden-marker.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -45,6 +46,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // narration-anchored captions, both safe-area aspect ratios (§narrate)
   { name: 'captions', mod: goldenCaptions },
   { name: 'captions-portrait', mod: goldenCaptionsPortrait },
+  // anchors (placement + pivot) and the marker highlight sweep
+  { name: 'marker', mod: goldenMarker },
 ];
 
 for (const { name, mod } of CORPUS) {

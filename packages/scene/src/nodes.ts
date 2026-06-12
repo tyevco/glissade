@@ -6,7 +6,29 @@
 import { signal, type BindableSignal, type PathValue } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
-import { breakLines, quantize, type TextMeasurer } from './text.js';
+import { breakLines, estimatingMeasurer, quantize, type TextMeasurer } from './text.js';
+
+/** Rounded-rect path segments — Rect's outline, shared with Highlight. */
+export function roundedRectSegs(x: number, y: number, w: number, h: number, r: number): PathSeg[] {
+  if (r <= 0) {
+    return [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']];
+  }
+  const HALF = Math.PI / 2;
+  // canvas ellipse() draws a connecting line from the current point, so
+  // each quarter arc continues the outline
+  return [
+    ['M', x + r, y],
+    ['L', x + w - r, y],
+    ['E', x + w - r, y + r, r, r, 0, -HALF, 0],
+    ['L', x + w, y + h - r],
+    ['E', x + w - r, y + h - r, r, r, 0, 0, HALF],
+    ['L', x + r, y + h],
+    ['E', x + r, y + h - r, r, r, 0, HALF, Math.PI],
+    ['L', x, y + r],
+    ['E', x + r, y + r, r, r, 0, Math.PI, Math.PI + HALF],
+    ['Z'],
+  ];
+}
 
 export class Group extends Node {
   readonly children: Node[];
@@ -105,27 +127,8 @@ export class Rect extends Shape {
   protected pathSegs(): PathSeg[] {
     const w = this.width();
     const h = this.height();
-    const x = -w / 2;
-    const y = -h / 2;
     const r = Math.min(Math.max(0, this.cornerRadius()), w / 2, h / 2);
-    if (r <= 0) {
-      return [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']];
-    }
-    const HALF = Math.PI / 2;
-    // canvas ellipse() draws a connecting line from the current point, so
-    // each quarter arc continues the outline
-    return [
-      ['M', x + r, y],
-      ['L', x + w - r, y],
-      ['E', x + w - r, y + r, r, r, 0, -HALF, 0],
-      ['L', x + w, y + h - r],
-      ['E', x + w - r, y + h - r, r, r, 0, 0, HALF],
-      ['L', x + r, y + h],
-      ['E', x + r, y + h - r, r, r, 0, HALF, Math.PI],
-      ['L', x, y + r],
-      ['E', x + r, y + r, r, r, 0, Math.PI, Math.PI + HALF],
-      ['Z'],
-    ];
+    return roundedRectSegs(-w / 2, -h / 2, w, h, r);
   }
 }
 
@@ -201,7 +204,7 @@ export class Path extends Shape {
   }
 
   /** Geometry is node-local, not center-anchored: offset to the box's actual top-left. */
-  override flowOffset(): { x: number; y: number } {
+  override drawOffset(): { x: number; y: number } {
     const b = this.bounds();
     return { x: b.minX, y: b.minY };
   }
@@ -346,6 +349,15 @@ export class Video extends Node {
   }
 }
 
+/** One laid-out line's ink box, in the Text node's draw space. */
+export interface LineBox {
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface TextProps extends NodeProps {
   text?: PropInit<string>;
   fill?: PropInit<string>;
@@ -397,13 +409,50 @@ export class Text extends Node {
   }
 
   /** Text draws from a baseline origin at its align edge, not a center (§3.6). */
-  override flowOffset(measurer: TextMeasurer): { x: number; y: number } {
-    const size = this.intrinsicSize(measurer);
+  override drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const size = this.intrinsicSize(m);
     const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
-    const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, measurer)[0] ?? '';
-    const ascent = measurer.measureText(firstLine, font).ascent;
+    const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, m)[0] ?? '';
+    const ascent = m.measureText(firstLine, font).ascent;
     const x = this.align === 'left' ? 0 : this.align === 'center' ? -size.w / 2 : -size.w;
     return { x, y: -ascent };
+  }
+
+  /**
+   * The wrapped box {w, h}, measured with the scene's active measurer — the
+   * same numbers Layout flows with, public so bindings never hand-calculate
+   * text dimensions (e.g. underline width = () => title.measuredSize().w).
+   */
+  measuredSize(measurer?: TextMeasurer): { w: number; h: number } {
+    return this.intrinsicSize(measurer ?? this.measurerSource?.() ?? estimatingMeasurer);
+  }
+
+  /**
+   * Per-line ink boxes in this node's DRAW space (origin = first baseline at
+   * the align edge), from the same breakLines pass that draws. Pull-based:
+   * re-measures when text/font/width animate. Blank lines (from '\n\n')
+   * produce no box. The substrate for highlights, underlines, per-line
+   * reveals, selections.
+   */
+  lineBoxes(measurer?: TextMeasurer): LineBox[] {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const text = this.text();
+    if (!text) return [];
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const maxWidth = this.width();
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
+    const step = quantize(font.size * this.lineHeight);
+    const boxes: LineBox[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const met = m.measureText(line, font);
+      const w = quantize(met.width);
+      const x = this.align === 'left' ? 0 : this.align === 'center' ? -w / 2 : -w;
+      boxes.push({ text: line, x, y: i * step - met.ascent, w, h: met.ascent + met.descent });
+    }
+    return boxes;
   }
 
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {

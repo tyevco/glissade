@@ -24,7 +24,16 @@ export {
   type Rect as RectShape,
 } from './displayList.js';
 
-export { Node, type EvalContext, type NodeProps, type PropInit, type BindablePropTarget, type HitArea } from './node.js';
+export {
+  Node,
+  resolveAnchor,
+  type AnchorSpec,
+  type EvalContext,
+  type NodeProps,
+  type PropInit,
+  type BindablePropTarget,
+  type HitArea,
+} from './node.js';
 
 export {
   Group,
@@ -34,12 +43,16 @@ export {
   Text,
   ImageNode,
   Video,
+  roundedRectSegs,
+  type LineBox,
   type ShapeProps,
   type PathProps,
   type TextProps,
   type ImageProps,
   type VideoProps,
 } from './nodes.js';
+
+export { Highlight, highlight, type HighlightProps } from './highlight.js';
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';

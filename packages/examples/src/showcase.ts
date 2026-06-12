@@ -19,6 +19,7 @@ import interactive from './scenes/showcase/interactive.js';
 import filters from './scenes/golden-filters.js';
 import paths from './scenes/golden-paths.js';
 import captions from './scenes/golden-captions.js';
+import marker from './scenes/golden-marker.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
@@ -46,8 +47,9 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   layout: { mod: layoutScene, blurb: 'Yoga flexbox behind the LayoutEngine seam: gap and tile size are animated tracks, and the same wasm computes these boxes headlessly — byte-compared in CI.' },
   flexboard: { mod: flexboard, blurb: 'A settings panel built entirely from nested Layouts: toggles are tiny flex containers, the description reflows as its wrap width tweens, and a growing row pushes its siblings.' },
   interactive: { mod: interactive, blurb: 'REAL toggles: click them — mid-flight clicks reverse the knob with its velocity intact (machine handoffs). The third toggle and the glow stay on the scrubbable ambient timeline; the button is two one-liner presets.' },
-  filters: { mod: filters, blurb: 'Group filters as signals: blur, drop-shadow, brightness, contrast, saturate — each param is a tweening track. The bottom row is the unfiltered control. (CPU-rendered browsers pay for these; a content-bounds clip fix is on the board.)' },
+  filters: { mod: filters, blurb: 'Group filters as signals: blur, drop-shadow, brightness, contrast, saturate — each param is a tweening track. The bottom row is the unfiltered control. Composites clip to content bounds, so these stay cheap even on software-rendered browsers.' },
   paths: { mod: paths, blurb: 'Path morphing: contours are a value type, so shapes tween point-by-point like any number — with fill-rule-aware hit testing on the result.' },
+  marker: { mod: marker, blurb: 'Anchors: bars grow FROM their pinned edge with plain width/height tracks, a needle rotates around its anchored end, and a marker highlight sweeps wrapped text via one progress track — line boxes come from the text itself.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
 };
 

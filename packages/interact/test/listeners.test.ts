@@ -241,3 +241,23 @@ describe('Path hit testing (§C.3): fill-rule, not bounding box', () => {
     expect(hitTest(scene, 195, 100)).toBeNull(); // outside entirely
   });
 });
+
+describe('hitTest: anchored nodes', () => {
+  it('an anchored rect hits where it DRAWS — the box hangs off the anchor', () => {
+    const bar = new Rect({ id: 'bar', anchor: 'left', width: 100, height: 20, position: [50, 200] });
+    bar.interactive = true;
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [bar] });
+    expect(hitTest(scene, 100, 200)).toBe(bar); // inside [50..150]
+    expect(hitTest(scene, 145, 200)).toBe(bar);
+    expect(hitTest(scene, 40, 200)).toBeNull(); // left of the pinned edge
+    expect(hitTest(scene, 160, 200)).toBeNull(); // past the grown end
+  });
+
+  it('rotation around the anchor moves the hit region with the pixels', () => {
+    const bar = new Rect({ id: 'bar', anchor: 'left', width: 100, height: 20, position: [50, 200], rotation: 90 });
+    bar.interactive = true;
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [bar] });
+    expect(hitTest(scene, 50, 250)).toBe(bar); // swung downward from the pivot
+    expect(hitTest(scene, 100, 200)).toBeNull(); // the unrotated spot is empty
+  });
+});

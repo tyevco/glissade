@@ -6,6 +6,7 @@
 
 import {
   computed,
+  emitDevWarning,
   signal,
   vec2Signal,
   TARGET_PATH,
@@ -20,8 +21,50 @@ import {
   type FilterSpec,
   type ShaderRef,
 } from './displayList.js';
-import { type TextMeasurer } from './text.js';
+import { estimatingMeasurer, type TextMeasurer } from './text.js';
 import { fromTRS, multiply, matEquals, IDENTITY, type Mat2x3 } from './matrix.js';
+
+/**
+ * Where `position` pins to on the node's intrinsic box, as fractions of its
+ * size — and the rotation/scale pivot (the Lottie anchor model). Default
+ * 'center' preserves every pre-anchor scene byte-for-byte. With a non-center
+ * anchor, grow direction falls out: anchor 'left' + a width track sweeps
+ * rightward, anchor [0, 1] grows a bar upward.
+ */
+export type AnchorSpec =
+  | 'center'
+  | 'top-left'
+  | 'top'
+  | 'top-right'
+  | 'left'
+  | 'right'
+  | 'bottom-left'
+  | 'bottom'
+  | 'bottom-right'
+  | readonly [number, number];
+
+const ANCHOR_PRESETS: Record<string, Vec2> = {
+  'center': [0.5, 0.5],
+  'top-left': [0, 0],
+  'top': [0.5, 0],
+  'top-right': [1, 0],
+  'left': [0, 0.5],
+  'right': [1, 0.5],
+  'bottom-left': [0, 1],
+  'bottom': [0.5, 1],
+  'bottom-right': [1, 1],
+};
+
+export function resolveAnchor(spec: AnchorSpec): Vec2 {
+  if (typeof spec === 'string') {
+    const preset = ANCHOR_PRESETS[spec];
+    if (!preset) {
+      throw new Error(`unknown anchor '${spec}' (use a preset like 'top-left' or a [ax, ay] pair)`);
+    }
+    return preset;
+  }
+  return [spec[0], spec[1]];
+}
 
 export interface EvalContext {
   /** The playhead value at evaluate() entry — the only time channel (§3.1). */
@@ -45,6 +88,8 @@ export interface NodeProps {
   zIndex?: PropInit<number>;
   /** Group filters (§3.4): the subtree composites as a unit through them. */
   filters?: PropInit<FilterSpec[]>;
+  /** Placement point + transform pivot on the intrinsic box; default 'center'. */
+  anchor?: AnchorSpec;
 }
 
 export interface BindablePropTarget {
@@ -78,8 +123,13 @@ export abstract class Node {
   readonly blend: BindableSignal<BlendMode>;
   readonly zIndex: BindableSignal<number>;
   readonly filters: BindableSignal<FilterSpec[]>;
+  /** Resolved anchor fraction over the intrinsic box; [0.5, 0.5] = center. */
+  readonly anchor: Vec2;
+  /** True only when the author SET an anchor — unset keeps the legacy origin. */
+  readonly hasAnchor: boolean;
 
   parent: Node | null = null;
+  #warnedAnchor = false;
 
   /** v2 §C.3: participates in hit testing; set implicitly by attaching a listener. */
   interactive = false;
@@ -110,10 +160,19 @@ export abstract class Node {
     this.blend = initScalar(signal<BlendMode>('source-over'), props.blend);
     this.zIndex = initScalar(signal(0), props.zIndex);
     this.filters = initScalar(signal<FilterSpec[]>([]), props.filters);
+    this.hasAnchor = props.anchor !== undefined;
+    this.anchor = resolveAnchor(props.anchor ?? 'center');
 
-    this.localMatrix = computed(() => fromTRS(this.position(), this.rotation(), this.scale()), {
-      equals: matEquals,
-    });
+    this.localMatrix = computed(
+      () => {
+        const trs = fromTRS(this.position(), this.rotation(), this.scale());
+        const [sx, sy] = this.anchorShift();
+        // the shift composes AFTER TRS, so the anchor is both the placement
+        // point and the rotation/scale pivot
+        return sx === 0 && sy === 0 ? trs : multiply(trs, [1, 0, 0, 1, sx, sy]);
+      },
+      { equals: matEquals },
+    );
     this.worldMatrix = computed(
       () => (this.parent ? multiply(this.parent.worldMatrix(), this.localMatrix()) : this.localMatrix()),
       { equals: matEquals },
@@ -155,13 +214,57 @@ export abstract class Node {
   }
 
   /**
-   * Vector from the node origin to its intrinsic box's TOP-LEFT, so Layout
-   * can place any anchor correctly. Default: center-anchored (every shape).
-   * Text overrides — it draws from a left/center/right baseline origin.
+   * Vector from the DRAW origin to the intrinsic box's top-left, in the
+   * geometry space draw() emits into (anchor-independent — the anchor shift
+   * lives in localMatrix). Hit testing boxes nodes with this. Default:
+   * center-anchored geometry (every shape). Text overrides — it draws from a
+   * left/center/right baseline origin; Path from author-positioned bounds.
    */
-  flowOffset(measurer: TextMeasurer): { x: number; y: number } {
-    const size = this.intrinsicSize(measurer) ?? { w: 0, h: 0 };
+  drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const size = this.intrinsicSize(m) ?? { w: 0, h: 0 };
     return { x: -size.w / 2, y: -size.h / 2 };
+  }
+
+  /**
+   * Vector from the node ORIGIN (the point `position` places) to the box's
+   * top-left, so Layout can place any node. With an anchor this is exactly
+   * (−ax·w, −ay·h); the center default reproduces (−w/2, −h/2).
+   */
+  flowOffset(measurer?: TextMeasurer): { x: number; y: number } {
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const d = this.drawOffset(m);
+    const [sx, sy] = this.anchorShift(m);
+    return { x: d.x + sx, y: d.y + sy };
+  }
+
+  /**
+   * Translation composed after TRS in localMatrix: moves the drawn box so the
+   * anchor point lands on the origin. shift = −(drawOffset + anchor·size).
+   * No anchor set → zero shift, the legacy origin (shape center / Text
+   * baseline / Path author coords) — every pre-anchor scene is byte-stable.
+   * An EXPLICIT anchor pins position to that fraction of the box, even
+   * 'center' (which differs from the legacy origin only for Text and Path).
+   * Nodes without an intrinsic box (Group) warn once and ignore it.
+   */
+  protected anchorShift(measurer?: TextMeasurer): Vec2 {
+    if (!this.hasAnchor) return [0, 0];
+    const [ax, ay] = this.anchor;
+    const m = measurer ?? this.measurerSource?.() ?? estimatingMeasurer;
+    const size = this.intrinsicSize(m);
+    if (!size) {
+      if (!this.#warnedAnchor) {
+        this.#warnedAnchor = true;
+        emitDevWarning(
+          `anchor set on a node without an intrinsic box${this.id ? ` ('${this.id}')` : ''} — ignored (give it a sized node, or position children explicitly)`,
+        );
+      }
+      return [0, 0];
+    }
+    const d = this.drawOffset(m);
+    const sx = -(d.x + ax * size.w);
+    const sy = -(d.y + ay * size.h);
+    return [sx === 0 ? 0 : sx, sy === 0 ? 0 : sy];
   }
 
   /** §3.5 predicate: composite-as-a-unit when opacity/blend/filters demand it. */
