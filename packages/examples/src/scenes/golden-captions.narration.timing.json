@@ -1,0 +1,75 @@
+{
+  "timingVersion": 1,
+  "provider": "fake",
+  "providerVersion": "fake-1",
+  "totalDuration": 4.523560090702948,
+  "segments": [
+    {
+      "id": "intro",
+      "text": "Welcome to glissade.",
+      "start": 0.25,
+      "duration": 1.308843537414966,
+      "file": "intro-842b0c93.wav",
+      "words": [
+        {
+          "word": "Welcome",
+          "start": 0.25,
+          "end": 0.6862811791383221
+        },
+        {
+          "word": "to",
+          "start": 0.6862811791383221,
+          "end": 1.1225623582766442
+        },
+        {
+          "word": "glissade.",
+          "start": 1.1225623582766442,
+          "end": 1.558843537414966
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "text": "Captions are data.",
+      "start": 1.908843537414966,
+      "duration": 1.308843537414966,
+      "file": "data-331fce83.wav",
+      "words": [
+        {
+          "word": "Captions",
+          "start": 1.908843537414966,
+          "end": 2.345124716553288
+        },
+        {
+          "word": "are",
+          "start": 2.345124716553288,
+          "end": 2.78140589569161
+        },
+        {
+          "word": "data.",
+          "start": 2.78140589569161,
+          "end": 3.217687074829932
+        }
+      ]
+    },
+    {
+      "id": "outro",
+      "text": "Render anywhere.",
+      "start": 3.567687074829932,
+      "duration": 0.9558730158730159,
+      "file": "outro-ca6c8611.wav",
+      "words": [
+        {
+          "word": "Render",
+          "start": 3.567687074829932,
+          "end": 4.0456235827664395
+        },
+        {
+          "word": "anywhere.",
+          "start": 4.0456235827664395,
+          "end": 4.523560090702948
+        }
+      ]
+    }
+  ]
+}

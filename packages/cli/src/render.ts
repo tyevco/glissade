@@ -25,6 +25,8 @@ export interface RenderOptions {
   state?: string;
   /** Downgrade a trace hash mismatch to a warning. */
   force?: boolean;
+  /** burn (default): captions render in-frame; sidecar/off hide the caption node. */
+  captions?: 'burn' | 'sidecar' | 'off';
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -57,12 +59,20 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   const scene = mod.createScene();
   // machine export routes (v2 §A.6): machines render via --trace/--state or error
   const { resolveRenderDoc } = await import('./machines.js');
-  const doc = resolveRenderDoc(mod, scene, {
+  let doc = resolveRenderDoc(mod, scene, {
     ...(opts.trace !== undefined ? { trace: opts.trace } : {}),
     ...(opts.state !== undefined ? { state: opts.state } : {}),
     ...(opts.force !== undefined ? { force: opts.force } : {}),
   });
   const fps = opts.fps ?? doc.fps ?? 60;
+
+  // --captions sidecar/off: hide the caption node via a document override —
+  // only when the scene actually has one (an unbound target would throw).
+  const captionsMode = opts.captions ?? 'burn';
+  const { hideCaptionsDoc, timingPathFor, writeCaptionSidecars } = await import('./captions.js');
+  if (captionsMode !== 'burn' && scene.resolveTarget('captions/opacity') !== undefined) {
+    doc = hideCaptionsDoc(doc);
+  }
 
   const { compileTimeline } = await import('@glissade/core');
   const compiled = compileTimeline(doc);
@@ -127,15 +137,32 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   backend.dispose();
   for (const source of videoSources) source.close();
 
+  // burn and sidecar modes both emit .srt/.vtt — the cues come from the same
+  // timing manifest as the burned track, so they match by construction
+  const emitSidecars = (target: string): void => {
+    if (captionsMode === 'off') return;
+    const timingPath = timingPathFor(opts.modulePath);
+    if (!timingPath) {
+      if (captionsMode === 'sidecar') {
+        process.stderr.write('note: --captions sidecar: no narration timing manifest found; run gs narrate first\n');
+      }
+      return;
+    }
+    const { srt, vtt } = writeCaptionSidecars(timingPath, target);
+    process.stderr.write(`captions: ${srt}, ${vtt}\n`);
+  };
+
   if (!isVideo) {
     if (compiled.audio.length > 0) {
       process.stderr.write('note: PNG-sequence output ignores timeline audio; render to .mp4/.webm to mix it\n');
     }
+    emitSidecars(framesDir);
     return { frames: total, out: framesDir };
   }
 
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
+  emitSidecars(outAbs);
   const isWebm = /\.webm$/i.test(outAbs);
   const container = isWebm ? ('webm' as const) : ('mp4' as const);
 

@@ -1,0 +1,34 @@
+{
+  "name": "@glissade/narrate",
+  "version": "0.3.0",
+  "description": "glissade narration + captions: TTS at prepare time (gs narrate), deterministic caching, narration-anchored timeline beats, and captions as plain tracks. Render stays offline.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "default": "./dist/providers.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/narrate"
+  }
+}

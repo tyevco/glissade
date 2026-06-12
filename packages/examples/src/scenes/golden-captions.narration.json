@@ -1,0 +1,11 @@
+{
+  "narrationVersion": 1,
+  "provider": "fake",
+  "gap": 0.35,
+  "leadIn": 0.25,
+  "segments": [
+    { "id": "intro", "text": "Welcome to glissade." },
+    { "id": "data", "text": "Captions are data." },
+    { "id": "outro", "text": "Render anywhere." }
+  ]
+}

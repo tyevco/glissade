@@ -1,0 +1,60 @@
+{
+  "cacheVersion": 1,
+  "entries": {
+    "331fce83f99a84d508a286c69f6cc16f5117c172fcc01e3e82af7ca98eea5795": {
+      "file": "data-331fce83.wav",
+      "words": [
+        {
+          "word": "Captions",
+          "start": 0,
+          "end": 0.43628117913832204
+        },
+        {
+          "word": "are",
+          "start": 0.43628117913832204,
+          "end": 0.8725623582766441
+        },
+        {
+          "word": "data.",
+          "start": 0.8725623582766441,
+          "end": 1.308843537414966
+        }
+      ]
+    },
+    "842b0c93e198005fc60eeec1d4d023d0d9cba6393e9094d09ca7636339846e90": {
+      "file": "intro-842b0c93.wav",
+      "words": [
+        {
+          "word": "Welcome",
+          "start": 0,
+          "end": 0.43628117913832204
+        },
+        {
+          "word": "to",
+          "start": 0.43628117913832204,
+          "end": 0.8725623582766441
+        },
+        {
+          "word": "glissade.",
+          "start": 0.8725623582766441,
+          "end": 1.308843537414966
+        }
+      ]
+    },
+    "ca6c8611960a3dd8e1fe7a132dffd06cda59615d82d748310dced339548061ce": {
+      "file": "outro-ca6c8611.wav",
+      "words": [
+        {
+          "word": "Render",
+          "start": 0,
+          "end": 0.47793650793650794
+        },
+        {
+          "word": "anywhere.",
+          "start": 0.47793650793650794,
+          "end": 0.9558730158730159
+        }
+      ]
+    }
+  }
+}

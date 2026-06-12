@@ -5,10 +5,19 @@
  */
 
 import { render } from './render.js';
+import { parseCaptionsMode, type CaptionsMode } from './captions.js';
 
 function fail(msg: string): never {
   console.error(`gs: ${msg}`);
   process.exit(1);
+}
+
+function parseCaptionsModeOrFail(raw: string | undefined): CaptionsMode {
+  try {
+    return parseCaptionsMode(raw);
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+  }
 }
 
 function parseArgs(argv: string[]) {
@@ -38,6 +47,7 @@ const USAGE = `usage:
   gs render <scene-module> [options]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json> [--out <dir>] [--allow-degraded]
+  gs narrate <scene-module|script.narration.json> [--provider <id>] [--force]
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -46,6 +56,7 @@ render options:
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
+  --captions <m>   burn (default) | sidecar | off; burn/sidecar also write .srt/.vtt
 
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
@@ -54,17 +65,40 @@ dev options:
 import options:
   --out <dir>          output directory for the generated scene module (default: .)
   --allow-degraded     downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
+
+narrate options (the explicit TTS prepare step; render itself stays offline):
+  --provider <id>  fake | espeak | openai (default: the script's provider, else espeak)
+  --force          ignore the cache and re-synthesize every segment
 `;
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'dev' && command !== 'import') {
+  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
   if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json>' : '<scene-module>'}\n${USAGE}`);
+
+  if (command === 'narrate') {
+    const { narrateCommand } = await import('./narrate.js');
+    try {
+      const result = await narrateCommand({
+        input: modulePath,
+        ...(flags.has('provider') ? { provider: flags.get('provider')! } : {}),
+        ...(flags.has('force') ? { force: true } : {}),
+      });
+      const parts = [
+        result.synthesized.length > 0 ? `synthesized ${result.synthesized.join(', ')}` : null,
+        result.reused.length > 0 ? `reused ${result.reused.length} cached` : null,
+      ].filter(Boolean);
+      process.stderr.write(`gs narrate: ${parts.join('; ') || 'nothing to do'} → ${result.timingPath}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
 
   if (command === 'import') {
     const { importCommand } = await import('./import.js');
@@ -113,6 +147,7 @@ async function main(): Promise<void> {
       ...(flags.has('trace') ? { trace: flags.get('trace')! } : {}),
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),
+      captions: parseCaptionsModeOrFail(flags.get('captions')),
       onProgress: (n, total) => {
         if (n % 30 === 0 || n === total) {
           process.stderr.write(`\rrendering ${n}/${total} frames`);

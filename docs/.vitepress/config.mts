@@ -23,6 +23,7 @@ export default defineConfig({
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Concepts', link: '/concepts' },
           { text: 'Interactivity (v2)', link: '/interactivity' },
+          { text: 'Narration & captions', link: '/narration' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },

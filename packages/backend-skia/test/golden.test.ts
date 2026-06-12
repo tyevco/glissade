@@ -17,6 +17,8 @@ import goldenTypography from '../../examples/src/scenes/golden-typography.js';
 import goldenLayout from '../../examples/src/scenes/golden-layout.js';
 import goldenFilters from '../../examples/src/scenes/golden-filters.js';
 import goldenPaths from '../../examples/src/scenes/golden-paths.js';
+import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
+import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -40,12 +42,15 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'layout', mod: goldenLayout },
   { name: 'filters', mod: goldenFilters },
   { name: 'paths', mod: goldenPaths },
+  // narration-anchored captions, both safe-area aspect ratios (§narrate)
+  { name: 'captions', mod: goldenCaptions },
+  { name: 'captions-portrait', mod: goldenCaptionsPortrait },
 ];
 
 for (const { name, mod } of CORPUS) {
   describe(`golden frames: ${name}`, () => {
     const scene = mod.createScene();
-    const backend = new SkiaBackend(640, 360);
+    const backend = new SkiaBackend(scene.size.w, scene.size.h);
     scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
 
     for (const frame of FRAMES) {
@@ -81,7 +86,7 @@ for (const { name, mod } of CORPUS) {
 
     it('a fresh scene + random-order evaluation produces the same pixels (purity, §2.5)', () => {
       const sceneB = mod.createScene();
-      const backendB = new SkiaBackend(640, 360);
+      const backendB = new SkiaBackend(sceneB.size.w, sceneB.size.h);
       sceneB.setTextMeasurer(backendB);
       const ts = [2.9, 0.4, 1.5, 2.0, 0.0];
       for (const t of ts) {

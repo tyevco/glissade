@@ -14,6 +14,7 @@
     "@glissade/effects-webgpu": "workspace:*",
     "@glissade/export-web": "workspace:*",
     "@glissade/interact": "workspace:*",
+    "@glissade/narrate": "workspace:*",
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*"
   },

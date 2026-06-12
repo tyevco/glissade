@@ -17,6 +17,8 @@ export default defineConfig({
       '@glissade/export-web': src('export-web'),
       '@glissade/interact': src('interact'),
       '@glissade/effects-webgpu': src('effects-webgpu'),
+      '@glissade/narrate/providers': src('narrate').replace('index.ts', 'providers.ts'),
+      '@glissade/narrate': src('narrate'),
       '@glissade/lottie': src('lottie'),
     },
   },
