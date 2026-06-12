@@ -1,6 +1,6 @@
 {
   "name": "@glissade/cli",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "glissade CLI: headless rendering via backend-skia (+ FFmpeg mux).",
   "license": "Apache-2.0",
   "type": "module",
