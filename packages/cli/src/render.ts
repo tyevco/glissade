@@ -190,13 +190,18 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // the mix, auto-ducked when a narration manifest also sits next to the scene
   const audioClips = [...compiled.audio];
   if ((opts.music ?? 'auto') === 'auto') {
-    const { buildMusicClip, musicPathFor } = await import('./music.js');
+    const { bedAlreadyReferenced, buildMusicClip, musicPathFor } = await import('./music.js');
     const musicPath = musicPathFor(opts.modulePath);
     if (musicPath) {
       const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
       if (bed) {
-        audioClips.push(bed.clip);
-        process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+        if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
+          // double-adding a coherent source is +6dB — skip, loudly
+          process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
+        } else {
+          audioClips.push(bed.clip);
+          process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+        }
       }
     }
   }

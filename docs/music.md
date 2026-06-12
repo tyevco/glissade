@@ -53,7 +53,9 @@ timeline({
 });
 ```
 
-The whole envelope (duck windows included) scales by `10^(gainDb/20)`, so `duck: 0.2` stays relative to the bed level.
+The whole envelope (duck windows included) scales by `10^(gainDb/20)`, so `duck: 0.2` stays relative to the bed level. `opts.gainDb` **overrides** the manifest's `gainDb` (it does not compose) — one bed level wins.
+
+Auto-mix never double-adds: if the timeline's `audio` array already references the stem (any url spelling resolving to the same file), `gs render` skips the bed with a note — a coherent duplicate would be +6dB.
 
 ## Zero-config auto-mix
 

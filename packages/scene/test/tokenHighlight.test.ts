@@ -159,3 +159,27 @@ describe('TokenHighlight', () => {
 function widthOf(segs: [string, ...number[]][]): number {
   return segs[1]![1]! - segs[0]![1]!; // M x,y → L x+w,y
 }
+
+describe('per-range offset (the shake gap)', () => {
+  it('offset translates a range independently; targets resolve incl. components', () => {
+    const t = new Text({ id: 'para', text: 'Budget approved: $48,200 per year', fontSize: 10 });
+    const hl = tokenHighlight(t, {
+      padding: [0, 0],
+      cornerRadius: 0,
+      ranges: [
+        { match: '$48,200', id: 'money', offset: [3, -2] },
+        { match: 'year' },
+      ],
+    });
+    for (const path of ['money/offset', 'money/offset.x', 'money/offset.y']) {
+      expect(hl.resolveTarget(path), path).toBeDefined();
+    }
+    const rec = emitOnce(hl);
+    const base = tokenHighlight(t, { padding: [0, 0], cornerRadius: 0, ranges: [{ match: '$48,200' }, { match: 'year' }] });
+    const baseRec = emitOnce(base);
+    // the money rect moved by [3, −2]; the year rect did not
+    expect(rec.resources[0]!.segs![0]![1]).toBeCloseTo(baseRec.resources[0]!.segs![0]![1]! + 3, 9);
+    expect(rec.resources[0]!.segs![0]![2]).toBeCloseTo(baseRec.resources[0]!.segs![0]![2]! - 2, 9);
+    expect(rec.resources[1]!.segs![0]![1]).toBeCloseTo(baseRec.resources[1]!.segs![0]![1]!, 9);
+  });
+});

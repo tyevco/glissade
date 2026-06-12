@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { buildMusicClip, musicPathFor } from '../src/music.js';
+import { bedAlreadyReferenced, buildMusicClip, musicPathFor } from '../src/music.js';
 import { ffmpegAvailable, render } from '../src/render.js';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -124,4 +124,15 @@ describe.runIf(ffmpegAvailable())('zero-config narrated-explainer-with-bed', () 
     await render({ modulePath: MODULE, out, fps: 30, range: [0, 1], music: 'off' });
     expect(existsSync(out)).toBe(true);
   }, 120_000);
+});
+
+describe('bedAlreadyReferenced (the +6dB double-add guard)', () => {
+  const clip = (url: string) => ({ asset: { kind: 'audio' as const, url }, at: 0 });
+
+  it('matches the same stem through different url spellings; remote urls never match', () => {
+    expect(bedAlreadyReferenced([clip('./bed.wav')], 'bed.wav', '/x/scene.ts')).toBe(true);
+    expect(bedAlreadyReferenced([clip('other.wav')], 'bed.wav', '/x/scene.ts')).toBe(false);
+    expect(bedAlreadyReferenced([clip('https://cdn/bed.wav')], 'bed.wav', '/x/scene.ts')).toBe(false);
+    expect(bedAlreadyReferenced([], 'bed.wav', '/x/scene.ts')).toBe(false);
+  });
 });

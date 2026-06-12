@@ -12,7 +12,7 @@
  *    `[wordIndex, wordIndex]` ranges sidestep matching entirely.
  */
 
-import { signal, type BindableSignal } from '@glissade/core';
+import { signal, vec2Signal, type BindableSignal, type Vec2, type Vec2Signal } from '@glissade/core';
 import { type DisplayListBuilder } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { roundedRectSegs, Text, type WordBox } from './nodes.js';
@@ -31,6 +31,8 @@ export interface TokenRange {
   progress?: PropInit<number>;
   /** scale about the range rect's center; default 1 */
   scale?: PropInit<number>;
+  /** translation of the range's rects, px — shakes and nudges; default [0, 0] */
+  offset?: PropInit<Vec2>;
 }
 
 export interface TokenHighlightProps extends NodeProps {
@@ -87,6 +89,7 @@ interface ResolvedRange {
   opacity: BindableSignal<number>;
   progress: BindableSignal<number>;
   scale: BindableSignal<number>;
+  offset: Vec2Signal;
   /** inclusive box index range, bound at construction unless rematch */
   run: [number, number];
   /** the stripped token at bind time — the drift check compares against this */
@@ -119,6 +122,7 @@ export class TokenHighlight extends Node {
         opacity: init(signal(1), spec.opacity),
         progress: init(signal(1), spec.progress),
         scale: init(signal(1), spec.scale),
+        offset: initVec(vec2Signal([0, 0]), spec.offset),
         run,
         bound: runText(boxes, run),
       };
@@ -126,6 +130,9 @@ export class TokenHighlight extends Node {
       this.registerTarget(`${id}/opacity`, r.opacity);
       this.registerTarget(`${id}/progress`, r.progress);
       this.registerTarget(`${id}/scale`, r.scale);
+      this.registerTarget(`${id}/offset`, r.offset);
+      this.registerTarget(`${id}/offset.x`, r.offset.x);
+      this.registerTarget(`${id}/offset.y`, r.offset.y);
       return r;
     });
   }
@@ -193,15 +200,16 @@ export class TokenHighlight extends Node {
 
       const fill = r.fill();
       const scale = r.scale();
+      const [ox, oy] = r.offset();
       const total = lineRects.reduce((sum, q) => sum + q.w, 0);
       let remaining = progress * total;
       for (const q of lineRects) {
         const fillW = Math.min(q.w, remaining);
         remaining -= fillW;
         if (fillW <= 0) break;
-        // scale about the rect center
-        const cx = q.x + q.w / 2;
-        const cy = q.y + q.h / 2;
+        // scale about the rect center; offset translates the result
+        const cx = q.x + q.w / 2 + ox;
+        const cy = q.y + q.h / 2 + oy;
         const w = fillW * scale;
         const h = q.h * scale;
         const x = cx - (q.w / 2) * scale;
@@ -233,6 +241,12 @@ export function tokenHighlight(text: Text, props: Omit<TokenHighlightProps, 'tex
 
 function init<T>(sig: BindableSignal<T>, v: PropInit<T> | undefined): BindableSignal<T> {
   if (typeof v === 'function') sig.bindSource(v as () => T);
+  else if (v !== undefined) sig.set(v);
+  return sig;
+}
+
+function initVec(sig: Vec2Signal, v: PropInit<Vec2> | undefined): Vec2Signal {
+  if (typeof v === 'function') sig.bindSource(v);
   else if (v !== undefined) sig.set(v);
   return sig;
 }
