@@ -71,6 +71,9 @@ importers:
       '@glissade/interact':
         specifier: workspace:*
         version: link:../interact
+      '@glissade/lottie':
+        specifier: workspace:*
+        version: link:../lottie
       '@glissade/player':
         specifier: workspace:*
         version: link:../player
@@ -152,6 +155,15 @@ importers:
       '@glissade/player':
         specifier: workspace:*
         version: link:../player
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+
+  packages/lottie:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene

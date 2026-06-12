@@ -24,6 +24,7 @@
     "@glissade/backend-skia": "workspace:*",
     "@glissade/core": "workspace:*",
     "@glissade/interact": "workspace:*",
+    "@glissade/lottie": "workspace:*",
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*",
     "@napi-rs/canvas": "^0.1.65",

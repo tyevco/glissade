@@ -16,6 +16,7 @@ export default defineConfig({
       '@glissade/cli': src('cli'),
       '@glissade/export-web': src('export-web'),
       '@glissade/interact': src('interact'),
+      '@glissade/lottie': src('lottie'),
     },
   },
   test: {

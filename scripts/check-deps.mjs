@@ -24,7 +24,8 @@ const ALLOWED = {
   'export-web': ['core', 'scene', 'backend-canvas2d'],
   // §C.6: the interactivity layer is opt-in — nothing in the linear pipeline may import it
   interact: ['core', 'scene', 'player'],
-  cli: ['core', 'scene', 'backend-skia', 'interact', 'player'], // interact/player: machine replay + the gs dev harness
+  lottie: ['core', 'scene'],
+  cli: ['core', 'scene', 'backend-skia', 'interact', 'player', 'lottie'], // interact/player: machine replay + the gs dev harness; lottie: gs import
   studio: ['core', 'scene', 'backend-canvas2d', 'player', 'react', 'vite-plugin', 'export-web'],
   examples: null, // leaf consumer: anything goes
 };

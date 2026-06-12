@@ -37,6 +37,7 @@ function parseArgs(argv: string[]) {
 const USAGE = `usage:
   gs render <scene-module> [options]
   gs dev <scene-module> [--record] [--port <n>]
+  gs import <lottie.json> [--out <dir>] [--allow-degraded]
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -49,17 +50,37 @@ render options:
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
   --port <n>       listen port (default: any free port)
+
+import options:
+  --out <dir>          output directory for the generated scene module (default: .)
+  --allow-degraded     downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
 `;
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'dev') {
+  if (command !== 'render' && command !== 'dev' && command !== 'import') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
-  if (!modulePath) fail(`missing <scene-module>\n${USAGE}`);
+  if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json>' : '<scene-module>'}\n${USAGE}`);
+
+  if (command === 'import') {
+    const { importCommand } = await import('./import.js');
+    try {
+      const result = await importCommand({
+        input: modulePath,
+        out: flags.get('out') ?? '.',
+        allowDegraded: flags.has('allow-degraded'),
+      });
+      for (const w of result.warnings) process.stderr.write(`gs import: warning: ${w}\n`);
+      process.stderr.write(`gs import: wrote ${result.out}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
 
   if (command === 'dev') {
     const { dev } = await import('./dev.js');
