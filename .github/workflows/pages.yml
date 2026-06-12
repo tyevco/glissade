@@ -37,10 +37,12 @@ jobs:
       - run: pnpm --filter @glissade/examples exec vite build --base=/glissade/demo/app/
       - name: Compose site
         run: |
-          mkdir -p site/demo
+          mkdir -p site/demo site/assets
           cp -r docs/.vitepress/dist/* site/
           cp -r packages/examples/dist site/demo/app
-          cp -r packages/examples/assets site/assets
+          # merge CONTENTS into site/assets — the vitepress dist already has an
+          # assets/ dir, so copying the directory itself would nest assets/assets/
+          cp -r packages/examples/assets/. site/assets/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
