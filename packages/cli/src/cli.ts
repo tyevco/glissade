@@ -47,7 +47,7 @@ const USAGE = `usage:
   gs render <scene-module> [options]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json> [--out <dir>] [--allow-degraded]
-  gs narrate <scene-module|script.narration.json> [--provider <id>] [--force]
+  gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -57,6 +57,7 @@ render options:
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
   --captions <m>   burn (default) | sidecar | off; burn/sidecar also write .srt/.vtt
+  --narration <m>  auto (default): mix the voice from a sibling *.narration.timing.json | off
   --music <m>      auto (default): mix a sibling *.music.timing.json bed, ducked under narration | off
 
 dev options:
@@ -68,7 +69,8 @@ import options:
   --allow-degraded     downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
 
 narrate options (the explicit TTS prepare step; render itself stays offline):
-  --provider <id>  fake | espeak | openai (default: the script's provider, else espeak)
+  --provider <id>  fake | espeak | piper | openai (default: the script's provider, else espeak)
+  --align <id>     heuristic (default) | vosk | none — word timings for providers that emit none
   --force          ignore the cache and re-synthesize every segment
 `;
 
@@ -88,11 +90,13 @@ async function main(): Promise<void> {
       const result = await narrateCommand({
         input: modulePath,
         ...(flags.has('provider') ? { provider: flags.get('provider')! } : {}),
+        ...(flags.has('align') ? { aligner: flags.get('align')! } : {}),
         ...(flags.has('force') ? { force: true } : {}),
       });
       const parts = [
         result.synthesized.length > 0 ? `synthesized ${result.synthesized.join(', ')}` : null,
         result.reused.length > 0 ? `reused ${result.reused.length} cached` : null,
+        result.aligned.length > 0 ? `aligned ${result.aligned.length} via ${result.aligner}` : null,
       ].filter(Boolean);
       process.stderr.write(`gs narrate: ${parts.join('; ') || 'nothing to do'} → ${result.timingPath}\n`);
     } catch (err) {
@@ -149,6 +153,7 @@ async function main(): Promise<void> {
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
+      narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),
       onProgress: (n, total) => {
         // TTY: live \r line; piped/CI: sparse newline-terminated updates

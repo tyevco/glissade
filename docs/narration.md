@@ -29,14 +29,66 @@ scene.narration.json   ── gs narrate ──▶  scene.narration-cache/*.wav
 2. Synthesize (the only step that touches a provider):
 
 ```sh
-gs narrate my-scene.ts                  # uses the script's provider
-gs narrate my-scene.ts --provider fake  # deterministic sine — CI, tests
-gs narrate my-scene.ts --force          # ignore the cache, redo everything
+gs narrate my-scene.ts                    # uses the script's provider
+gs narrate my-scene.ts --provider piper   # local neural voice
+gs narrate my-scene.ts --align vosk       # real word timings (re-aligns cached audio)
+gs narrate my-scene.ts --force            # ignore the cache, redo everything
 ```
 
 Each segment is cached by `sha256(text, voice, rate, provider, providerVersion)` — editing one segment's text re-synthesizes **only that segment**, and every later segment's start time re-flows automatically.
 
-Providers: `espeak` (local/offline, needs `espeak-ng` on PATH), `openai` (cloud, `OPENAI_API_KEY`), `fake` (pure function of the text — what CI and the golden corpus use). The `TtsProvider` interface is three members; bring your own.
+## Voices (providers)
+
+| Provider | Where | Quality | Native word timings | Needs |
+| --- | --- | --- | --- | --- |
+| `fake` | local, pure JS | a tone | yes (synthetic) | nothing — CI, tests, previews |
+| `espeak` | local, offline | robotic | no | `espeak-ng` on PATH |
+| `piper` | local, offline | **natural** (neural) | no | a `.onnx` voice model ([rhasspy/piper](https://github.com/rhasspy/piper)) |
+| `openai` | cloud | natural | no | `OPENAI_API_KEY` (`gpt-4o-mini-tts`) |
+
+`piper` needs a voice model: pass it as `--provider piper` with the model path in the script's `voice` (per-segment or top-level), or construct `piperProvider({ model })`. Most providers emit **no word timings** — the [alignment step](#word-timing-alignment) fills those in.
+
+The `TtsProvider` interface is three members (`id`, `version()`, `synthesize()`) — bring your own (ElevenLabs, Azure, Polly…) and pass the instance via `synthesizeScript({ providerImpl })`; a provider that returns `words` skips alignment entirely.
+
+## Word timing & alignment {#word-timing-alignment}
+
+Captions are segment-level, but word-synced highlights (`wordBoxes()` + `tokenHighlight`) need per-word timing — and most providers don't emit it. So timing is a separate, **provider-independent** step:
+
+```
+synthesize (any provider)  →  wav  (+ words, if the provider gives them)
+        │
+        ├─ words present? ── yes ──▶ use them          (ElevenLabs/Azure-style)
+        │
+        └─ no ──▶ align(wav, text)  →  words           (the --align step)
+```
+
+Aligners (`--align <id>`, or the script's `align` field; default `heuristic`):
+
+| Aligner | How | Accuracy | Needs |
+| --- | --- | --- | --- |
+| `heuristic` | spreads words over the clip by syllable estimate | rough, deterministic | nothing (always available) |
+| `vosk` | offline ASR, word timestamps from the audio | real | the optional `vosk` package + a model (Apache-2.0, ~50 MB) |
+| `none` | — | — | leaves segments word-less |
+
+The default `heuristic` means word timings **always exist** — fine for captions; karaoke on a very fast or slow word wants a real aligner. Provider-supplied words always win over alignment.
+
+`vosk` is the chosen real aligner because it clears the bar that ruled out the alternatives — **Apache-2.0** (code and model), a **~50 MB** model (not the multiple GB that wav2vec2/Whisper pull), a real **Node binding** (no Python, no Docker), and it emits word-level start/end natively. It's an *optional* dependency: install it only if you use this aligner —
+
+```sh
+npm i vosk                                            # the native binding
+# download a model, e.g. vosk-model-small-en-us (~40 MB), from
+# https://alphacephei.com/vosk/models, then:
+gs narrate my-scene.ts --align vosk                   # VOSK_MODEL=/path/to/model
+```
+
+Vosk transcribes, and `mapAsrToScript` fits its words onto your *script* tokens (`segments[].words[i]` lines up with `wordBoxes()[i]`), interpolating any the recognizer missed (a number spelled out, say). The WAV is decoded and resampled to Vosk's 16 kHz mono in pure JS — no extra tooling.
+
+Two properties worth knowing:
+
+- **Alignment runs only in `gs narrate`** — heavy work is acceptable because it runs once and the result is cached, exactly like synthesis. Render never sees it.
+- **Swapping aligners re-aligns the cached wav, not the TTS.** `gs narrate scene.ts --align vosk` after a `heuristic` run re-derives words from the committed audio at **zero synthesis cost** — the cache records which aligner produced each segment's words (`wordsFrom`) and only re-runs when it changed.
+
+Other forced aligners — the Montreal Forced Aligner (conda, gold-standard, multilingual TextGrids) or whisper.cpp (a C++ binary, no Python) — slot in the same way: the `Aligner` interface is three members (`id`, `version()`, `align({ wav, text })`), and `mapAsrToScript` is exported to map their output onto your script tokens. Pass your instance via `synthesizeScript({ alignerImpl })`.
 
 ## Anchors: beats addressed by narration
 
@@ -55,6 +107,8 @@ track('panel/opacity', 'number', [
 ```
 
 `beats.clips('./my-scene.narration-cache')` returns ordinary `AudioClip[]` for the timeline's `audio` array — the existing FFmpeg mix machinery does the rest. `beats.labels()` exposes `intro.start` / `intro.end` as timeline labels.
+
+**You can omit `audio: beats.clips(...)` for `gs render`** — it auto-mixes a sibling `*.narration.timing.json` (so scene + narration manifest → a voiced mp4, zero-config; `--narration off` opts out). Wire `beats.clips()` explicitly when you want the voice in **browser export** (which mixes only `timeline.audio`, no manifest discovery) or to control clip order/gain; `gs render` detects what's already wired and never double-mixes it.
 
 Re-narrate with different durations and every anchored beat re-flows. Nothing else changes.
 
@@ -92,7 +146,7 @@ gs render my-scene.ts --out video.mp4 --captions off      # neither
 
 - `gs render` never contacts a provider; with committed narration artifacts it runs fully offline, byte-stable across runs.
 - The `fake` provider is a pure function of the request, so narration fixtures in the repo regenerate identically on any machine.
-- Word-level timestamps land in the manifest when the provider supplies them (`segments[].words`) — segment-level is the v1 caption granularity.
+- Word-level timestamps (`segments[].words`) come from the provider when it emits them, otherwise from the [alignment step](#word-timing-alignment) — both run once in `gs narrate`, are committed, and are cached. Cloud TTS isn't byte-stable call-to-call, but the cache key prevents re-synthesis, so the committed manifest stays reproducible.
 
 ## Karaoke (word-synced highlights)
 

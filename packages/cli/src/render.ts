@@ -29,6 +29,8 @@ export interface RenderOptions {
   captions?: 'burn' | 'sidecar' | 'off';
   /** auto (default): mix a sibling *.music.timing.json bed, ducked under narration. */
   music?: 'auto' | 'off';
+  /** auto (default): mix the voice from a sibling *.narration.timing.json. */
+  narration?: 'auto' | 'off';
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -186,21 +188,42 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
 
-  // music auto-mix (narration parity): a sibling manifest with a stem joins
-  // the mix, auto-ducked when a narration manifest also sits next to the scene
+  // audio auto-mix: sibling manifests join the timeline mix so scene +
+  // narration (+ music) manifests render to a finished mp4 with no hand-wired
+  // timeline.audio. Author-wired clips are detected and never doubled (+6dB).
   const audioClips = [...compiled.audio];
-  if ((opts.music ?? 'auto') === 'auto') {
-    const { bedAlreadyReferenced, buildMusicClip, musicPathFor } = await import('./music.js');
-    const musicPath = musicPathFor(opts.modulePath);
-    if (musicPath) {
-      const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
-      if (bed) {
-        if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
-          // double-adding a coherent source is +6dB — skip, loudly
-          process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
-        } else {
-          audioClips.push(bed.clip);
-          process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+  {
+    const { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } = await import('./music.js');
+
+    // narration: the voice itself (the half music parity was missing)
+    if ((opts.narration ?? 'auto') === 'auto') {
+      const narrationPath = timingPathFor(opts.modulePath);
+      if (narrationPath) {
+        const voice = buildNarrationClips(narrationPath);
+        if (voice) {
+          const wired = voice.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
+          if (wired) {
+            process.stderr.write('note: narration already in the timeline audio — auto-mix skipped\n');
+          } else {
+            audioClips.push(...voice.clips);
+            process.stderr.write(`note: auto-mixing ${voice.note}\n`);
+          }
+        }
+      }
+    }
+
+    // music: the bed, auto-ducked under the narration windows
+    if ((opts.music ?? 'auto') === 'auto') {
+      const musicPath = musicPathFor(opts.modulePath);
+      if (musicPath) {
+        const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
+        if (bed) {
+          if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
+            process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
+          } else {
+            audioClips.push(bed.clip);
+            process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+          }
         }
       }
     }

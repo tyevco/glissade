@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { bedAlreadyReferenced, buildMusicClip, musicPathFor } from '../src/music.js';
+import { synthesizeScript } from '@glissade/narrate/providers';
+import { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } from '../src/music.js';
 import { ffmpegAvailable, render } from '../src/render.js';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -134,5 +135,82 @@ describe('bedAlreadyReferenced (the +6dB double-add guard)', () => {
     expect(bedAlreadyReferenced([clip('other.wav')], 'bed.wav', '/x/scene.ts')).toBe(false);
     expect(bedAlreadyReferenced([clip('https://cdn/bed.wav')], 'bed.wav', '/x/scene.ts')).toBe(false);
     expect(bedAlreadyReferenced([], 'bed.wav', '/x/scene.ts')).toBe(false);
+  });
+});
+
+describe('buildNarrationClips (the narration half of auto-mix)', () => {
+  it('one clip per segment at its start, url relative to the cache dir', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-narr-'));
+    try {
+      const tp = join(dir, 'scene.narration.timing.json');
+      writeFileSync(
+        tp,
+        JSON.stringify({
+          timingVersion: 1,
+          provider: 'fake',
+          providerVersion: 'fake-1',
+          totalDuration: 3,
+          segments: [
+            { id: 'a', text: 'one', start: 0.2, duration: 1, file: 'a-1.wav' },
+            { id: 'b', text: 'two', start: 1.5, duration: 1, file: 'b-2.wav' },
+          ],
+        }),
+      );
+      const built = buildNarrationClips(tp)!;
+      expect(built.clips).toHaveLength(2);
+      // cacheBase derived from the manifest name: scene.narration-cache
+      expect(built.clips[0]).toEqual({ asset: { kind: 'audio', url: 'scene.narration-cache/a-1.wav' }, at: 0.2 });
+      expect(built.clips[1]!.at).toBe(1.5);
+      expect(built.note).toContain('2 segments');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('narration auto-mix (the parity fix: scene + narration manifest → voice, zero-config)', () => {
+  // golden-marker has NO timeline.audio and is rendered to video by no other
+  // test — safe to drop narration fixtures next to it
+  const NMODULE = join(SCENES, 'golden-marker.ts');
+  const NSCRIPT = join(SCENES, 'golden-marker.narration.json');
+  const NTIMING = join(SCENES, 'golden-marker.narration.timing.json');
+  const NCACHE = join(SCENES, 'golden-marker.narration-cache');
+
+  async function writeNarration(): Promise<void> {
+    writeFileSync(
+      NSCRIPT,
+      JSON.stringify({ narrationVersion: 1, provider: 'fake', segments: [{ id: 'a', text: 'Anchors and a marker sweep.' }] }),
+    );
+    await synthesizeScript(NSCRIPT, { provider: 'fake' });
+  }
+  function cleanNarration(): void {
+    for (const f of [NSCRIPT, NTIMING]) if (existsSync(f)) unlinkSync(f);
+    if (existsSync(NCACHE)) rmSync(NCACHE, { recursive: true, force: true });
+  }
+  afterAll(cleanNarration);
+
+  const audioTypes = (out: string): string[] => {
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'json', out]);
+    const info = JSON.parse(probe.stdout.toString()) as { streams: { codec_type: string }[] };
+    return info.streams.map((s) => s.codec_type).sort();
+  };
+
+  describe.runIf(ffmpegAvailable())('e2e', () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'glissade-narrmix-test-'));
+    afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+
+    it('renders an mp4 with the voice mixed in — no hand-wired timeline.audio', async () => {
+      await writeNarration();
+      const out = join(outDir, 'voiced.mp4');
+      await render({ modulePath: NMODULE, out, fps: 30, range: [0, 1] });
+      expect(audioTypes(out)).toEqual(['audio', 'video']);
+    }, 120_000);
+
+    it('--narration off omits the voice (golden-marker has no other audio → video only)', async () => {
+      await writeNarration();
+      const out = join(outDir, 'silent.mp4');
+      await render({ modulePath: NMODULE, out, fps: 30, range: [0, 1], narration: 'off' });
+      expect(audioTypes(out)).toEqual(['video']);
+    }, 120_000);
   });
 });

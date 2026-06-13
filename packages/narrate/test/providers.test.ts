@@ -10,13 +10,37 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { NarrationError, type NarrationScript } from '../src/index.js';
 import {
+  alignerById,
   cacheKey,
+  decodeWavMono,
   fakeProvider,
+  heuristicAligner,
+  heuristicWords,
+  interpolateMissing,
+  mapAsrToScript,
+  piperProvider,
   providerById,
+  resampleTo16kPcm,
   scriptPathFor,
   synthesizeScript,
+  voskAligner,
   wavDuration,
+  type Aligner,
+  type TtsProvider,
 } from '../src/providers.js';
+
+/** a real WAV (deterministic) but with the provider's word timings stripped */
+function noWordsProvider(): TtsProvider {
+  const fake = fakeProvider();
+  return {
+    id: 'nowords',
+    version: () => Promise.resolve('nw-1'),
+    synthesize: async (req) => {
+      const r = await fake.synthesize(req);
+      return { wav: r.wav, duration: r.duration };
+    },
+  };
+}
 
 const dir = mkdtempSync(join(tmpdir(), 'glissade-narrate-test-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -69,7 +93,193 @@ describe('wavDuration', () => {
 
 describe('providerById', () => {
   it('rejects unknown providers, listing the real ones', () => {
-    expect(() => providerById('elevenlabs')).toThrow(/fake, espeak, openai/);
+    expect(() => providerById('elevenlabs')).toThrow(/fake, espeak, piper, openai/);
+  });
+});
+
+describe('piperProvider (feature-detected, like espeak/openai)', () => {
+  it('version() fails clearly when piper is not on PATH', () => {
+    // this box has no piper; the error names the alternatives (sync throw,
+    // matching espeak's feature-detection pattern)
+    expect(() => piperProvider().version()).toThrow(/piper not found|install rhasspy/);
+  });
+
+  it('synthesize needs a model', () => {
+    expect(() => piperProvider().synthesize({ text: 'hi' })).toThrow(/needs a voice model/);
+  });
+});
+
+describe('heuristicWords / heuristicAligner', () => {
+  it('distributes words across the duration; spans sum to it exactly', () => {
+    const words = heuristicWords('Captions are plain data', 4);
+    expect(words.map((w) => w.word)).toEqual(['Captions', 'are', 'plain', 'data']);
+    expect(words[0]!.start).toBe(0);
+    expect(words[words.length - 1]!.end).toBeCloseTo(4, 9);
+    for (let i = 1; i < words.length; i++) expect(words[i]!.start).toBeCloseTo(words[i - 1]!.end, 9);
+  });
+
+  it('weights by syllables, not characters — a 3-syllable word gets more than a 1-syllable one', () => {
+    const [animation, of] = heuristicWords('animation of', 2);
+    expect(animation!.end - animation!.start).toBeGreaterThan((of!.end - of!.start) * 2);
+  });
+
+  it('is a pure function (same text + duration → identical timings)', () => {
+    expect(heuristicWords('one two three', 3)).toEqual(heuristicWords('one two three', 3));
+  });
+
+  it('the aligner reads its duration from the wav bytes', async () => {
+    const wav = (await fakeProvider().synthesize({ text: 'one two' })).wav;
+    const words = await heuristicAligner().align({ wav, text: 'one two' });
+    expect(words[words.length - 1]!.end).toBeCloseTo(wavDuration(wav), 9);
+  });
+});
+
+describe('alignerById', () => {
+  it("'none' disables; unknown throws; ids resolve", () => {
+    expect(alignerById('none')).toBeNull();
+    expect(alignerById('heuristic')!.id).toBe('heuristic');
+    expect(alignerById('vosk')!.id).toBe('vosk');
+    expect(() => alignerById('aeneas')).toThrow(/heuristic, vosk, none/);
+  });
+});
+
+describe('Vosk WAV plumbing (pure: decode + resample to 16k)', () => {
+  it('decodeWavMono reads the sample rate and yields mono float in [-1, 1]', async () => {
+    // the fake provider emits 22050 Hz mono 16-bit PCM
+    const { wav } = await fakeProvider().synthesize({ text: 'hello world' });
+    const decoded = decodeWavMono(wav);
+    expect(decoded.sampleRate).toBe(22050);
+    expect(decoded.samples.length).toBeGreaterThan(0);
+    for (const s of decoded.samples) expect(Math.abs(s)).toBeLessThanOrEqual(1);
+  });
+
+  it('resampleTo16kPcm scales length by 16000/inputRate, 16-bit LE', () => {
+    const samples = new Float32Array(22050).fill(0.5); // 1s @ 22050
+    const pcm = resampleTo16kPcm({ samples, sampleRate: 22050 });
+    expect(pcm.length / 2).toBe(16000); // 1s @ 16k
+    expect(pcm.readInt16LE(0)).toBe(Math.round(0.5 * 32767));
+  });
+
+  it('rejects non-RIFF input', () => {
+    expect(() => decodeWavMono(Buffer.from('definitely not a wav file here ok'))).toThrow();
+  });
+});
+
+describe('voskAligner (optional dep, feature-detected like piper)', () => {
+  it('version() fails clearly when no model is configured', async () => {
+    delete process.env['VOSK_MODEL'];
+    await expect(voskAligner().version()).rejects.toThrow(/vosk needs a model/);
+  });
+
+  it('version() fails when the model path does not exist', async () => {
+    await expect(voskAligner({ model: '/no/such/vosk-model' }).version()).rejects.toThrow(/not found/);
+  });
+});
+
+describe('mapAsrToScript / interpolateMissing (the shared alignment core)', () => {
+  it('maps clean forced-aligner words 1:1 onto the script tokens', () => {
+    const timed = [
+      { word: 'Captions', start: 0, end: 0.5 },
+      { word: 'are', start: 0.5, end: 0.7 },
+      { word: 'data', start: 0.7, end: 1.2 },
+    ];
+    const out = mapAsrToScript(timed, 'Captions are data');
+    expect(out).toEqual(timed);
+  });
+
+  it('normalizes punctuation/case when matching (script "data." ↔ asr "data")', () => {
+    const timed = [{ word: 'data', start: 1, end: 2 }];
+    const out = mapAsrToScript(timed, 'Data.');
+    expect(out).toEqual([{ word: 'Data.', start: 1, end: 2 }]);
+  });
+
+  it('interpolates script words the aligner did not time (ASR drift on numbers)', () => {
+    // ASR spelled the number out → '$48,200' has no normalized match → interpolated
+    const timed = [
+      { word: 'budget', start: 0, end: 1 },
+      { word: 'forty', start: 1, end: 1.3 },
+      { word: 'eight', start: 1.3, end: 1.6 },
+      { word: 'thousand', start: 1.6, end: 2 },
+      { word: 'approved', start: 2, end: 3 },
+    ];
+    const out = mapAsrToScript(timed, 'budget $48,200 approved');
+    expect(out.map((w) => w.word)).toEqual(['budget', '$48,200', 'approved']);
+    // the middle word sits between its timed neighbours, monotonic
+    expect(out[1]!.start).toBeCloseTo(1, 9); // budget.end
+    expect(out[1]!.end).toBeCloseTo(2, 9); // approved.start
+    for (let i = 1; i < out.length; i++) expect(out[i]!.start).toBeGreaterThanOrEqual(out[i - 1]!.start);
+  });
+
+  it('falls back to syllable distribution when nothing matches', () => {
+    const timed = [{ word: 'zzz', start: 2, end: 5 }]; // matches no script word
+    const out = mapAsrToScript(timed, 'one two three');
+    expect(out.map((w) => w.word)).toEqual(['one', 'two', 'three']);
+    expect(out[0]!.start).toBeCloseTo(2, 9); // distributed over the timed span [2,5]
+    expect(out[out.length - 1]!.end).toBeCloseTo(5, 9);
+  });
+
+  it('interpolateMissing fills NaN runs between known anchors; edges clamp', () => {
+    const filled = interpolateMissing([
+      { word: 'a', start: 0, end: 1 },
+      { word: 'b', start: NaN, end: NaN },
+      { word: 'c', start: NaN, end: NaN },
+      { word: 'd', start: 4, end: 5 },
+    ]);
+    expect(filled[1]!.start).toBeCloseTo(1, 9);
+    expect(filled[2]!.end).toBeCloseTo(4, 9);
+    expect(filled.every((w) => !Number.isNaN(w.start))).toBe(true);
+  });
+});
+
+describe('synthesizeScript: the alignment pipeline', () => {
+  const NW = noWordsProvider;
+
+  it('a word-less provider gets words from the aligner (and reports which segments)', async () => {
+    const scriptPath = writeScript('align-fill', SCRIPT);
+    const r = await synthesizeScript(scriptPath, { providerImpl: NW(), alignerImpl: heuristicAligner() });
+    expect(r.aligner).toBe('heuristic');
+    expect(r.aligned).toEqual(['one', 'two', 'three']);
+    expect(r.timing.segments[0]!.words!.length).toBeGreaterThan(0);
+    // words are absolute (offset by the segment start = leadIn 0.2)
+    expect(r.timing.segments[0]!.words![0]!.start).toBeCloseTo(0.2, 9);
+  });
+
+  it('provider words WIN — alignment is skipped when the provider supplies them', async () => {
+    const scriptPath = writeScript('align-skip', SCRIPT);
+    const r = await synthesizeScript(scriptPath, { providerImpl: fakeProvider(), alignerImpl: heuristicAligner() });
+    expect(r.aligned).toEqual([]); // fake gives words; aligner untouched
+    expect(r.timing.segments[0]!.words!.length).toBeGreaterThan(0);
+  });
+
+  it("align: 'none' leaves segments word-less", async () => {
+    const scriptPath = writeScript('align-none', SCRIPT);
+    const r = await synthesizeScript(scriptPath, { providerImpl: NW(), alignerImpl: null });
+    expect(r.aligned).toEqual([]);
+    expect(r.timing.segments[0]!.words).toBeUndefined();
+  });
+
+  it('a changed aligner re-derives words from the CACHED wav — no re-synthesis', async () => {
+    const constAligner = (): Aligner => ({
+      id: 'constal',
+      version: () => Promise.resolve('c-1'),
+      align: (req) => Promise.resolve([{ word: 'X', start: 0, end: wavDuration(req.wav) }]),
+    });
+    const scriptPath = writeScript('align-swap', SCRIPT);
+
+    const first = await synthesizeScript(scriptPath, { providerImpl: NW(), alignerImpl: heuristicAligner() });
+    expect(first.synthesized).toEqual(['one', 'two', 'three']);
+
+    // swap the aligner: wavs are cached (synthesized empty), but words re-derive
+    const second = await synthesizeScript(scriptPath, { providerImpl: NW(), alignerImpl: constAligner() });
+    expect(second.synthesized).toEqual([]);
+    expect(second.reused).toEqual(['one', 'two', 'three']);
+    expect(second.aligned).toEqual(['one', 'two', 'three']);
+    expect(second.timing.segments[0]!.words).toHaveLength(1); // the const aligner's one word
+
+    // same aligner again: cached alignment reused, nothing re-aligned
+    const third = await synthesizeScript(scriptPath, { providerImpl: NW(), alignerImpl: constAligner() });
+    expect(third.aligned).toEqual([]);
+    expect(third.timing.segments[0]!.words).toHaveLength(1);
   });
 });
 

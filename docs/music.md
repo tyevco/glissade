@@ -59,7 +59,7 @@ Auto-mix never double-adds: if the timeline's `audio` array already references t
 
 ## Zero-config auto-mix
 
-`gs render` picks up a sibling `<scene>.music.timing.json` whose manifest has a `stem` field — and when a narration timing manifest *also* sits next to the scene, the bed auto-ducks under the voice:
+`gs render` auto-mixes **both** sibling manifests — the narration voice (`<scene>.narration.timing.json`) and the music bed (`<scene>.music.timing.json` with a `stem`), the bed auto-ducked under the voice:
 
 ```
 scene.ts
@@ -69,8 +69,9 @@ bed.wav                        ← the stem
 ```
 
 ```sh
-gs render scene.ts --out video.mp4          # narration + ducked bed, one command
-gs render scene.ts --out video.mp4 --music off
+gs render scene.ts --out video.mp4               # voice + ducked bed, one command
+gs render scene.ts --out video.mp4 --music off   # voice only
+gs render scene.ts --out video.mp4 --narration off --music off   # silent
 ```
 
-That's the full narrated-explainer-with-bed pipeline with no mixing configuration at all: narration clips from the narration manifest, bed level from `gainDb`, duck windows from the narration segments.
+That's the full narrated-explainer-with-bed pipeline with no mixing configuration at all: narration clips from the narration manifest, bed level from `gainDb`, duck windows from the narration segments. You can still wire `timeline.audio` by hand (and must, for browser export — see [narration](/narration)); `gs render` detects what's already wired and never double-mixes it.
