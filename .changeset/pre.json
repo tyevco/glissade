@@ -1,0 +1,26 @@
+{
+  "mode": "pre",
+  "tag": "pre",
+  "initialVersions": {
+    "@glissade/backend-canvas2d": "0.4.5",
+    "@glissade/backend-skia": "0.4.5",
+    "@glissade/cli": "0.4.5",
+    "@glissade/core": "0.4.5",
+    "@glissade/effects-webgpu": "0.4.5",
+    "@glissade/element": "0.4.5",
+    "@glissade/examples": "0.0.0",
+    "@glissade/export-web": "0.4.5",
+    "@glissade/interact": "0.4.5",
+    "@glissade/lottie": "0.4.5",
+    "@glissade/narrate": "0.4.5",
+    "@glissade/player": "0.4.5",
+    "@glissade/react": "0.4.5",
+    "@glissade/scene": "0.4.5",
+    "@glissade/studio": "0.0.0",
+    "@glissade/vite-plugin": "0.4.5"
+  },
+  "changesets": [
+    "narration-automix",
+    "piper-and-alignment"
+  ]
+}
