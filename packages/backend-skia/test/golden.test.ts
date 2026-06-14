@@ -25,6 +25,7 @@ import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
+import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -63,6 +64,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)
   { name: 'sketch', mod: goldenSketch },
+  // sketch draw-on: per-contour retreating dash (reveal 0→1)
+  { name: 'sketch-drawon', mod: goldenSketchDrawon },
 ];
 
 for (const { name, mod } of CORPUS) {

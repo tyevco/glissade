@@ -120,6 +120,24 @@ describe('Shape.draw with sketch', () => {
     expect(emit(r)).toEqual(emit(r));
   });
 
+  it('reveal defaults to 1 → no dash emitted (byte-identical to the non-draw-on path)', () => {
+    const r = new Rect({ id: 'r', width: 80, height: 50, sketch: { kind: 'marker' } });
+    for (const s of strokes(emit(r))) {
+      expect((s as unknown as { stroke: { dash?: number[] } }).stroke.dash).toBeUndefined();
+    }
+  });
+
+  it('reveal < 1 strokes each contour with a retreating dash = len*(1-reveal)', () => {
+    const r = new Rect({ id: 'r', width: 80, height: 50, sketch: { kind: 'marker' }, reveal: 0.5 });
+    const ss = strokes(emit(r)).map((s) => (s as unknown as { stroke: { dash: number[]; dashOffset: number } }).stroke);
+    expect(ss).toHaveLength(2); // marker = 2 passes, Rect = 1 contour each
+    for (const st of ss) {
+      expect(st.dash).toHaveLength(2);
+      expect(st.dash[0]).toBeGreaterThan(0);
+      expect(st.dashOffset).toBeCloseTo(st.dash[0]! * 0.5, 6); // len*(1-0.5)
+    }
+  });
+
   it('a shape without sketch is unchanged (single path, normal fill/stroke)', () => {
     const r = new Rect({ id: 'r', width: 80, height: 50, fill: '#fff', stroke: '#000', strokeWidth: 2 });
     const c = emit(r);

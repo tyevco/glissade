@@ -5,7 +5,7 @@
 
 import { random, signal, type BindableSignal, type PathValue, type Track } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
-import { hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
+import { arcLength, flatten, hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import {
   breakLines,
@@ -71,6 +71,10 @@ export interface ShapeProps extends NodeProps {
   sketch?: SketchStyle;
   /** seed for the roughening; default a stable hash of the node id */
   sketchSeed?: number;
+  /** draw-on for a sketched shape: 0..1 of the outline drawn (default 1 = whole).
+   * Track `<id>/reveal`. Precise for single-contour shapes; multi-contour ones
+   * reveal each contour in parallel. */
+  reveal?: PropInit<number>;
 }
 
 abstract class Shape extends Node {
@@ -79,15 +83,18 @@ abstract class Shape extends Node {
   readonly strokeWidth: BindableSignal<number>;
   readonly sketch: SketchStyle | undefined;
   readonly sketchSeed: number;
+  readonly reveal: BindableSignal<number>;
 
   constructor(props: ShapeProps = {}) {
     super(props);
     this.fill = initProp(signal(''), props.fill);
     this.stroke = initProp(signal(''), props.stroke);
     this.strokeWidth = initProp(signal(0), props.strokeWidth);
+    this.reveal = initProp(signal(1), props.reveal);
     this.registerTarget('fill', this.fill);
     this.registerTarget('stroke', this.stroke);
     this.registerTarget('strokeWidth', this.strokeWidth);
+    this.registerTarget('reveal', this.reveal);
     if (props.sketch) validateSketch(props.sketch);
     this.sketch = props.sketch;
     this.sketchSeed = props.sketchSeed ?? (this.id !== undefined ? hashStr(this.id) : 0);
@@ -118,8 +125,25 @@ abstract class Shape extends Node {
     }
     const { strokes, resolved } = roughen(segs, this.sketch!, random(this.sketchSeed >>> 0));
     const ink = this.stroke() || fill || '#000000';
+    const reveal = this.reveal();
+    const drawOn = reveal < 1; // strict: reveal >= 1 takes the byte-identical path
     for (const passSegs of strokes) {
       if (passSegs.length === 0) continue;
+      if (drawOn) {
+        // draw-on via a retreating dash, PER CONTOUR (canvas restarts the dash
+        // phase at each subpath move), so each contour reveals from its own start
+        for (const contour of splitContours(passSegs)) {
+          const len = flatten(contour).reduce((s, p) => s + arcLength(p), 0);
+          const path = out.resource({ kind: 'path', segs: contour });
+          out.push({
+            op: 'strokePath',
+            path,
+            paint: { kind: 'color', color: ink },
+            stroke: { width: resolved.width, cap: 'round', join: 'round', dash: [len, len], dashOffset: len * (1 - reveal) },
+          });
+        }
+        continue;
+      }
       const path = out.resource({ kind: 'path', segs: passSegs });
       out.push({
         op: 'strokePath',
@@ -135,6 +159,21 @@ function initProp<T>(sig: BindableSignal<T>, init: PropInit<T> | undefined): Bin
   if (typeof init === 'function') sig.bindSource(init as () => T);
   else if (init !== undefined) sig.set(init);
   return sig;
+}
+
+/** Split a stroke path into its subpaths (each starting at an 'M'). */
+function splitContours(segs: PathSeg[]): PathSeg[][] {
+  const out: PathSeg[][] = [];
+  let cur: PathSeg[] | null = null;
+  for (const s of segs) {
+    if (s[0] === 'M') {
+      cur = [s];
+      out.push(cur);
+    } else if (cur) {
+      cur.push(s);
+    }
+  }
+  return out;
 }
 
 export class Rect extends Shape {
