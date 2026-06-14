@@ -1,5 +1,12 @@
 # @glissade/react
 
+## 0.5.0-pre.3
+
+### Patch Changes
+
+- @glissade/player@0.5.0-pre.3
+- @glissade/core@0.5.0-pre.3
+
 ## 0.5.0-pre.2
 
 ### Patch Changes
