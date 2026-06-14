@@ -1,5 +1,24 @@
 # @glissade/cli
 
+## 0.5.0-pre.4
+
+### Minor Changes
+
+- 1c53eeb: `gs sfx --verbose` echoes each resolved hit as `<time>s  <voice>` (plus gain/rate when jittered), so anchor coupling validates at a glance instead of reading the committed timing.json. `prepareSfx` now returns the resolved `clips` for programmatic use.
+
+### Patch Changes
+
+- Updated dependencies [ca2150f]
+- Updated dependencies [1c53eeb]
+  - @glissade/scene@0.5.0-pre.4
+  - @glissade/narrate@0.5.0-pre.4
+  - @glissade/backend-skia@0.5.0-pre.4
+  - @glissade/interact@0.5.0-pre.4
+  - @glissade/lottie@0.5.0-pre.4
+  - @glissade/player@0.5.0-pre.4
+  - @glissade/core@0.5.0-pre.4
+  - @glissade/sfx@0.5.0-pre.4
+
 ## 0.5.0-pre.3
 
 ### Patch Changes
