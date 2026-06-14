@@ -5,7 +5,17 @@
 
 import { random, signal, type BindableSignal, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
-import { arcLength, flatten, hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
+import {
+  arcLength,
+  flatten,
+  hachureLines,
+  hashStr,
+  roughen,
+  validateHachure,
+  validateSketch,
+  type HachureSpec,
+  type SketchStyle,
+} from './sketch.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import {
   breakLines,
@@ -75,6 +85,9 @@ export interface ShapeProps extends NodeProps {
    * Track `<id>/reveal`. Precise for single-contour shapes; multi-contour ones
    * reveal each contour in parallel. */
   reveal?: PropInit<number>;
+  /** sketchy hatch fill clipped to the shape (the pencil/crayon filled look);
+   * requires `sketch`. */
+  sketchFill?: HachureSpec;
 }
 
 abstract class Shape extends Node {
@@ -82,6 +95,7 @@ abstract class Shape extends Node {
   readonly stroke: BindableSignal<string>;
   readonly strokeWidth: BindableSignal<number>;
   readonly sketch: SketchStyle | undefined;
+  readonly sketchFill: HachureSpec | undefined;
   readonly sketchSeed: number;
   readonly reveal: BindableSignal<number>;
 
@@ -96,7 +110,9 @@ abstract class Shape extends Node {
     this.registerTarget('strokeWidth', this.strokeWidth);
     this.registerTarget('reveal', this.reveal);
     if (props.sketch) validateSketch(props.sketch);
+    if (props.sketchFill) validateHachure(props.sketchFill);
     this.sketch = props.sketch;
+    this.sketchFill = props.sketchFill;
     this.sketchSeed = props.sketchSeed ?? (this.id !== undefined ? hashStr(this.id) : 0);
   }
 
@@ -125,13 +141,27 @@ abstract class Shape extends Node {
   /** Hand-drawn render: solid fill (if any) under roughened, multi-pass strokes.
    * The seed is consumed fresh each draw, so re-evaluation is byte-identical. */
   private drawSketch(out: DisplayListBuilder, segs: PathSeg[]): void {
+    const rng = random(this.sketchSeed >>> 0);
     const fill = this.fill();
     if (fill) {
       const path = out.resource({ kind: 'path', segs });
       out.push({ op: 'fillPath', path, paint: { kind: 'color', color: fill } });
     }
-    const { strokes, resolved } = roughen(segs, this.sketch!, random(this.sketchSeed >>> 0));
+    const { strokes, resolved } = roughen(segs, this.sketch!, rng);
     const ink = this.stroke() || fill || '#000000';
+    // hatch fill, clipped to the shape, UNDER the roughened outline. The rng is
+    // consumed AFTER roughen (stable order) so the result stays byte-identical.
+    if (this.sketchFill) {
+      const clipPath = out.resource({ kind: 'path', segs });
+      out.push({ op: 'save' });
+      out.push({ op: 'clip', path: clipPath, rule: 'nonzero' });
+      const hatch = hachureLines(segs, this.sketchFill, rng);
+      if (hatch.length > 0) {
+        const hp = out.resource({ kind: 'path', segs: hatch });
+        out.push({ op: 'strokePath', path: hp, paint: { kind: 'color', color: ink }, stroke: { width: Math.max(1, resolved.width * 0.5), cap: 'round' } });
+      }
+      out.push({ op: 'restore' });
+    }
     const reveal = this.reveal();
     const drawOn = reveal < 1; // strict: reveal >= 1 takes the byte-identical path
     for (const passSegs of strokes) {

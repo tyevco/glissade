@@ -177,6 +177,79 @@ export function arcLength(poly: Polyline): number {
   return len;
 }
 
+/** A sketchy fill: parallel hatch lines (clipped to the shape by the caller). */
+export interface HachureSpec {
+  /** hatch line angle, radians */
+  angleRad: number;
+  /** spacing between lines, px */
+  gap: number;
+  /** jitter amplitude, px; default 1 */
+  roughness?: number;
+}
+
+export function validateHachure(h: HachureSpec): void {
+  if (!(h.gap > 0)) throw new SketchValidationError(`hachure gap must be > 0, got ${String(h.gap)}`);
+  if (h.roughness !== undefined && !(h.roughness >= 0)) {
+    throw new SketchValidationError(`hachure roughness must be ≥ 0, got ${String(h.roughness)}`);
+  }
+}
+
+/**
+ * Parallel hatch lines covering a path's bounding box at `angleRad`, spaced
+ * `gap`, lightly jittered. Returned as `M/L` segments to be stroked INSIDE a
+ * clip of the shape (the caller emits the clip). Pure; `rng` reseeded per draw.
+ */
+export function hachureLines(segs: readonly PathSeg[], spec: HachureSpec, rng: Rng): PathSeg[] {
+  const polys = flatten(segs);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of polys) {
+    for (const [x, y] of p.points) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!Number.isFinite(minX)) return [];
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // rotate into the hatch frame, find the rotated bbox, lay down horizontal
+  // lines spaced `gap`, then rotate each line endpoint back to world space
+  const ca = Math.cos(spec.angleRad);
+  const sa = Math.sin(spec.angleRad);
+  const toRot = (x: number, y: number): V2 => [(x - cx) * ca + (y - cy) * sa, -(x - cx) * sa + (y - cy) * ca];
+  const fromRot = (x: number, y: number): V2 => [cx + x * ca - y * sa, cy + x * sa + y * ca];
+  let rMinX = Infinity;
+  let rMinY = Infinity;
+  let rMaxX = -Infinity;
+  let rMaxY = -Infinity;
+  const corners: V2[] = [
+    [minX, minY],
+    [maxX, minY],
+    [maxX, maxY],
+    [minX, maxY],
+  ];
+  for (const [x, y] of corners) {
+    const [rx, ry] = toRot(x, y);
+    if (rx < rMinX) rMinX = rx;
+    if (ry < rMinY) rMinY = ry;
+    if (rx > rMaxX) rMaxX = rx;
+    if (ry > rMaxY) rMaxY = ry;
+  }
+  const rough = spec.roughness ?? 1;
+  const jit = (): number => (rng() * 2 - 1) * rough;
+  const out: PathSeg[] = [];
+  for (let y = rMinY + spec.gap / 2; y < rMaxY; y += spec.gap) {
+    const a = fromRot(rMinX, y + jit());
+    const b = fromRot(rMaxX, y + jit());
+    out.push(['M', a[0], a[1]], ['L', b[0], b[1]]);
+  }
+  return out;
+}
+
 /**
  * Roughen a path into hand-drawn stroke passes. Each segment becomes a bowed,
  * jittered quadratic; `passes` overlay slightly different jitters for the

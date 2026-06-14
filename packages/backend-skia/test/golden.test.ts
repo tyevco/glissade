@@ -25,6 +25,7 @@ import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
+import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
@@ -65,6 +66,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)
   { name: 'sketch', mod: goldenSketch },
+  // hachure fill (clipped hatch under a roughened outline)
+  { name: 'sketch-hachure', mod: goldenSketchHachure },
   // sketch draw-on: per-contour retreating dash (reveal 0→1)
   { name: 'sketch-drawon', mod: goldenSketchDrawon },
   // plain-shape draw-on (reveal on a non-sketch Path/Rect) + pathFromSegs

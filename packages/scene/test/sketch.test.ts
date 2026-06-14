@@ -8,9 +8,11 @@ import { random } from '@glissade/core';
 import {
   arcLength,
   flatten,
+  hachureLines,
   resolveSketch,
   roughen,
   SketchValidationError,
+  validateHachure,
   validateSketch,
 } from '../src/sketch.js';
 import { Rect } from '../src/nodes.js';
@@ -143,6 +145,30 @@ describe('Shape.draw with sketch', () => {
     const c = emit(r);
     expect(fills(c)).toHaveLength(1);
     expect(strokes(c)).toHaveLength(1);
+  });
+});
+
+describe('hachureLines (sketchy fill)', () => {
+  const square: PathSeg[] = [['M', 0, 0], ['L', 100, 0], ['L', 100, 100], ['L', 0, 100], ['Z']];
+
+  it('lays parallel lines across the bbox, deterministically', () => {
+    const a = hachureLines(square, { angleRad: 0, gap: 20, roughness: 0 }, random(1));
+    const b = hachureLines(square, { angleRad: 0, gap: 20, roughness: 0 }, random(1));
+    expect(a).toEqual(b);
+    expect(a.filter((s) => s[0] === 'M')).toHaveLength(5); // 5 lines at gap 20 over a 100px span
+  });
+
+  it('validateHachure rejects a non-positive gap', () => {
+    expect(() => validateHachure({ angleRad: 0, gap: 0 })).toThrow(/gap must be > 0/);
+    expect(() => validateHachure({ angleRad: 0, gap: 5, roughness: -1 })).toThrow(/roughness/);
+  });
+
+  it('drawSketch emits save/clip/hatch-stroke/restore when sketchFill is set', () => {
+    const r = new Rect({ id: 'r', width: 100, height: 60, sketch: { kind: 'pencil' }, sketchFill: { angleRad: Math.PI / 4, gap: 8 } });
+    const c = emit(r);
+    expect(c.some((x) => x.op === 'save')).toBe(true);
+    expect(c.some((x) => x.op === 'clip')).toBe(true);
+    expect(c.some((x) => x.op === 'restore')).toBe(true);
   });
 });
 

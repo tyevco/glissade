@@ -61,10 +61,13 @@ export {
   flatten,
   arcLength,
   sketchStrokes,
+  hachureLines,
   validateSketch,
+  validateHachure,
   resolveSketch,
   SketchValidationError,
   type SketchStyle,
+  type HachureSpec,
   type Polyline,
   type ResolvedSketch,
 } from './sketch.js';
