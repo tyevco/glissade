@@ -307,16 +307,19 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
       const spec: FontSpec = { family: fontFamily, size: font, weight: node.fontWeight };
       return breakLines(t, spec, width > 0 ? width : undefined, m).length;
     };
-    node.fontSize.bindSource(() => {
-      const m = node.measurerSource?.() ?? estimatingMeasurer;
+    // shrink to fit maxLines (floored at minFont), returning the chosen font AND
+    // its ACTUAL wrapped line count together — so the bottom-anchor always
+    // agrees with the draw, even at the floor where the wrap still exceeds
+    // maxLines (a best-effort regime; split the segment to truly fit, see docs).
+    const fit = (m: TextMeasurer): { font: number; lines: number } => {
       let font = baseFont;
       while (font > minFont && lineCountAt(font, m) > maxLines) font -= 1;
-      return font;
-    });
+      return { font, lines: Math.max(1, lineCountAt(font, m)) };
+    };
+    node.fontSize.bindSource(() => fit(node.measurerSource?.() ?? estimatingMeasurer).font);
     node.position.bindSource(() => {
-      const m = node.measurerSource?.() ?? estimatingMeasurer;
-      const lines = Math.max(1, lineCountAt(node.fontSize(), m));
-      const step = quantize(node.fontSize() * lineHeight);
+      const { font, lines } = fit(node.measurerSource?.() ?? estimatingMeasurer);
+      const step = quantize(font * lineHeight);
       return [size.w / 2, bottomY - (lines - 1) * step];
     });
   }

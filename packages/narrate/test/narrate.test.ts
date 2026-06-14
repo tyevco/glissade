@@ -420,4 +420,15 @@ describe('captionNode() auto-fit (overflow guard)', () => {
     const b = caption('alpha bravo charlie delta echo foxtrot golf hotel india');
     expect([a.fontSize(), a.position()]).toEqual([b.fontSize(), b.position()]);
   });
+
+  it('at the minScale floor, the bottom-anchor uses the ACTUAL wrapped line count (not the maxLines target)', () => {
+    // 20 words (~120 chars): at base 40px it wraps far past maxLines 2; even at
+    // the floor (minFont 20) it still wraps to 3 lines (> maxLines).
+    const long = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango';
+    const n = caption(long);
+    expect(n.fontSize()).toBe(20); // pinned at the floor (40 * 0.5)
+    const step = 26; // quantize(20 * 1.3)
+    // anchored for the REAL 3 lines (bottomY 180 − 2·step), so anchor agrees with draw
+    expect(n.position()[1]).toBe(180 - 2 * step);
+  });
 });

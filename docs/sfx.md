@@ -131,6 +131,10 @@ const kit = samplePackSource({
 
 A pack missing its license or provenance throws — unlicensed audio never ships by omission.
 
+> **Cache filenames** carry a `pack-` prefix: a pack's `id` becomes the source id `pack-<id>`, so committed WAVs are `pack-<id>-<voice>.wav` (via `sfxFileName`). This namespaces pack voices from the procedural `sfxr` source so a pack named `sfxr` can't collide. Clip urls and the prepare-step writes both use `sfxFileName`, so they match by construction — just don't assume the bare pack id when setting `baseUrl` by hand.
+
+Note: `buildSfxClips`/`keystrokeClips` attach a `gain` only when it differs from 1 — a flat non-unity gain (say `0.2`) becomes a one-key envelope `{ keys: [{ t: 0, value: 0.2 }] }`, which the FFmpeg mix applies as a constant. (No envelope at all means unity.)
+
 ## One-step prep: `gs prepare`
 
 When you mix the manifest path (`.sfx.json`) with in-code clips (`keystrokeClips` + your own `renderSfxAssets` cache), `gs prepare <scene>` materializes **everything** at once — it runs the narration + sfx prepare steps, then imports the scene module so its module-level cache writes flush too. After it, `gs render` is a pure read of committed files.
