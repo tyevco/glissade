@@ -131,6 +131,15 @@ const kit = samplePackSource({
 
 A pack missing its license or provenance throws — unlicensed audio never ships by omission.
 
+## One-step prep: `gs prepare`
+
+When you mix the manifest path (`.sfx.json`) with in-code clips (`keystrokeClips` + your own `renderSfxAssets` cache), `gs prepare <scene>` materializes **everything** at once — it runs the narration + sfx prepare steps, then imports the scene module so its module-level cache writes flush too. After it, `gs render` is a pure read of committed files.
+
+```sh
+gs prepare my-scene.ts   # narration + .sfx.json + in-code keystroke caches, all committed
+gs render my-scene.ts
+```
+
 ## Determinism
 
 `renderSfxr`, `buildSfxClips`, and the jitter are pure functions — no clock, no ambient randomness. Committed WAVs + the timeline document are the reproducibility boundary, exactly like narration and music: `gs render` contacts nothing and produces byte-stable audio.

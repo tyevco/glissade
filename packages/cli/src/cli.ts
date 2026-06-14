@@ -49,6 +49,7 @@ const USAGE = `usage:
   gs import <lottie.json> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
   gs sfx <scene-module|script.sfx.json> [--verbose]
+  gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -78,7 +79,7 @@ narrate options (the explicit TTS prepare step; render itself stays offline):
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx') {
+  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx' && command !== 'prepare') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -101,6 +102,22 @@ async function main(): Promise<void> {
         result.aligned.length > 0 ? `aligned ${result.aligned.length} via ${result.aligner}` : null,
       ].filter(Boolean);
       process.stderr.write(`gs narrate: ${parts.join('; ') || 'nothing to do'} → ${result.timingPath}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (command === 'prepare') {
+    const { prepareCommand } = await import('./prepare.js');
+    try {
+      const result = await prepareCommand({
+        input: modulePath,
+        ...(flags.has('provider') ? { provider: flags.get('provider')! } : {}),
+        ...(flags.has('align') ? { aligner: flags.get('align')! } : {}),
+        ...(flags.has('force') ? { force: true } : {}),
+      });
+      process.stderr.write(`gs prepare: ${result.notes.join('; ') || 'nothing to prepare'}\n`);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
