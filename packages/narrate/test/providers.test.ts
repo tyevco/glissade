@@ -12,7 +12,6 @@ import { NarrationError, type NarrationScript } from '../src/index.js';
 import {
   alignerById,
   cacheKey,
-  decodeWavMono,
   fakeProvider,
   heuristicAligner,
   heuristicWords,
@@ -20,7 +19,6 @@ import {
   mapAsrToScript,
   piperProvider,
   providerById,
-  resampleTo16kPcm,
   scriptPathFor,
   synthesizeScript,
   voskAligner,
@@ -98,10 +96,15 @@ describe('providerById', () => {
 });
 
 describe('piperProvider (feature-detected, like espeak/openai)', () => {
-  it('version() fails clearly when piper is not on PATH', () => {
-    // this box has no piper; the error names the alternatives (sync throw,
-    // matching espeak's feature-detection pattern)
-    expect(() => piperProvider().version()).toThrow(/piper not found|install rhasspy/);
+  it('version(): present piper → a string; only genuine absence (ENOENT) throws', async () => {
+    // env-robust: piper-tts 1.x exits non-zero with no --version, so detection
+    // gates on spawn ENOENT, not exit code. Present (e.g. this box) → a version
+    // string; absent (e.g. CI) → a clear error naming both install paths.
+    try {
+      expect(await piperProvider().version()).toMatch(/piper/);
+    } catch (e) {
+      expect((e as Error).message).toMatch(/piper not found.*pip install piper-tts/s);
+    }
   });
 
   it('synthesize needs a model', () => {
@@ -143,36 +146,20 @@ describe('alignerById', () => {
   });
 });
 
-describe('Vosk WAV plumbing (pure: decode + resample to 16k)', () => {
-  it('decodeWavMono reads the sample rate and yields mono float in [-1, 1]', async () => {
-    // the fake provider emits 22050 Hz mono 16-bit PCM
-    const { wav } = await fakeProvider().synthesize({ text: 'hello world' });
-    const decoded = decodeWavMono(wav);
-    expect(decoded.sampleRate).toBe(22050);
-    expect(decoded.samples.length).toBeGreaterThan(0);
-    for (const s of decoded.samples) expect(Math.abs(s)).toBeLessThanOrEqual(1);
+describe('voskAligner (shells out to a `vosk-align` command, feature-detected)', () => {
+  it('version(): present command → a string; a missing command (ENOENT) throws', async () => {
+    // env-robust: with vosk-align on PATH (the vosk flake) → present; without
+    // it → a clear error naming the contract. The aligner never touches the
+    // broken npm `vosk`/ffi-napi binding.
+    try {
+      expect(await voskAligner().version()).toMatch(/vosk/);
+    } catch (e) {
+      expect((e as Error).message).toMatch(/not found.*vosk-align command/s);
+    }
   });
 
-  it('resampleTo16kPcm scales length by 16000/inputRate, 16-bit LE', () => {
-    const samples = new Float32Array(22050).fill(0.5); // 1s @ 22050
-    const pcm = resampleTo16kPcm({ samples, sampleRate: 22050 });
-    expect(pcm.length / 2).toBe(16000); // 1s @ 16k
-    expect(pcm.readInt16LE(0)).toBe(Math.round(0.5 * 32767));
-  });
-
-  it('rejects non-RIFF input', () => {
-    expect(() => decodeWavMono(Buffer.from('definitely not a wav file here ok'))).toThrow();
-  });
-});
-
-describe('voskAligner (optional dep, feature-detected like piper)', () => {
-  it('version() fails clearly when no model is configured', async () => {
-    delete process.env['VOSK_MODEL'];
-    await expect(voskAligner().version()).rejects.toThrow(/vosk needs a model/);
-  });
-
-  it('version() fails when the model path does not exist', async () => {
-    await expect(voskAligner({ model: '/no/such/vosk-model' }).version()).rejects.toThrow(/not found/);
+  it('a definitely-absent command throws ENOENT, not a silent pass', () => {
+    expect(() => voskAligner({ command: '/no/such/vosk-align-xyz' }).version()).toThrow(/not found/);
   });
 });
 

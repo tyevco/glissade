@@ -172,13 +172,24 @@ export function piperProvider(opts: { model?: string } = {}): TtsProvider {
   return {
     id: 'piper',
     version: () => {
+      // Detect PRESENCE via spawn success, not exit code: piper-tts 1.x has no
+      // `--version` action (argparse exits non-zero needing -m), so an exit
+      // code can't mean "absent". ENOENT is the only true "not installed";
+      // anything that actually ran means piper is here. A version string is
+      // parsed only if one prints (the legacy standalone binary does; piper-tts
+      // doesn't), so the cache key stays stable either way.
       const r = spawnSync('piper', ['--version'], { encoding: 'utf8' });
-      if (r.status !== 0) {
-        throw new NarrationError(
-          'piper not found on PATH — install rhasspy/piper, or use --provider fake/espeak/openai',
-        );
+      if (r.error) {
+        if ((r.error as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new NarrationError(
+            'piper not found on PATH — `pip install piper-tts` (or the standalone rhasspy/piper), ' +
+              'or use --provider fake/espeak/openai',
+          );
+        }
+        throw new NarrationError(`could not run piper: ${r.error.message}`);
       }
-      const v = (r.stdout.trim() || r.stderr.trim() || 'piper').split('\n')[0]!;
+      const m = /\b\d+\.\d+\.\d+\b/.exec(r.stdout ?? ''); // stdout only — avoid usage-text false matches
+      const v = m ? `piper ${m[0]}` : 'piper (version unknown)';
       return Promise.resolve(opts.model ? `${v} ${basename(opts.model)}` : v);
     },
     synthesize: (req) => {
@@ -191,7 +202,10 @@ export function piperProvider(opts: { model?: string } = {}): TtsProvider {
       const tag = createHash('sha256').update(req.text).digest('hex').slice(0, 8);
       const out = join(tmpdir(), `glissade-piper-${process.pid}-${tag}.wav`);
       const args = ['--model', model, '--output_file', out];
-      // piper speed is length_scale (lower = faster): invert our rate multiplier
+      // piper speed is length_scale (lower = faster): invert our rate multiplier.
+      // underscore form works on BOTH piper-tts 1.x (which aliases
+      // --length-scale/--length_scale) and the legacy standalone binary —
+      // verified against piper-tts 1.4.2.
       if (req.rate !== undefined && req.rate > 0) args.push('--length_scale', String(1 / req.rate));
       const r = spawnSync('piper', args, { input: req.text, maxBuffer: 64 * 1024 * 1024 });
       try {
@@ -363,126 +377,64 @@ export function mapAsrToScript(
   );
 }
 
-// ---- WAV decode + resample to Vosk's 16 kHz mono (pure, dependency-free) ----
+// ---- Vosk: offline ASR word timings via the `vosk-align` command ----
 
-interface WavMono {
-  /** mono samples in [-1, 1] */
-  samples: Float32Array;
-  sampleRate: number;
-}
-
-/** Decode a 16-bit PCM RIFF/WAV to mono float samples (channels averaged). */
-export function decodeWavMono(wav: Buffer): WavMono {
-  if (wav.length < 44 || wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') {
-    throw new NarrationError('not a RIFF/WAVE file');
-  }
-  let channels = 1;
-  let sampleRate = 16000;
-  let bits = 16;
-  let dataOffset = -1;
-  let dataSize = 0;
-  let offset = 12;
-  while (offset + 8 <= wav.length) {
-    const id = wav.toString('ascii', offset, offset + 4);
-    const size = wav.readUInt32LE(offset + 4);
-    if (id === 'fmt ') {
-      channels = wav.readUInt16LE(offset + 10);
-      sampleRate = wav.readUInt32LE(offset + 12);
-      bits = wav.readUInt16LE(offset + 22);
-    } else if (id === 'data') {
-      dataOffset = offset + 8;
-      dataSize = size;
-    }
-    offset += 8 + size + (size % 2);
-  }
-  if (bits !== 16) throw new NarrationError(`only 16-bit PCM WAV is supported (got ${bits}-bit)`);
-  if (dataOffset < 0) throw new NarrationError('WAV has no data chunk');
-  const frames = Math.floor(dataSize / 2 / Math.max(1, channels));
-  const samples = new Float32Array(frames);
-  for (let f = 0; f < frames; f++) {
-    let acc = 0;
-    for (let c = 0; c < channels; c++) acc += wav.readInt16LE(dataOffset + (f * channels + c) * 2);
-    samples[f] = acc / channels / 32768;
-  }
-  return { samples, sampleRate };
-}
-
-/** Linear-resample mono float to a 16 kHz int16 LE PCM buffer (Vosk's input). */
-export function resampleTo16kPcm(input: WavMono): Buffer {
-  const target = 16000;
-  const ratio = input.sampleRate / target;
-  const outLen = Math.max(1, Math.round(input.samples.length / ratio));
-  const out = Buffer.alloc(outLen * 2);
-  for (let i = 0; i < outLen; i++) {
-    const src = i * ratio;
-    const j = Math.floor(src);
-    const frac = src - j;
-    const a = input.samples[j] ?? 0;
-    const b = input.samples[j + 1] ?? a;
-    const v = Math.max(-1, Math.min(1, a + (b - a) * frac));
-    out.writeInt16LE(Math.round(v * 32767), i * 2);
-  }
-  return out;
-}
-
-// ---- Vosk: offline ASR, Apache-2.0, ~50 MB model, no Docker/Python ----
-
-/** the slice of the (optional) `vosk` package we use — kept loose; no @types */
-interface VoskModule {
-  setLogLevel(level: number): void;
-  Model: new (path: string) => { free(): void };
-  Recognizer: new (opts: { model: object; sampleRate: number }) => {
-    setWords(on: boolean): void;
-    acceptWaveform(pcm: Buffer): boolean;
-    finalResult(): { result?: { word: string; start: number; end: number }[] };
-    free(): void;
-  };
+/** one word from vosk-align's JSON output */
+export interface VoskAlignWord {
+  word: string;
+  start: number;
+  end: number;
+  conf?: number;
 }
 
 /**
- * Word timings via Vosk (alphacephei) — offline, Apache-2.0, ~50 MB model, a
- * real Node binding (no Python, no Docker, no multi-GB download). `vosk` is an
- * OPTIONAL peer: install it (`npm i vosk`) and point at a model
- * (`opts.model` / `VOSK_MODEL`) only if you use this aligner. ASR words are
- * mapped onto the script tokens by `mapAsrToScript`.
+ * Word timings via Vosk (alphacephei) — offline ASR, Apache-2.0. Shells out to
+ * a `vosk-align` command (the Python `vosk` binding + ffmpeg — deliberately NOT
+ * the npm `vosk` package, whose `ffi-napi` native build is broken on modern
+ * Node). The command reads any audio and writes
+ *   { "words": [ { "word", "start", "end", "conf"? }, … ] }
+ * to stdout; its recognized words are LCS-mapped onto the script tokens by
+ * `mapAsrToScript`, so mis-recognitions (e.g. an unknown proper noun) just
+ * interpolate cleanly between the words around them.
+ *
+ * Provide the command via `opts.command` / `VOSK_ALIGN` (default `vosk-align`);
+ * the model is the command's own concern (its default, or `--model`/VOSK_MODEL),
+ * passed through with `opts.model`.
  */
-export function voskAligner(opts: { model?: string } = {}): Aligner {
-  const modelPath = opts.model ?? process.env['VOSK_MODEL'];
-  let vosk: VoskModule | null = null;
-  const load = async (): Promise<VoskModule> => {
-    if (vosk) return vosk;
-    try {
-      // variable specifier: keep TS/bundler from resolving the optional dep
-      const spec = 'vosk';
-      vosk = (await import(spec)) as unknown as VoskModule;
-    } catch {
-      throw new NarrationError("vosk is not installed — `npm i vosk` and download a model, or use --align heuristic");
-    }
-    vosk.setLogLevel(-1);
-    return vosk;
-  };
+export function voskAligner(opts: { command?: string; model?: string } = {}): Aligner {
+  const command = opts.command ?? process.env['VOSK_ALIGN'] ?? 'vosk-align';
   return {
     id: 'vosk',
-    version: async () => {
-      if (!modelPath) {
-        throw new NarrationError('vosk needs a model — set VOSK_MODEL or pass { model } (alphacephei.com/vosk/models)');
+    version: () => {
+      // ENOENT is the only true "not found"; the command itself runs fine.
+      const r = spawnSync(command, ['--help'], { encoding: 'utf8' });
+      if (r.error) {
+        if ((r.error as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new NarrationError(
+            `'${command}' not found — provide a vosk-align command (Apache-2.0 Vosk + ffmpeg, ` +
+              'JSON {words:[{word,start,end}]} on stdout), or use --align heuristic',
+          );
+        }
+        throw new NarrationError(`could not run ${command}: ${r.error.message}`);
       }
-      if (!existsSync(modelPath)) throw new NarrationError(`vosk model not found at ${modelPath}`);
-      await load();
-      return `vosk:${basename(modelPath)}`;
+      return Promise.resolve(opts.model ? `vosk ${basename(opts.model)}` : 'vosk');
     },
-    align: async (req) => {
-      const v = await load();
-      const model = new v.Model(modelPath!);
-      const rec = new v.Recognizer({ model, sampleRate: 16000 });
+    align: (req) => {
+      const tag = createHash('sha256').update(req.text).digest('hex').slice(0, 8);
+      const wavPath = join(tmpdir(), `glissade-vosk-${process.pid}-${tag}.wav`);
       try {
-        rec.setWords(true);
-        rec.acceptWaveform(resampleTo16kPcm(decodeWavMono(req.wav)));
-        const timed = rec.finalResult().result ?? [];
-        return mapAsrToScript(timed, req.text);
+        writeFileSync(wavPath, req.wav);
+        const args = [wavPath, ...(opts.model ? ['--model', opts.model] : [])];
+        const r = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        if (r.error) throw new NarrationError(`${command} failed to run: ${r.error.message}`);
+        if (r.status !== 0) throw new NarrationError(`${command} failed: ${(r.stderr || '').slice(0, 300)}`);
+        const parsed = JSON.parse(r.stdout) as { words?: VoskAlignWord[] };
+        const timed = (parsed.words ?? [])
+          .filter((w) => typeof w.start === 'number' && typeof w.end === 'number')
+          .map((w) => ({ word: w.word, start: w.start, end: w.end }));
+        return Promise.resolve(mapAsrToScript(timed, req.text));
       } finally {
-        rec.free();
-        model.free();
+        if (existsSync(wavPath)) unlinkSync(wavPath);
       }
     },
   };

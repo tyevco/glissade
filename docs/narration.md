@@ -67,21 +67,24 @@ Aligners (`--align <id>`, or the script's `align` field; default `heuristic`):
 | Aligner | How | Accuracy | Needs |
 | --- | --- | --- | --- |
 | `heuristic` | spreads words over the clip by syllable estimate | rough, deterministic | nothing (always available) |
-| `vosk` | offline ASR, word timestamps from the audio | real | the optional `vosk` package + a model (Apache-2.0, ~50 MB) |
+| `vosk` | offline ASR, word timestamps from the audio | real | a `vosk-align` command (Apache-2.0 Vosk + ffmpeg; ~40 MB model) |
 | `none` | — | — | leaves segments word-less |
 
 The default `heuristic` means word timings **always exist** — fine for captions; karaoke on a very fast or slow word wants a real aligner. Provider-supplied words always win over alignment.
 
-`vosk` is the chosen real aligner because it clears the bar that ruled out the alternatives — **Apache-2.0** (code and model), a **~50 MB** model (not the multiple GB that wav2vec2/Whisper pull), a real **Node binding** (no Python, no Docker), and it emits word-level start/end natively. It's an *optional* dependency: install it only if you use this aligner —
+`vosk` is the chosen real aligner because it clears the bar that ruled out the alternatives — **Apache-2.0** (code *and* the ~40 MB model, vs the multi-GB / CC-BY-NC wav2vec2/Whisper options), and offline. glissade **shells out to a `vosk-align` command** rather than the npm `vosk` package (whose `ffi-napi` native build is broken on modern Node). The command reads any audio (ffmpeg-decoded) and writes word JSON to stdout:
 
 ```sh
-npm i vosk                                            # the native binding
-# download a model, e.g. vosk-model-small-en-us (~40 MB), from
-# https://alphacephei.com/vosk/models, then:
-gs narrate my-scene.ts --align vosk                   # VOSK_MODEL=/path/to/model
+vosk-align speech.wav   # → { "words": [ { "word", "start", "end", "conf" }, … ] }
 ```
 
-Vosk transcribes, and `mapAsrToScript` fits its words onto your *script* tokens (`segments[].words[i]` lines up with `wordBoxes()[i]`), interpolating any the recognizer missed (a number spelled out, say). The WAV is decoded and resampled to Vosk's 16 kHz mono in pure JS — no extra tooling.
+Point glissade at it via `VOSK_ALIGN` (default `vosk-align`); the model is the command's own concern (its default or `VOSK_MODEL`). The cleanest setup is the Python `vosk` binding + ffmpeg wrapped as `vosk-align` (e.g. via a Nix flake); any command honoring that stdout contract works.
+
+```sh
+gs narrate my-scene.ts --align vosk
+```
+
+Vosk transcribes, and `mapAsrToScript` fits its words onto your *script* tokens (`segments[].words[i]` lines up with `wordBoxes()[i]`), interpolating any the recognizer missed — a number spelled out, or an unknown proper noun, lands accurately between the words around it. (Verified: a synthesized "glissade" that Vosk hears as "glue glyphosate" still gets a sensible interpolated span while its neighbours keep exact timing.)
 
 Two properties worth knowing:
 
