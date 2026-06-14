@@ -4,7 +4,7 @@
  */
 
 import { random, signal, type BindableSignal, type PathValue, type Track, type Vec2 } from '@glissade/core';
-import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
+import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
 import { arcLength, flatten, hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import {
@@ -111,7 +111,14 @@ abstract class Shape extends Node {
     const stroke = this.stroke();
     const width = this.strokeWidth();
     if (stroke && width > 0) {
-      out.push({ op: 'strokePath', path, paint: { kind: 'color', color: stroke }, stroke: { width } });
+      const reveal = this.reveal();
+      if (reveal < 1) {
+        // draw-on for ANY stroked shape (not just sketched) — reveal>=1 keeps
+        // the single strokePath below, so existing goldens are byte-identical
+        emitDrawOnStroke(out, segs, { kind: 'color', color: stroke }, { width }, reveal);
+      } else {
+        out.push({ op: 'strokePath', path, paint: { kind: 'color', color: stroke }, stroke: { width } });
+      }
     }
   }
 
@@ -130,18 +137,7 @@ abstract class Shape extends Node {
     for (const passSegs of strokes) {
       if (passSegs.length === 0) continue;
       if (drawOn) {
-        // draw-on via a retreating dash, PER CONTOUR (canvas restarts the dash
-        // phase at each subpath move), so each contour reveals from its own start
-        for (const contour of splitContours(passSegs)) {
-          const len = flatten(contour).reduce((s, p) => s + arcLength(p), 0);
-          const path = out.resource({ kind: 'path', segs: contour });
-          out.push({
-            op: 'strokePath',
-            path,
-            paint: { kind: 'color', color: ink },
-            stroke: { width: resolved.width, cap: 'round', join: 'round', dash: [len, len], dashOffset: len * (1 - reveal) },
-          });
-        }
+        emitDrawOnStroke(out, passSegs, { kind: 'color', color: ink }, { width: resolved.width, cap: 'round', join: 'round' }, reveal);
         continue;
       }
       const path = out.resource({ kind: 'path', segs: passSegs });
@@ -174,6 +170,25 @@ function splitContours(segs: PathSeg[]): PathSeg[][] {
     }
   }
   return out;
+}
+
+/**
+ * Emit a stroke that "draws on" by arc length — a retreating dash PER CONTOUR
+ * (canvas restarts the dash phase at each subpath move, so each contour reveals
+ * from its own start). Shared by sketched and plain stroked shapes.
+ */
+function emitDrawOnStroke(
+  out: DisplayListBuilder,
+  segs: PathSeg[],
+  paint: Paint,
+  baseStroke: StrokeStyle,
+  reveal: number,
+): void {
+  for (const contour of splitContours(segs)) {
+    const len = flatten(contour).reduce((s, p) => s + arcLength(p), 0);
+    const path = out.resource({ kind: 'path', segs: contour });
+    out.push({ op: 'strokePath', path, paint, stroke: { ...baseStroke, dash: [len, len], dashOffset: len * (1 - reveal) } });
+  }
 }
 
 /**

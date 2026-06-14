@@ -145,3 +145,20 @@ describe('Shape.draw with sketch', () => {
     expect(strokes(c)).toHaveLength(1);
   });
 });
+
+describe('reveal draw-on on a plain (non-sketch) stroked shape', () => {
+  it('reveal < 1 strokes on via a per-contour dash', () => {
+    const r = new Rect({ id: 'r', width: 80, height: 50, stroke: '#fff', strokeWidth: 2, reveal: 0.5 });
+    const ss = strokes(emit(r)).map((s) => (s as unknown as { stroke: { dash: number[]; dashOffset: number } }).stroke);
+    expect(ss).toHaveLength(1); // Rect = 1 contour
+    expect(ss[0]!.dash).toHaveLength(2);
+    expect(ss[0]!.dashOffset).toBeCloseTo(ss[0]!.dash[0]! * 0.5, 6);
+  });
+
+  it('reveal defaults to 1 → no dash (byte-identical to before)', () => {
+    const r = new Rect({ id: 'r', width: 80, height: 50, stroke: '#fff', strokeWidth: 2 });
+    for (const s of strokes(emit(r))) {
+      expect((s as unknown as { stroke: { dash?: number[] } }).stroke.dash).toBeUndefined();
+    }
+  });
+});

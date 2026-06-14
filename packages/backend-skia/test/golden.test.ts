@@ -26,6 +26,7 @@ import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
+import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -66,6 +67,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'sketch', mod: goldenSketch },
   // sketch draw-on: per-contour retreating dash (reveal 0→1)
   { name: 'sketch-drawon', mod: goldenSketchDrawon },
+  // plain-shape draw-on (reveal on a non-sketch Path/Rect) + pathFromSegs
+  { name: 'path-drawon', mod: goldenPathDrawon },
 ];
 
 for (const { name, mod } of CORPUS) {
