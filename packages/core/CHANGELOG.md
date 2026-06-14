@@ -1,5 +1,7 @@
 # @glissade/core
 
+## 0.5.0-pre.5
+
 ## 0.5.0-pre.4
 
 ## 0.5.0-pre.3

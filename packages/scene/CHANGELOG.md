@@ -1,5 +1,15 @@
 # @glissade/scene
 
+## 0.5.0-pre.5
+
+### Minor Changes
+
+- 4495359: `typewriter()` now returns `steps: StepMark[]` — one `{ index, start, end, value }` per edit step, the phrase boundaries of the performance. Drive sibling UI (an attempts counter, a progress dot) off `steps[i].end` instead of recomputing wall-clock spans against the edit script.
+
+### Patch Changes
+
+- @glissade/core@0.5.0-pre.5
+
 ## 0.5.0-pre.4
 
 ### Minor Changes
