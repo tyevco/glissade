@@ -57,7 +57,7 @@ export {
 
 export { Highlight, highlight, type HighlightProps } from './highlight.js';
 export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
-export { typewriter, type TypeEdit, type EditMark, type TypewriterResult } from './typewriter.js';
+export { typewriter, type TypeEdit, type EditMark, type StepMark, type TypewriterResult } from './typewriter.js';
 export {
   FollowPath,
   followPath,

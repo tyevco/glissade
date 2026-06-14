@@ -39,11 +39,26 @@ export interface EditMark {
   value: string;
 }
 
+/** One edit step's phrase boundary — for driving sibling UI (a counter chip, a
+ * progress dot) off the same source instead of recomputing wall-clock spans. */
+export interface StepMark {
+  /** index of the step in the edit script */
+  index: number;
+  /** time this step began (before its first keystroke) */
+  start: number;
+  /** time this step completed (after its last keystroke and its hold) */
+  end: number;
+  /** the full visible string after this step */
+  value: string;
+}
+
 export interface TypewriterResult {
   /** hold-key string track for the Text node's `<id>/text` target */
   track: Track<string>;
   /** every keystroke (insert + delete), for keystroke SFX */
   marks: EditMark[];
+  /** one entry per edit step, with its start/end times — phrase boundaries */
+  steps: StepMark[];
   /** time of the last keystroke or hold — the performance's end */
   duration: number;
 }
@@ -73,8 +88,11 @@ export function typewriter(
   const shown: string[] = []; // current visible graphemes
   const keys: Key<string>[] = [key(start, '', { interp: 'hold' })];
   const marks: EditMark[] = [];
+  const steps: StepMark[] = [];
 
-  for (const edit of edits) {
+  for (let ei = 0; ei < edits.length; ei++) {
+    const edit = edits[ei]!;
+    const stepStart = t;
     const per = edit.perChar ?? globalPer;
     if (edit.type !== undefined) {
       for (const g of segmentGraphemes(edit.type)) {
@@ -95,7 +113,8 @@ export function typewriter(
       }
     }
     if (edit.hold !== undefined) t += edit.hold;
+    steps.push({ index: ei, start: stepStart, end: t, value: shown.join('') });
   }
 
-  return { track: track(target, 'string', keys), marks, duration: t };
+  return { track: track(target, 'string', keys), marks, steps, duration: t };
 }

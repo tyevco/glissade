@@ -243,6 +243,16 @@ describe('typewriter() — edit-event-aware (type / delete / retype)', () => {
     expect(tw.marks.map((m) => m.grapheme)).toEqual(['a', '👍']);
   });
 
+  it('steps[] gives each edit step its start/end + result string (phrase boundaries)', () => {
+    const tw = typewriter('t/text', [{ type: 'go' }, { hold: 2 }, { delete: 1 }], { perChar: 1 });
+    expect(tw.steps).toEqual([
+      { index: 0, start: 0, end: 2, value: 'go' }, // typed 'g','o' at t=1,2
+      { index: 1, start: 2, end: 4, value: 'go' }, // a 2s hold, text unchanged
+      { index: 2, start: 4, end: 5, value: 'g' }, // backspaced one at t=5
+    ]);
+    // a sibling counter chip can ride steps[i].end instead of recomputing spans
+  });
+
   it('keys are strictly time-ordered and start empty', () => {
     const tw = typewriter('t/text', [{ type: 'abc' }, { delete: 1 }, { type: 'd' }], { perChar: 1 });
     expect(tw.track.keys[0]).toEqual({ t: 0, value: '', interp: 'hold' });

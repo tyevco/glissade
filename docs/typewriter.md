@@ -85,6 +85,15 @@ timeline({ tracks: [tw.track] }); // the only track the cold-open needs
 
 `textCursor` reads `prompt.revealHead()` each frame; with `reveal` at Infinity that's the end of the current string, so the caret follows the typing **and** the deletes for free.
 
+To drive **sibling UI off the same edit script** — an attempts counter, a step dot — use `tw.steps`: one `{ index, start, end, value }` per edit step, so you key off `steps[i].end` instead of recomputing wall-clock spans:
+
+```ts
+// a chip that counts the cold-open's drafts as each attempt completes
+track('counter/text', 'string', tw.steps
+  .filter((s) => s.value === '')                 // each retype begins after an empty
+  .map((s, i) => key(s.end, String(i + 1), { interp: 'hold' })));
+```
+
 ## Keystroke sync (the SFX contract)
 
 Both reveal paths produce a per-keystroke schedule for audio. For the monotonic case, `revealSchedule(text, revealTrack)` is the pure bridge — geometry from the text, timing from the track:
