@@ -3,10 +3,17 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { signal, type BindableSignal, type PathValue } from '@glissade/core';
+import { signal, type BindableSignal, type PathValue, type Track } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
-import { breakLines, fallbackMeasurer, quantize, segmentWords, type TextMeasurer } from './text.js';
+import {
+  breakLines,
+  fallbackMeasurer,
+  quantize,
+  segmentGraphemes,
+  segmentWords,
+  type TextMeasurer,
+} from './text.js';
 
 /** Rounded-rect path segments — Rect's outline, shared with Highlight. */
 export function roundedRectSegs(x: number, y: number, w: number, h: number, r: number): PathSeg[] {
@@ -381,6 +388,13 @@ export interface TextProps extends NodeProps {
   width?: PropInit<number>;
   /** Line height as a multiple of fontSize; default 1.25. */
   lineHeight?: number;
+  /**
+   * Typewriter reveal: how many graphemes of the laid-out text are shown,
+   * left-to-right. Default Infinity = fully shown (byte-identical to no
+   * reveal, so existing goldens never shift). Track target '<id>/reveal';
+   * author a per-keystroke staircase off graphemes() — see revealSchedule().
+   */
+  reveal?: PropInit<number>;
 }
 
 export class Text extends Node {
@@ -392,6 +406,7 @@ export class Text extends Node {
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
+  readonly reveal: BindableSignal<number>;
 
   constructor(props: TextProps = {}) {
     super(props);
@@ -403,10 +418,12 @@ export class Text extends Node {
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
+    this.reveal = initProp(signal(Number.POSITIVE_INFINITY), props.reveal);
     this.registerTarget('width', this.width);
     this.registerTarget('text', this.text);
     this.registerTarget('fill', this.fill);
     this.registerTarget('fontSize', this.fontSize);
+    this.registerTarget('reveal', this.reveal);
   }
 
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
@@ -509,6 +526,66 @@ export class Text extends Node {
     return boxes;
   }
 
+  /**
+   * The laid-out grapheme stream the typewriter reveal advances over — every
+   * grapheme of every wrapped line, in reading order (soft-wrap whitespace is
+   * dropped by the breaker, exactly as drawn, so draw/revealHead/revealSchedule
+   * all agree). Pull-based; its length is the `reveal` count that shows
+   * everything. Author a per-keystroke staircase straight off it:
+   *
+   *   const g = title.graphemes();
+   *   track('title/reveal', 'number',
+   *     g.map((_, i) => key(t0 + i * 0.05, i + 1, { interp: 'hold' })));
+   */
+  graphemes(measurer?: TextMeasurer): string[] {
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    const text = this.text();
+    if (!text) return [];
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const maxWidth = this.width();
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
+    const out: string[] = [];
+    for (const line of lines) for (const g of segmentGraphemes(line)) out.push(g);
+    return out;
+  }
+
+  /**
+   * Draw-space position of the reveal head — the caret point just after the
+   * last revealed grapheme, for the current `reveal` value. Drives TextCursor;
+   * honours align and wrap exactly like wordBoxes(). At reveal 0 it sits at the
+   * start of the first line; fully revealed, at the end of the last line.
+   */
+  revealHead(measurer?: TextMeasurer): { x: number; y: number; h: number; line: number; index: number } {
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const maxWidth = this.width();
+    const lines = breakLines(this.text(), font, maxWidth > 0 ? maxWidth : undefined, m);
+    const step = quantize(font.size * this.lineHeight);
+    const total = lines.reduce((n, l) => n + segmentGraphemes(l).length, 0);
+    const revealRaw = this.reveal();
+    const shown = Math.max(0, Math.min(Number.isFinite(revealRaw) ? Math.floor(revealRaw) : total, total));
+    let remaining = shown;
+    let last = { x: 0, y: 0, h: 0, line: 0, index: shown };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      const met = m.measureText(line, font);
+      const lineW = quantize(met.width);
+      const lineX = this.align === 'left' ? 0 : this.align === 'center' ? -lineW / 2 : -lineW;
+      const y = i * step - met.ascent;
+      const h = met.ascent + met.descent;
+      const gs = segmentGraphemes(line);
+      // before consuming this line, the head could land at its start (remaining
+      // 0); record it so a fully-consumed prior line hands off cleanly
+      if (remaining <= gs.length) {
+        const advance = remaining <= 0 ? 0 : m.measureText(gs.slice(0, remaining).join(''), font).width;
+        return { x: lineX + advance, y, h, line: i, index: shown };
+      }
+      remaining -= gs.length;
+      last = { x: lineX + met.width, y, h, line: i, index: shown };
+    }
+    return last;
+  }
+
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
     const text = this.text();
     if (!text) return;
@@ -517,17 +594,123 @@ export class Text extends Node {
     // line breaking is ours (§3.6), measured by the injected backend measurer
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, ctx.measurer);
     const step = quantize(font.size * this.lineHeight);
+    // Reveal masking: Infinity (the default) takes the original emit path
+    // untouched, so any scene without a reveal track is byte-identical. A
+    // finite reveal breaks lines on the FULL text (no reflow) and draws the
+    // revealed grapheme prefix; a fully-shown line emits identically to the
+    // unmasked path, a partial line is positioned by hand so its substring
+    // does not recenter under align.
+    const revealRaw = this.reveal();
+    const masked = Number.isFinite(revealRaw);
+    let remaining = masked ? Math.max(0, Math.floor(revealRaw)) : 0;
     for (let i = 0; i < lines.length; i++) {
-      if (!lines[i]) continue;
-      out.push({
-        op: 'fillText',
-        text: lines[i]!,
-        font,
-        paint: { kind: 'color', color: this.fill() },
-        x: 0,
-        y: i * step,
-        ...(this.align !== 'left' ? { align: this.align } : {}),
-      });
+      const line = lines[i];
+      if (!line) continue;
+      if (!masked) {
+        out.push({
+          op: 'fillText',
+          text: line,
+          font,
+          paint: { kind: 'color', color: this.fill() },
+          x: 0,
+          y: i * step,
+          ...(this.align !== 'left' ? { align: this.align } : {}),
+        });
+        continue;
+      }
+      if (remaining <= 0) break;
+      const gs = segmentGraphemes(line);
+      const show = Math.min(remaining, gs.length);
+      remaining -= show;
+      if (show === gs.length) {
+        out.push({
+          op: 'fillText',
+          text: line,
+          font,
+          paint: { kind: 'color', color: this.fill() },
+          x: 0,
+          y: i * step,
+          ...(this.align !== 'left' ? { align: this.align } : {}),
+        });
+      } else {
+        // partial line: anchor at the FULL line's align edge, draw the prefix
+        // with no align so it grows left-to-right without re-centering
+        const met = ctx.measurer.measureText(line, font);
+        const lineW = quantize(met.width);
+        const lineX = this.align === 'left' ? 0 : this.align === 'center' ? -lineW / 2 : -lineW;
+        out.push({
+          op: 'fillText',
+          text: gs.slice(0, show).join(''),
+          font,
+          paint: { kind: 'color', color: this.fill() },
+          x: lineX,
+          y: i * step,
+        });
+      }
     }
   }
+}
+
+/** One revealed grapheme's timing + draw-space position — the keystroke sync
+ * contract, the direct analogue of narrate's TimedWord[]. SFX maps each mark to
+ * one AudioClip at `at: time`; visuals can place per-key effects at (x, y). */
+export interface RevealMark {
+  /** index into the laid-out grapheme stream (Text.graphemes()) */
+  charIndex: number;
+  /** the revealed grapheme (raw — char-class policy is the consumer's) */
+  grapheme: string;
+  /** time the grapheme first becomes visible, from the reveal track */
+  time: number;
+  /** caret x just after this grapheme, in the Text's draw space */
+  x: number;
+  /** top of the grapheme's line box, in the Text's draw space */
+  y: number;
+  /** laid-out line index */
+  line: number;
+}
+
+/**
+ * Pure per-grapheme schedule from a Text and its reveal track — geometry from
+ * the text, timing from the track. A grapheme's time is the first key whose
+ * value reveals it (value >= index + 1); graphemes the track never reaches are
+ * omitted. The single source SFX keystroke-sync consumes (keystrokeClips()):
+ * one click per mark at `at: mark.time`, char-class policy (skip space/newline,
+ * pick a sample) decided downstream from `mark.grapheme`.
+ */
+export function revealSchedule(text: Text, reveal: Track<number>, measurer?: TextMeasurer): RevealMark[] {
+  const m = measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
+  const src = text.text();
+  if (!src) return [];
+  const font: FontSpec = { family: text.fontFamily, size: text.fontSize(), weight: text.fontWeight };
+  const maxWidth = text.width();
+  const lines = breakLines(src, font, maxWidth > 0 ? maxWidth : undefined, m);
+  const step = quantize(font.size * text.lineHeight);
+  const keys = reveal.keys;
+  const marks: RevealMark[] = [];
+  let k = 0;
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (!line) continue;
+    const met = m.measureText(line, font);
+    const lineW = quantize(met.width);
+    const lineX = text.align === 'left' ? 0 : text.align === 'center' ? -lineW / 2 : -lineW;
+    const y = li * step - met.ascent;
+    let prefix = '';
+    for (const g of segmentGraphemes(line)) {
+      prefix += g;
+      const need = k + 1;
+      let time = Number.POSITIVE_INFINITY;
+      for (const key of keys) {
+        if (key.value >= need) {
+          time = key.t;
+          break;
+        }
+      }
+      if (Number.isFinite(time)) {
+        marks.push({ charIndex: k, grapheme: g, time, x: lineX + m.measureText(prefix, font).width, y, line: li });
+      }
+      k++;
+    }
+  }
+  return marks;
 }

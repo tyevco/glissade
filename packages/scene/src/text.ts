@@ -92,6 +92,30 @@ export function segmentWords(text: string): string[] {
   return text.split(/(\s+)/).filter((w) => w.length > 0);
 }
 
+// Per-grapheme segmentation — the unit the typewriter reveal advances over, so
+// emoji/ZWJ sequences and combining marks stay whole (a flag or 'é' is one
+// keystroke, not two). Same Intl.Segmenter discipline as segmentWords; falls
+// back to Array.from (code points) where Segmenter is absent.
+let graphemeSegmenter: Intl.Segmenter | null | undefined;
+
+/**
+ * Split text into graphemes (user-perceived characters). Exported so Text.draw
+ * (reveal masking), Text.graphemes() (authoring), and revealSchedule() (the SFX
+ * keystroke contract) all count the SAME units.
+ */
+export function segmentGraphemes(text: string): string[] {
+  if (graphemeSegmenter === undefined) {
+    graphemeSegmenter =
+      typeof Intl !== 'undefined' && 'Segmenter' in Intl
+        ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+        : null;
+  }
+  if (graphemeSegmenter) {
+    return [...graphemeSegmenter.segment(text)].map((s) => s.segment);
+  }
+  return Array.from(text);
+}
+
 /**
  * Greedy line breaking: explicit '\n' always breaks; otherwise word segments
  * flow until maxWidth is exceeded (Intl.Segmenter boundaries, so CJK wraps

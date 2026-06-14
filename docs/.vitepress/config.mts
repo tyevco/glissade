@@ -25,6 +25,7 @@ export default defineConfig({
           { text: 'Interactivity (v2)', link: '/interactivity' },
           { text: 'Narration & captions', link: '/narration' },
           { text: 'Music & the beat grid', link: '/music' },
+          { text: 'Typewriter & text reveal', link: '/typewriter' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },

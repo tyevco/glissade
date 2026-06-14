@@ -44,8 +44,10 @@ export {
   ImageNode,
   Video,
   roundedRectSegs,
+  revealSchedule,
   type LineBox,
   type WordBox,
+  type RevealMark,
   type ShapeProps,
   type PathProps,
   type TextProps,
@@ -54,6 +56,7 @@ export {
 } from './nodes.js';
 
 export { Highlight, highlight, type HighlightProps } from './highlight.js';
+export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
 export {
   TokenHighlight,
   tokenHighlight,

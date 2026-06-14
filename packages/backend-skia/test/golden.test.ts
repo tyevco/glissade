@@ -20,6 +20,7 @@ import goldenPaths from '../../examples/src/scenes/golden-paths.js';
 import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
 import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
 import goldenMarker from '../../examples/src/scenes/golden-marker.js';
+import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -48,6 +49,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'captions-portrait', mod: goldenCaptionsPortrait },
   // anchors (placement + pivot) and the marker highlight sweep
   { name: 'marker', mod: goldenMarker },
+  // typewriter reveal + caret (partial-line masking, wrap, cursor blink)
+  { name: 'typewriter', mod: goldenTypewriter },
 ];
 
 for (const { name, mod } of CORPUS) {
