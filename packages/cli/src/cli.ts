@@ -48,6 +48,7 @@ const USAGE = `usage:
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
+  gs sfx <scene-module|script.sfx.json>
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -59,6 +60,7 @@ render options:
   --captions <m>   burn (default) | sidecar | off; burn/sidecar also write .srt/.vtt
   --narration <m>  auto (default): mix the voice from a sibling *.narration.timing.json | off
   --music <m>      auto (default): mix a sibling *.music.timing.json bed, ducked under narration | off
+  --sfx <m>        auto (default): mix effect hits from a sibling *.sfx.timing.json | off
 
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
@@ -76,7 +78,7 @@ narrate options (the explicit TTS prepare step; render itself stays offline):
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate') {
+  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -99,6 +101,20 @@ async function main(): Promise<void> {
         result.aligned.length > 0 ? `aligned ${result.aligned.length} via ${result.aligner}` : null,
       ].filter(Boolean);
       process.stderr.write(`gs narrate: ${parts.join('; ') || 'nothing to do'} → ${result.timingPath}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (command === 'sfx') {
+    const { prepareSfx, sfxScriptPathFor } = await import('./sfx.js');
+    try {
+      const result = prepareSfx(sfxScriptPathFor(modulePath));
+      process.stderr.write(
+        `gs sfx: ${result.clipCount} ${result.clipCount === 1 ? 'hit' : 'hits'}, ` +
+          `${result.voices.length} ${result.voices.length === 1 ? 'voice' : 'voices'} rendered → ${result.timingPath}\n`,
+      );
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
@@ -155,6 +171,7 @@ async function main(): Promise<void> {
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),
+      sfx: flags.get('sfx') === 'off' ? ('off' as const) : ('auto' as const),
       onProgress: (n, total) => {
         // TTY: live \r line; piped/CI: sparse newline-terminated updates
         if (process.stderr.isTTY) {

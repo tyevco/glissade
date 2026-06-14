@@ -83,6 +83,9 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+      '@glissade/sfx':
+        specifier: workspace:*
+        version: link:../sfx
       '@napi-rs/canvas':
         specifier: ^0.1.65
         version: 0.1.100

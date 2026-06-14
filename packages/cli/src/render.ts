@@ -31,6 +31,8 @@ export interface RenderOptions {
   music?: 'auto' | 'off';
   /** auto (default): mix the voice from a sibling *.narration.timing.json. */
   narration?: 'auto' | 'off';
+  /** auto (default): mix effect hits from a sibling *.sfx.timing.json. */
+  sfx?: 'auto' | 'off';
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -223,6 +225,24 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
           } else {
             audioClips.push(bed.clip);
             process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+          }
+        }
+      }
+    }
+
+    // sfx: effect hits from a sibling *.sfx.timing.json (gs sfx prepare step)
+    if ((opts.sfx ?? 'auto') === 'auto') {
+      const { buildSfxClipsFromTiming, sfxTimingPathFor } = await import('./sfx.js');
+      const sfxPath = sfxTimingPathFor(opts.modulePath);
+      if (sfxPath) {
+        const fx = buildSfxClipsFromTiming(sfxPath);
+        if (fx) {
+          const wired = fx.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
+          if (wired) {
+            process.stderr.write('note: sfx already in the timeline audio — auto-mix skipped\n');
+          } else {
+            audioClips.push(...fx.clips);
+            process.stderr.write(`note: auto-mixing ${fx.note}\n`);
           }
         }
       }

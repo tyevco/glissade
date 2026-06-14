@@ -47,6 +47,34 @@ timeline({
 
 Repeated identical hits sound machine-gun fake. `jitterRate` / `jitterGain` add per-hit pitch and level variation — but **index-seeded**, from `random(seed ^ hash(source/voice) ^ index)`, so it's a pure function of position: identical inputs yield identical clips, and re-evaluating the timeline out of order never drifts. `±0.06` is a natural keystroke/coin spread.
 
+## Zero-config: the `gs sfx` prepare step
+
+Like narration and music, effects have an explicit prepare step so `gs render` stays a pure read of committed files. Write a `<scene>.sfx.json` next to the module — hits can anchor to a **narration beat** (resolved against the sibling `*.narration.timing.json`, so they re-flow when you re-narrate) or use an absolute `at`:
+
+```json
+// my-scene.sfx.json
+{
+  "sfxVersion": 1,
+  "source": "sfxr",
+  "seed": 7,
+  "jitterRate": 0.06,
+  "hits": [
+    { "voice": "pop",     "anchor": "reveal" },
+    { "voice": "success", "anchor": "beat", "offset": 0.2 },
+    { "voice": "click",   "at": 4.5, "gain": 0.6 }
+  ]
+}
+```
+
+```sh
+gs sfx my-scene.ts     # resolve anchors, render the WAV cache, commit the timing manifest
+gs render my-scene.ts  # auto-mixes the sibling *.sfx.timing.json — zero config (--sfx off opts out)
+```
+
+`gs sfx` resolves each hit's time, renders the referenced voices once (deduped) into `my-scene.sfx-cache/`, **bakes the index-seeded jitter into the committed `my-scene.sfx.timing.json`**, and that manifest is what `gs render` mixes — exactly the narration/music pattern, including the double-add guard (author-wired clips are detected and never doubled). Re-run `gs sfx` after editing the script or re-narrating, and the times re-flow.
+
+A hit needs exactly one of `anchor` or `at`; an unknown voice or an anchor with no narration manifest fails loudly. (v1 of `gs sfx` drives the procedural `sfxr` source; sample packs are available from code via `buildSfxClips`.)
+
 ## Sample packs (license-checked)
 
 To use recorded samples instead of (or alongside) the synth, wrap them in a pack — `license` and `source` are **mandatory** and validated at construction (a hard throw, the same discipline as the music manifest):
