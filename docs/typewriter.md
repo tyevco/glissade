@@ -40,9 +40,28 @@ createScene({
 
 By default the caret stays **solid while typing** (the reveal is still advancing) and switches to **blinking** once the text is fully shown — the familiar "types, then waits" terminal feel. Override with `solidWhileTyping: false` to blink throughout, or `blinkPeriod` / `blinkPhase` to tune the rhythm. The caret color follows the text's `fill` unless you set its own (animatable via `'<id>/fill'`).
 
+## Deletion: type, delete, retype
+
+`reveal` is **monotonic** — it only moves forward, so it can't express a terminal cold-open that types, backspaces, and retypes *different* text. Since `Text.text` is itself a signal, the honest substrate for that is a hold-key **string track** carrying the visible text after every keystroke. `typewriter()` compiles a compact edit script into exactly that track, plus a per-keystroke schedule (deletes included):
+
+```ts
+import { typewriter } from '@glissade/scene';
+
+const tw = typewriter('prompt/text', [
+  { type: 'make it pop' },
+  { hold: 0.4 },          // a pause beat
+  { delete: 3 },          // backspace 'pop'
+  { type: 'sing' },       // retype — a string reveal could never reach
+]);
+
+timeline({ tracks: [tw.track, ...] });   // drives Text.text
+```
+
+Drive `Text.text` with `tw.track` and leave `reveal` at its default (Infinity): the whole current string shows, so deletion just works, and `textCursor` rides the end of the live text with no extra wiring. `{ perChar }` (global or per step) sets the keystroke cadence; `{ hold }` inserts a pause; `tw.duration` is when the performance ends.
+
 ## Keystroke sync (the SFX contract)
 
-`revealSchedule(text, revealTrack)` is the pure bridge to audio — geometry from the text, timing from the track:
+Both reveal paths produce a per-keystroke schedule for audio. For the monotonic case, `revealSchedule(text, revealTrack)` is the pure bridge — geometry from the text, timing from the track:
 
 ```ts
 import { revealSchedule, type RevealMark } from '@glissade/scene';
@@ -51,7 +70,7 @@ const marks = revealSchedule(title, revealTrack);
 // RevealMark = { charIndex, grapheme, time, x, y, line }
 ```
 
-Each `RevealMark` is one revealed grapheme with the time it appears and the caret position when it does — the direct analogue of narration's `TimedWord[]`. `@glissade/sfx` keystroke-sync consumes this to place one click per mark (`at: mark.time`); the raw `grapheme` is carried so the audio layer decides char-class policy (skip spaces and newlines, pick a different sample). Graphemes the track never reveals are omitted.
+For the edit-script case, `typewriter().marks` carries `EditMark = { time, kind: 'insert' | 'delete', grapheme, value }` — so a backspace can take a different sound. Both feed `@glissade/sfx`'s `keystrokeClips(marks, source)`, which places one click per keystroke (`at: mark.time`); whitespace is skipped by default and the raw `grapheme` is carried so the audio layer owns char-class policy. Graphemes a monotonic track never reveals are omitted.
 
 ## Determinism
 

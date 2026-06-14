@@ -47,6 +47,24 @@ timeline({
 
 Repeated identical hits sound machine-gun fake. `jitterRate` / `jitterGain` add per-hit pitch and level variation — but **index-seeded**, from `random(seed ^ hash(source/voice) ^ index)`, so it's a pure function of position: identical inputs yield identical clips, and re-evaluating the timeline out of order never drifts. `±0.06` is a natural keystroke/coin spread.
 
+## Keystroke sync
+
+`keystrokeClips(marks, source)` is the typewriter's audio half — one click per typed (or deleted) character. It consumes the schedule from [`typewriter()`](/typewriter#deletion-type-delete-retype) (`EditMark[]`, with backspaces) or a monotonic `revealSchedule()`:
+
+```ts
+import { keystrokeClips } from '@glissade/sfx';
+import { typewriter } from '@glissade/scene';
+
+const tw = typewriter('prompt/text', [{ type: 'make it pop' }, { delete: 3 }, { type: 'sing' }]);
+
+timeline({
+  tracks: [tw.track],
+  audio: keystrokeClips(tw.marks, sfxrSource(), { seed: 9, jitterRate: 0.05, deleteVoice: 'tap' }),
+});
+```
+
+Whitespace is skipped by default, a backspace can take a distinct `deleteVoice`, and the per-key variation is index-seeded — so the typing track stays alive instead of machine-gun identical. The `marks` are neutral data; the policy (which sample, what to skip) lives here.
+
 ## Zero-config: the `gs sfx` prepare step
 
 Like narration and music, effects have an explicit prepare step so `gs render` stays a pure read of committed files. Write a `<scene>.sfx.json` next to the module — hits can anchor to a **narration beat** (resolved against the sibling `*.narration.timing.json`, so they re-flow when you re-narrate) or use an absolute `at`:

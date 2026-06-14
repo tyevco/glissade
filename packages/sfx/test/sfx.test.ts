@@ -11,6 +11,7 @@ import {
   buildSfxClips,
   encodeWavMono,
   hashStr,
+  keystrokeClips,
   renderSfxAssets,
   renderSfxr,
   samplePackSource,
@@ -158,3 +159,37 @@ describe('hashStr', () => {
     expect(hashStr('sfxr/click')).not.toBe(hashStr('sfxr/pop'));
   });
 });
+
+describe('keystrokeClips: one click per typed/deleted character', () => {
+  const src = sfxrSource();
+  const marks = [
+    { time: 1, grapheme: 'h', kind: 'insert' as const },
+    { time: 2, grapheme: ' ', kind: 'insert' as const }, // whitespace
+    { time: 3, grapheme: 'i', kind: 'delete' as const }, // a backspace
+  ];
+
+  it('places a clip per non-whitespace keystroke; whitespace is skipped by default', () => {
+    const clips = keystrokeClips(marks, src, { baseUrl: './c' });
+    expect(clips).toHaveLength(2); // the space is dropped
+    expect(clips[0]!.at).toBe(1);
+    expect(clips[0]!.asset.url).toBe(`./c/${sfxFileName('sfxr', 'type')}`);
+    expect(clips[1]!.at).toBe(3); // the delete keystroke
+  });
+
+  it('a backspace can take a distinct voice', () => {
+    const clips = keystrokeClips(marks, src, { deleteVoice: 'tap' });
+    expect(clips[1]!.asset.url).toBe(`./${sfxFileName('sfxr', 'tap')}`); // the delete → 'tap'
+    expect(clips[0]!.asset.url).toBe(`./${sfxFileName('sfxr', 'type')}`); // the insert → 'type'
+  });
+
+  it('marks without a kind (a monotonic revealSchedule) are all inserts', () => {
+    const clips = keystrokeClips([{ time: 0.5, grapheme: 'a' }], src, { insertVoice: 'blip' });
+    expect(clips).toHaveLength(1);
+    expect(clips[0]!.asset.url).toBe(`./${sfxFileName('sfxr', 'blip')}`);
+  });
+
+  it('index-seeded jitter is deterministic and consumes typewriter marks', () => {
+    const opts = { seed: 3, jitterRate: 0.05 };
+    expect(keystrokeClips(marks, src, opts)).toEqual(keystrokeClips(marks, src, opts));
+  });
+})

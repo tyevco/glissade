@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { key, type Track } from '@glissade/core';
 import { Text, revealSchedule } from '../src/nodes.js';
 import { textCursor } from '../src/textCursor.js';
+import { typewriter } from '../src/typewriter.js';
 import type { DisplayListBuilder } from '../src/displayList.js';
 import type { EvalContext, Node } from '../src/node.js';
 import type { TextMeasurer } from '../src/text.js';
@@ -189,5 +190,64 @@ describe('TextCursor', () => {
     const cur = textCursor(t);
     const f = fills(emit(cur, 0))[0]!;
     expect((f.paint as { color: string }).color).toBe('#ff0000');
+  });
+});
+
+describe('typewriter() — edit-event-aware (type / delete / retype)', () => {
+  it('type-only compiles to a hold-key string staircase + insert marks', () => {
+    const tw = typewriter('title/text', [{ type: 'ab' }], { perChar: 1 });
+    expect(tw.track.target).toBe('title/text');
+    expect(tw.track.keys.map((k) => [k.t, k.value])).toEqual([
+      [0, ''],
+      [1, 'a'],
+      [2, 'ab'],
+    ]);
+    expect(tw.track.keys.every((k) => k.interp === 'hold')).toBe(true);
+    expect(tw.marks).toEqual([
+      { time: 1, kind: 'insert', grapheme: 'a', value: 'a' },
+      { time: 2, kind: 'insert', grapheme: 'b', value: 'ab' },
+    ]);
+    expect(tw.duration).toBe(2);
+  });
+
+  it('the cold-open: type → delete → retype DIFFERENT text (not just reveal-count)', () => {
+    const tw = typewriter('p/text', [{ type: 'pop' }, { delete: 3 }, { type: 'sing' }], { perChar: 1 });
+    // ends on a string the monotonic reveal could never reach
+    expect(tw.track.keys[tw.track.keys.length - 1]!.value).toBe('sing');
+    expect(tw.marks).toHaveLength(10); // 3 insert + 3 delete + 4 insert
+    // backspaces remove last-first, carrying the removed grapheme for SFX
+    expect(tw.marks.slice(3, 6)).toEqual([
+      { time: 4, kind: 'delete', grapheme: 'p', value: 'po' },
+      { time: 5, kind: 'delete', grapheme: 'o', value: 'p' },
+      { time: 6, kind: 'delete', grapheme: 'p', value: '' },
+    ]);
+    expect(tw.marks[6]).toEqual({ time: 7, kind: 'insert', grapheme: 's', value: 's' });
+  });
+
+  it('hold advances time without a keystroke; per-step perChar overrides', () => {
+    const tw = typewriter('t/text', [{ type: 'hi', perChar: 0.1 }, { hold: 0.5 }, { type: 'x' }], { perChar: 1 });
+    const times = tw.marks.map((m) => m.time);
+    expect(times[0]).toBeCloseTo(0.1, 9); // step perChar 0.1
+    expect(times[1]).toBeCloseTo(0.2, 9);
+    expect(times[2]).toBeCloseTo(0.2 + 0.5 + 1, 9); // + hold + global perChar
+  });
+
+  it('deleting past the start clamps (no negative-length text)', () => {
+    const tw = typewriter('t/text', [{ type: 'ab' }, { delete: 5 }], { perChar: 1 });
+    expect(tw.track.keys[tw.track.keys.length - 1]!.value).toBe('');
+    expect(tw.marks.filter((m) => m.kind === 'delete')).toHaveLength(2); // only 2 to remove
+  });
+
+  it('treats an emoji as one keystroke', () => {
+    const tw = typewriter('t/text', [{ type: 'a👍' }], { perChar: 1 });
+    expect(tw.marks.map((m) => m.grapheme)).toEqual(['a', '👍']);
+  });
+
+  it('keys are strictly time-ordered and start empty', () => {
+    const tw = typewriter('t/text', [{ type: 'abc' }, { delete: 1 }, { type: 'd' }], { perChar: 1 });
+    expect(tw.track.keys[0]).toEqual({ t: 0, value: '', interp: 'hold' });
+    for (let i = 1; i < tw.track.keys.length; i++) {
+      expect(tw.track.keys[i]!.t).toBeGreaterThan(tw.track.keys[i - 1]!.t);
+    }
   });
 });

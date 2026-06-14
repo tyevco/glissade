@@ -314,3 +314,47 @@ export function buildSfxClips(hits: readonly SfxHit[], source: SfxSource, opts: 
     return clip;
   });
 }
+
+// ---- keystroke sync: one click per typed/deleted character ----
+
+/** One keystroke to sonify — the structural shape both the typewriter's
+ * `EditMark` and a monotonic `RevealMark` satisfy. `kind` lets a backspace
+ * take a different sample; absent, it's treated as an insert. */
+export interface KeystrokeMark {
+  time: number;
+  grapheme: string;
+  kind?: 'insert' | 'delete';
+}
+
+export interface KeystrokeOptions extends SfxClipOptions {
+  /** voice for inserts (a typed char); default 'type' */
+  insertVoice?: string;
+  /** voice for deletes (a backspace); default = insertVoice */
+  deleteVoice?: string;
+  /** graphemes to NOT click; default whitespace (space, tab, newline) */
+  skip?: (grapheme: string) => boolean;
+}
+
+const isWhitespace = (g: string): boolean => /^\s+$/.test(g);
+
+/**
+ * One AudioClip per keystroke, placed at its time — the SFX side of the
+ * typewriter, the analogue of buildNarrationClips. Consumes the typewriter's
+ * `marks` (insert + delete) or a monotonic `revealSchedule` (inserts only).
+ * Char-class policy lives HERE: whitespace is skipped by default, and a
+ * backspace can take a distinct voice — the marks stay neutral data. Per-key
+ * variation is index-seeded, so it's a pure function of position.
+ */
+export function keystrokeClips(
+  marks: readonly KeystrokeMark[],
+  source: SfxSource,
+  opts: KeystrokeOptions = {},
+): AudioClip[] {
+  const insertVoice = opts.insertVoice ?? 'type';
+  const deleteVoice = opts.deleteVoice ?? insertVoice;
+  const skip = opts.skip ?? isWhitespace;
+  const hits: SfxHit[] = marks
+    .filter((m) => !skip(m.grapheme))
+    .map((m) => ({ voice: m.kind === 'delete' ? deleteVoice : insertVoice, at: m.time }));
+  return buildSfxClips(hits, source, opts);
+}
