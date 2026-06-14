@@ -236,6 +236,12 @@ importers:
         specifier: ^3.2.1
         version: 3.2.1
 
+  packages/sfx:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/studio:
     dependencies:
       '@glissade/backend-canvas2d':
