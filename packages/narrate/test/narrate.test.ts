@@ -10,6 +10,7 @@ import {
   captionNode,
   captionTrack,
   duckEnvelope,
+  splitCaption,
   music,
   narration,
   NarrationError,
@@ -430,5 +431,63 @@ describe('captionNode() auto-fit (overflow guard)', () => {
     const step = 26; // quantize(20 * 1.3)
     // anchored for the REAL 3 lines (bottomY 180 − 2·step), so anchor agrees with draw
     expect(n.position()[1]).toBe(180 - 2 * step);
+  });
+});
+
+// caption split-cues: a long segment splits into timed sub-cues; the SAME
+// splitCaption drives the burned track AND the sidecars, so they match.
+const SPLIT_SEG = {
+  id: 's',
+  text: 'one two three four five six',
+  start: 0,
+  duration: 6,
+  file: 's.wav',
+  words: [
+    { word: 'one', start: 0, end: 1 },
+    { word: 'two', start: 1, end: 2 },
+    { word: 'three', start: 2, end: 3 },
+    { word: 'four', start: 3, end: 4 },
+    { word: 'five', start: 4, end: 5 },
+    { word: 'six', start: 5, end: 6 },
+  ],
+};
+const SPLIT_TIMING: NarrationTiming = {
+  timingVersion: 1,
+  provider: 'fake',
+  providerVersion: 'f',
+  totalDuration: 6,
+  captionSplit: { maxChars: 12 },
+  segments: [SPLIT_SEG],
+};
+
+describe('splitCaption', () => {
+  it('no budget (or short segment) yields a single cue — byte-identical default', () => {
+    expect(splitCaption(SPLIT_SEG)).toEqual([{ text: 'one two three four five six', start: 0, end: 6 }]);
+  });
+
+  it('splits at word boundaries on the per-word clock', () => {
+    expect(splitCaption(SPLIT_SEG, 12)).toEqual([
+      { text: 'one two', start: 0, end: 2 },
+      { text: 'three four', start: 2, end: 4 },
+      { text: 'five six', start: 4, end: 6 },
+    ]);
+  });
+
+  it('falls back to even time-division when words are absent', () => {
+    const { words: _w, ...noWords } = SPLIT_SEG;
+    expect(splitCaption(noWords as never, 12).map((c) => c.text)).toEqual(['one two', 'three four', 'five six']);
+  });
+});
+
+describe('caption split-cues: burned track + sidecars agree', () => {
+  it('captionTrack and toSrt split identically from the one committed budget', () => {
+    const cues = splitCaption(SPLIT_SEG, 12);
+    const trackKeys = captionTrack(SPLIT_TIMING).keys.filter((k) => k.value !== '');
+    expect(trackKeys.map((k) => [k.t, k.value])).toEqual(cues.map((c) => [c.start, c.text]));
+    // one SRT cue block per sub-cue, same text
+    const blocks = toSrt(SPLIT_TIMING).split('\n\n').filter((b) => b.trim());
+    expect(blocks).toHaveLength(cues.length);
+    expect(toSrt(SPLIT_TIMING)).toContain('three four');
+    expect(toVtt(SPLIT_TIMING)).toContain('three four');
   });
 });

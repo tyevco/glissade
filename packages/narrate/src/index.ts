@@ -78,6 +78,13 @@ export interface NarrationScript {
    * segments word-less. Providers that supply their own words ignore this.
    */
   align?: string;
+  /**
+   * Split long caption segments into timed sub-cues at ~`maxChars` (on word
+   * boundaries, using per-word timings when present). Persisted into the timing
+   * manifest so the burned track and the .srt/.vtt sidecars split identically.
+   * Omit for no split (the default).
+   */
+  captionSplit?: { maxChars: number };
   /** spoken segments and explicit pause beats, in playback order */
   segments: NarrationElement[];
 }
@@ -118,6 +125,8 @@ export interface NarrationTiming {
   segments: TimedSegment[];
   /** explicit pause windows, addressable like segments; omitted when none */
   pauses?: TimedPause[];
+  /** caption split budget, committed so burned + sidecar split identically */
+  captionSplit?: { maxChars: number };
 }
 
 export class NarrationError extends Error {
@@ -218,8 +227,59 @@ export interface CaptionTrackOptions {
   granularity?: 'segment';
 }
 
+/** One caption cue within a segment's window. */
+export interface CaptionCue {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Split a segment's caption into timed sub-cues at ~`maxChars` (word-boundary).
+ * With per-word timings, each sub-cue is timed from its first word; without
+ * them, the segment window is divided evenly. No budget (or a short segment)
+ * yields a single cue — so the default is byte-identical. The SAME function
+ * drives the burned track AND the .srt/.vtt sidecars, so they match.
+ */
+export function splitCaption(segment: TimedSegment, maxChars?: number): CaptionCue[] {
+  const end = segment.start + segment.duration;
+  if (!maxChars || segment.text.length <= maxChars) {
+    return [{ text: segment.text, start: segment.start, end }];
+  }
+  if (segment.words && segment.words.length > 0) {
+    const cues: CaptionCue[] = [];
+    let words: string[] = [];
+    let start = segment.words[0]!.start;
+    for (const w of segment.words) {
+      if (words.length > 0 && [...words, w.word].join(' ').length > maxChars) {
+        cues.push({ text: words.join(' '), start, end: w.start });
+        words = [];
+        start = w.start;
+      }
+      words.push(w.word);
+    }
+    if (words.length > 0) cues.push({ text: words.join(' '), start, end });
+    return cues;
+  }
+  // no per-word timings: chunk text on word boundaries, divide the window evenly
+  const tokens = segment.text.split(/\s+/).filter(Boolean);
+  const chunks: string[] = [];
+  let cur = '';
+  for (const t of tokens) {
+    const candidate = cur ? `${cur} ${t}` : t;
+    if (cur && candidate.length > maxChars) {
+      chunks.push(cur);
+      cur = t;
+    } else cur = candidate;
+  }
+  if (cur) chunks.push(cur);
+  const span = segment.duration / chunks.length;
+  return chunks.map((text, i) => ({ text, start: segment.start + i * span, end: segment.start + (i + 1) * span }));
+}
+
 export function captionTrack(timing: NarrationTiming, opts: CaptionTrackOptions = {}): Track<string> {
   const target = opts.target ?? 'captions/text';
+  const budget = timing.captionSplit?.maxChars;
   const keys = [key(0, '', { interp: 'hold' as const })];
   let cursor = 0;
   for (const s of timing.segments) {
@@ -228,10 +288,12 @@ export function captionTrack(timing: NarrationTiming, opts: CaptionTrackOptions 
       // previous segment already ended exactly here)
       if (keys[keys.length - 1]!.value !== '') keys.push(key(cursor, '', { interp: 'hold' as const }));
     }
-    if (s.start <= 1e-9) {
-      keys[0] = key(0, s.text, { interp: 'hold' as const });
-    } else {
-      keys.push(key(s.start, s.text, { interp: 'hold' as const }));
+    for (const cue of splitCaption(s, budget)) {
+      if (cue.start <= 1e-9) {
+        keys[0] = key(0, cue.text, { interp: 'hold' as const });
+      } else {
+        keys.push(key(cue.start, cue.text, { interp: 'hold' as const }));
+      }
     }
     cursor = s.start + s.duration;
   }
@@ -575,22 +637,11 @@ function srtTime(t: number, sep: ',' | '.'): string {
 }
 
 export function toSrt(timing: NarrationTiming): string {
-  return (
-    timing.segments
-      .map(
-        (s, i) =>
-          `${i + 1}\n${srtTime(s.start, ',')} --> ${srtTime(s.start + s.duration, ',')}\n${s.text}`,
-      )
-      .join('\n\n') + '\n'
-  );
+  const cues = timing.segments.flatMap((s) => splitCaption(s, timing.captionSplit?.maxChars));
+  return cues.map((c, i) => `${i + 1}\n${srtTime(c.start, ',')} --> ${srtTime(c.end, ',')}\n${c.text}`).join('\n\n') + '\n';
 }
 
 export function toVtt(timing: NarrationTiming): string {
-  return (
-    'WEBVTT\n\n' +
-    timing.segments
-      .map((s) => `${srtTime(s.start, '.')} --> ${srtTime(s.start + s.duration, '.')}\n${s.text}`)
-      .join('\n\n') +
-    '\n'
-  );
+  const cues = timing.segments.flatMap((s) => splitCaption(s, timing.captionSplit?.maxChars));
+  return 'WEBVTT\n\n' + cues.map((c) => `${srtTime(c.start, '.')} --> ${srtTime(c.end, '.')}\n${c.text}`).join('\n\n') + '\n';
 }

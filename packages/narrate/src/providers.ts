@@ -662,6 +662,7 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
     totalDuration: ends.length > 0 ? Math.max(...ends) : 0,
     segments,
     ...(pauses.length > 0 ? { pauses } : {}),
+    ...(raw.captionSplit ? { captionSplit: raw.captionSplit } : {}),
   };
   const timingPath = `${base}.narration.timing.json`;
   writeFileSync(timingPath, JSON.stringify(timing, null, 2) + '\n');

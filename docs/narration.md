@@ -177,7 +177,16 @@ timeline({
 captionNode(SIZE, { autoFit: true, maxLines: 3 }); // recommended for 9:16 cutdowns
 ```
 
-It's **off by default** — enabling it re-flows multi-line burned captions, so it's an explicit opt-in (existing scenes render byte-identically without it). For very long cues that won't fit even the floor, split the segment in the script.
+It's **off by default** — enabling it re-flows multi-line burned captions, so it's an explicit opt-in (existing scenes render byte-identically without it).
+
+For cues too long to fit even the floor, **split** the segment into timed sub-cues instead of shrinking. Add `captionSplit` to the script — it's persisted into the timing manifest, so the burned track and the `.srt`/`.vtt` sidecars split at exactly the same boundaries:
+
+```json
+// my-scene.narration.json
+{ "narrationVersion": 1, "captionSplit": { "maxChars": 32 }, "segments": [ … ] }
+```
+
+`captionTrack`, `toSrt`, and `toVtt` all call the same `splitCaption(segment, maxChars)` — chunking on word boundaries and timing each sub-cue from its first word (per-word alignment), or dividing the segment window evenly when words are absent. Omit `captionSplit` for no split (the default, byte-identical).
 
 ## Render modes & sidecars
 
