@@ -389,7 +389,7 @@ const capMeasurer: TextMeasurer = {
   measureText: (t, f) => ({ width: t.length * f.size * 0.3, ascent: f.size, descent: 0 }),
 };
 function caption(text: string, style = {}) {
-  const node = captionNode({ w: 400, h: 200 }, { fontSize: 40, fontFamily: 'x', maxLines: 2, minScale: 0.5, ...style });
+  const node = captionNode({ w: 400, h: 200 }, { fontSize: 40, fontFamily: 'x', autoFit: true, maxLines: 2, minScale: 0.5, ...style });
   node.measurerSource = () => capMeasurer;
   node.text.set(text);
   return node;

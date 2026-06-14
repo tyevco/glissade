@@ -253,9 +253,15 @@ export interface CaptionStyle {
   /** bottom inset as a fraction of scene height; defaults 0.10 (landscape) / 0.18 (portrait) */
   bottomInsetFrac?: number;
   lineHeight?: number;
-  /** lines a caption may use before it auto-shrinks to fit; default 2 */
+  /**
+   * Opt in to the long-caption fit (auto-shrink + bottom-anchor). OFF by default
+   * so captionNode stays byte-identical for existing scenes — enabling it
+   * re-flows multi-line burned captions. Recommended for muted 9:16 cutdowns.
+   */
+  autoFit?: boolean;
+  /** lines a caption may use before it auto-shrinks to fit (autoFit only); default 2 */
   maxLines?: number;
-  /** floor for auto-shrink, as a fraction of the base font size; default 0.7 */
+  /** floor for auto-shrink, as a fraction of the base font size (autoFit only); default 0.7 */
   minScale?: number;
 }
 
@@ -271,8 +277,6 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
   const fontFamily = style.fontFamily ?? 'sans-serif';
   const width = Math.round(size.w * (style.widthFrac ?? 0.82));
   const lineHeight = style.lineHeight ?? 1.3;
-  const maxLines = Math.max(1, style.maxLines ?? 2);
-  const minFont = Math.max(1, Math.round(baseFont * (style.minScale ?? 0.7)));
   const bottomY = Math.round(size.h * (1 - inset));
 
   const node = new Text({
@@ -288,32 +292,34 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
     filters: style.filters ?? glow('#000000cc', 3, 1),
   });
 
-  // a long narration segment wraps to many lines and, drawn top-down from a
-  // fixed baseline, runs off the bottom of frame — fatal for muted 9:16
-  // cutdowns where burned captions are load-bearing. Fix both ends, pull-based
-  // and deterministic: AUTO-SHRINK the font until the wrap fits `maxLines`
-  // (floored at minScale), and BOTTOM-ANCHOR the block so it grows upward into
-  // the safe area instead of off the edge.
-  const lineCountAt = (font: number, m: TextMeasurer): number => {
-    const t = node.text();
-    if (!t) return 0;
-    const spec: FontSpec = { family: fontFamily, size: font, weight: node.fontWeight };
-    return breakLines(t, spec, width > 0 ? width : undefined, m).length;
-  };
-
-  node.fontSize.bindSource(() => {
-    const m = node.measurerSource?.() ?? estimatingMeasurer;
-    let font = baseFont;
-    while (font > minFont && lineCountAt(font, m) > maxLines) font -= 1;
-    return font;
-  });
-
-  node.position.bindSource(() => {
-    const m = node.measurerSource?.() ?? estimatingMeasurer;
-    const lines = Math.max(1, lineCountAt(node.fontSize(), m));
-    const step = quantize(node.fontSize() * lineHeight);
-    return [size.w / 2, bottomY - (lines - 1) * step];
-  });
+  // OPT-IN long-caption fit. A long segment wraps to many lines and, drawn
+  // top-down from a fixed baseline, runs off the bottom — fatal for muted 9:16
+  // cutdowns. When enabled, AUTO-SHRINK the font until the wrap fits `maxLines`
+  // (floored at minScale) and BOTTOM-ANCHOR the block so it grows upward. Left
+  // OFF by default so the node stays byte-identical for existing scenes (it
+  // re-flows multi-line burned captions, so it's an explicit opt-in).
+  if (style.autoFit) {
+    const maxLines = Math.max(1, style.maxLines ?? 2);
+    const minFont = Math.max(1, Math.round(baseFont * (style.minScale ?? 0.7)));
+    const lineCountAt = (font: number, m: TextMeasurer): number => {
+      const t = node.text();
+      if (!t) return 0;
+      const spec: FontSpec = { family: fontFamily, size: font, weight: node.fontWeight };
+      return breakLines(t, spec, width > 0 ? width : undefined, m).length;
+    };
+    node.fontSize.bindSource(() => {
+      const m = node.measurerSource?.() ?? estimatingMeasurer;
+      let font = baseFont;
+      while (font > minFont && lineCountAt(font, m) > maxLines) font -= 1;
+      return font;
+    });
+    node.position.bindSource(() => {
+      const m = node.measurerSource?.() ?? estimatingMeasurer;
+      const lines = Math.max(1, lineCountAt(node.fontSize(), m));
+      const step = quantize(node.fontSize() * lineHeight);
+      return [size.w / 2, bottomY - (lines - 1) * step];
+    });
+  }
 
   return node;
 }

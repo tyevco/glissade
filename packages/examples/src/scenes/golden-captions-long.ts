@@ -30,7 +30,7 @@ const mod: SceneModule = {
         new Rect({ id: 'bg', width: SIZE.w, height: SIZE.h, position: [SIZE.w / 2, SIZE.h / 2], fill: '#1b2330' }),
         // a marker at the bottom inset, so the golden shows the caption staying ABOVE it
         new Rect({ id: 'safeline', width: SIZE.w, height: 2, position: [SIZE.w / 2, Math.round(SIZE.h * 0.82)], fill: '#3a4660' }),
-        captionNode(SIZE, { fontFamily: 'DejaVu Sans', maxLines: 3 }),
+        captionNode(SIZE, { fontFamily: 'DejaVu Sans', autoFit: true, maxLines: 3 }),
       ],
     }),
   timeline: timeline({ fps: 60, duration: 4, tracks: [captionTrack(timing)] }),

@@ -171,7 +171,13 @@ timeline({
 
 `captionNode` places bottom-centered text inside the platform safe area — and detects portrait scenes (9:16 cutdowns live under reels/shorts UI chrome), sitting captions higher with a proportionally smaller face. Both aspect ratios are in the golden corpus.
 
-**Long segments stay in-frame.** A long caption would otherwise wrap to many lines and run off the bottom — fatal for muted 9:16 cutdowns where burned captions are load-bearing. `captionNode` guards both ends, deterministically: it **auto-shrinks** the font until the wrap fits `maxLines` (default 2; floored at `minScale`, default 0.7× the base size), and **bottom-anchors** the block so extra lines grow *upward* into the safe area instead of off the edge. Tune with `captionNode(SIZE, { maxLines: 3, minScale: 0.6 })`; for very long cues that still won't fit the floor, split the segment in the script.
+**Long segments can stay in-frame — opt in with `{ autoFit: true }`.** A long caption otherwise wraps to many lines and runs off the bottom — fatal for muted 9:16 cutdowns where burned captions are load-bearing. With `autoFit`, `captionNode` guards both ends, deterministically: it **auto-shrinks** the font until the wrap fits `maxLines` (default 2; floored at `minScale`, default 0.7× the base size), and **bottom-anchors** the block so extra lines grow *upward* into the safe area instead of off the edge.
+
+```ts
+captionNode(SIZE, { autoFit: true, maxLines: 3 }); // recommended for 9:16 cutdowns
+```
+
+It's **off by default** — enabling it re-flows multi-line burned captions, so it's an explicit opt-in (existing scenes render byte-identically without it). For very long cues that won't fit even the floor, split the segment in the script.
 
 ## Render modes & sidecars
 
