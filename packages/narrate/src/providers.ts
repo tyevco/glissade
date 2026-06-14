@@ -167,8 +167,18 @@ export function openaiProvider(opts: { model?: string } = {}): TtsProvider {
  * offline. Needs a voice MODEL (`.onnx` + sibling `.onnx.json`) — pass its
  * path as `model`, or per-segment as `voice`. Emits no word timestamps; the
  * alignment step (below) fills them in.
+ *
+ * DETERMINISTIC by default: VITS adds noise (generator + the stochastic
+ * duration predictor), so the same text re-synthesizes to slightly different
+ * audio/durations. glissade zeroes both noise scales so re-synth is
+ * byte-identical — reproducible pipelines, glissade's determinism contract.
+ * For piper's more-natural (but drifting) prosody, pass its defaults
+ * (`{ noiseScale: 0.667, noiseWScale: 0.8 }`) and wire via `providerImpl`.
+ * The noise mode is part of `version()`, so changing it invalidates the cache.
  */
-export function piperProvider(opts: { model?: string } = {}): TtsProvider {
+export function piperProvider(opts: { model?: string; noiseScale?: number; noiseWScale?: number } = {}): TtsProvider {
+  const noiseScale = opts.noiseScale ?? 0;
+  const noiseWScale = opts.noiseWScale ?? 0;
   return {
     id: 'piper',
     version: () => {
@@ -189,8 +199,10 @@ export function piperProvider(opts: { model?: string } = {}): TtsProvider {
         throw new NarrationError(`could not run piper: ${r.error.message}`);
       }
       const m = /\b\d+\.\d+\.\d+\b/.exec(r.stdout ?? ''); // stdout only — avoid usage-text false matches
-      const v = m ? `piper ${m[0]}` : 'piper (version unknown)';
-      return Promise.resolve(opts.model ? `${v} ${basename(opts.model)}` : v);
+      // noise mode is in the cache key: switching deterministic↔natural re-synthesizes
+      const noise = `noise=${noiseScale}/${noiseWScale}`;
+      const v = m ? `piper ${m[0]}` : 'piper';
+      return Promise.resolve([v, noise, opts.model ? basename(opts.model) : null].filter(Boolean).join(' '));
     },
     synthesize: (req) => {
       const model = req.voice ?? opts.model;
@@ -201,7 +213,15 @@ export function piperProvider(opts: { model?: string } = {}): TtsProvider {
       }
       const tag = createHash('sha256').update(req.text).digest('hex').slice(0, 8);
       const out = join(tmpdir(), `glissade-piper-${process.pid}-${tag}.wav`);
-      const args = ['--model', model, '--output_file', out];
+      // noise scales 0/0 (default) make synthesis byte-deterministic (§verified
+      // on piper-tts 1.4.2); --noise-w-scale zeroes the stochastic duration
+      // predictor, --noise-scale the generator
+      const args = [
+        '--model', model,
+        '--output_file', out,
+        '--noise-scale', String(noiseScale),
+        '--noise-w-scale', String(noiseWScale),
+      ];
       // piper speed is length_scale (lower = faster): invert our rate multiplier.
       // underscore form works on BOTH piper-tts 1.x (which aliases
       // --length-scale/--length_scale) and the legacy standalone binary —

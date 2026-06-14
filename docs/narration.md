@@ -48,6 +48,14 @@ Each segment is cached by `sha256(text, voice, rate, provider, providerVersion)`
 
 `piper` needs a voice model: pass it as `--provider piper` with the model path in the script's `voice` (per-segment or top-level), or construct `piperProvider({ model })`. Most providers emit **no word timings** — the [alignment step](#word-timing-alignment) fills those in.
 
+Piper is **deterministic by default**: VITS adds noise (generator + a stochastic duration predictor), so vanilla piper re-synthesizes the same text to slightly different audio/durations — which would re-pin any goldens anchored to narration timing. glissade zeroes both noise scales so re-synthesis is **byte-identical**. For piper's more natural (but drifting) prosody, opt out with its native defaults and wire via `providerImpl`:
+
+```ts
+synthesizeScript(script, { providerImpl: piperProvider({ model, noiseScale: 0.667, noiseWScale: 0.8 }) });
+```
+
+The noise mode is part of the provider version, so switching deterministic↔natural invalidates the cache and re-synthesizes. (Either way, the committed manifest + cache is the practical determinism boundary — don't re-narrate unless the script changes.)
+
 The `TtsProvider` interface is three members (`id`, `version()`, `synthesize()`) — bring your own (ElevenLabs, Azure, Polly…) and pass the instance via `synthesizeScript({ providerImpl })`; a provider that returns `words` skips alignment entirely.
 
 ## Word timing & alignment {#word-timing-alignment}

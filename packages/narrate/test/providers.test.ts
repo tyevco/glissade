@@ -96,12 +96,15 @@ describe('providerById', () => {
 });
 
 describe('piperProvider (feature-detected, like espeak/openai)', () => {
-  it('version(): present piper → a string; only genuine absence (ENOENT) throws', async () => {
+  it('version(): present → string incl. the noise mode (cache key); absence (ENOENT) throws', async () => {
     // env-robust: piper-tts 1.x exits non-zero with no --version, so detection
     // gates on spawn ENOENT, not exit code. Present (e.g. this box) → a version
-    // string; absent (e.g. CI) → a clear error naming both install paths.
+    // string carrying the noise mode (deterministic 0/0 by default); absent
+    // (e.g. CI) → a clear error naming both install paths.
     try {
-      expect(await piperProvider().version()).toMatch(/piper/);
+      expect(await piperProvider().version()).toMatch(/piper.*noise=0\/0/s);
+      // a different noise mode → different cache key → re-synthesis
+      expect(await piperProvider({ noiseScale: 0.5, noiseWScale: 0.8 }).version()).toMatch(/noise=0\.5\/0\.8/);
     } catch (e) {
       expect((e as Error).message).toMatch(/piper not found.*pip install piper-tts/s);
     }
