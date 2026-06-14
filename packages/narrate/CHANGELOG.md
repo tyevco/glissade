@@ -1,5 +1,16 @@
 # @glissade/narrate
 
+## 0.5.0-pre.7
+
+### Minor Changes
+
+- 763bd2f: `captionNode`'s long-caption fit (auto-shrink + bottom-anchor) is now **opt-in** via `{ autoFit: true }`, off by default. It re-flows multi-line burned captions, so leaving it off keeps captionNode byte-identical for existing scenes (a strict additive contract — no golden shifts on upgrade). Enable it for muted 9:16 cutdowns where burned captions are load-bearing: `captionNode(SIZE, { autoFit: true, maxLines: 3 })`. `maxLines`/`minScale` apply only when `autoFit` is set.
+
+### Patch Changes
+
+- @glissade/core@0.5.0-pre.7
+- @glissade/scene@0.5.0-pre.7
+
 ## 0.5.0-pre.6
 
 ### Patch Changes
