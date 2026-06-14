@@ -1,5 +1,13 @@
 # @glissade/backend-skia
 
+## 0.5.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies [27b4b49]
+  - @glissade/scene@0.5.0-pre.2
+  - @glissade/core@0.5.0-pre.2
+
 ## 0.5.0-pre.1
 
 ### Patch Changes

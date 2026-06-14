@@ -1,5 +1,26 @@
 # @glissade/cli
 
+## 0.5.0-pre.2
+
+### Minor Changes
+
+- adc00ba: `gs sfx` — the sound-effects prepare step + render auto-mix, closing the SFX zero-config loop (parity with narration/music). Write a `<scene>.sfx.json` with effect hits that anchor to a narration beat (`{ voice, anchor, offset }`, resolved against the sibling `*.narration.timing.json` so they re-flow on re-narrate) or use an absolute `at`. `gs sfx <scene>` resolves the times, renders the referenced voices once (deduped) to `<scene>.sfx-cache/`, bakes the deterministic index-seeded jitter into a committed `<scene>.sfx.timing.json`, and `gs render` auto-mixes that manifest with zero config (`--sfx off` opts out). Author-wired clips are detected and never doubled (the +6dB guard). v1 drives the procedural `sfxr` source; sample packs remain available from code via `@glissade/sfx`'s `buildSfxClips`.
+
+### Patch Changes
+
+- Updated dependencies [363c7b7]
+- Updated dependencies [3383077]
+- Updated dependencies [829b14d]
+- Updated dependencies [27b4b49]
+  - @glissade/narrate@0.5.0-pre.2
+  - @glissade/sfx@0.5.0-pre.2
+  - @glissade/scene@0.5.0-pre.2
+  - @glissade/backend-skia@0.5.0-pre.2
+  - @glissade/interact@0.5.0-pre.2
+  - @glissade/lottie@0.5.0-pre.2
+  - @glissade/player@0.5.0-pre.2
+  - @glissade/core@0.5.0-pre.2
+
 ## 0.5.0-pre.1
 
 ### Patch Changes

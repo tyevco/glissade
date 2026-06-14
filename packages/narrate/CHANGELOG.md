@@ -1,5 +1,20 @@
 # @glissade/narrate
 
+## 0.5.0-pre.2
+
+### Minor Changes
+
+- 363c7b7: Pause beats: pacing as first-class, addressable narration data. A narration script may now interleave `{ "pause": <seconds>, "id": "...", "bed": "hold" | "silence" | "swell" }` elements between segments. A pause is an addressable **window**, not dead air — it produces the same anchors a segment does (`beats.start/end/duration('id')`, plus `beats.at('id', offset)` for sub-beats and `beats.labels()` entries), supplies its own silence (suppressing the default inter-segment `gap` around it), and shifts every later segment's start, so the whole track re-flows on re-narrate.
+
+  The per-pause `bed` mode threads into `duckEnvelope`: `hold` (default) keeps the bed ducked across the pause, `silence` cuts it to a floor (`{ silence }` to set the level, default 0), `swell` lets it breathe back to base while the voice rests. `duckEnvelope` was reworked to a per-transition ramp model that handles contiguous different-level windows correctly; its output for pause-free manifests is byte-identical to before. The manifest gains an optional `pauses: TimedPause[]`; `narration()` resolves segments and pauses in one id namespace (collisions throw). Pure manifest data — golden-stable.
+
+### Patch Changes
+
+- 3383077: `piperProvider` is now deterministic by default. VITS adds noise (generator + a stochastic duration predictor), so vanilla piper re-synthesizes the same text to slightly different audio/durations — which re-pins any goldens anchored to narration timing. glissade now passes `--noise-scale 0 --noise-w-scale 0`, making re-synthesis byte-identical (verified end-to-end on real piper-tts 1.4.2). Opt into piper's natural-but-drifting prosody via `piperProvider({ noiseScale: 0.667, noiseWScale: 0.8 })` + `providerImpl`. The noise mode is part of the provider version, so switching deterministic↔natural invalidates the cache.
+- Updated dependencies [27b4b49]
+  - @glissade/scene@0.5.0-pre.2
+  - @glissade/core@0.5.0-pre.2
+
 ## 0.5.0-pre.1
 
 ### Patch Changes
