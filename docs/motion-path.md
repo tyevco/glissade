@@ -44,6 +44,19 @@ const tip = pointAtLength(routeContours, 40); // 40px along the path
 const total = pathLength(routeContours);
 ```
 
-`{ samplesPerSegment }` (default 32) trades smoothness for table size. Everything here is pure and deterministic — the sampler is built once from a static `PathValue`, and `atProgress` is a pure function of progress, so `evaluate()` stays pure and the motion is in the golden corpus.
+`{ samplesPerSegment }` (default 32) trades smoothness for table size. Everything here is pure and deterministic — `atProgress` is a pure function of progress, so `evaluate()` stays pure and the motion is in the golden corpus.
 
-> **v1 note:** the path is snapshotted when `followPath` is constructed (pass a static `PathValue`, or a `Path` node whose `data()` is read once). Following a *morphing* path dynamically is a future addition.
+## Following a morphing path
+
+Pass `followPath` the **Path node** (not a snapshot of its data) to follow it *live* — as the route itself morphs along a `'<id>/d'` track, the cursor re-samples the current geometry and rides the bending line:
+
+```ts
+const route = new Path({ id: 'route', data: flatLine, stroke: '#ffb454', strokeWidth: 3 });
+const cursor = new Path({ id: 'cursor', data: arrow });
+createScene({ children: [route, cursor, followPath(cursor, route, { id: 'cf', orient: true })] });
+
+track('route/d', 'path', [key(0, flatLine), key(2.2, arch, 'easeInOutCubic')]); // bend it
+track('cf/progress', 'number', [key(0, 0), key(2.6, 1)]);                        // sweep it
+```
+
+The arc-length table is rebuilt only when the path's value actually changes (memoized by reference), so a **static** route — a raw `PathValue`, or a Path node whose data never animates — still builds its table just once. Pass a `PathValue` directly when you want a fixed route.

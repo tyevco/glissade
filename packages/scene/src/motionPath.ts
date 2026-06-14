@@ -148,7 +148,8 @@ export function pointAtLength(path: PathValue, s: number): Vec2 {
 export interface FollowPathProps extends NodeProps {
   /** the node to move along the path; its position (and rotation, if orient) is owned by this */
   target: Node;
-  path: PathValue;
+  /** a static PathValue, or a Path node followed LIVE (re-sampled as its `data` morphs) */
+  path: PathValue | Path;
   /** 0→1 position along the path's arc length; default 1 (the end). Track `<id>/progress`. */
   progress?: PropInit<number>;
   /** rotate the target to the path tangent — a cursor that points where it heads; default false */
@@ -176,15 +177,30 @@ export class FollowPath extends Node {
     else if (props.progress !== undefined) this.progress.set(props.progress);
     this.registerTarget('progress', this.progress);
 
-    const sampler = motionPath(
-      props.path,
-      props.samplesPerSegment !== undefined ? { samplesPerSegment: props.samplesPerSegment } : {},
-    );
-    props.target.position.bindSource(() => sampler.atProgress(this.progress()));
+    // a Path node is followed LIVE; a raw PathValue is static. The arc-length
+    // table is rebuilt only when the underlying PathValue reference changes —
+    // so a static path (constant ref) builds once, a morphing path (a new
+    // lerped value each frame) re-samples ~once per frame. Pull-based + pure.
+    const sOpts =
+      props.samplesPerSegment !== undefined ? { samplesPerSegment: props.samplesPerSegment } : {};
+    const getPath: () => PathValue =
+      props.path instanceof Path ? () => (props.path as Path).data() : () => props.path as PathValue;
+    let cachedPath = getPath();
+    let cachedSampler = motionPath(cachedPath, sOpts);
+    const sampler = (): PathSampler => {
+      const pv = getPath();
+      if (pv !== cachedPath) {
+        cachedPath = pv;
+        cachedSampler = motionPath(pv, sOpts);
+      }
+      return cachedSampler;
+    };
+
+    props.target.position.bindSource(() => sampler().atProgress(this.progress()));
     if (props.orient) {
       const offset = props.orientOffset ?? 0;
       props.target.rotation.bindSource(() => {
-        const t = sampler.tangentAtProgress(this.progress());
+        const t = sampler().tangentAtProgress(this.progress());
         return (Math.atan2(t[1], t[0]) * 180) / Math.PI + offset;
       });
     }
@@ -195,12 +211,12 @@ export class FollowPath extends Node {
   }
 }
 
-/** `children: [route, cursor, followPath(cursor, route, { orient: true })]` — cursor traces the route. */
+/** `children: [route, cursor, followPath(cursor, route, { orient: true })]` — cursor traces the route.
+ * Pass the Path *node* to follow it as it morphs; pass a PathValue for a fixed route. */
 export function followPath(
   target: Node,
   path: PathValue | Path,
   props: Omit<FollowPathProps, 'target' | 'path'> = {},
 ): FollowPath {
-  const pv = path instanceof Path ? path.data() : path;
-  return new FollowPath({ ...props, target, path: pv });
+  return new FollowPath({ ...props, target, path });
 }

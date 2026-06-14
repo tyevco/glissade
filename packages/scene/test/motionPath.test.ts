@@ -89,11 +89,22 @@ describe('followPath', () => {
     expect(cursor.rotation()).toBeCloseTo(-90, 6); // tangent 0° + offset
   });
 
-  it('accepts a Path node (snapshots its data)', () => {
+  it('accepts a Path node and follows its end', () => {
     const route = new Path({ id: 'route', data: ell });
     const cursor = new Rect({ id: 'cursor', width: 8, height: 8 });
     followPath(cursor, route, { id: 'cf', progress: 1 });
     expect(cursor.position()).toEqual([expect.closeTo(100, 6), expect.closeTo(100, 6)]); // the end
+  });
+
+  it('follows a Path node LIVE — re-samples when its data morphs', () => {
+    const route = new Path({ id: 'route', data: line }); // [0,0] → [100,0]
+    const cursor = new Rect({ id: 'cursor', width: 8, height: 8 });
+    followPath(cursor, route, { id: 'cf', progress: 1 }); // ride the path end
+    expect(cursor.position()[0]).toBeCloseTo(100, 6); // end of the horizontal line
+
+    // morph the route to a vertical line [0,0] → [0,200]
+    route.data.set([{ closed: false, v: [[0, 0], [0, 200]], in: [[0, 0], [0, 0]], out: [[0, 0], [0, 0]] }]);
+    expect(cursor.position()).toEqual([expect.closeTo(0, 6), expect.closeTo(200, 6)]); // re-sampled, not stale
   });
 
   it('progress clamps outside [0, 1]', () => {
