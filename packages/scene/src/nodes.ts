@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { random, signal, type BindableSignal, type PathValue, type Track } from '@glissade/core';
+import { random, signal, type BindableSignal, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
 import { arcLength, flatten, hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
@@ -174,6 +174,82 @@ function splitContours(segs: PathSeg[]): PathSeg[][] {
     }
   }
   return out;
+}
+
+/**
+ * `PathSeg[]` → `PathValue` (Lottie vertex contours) — the inverse of
+ * `Path.pathSegs`, so geometry from `roundedRectSegs` / `sketchStrokes` /
+ * `flatten` can be placed on a `Path` node (to morph, motion-path, or draw-on
+ * it). C/Q become an anchor + relative in/out tangents; L is a zero-tangent
+ * vertex; E samples to vertices; Z closes the contour, folding the closing
+ * tangent back onto the first vertex. Round-trips C-contours exactly.
+ */
+export function pathFromSegs(segs: readonly PathSeg[]): PathValue {
+  type Contour = { closed: boolean; v: Vec2[]; in: Vec2[]; out: Vec2[] };
+  const contours: Contour[] = [];
+  let c: Contour | null = null;
+  const push = (v: Vec2, inT: Vec2 = [0, 0], outT: Vec2 = [0, 0]): void => {
+    c!.v.push(v);
+    c!.in.push(inT);
+    c!.out.push(outT);
+  };
+  const last = (): Vec2 => c!.v[c!.v.length - 1]!;
+  for (const s of segs) {
+    switch (s[0]) {
+      case 'M':
+        c = { closed: false, v: [[s[1], s[2]]], in: [[0, 0]], out: [[0, 0]] };
+        contours.push(c);
+        break;
+      case 'L':
+        if (c) push([s[1], s[2]]);
+        break;
+      case 'C':
+        if (c) {
+          const p0 = last();
+          c.out[c.out.length - 1] = [s[1] - p0[0], s[2] - p0[1]]; // out of prev = c1 − p0
+          push([s[5], s[6]], [s[3] - s[5], s[4] - s[6]]); // in of new = c2 − p1
+        }
+        break;
+      case 'Q':
+        if (c) {
+          const p0 = last();
+          const qx = s[1];
+          const qy = s[2];
+          const px = s[3];
+          const py = s[4];
+          c.out[c.out.length - 1] = [(2 / 3) * (qx - p0[0]), (2 / 3) * (qy - p0[1])];
+          push([px, py], [(2 / 3) * (qx - px), (2 / 3) * (qy - py)]);
+        }
+        break;
+      case 'E':
+        if (c) {
+          const [, cx, cy, rx, ry, rot, a0, a1] = s;
+          const cos = Math.cos(rot);
+          const sin = Math.sin(rot);
+          for (let k = 1; k <= 16; k++) {
+            const ang = a0 + (a1 - a0) * (k / 16);
+            const ex = rx * Math.cos(ang);
+            const ey = ry * Math.sin(ang);
+            push([cx + ex * cos - ey * sin, cy + ex * sin + ey * cos]);
+          }
+        }
+        break;
+      case 'Z':
+        if (c) {
+          c.closed = true;
+          const f = c.v[0]!;
+          const l = last();
+          if (c.v.length > 1 && Math.abs(f[0] - l[0]) < 1e-9 && Math.abs(f[1] - l[1]) < 1e-9) {
+            c.in[0] = c.in[c.in.length - 1]!; // fold the closing in-tangent onto v0
+            c.v.pop();
+            c.in.pop();
+            c.out.pop();
+          }
+        }
+        break;
+    }
+  }
+  return contours;
 }
 
 export class Rect extends Shape {

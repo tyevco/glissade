@@ -44,6 +44,7 @@ export {
   ImageNode,
   Video,
   roundedRectSegs,
+  pathFromSegs,
   revealSchedule,
   type LineBox,
   type WordBox,
