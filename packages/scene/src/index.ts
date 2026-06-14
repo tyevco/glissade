@@ -59,6 +59,15 @@ export { Highlight, highlight, type HighlightProps } from './highlight.js';
 export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
 export { typewriter, type TypeEdit, type EditMark, type TypewriterResult } from './typewriter.js';
 export {
+  FollowPath,
+  followPath,
+  motionPath,
+  pointAtLength,
+  pathLength,
+  type FollowPathProps,
+  type PathSampler,
+} from './motionPath.js';
+export {
   TokenHighlight,
   tokenHighlight,
   matchTokenRun,
