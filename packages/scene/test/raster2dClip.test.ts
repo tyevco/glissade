@@ -38,6 +38,7 @@ function makeHost() {
         composites++;
       },
       setLineDash: () => {},
+      lineDashOffset: 0,
       measureText: (t: string) => ({ width: t.length * 10 }),
       fillStyle: '',
       strokeStyle: '',

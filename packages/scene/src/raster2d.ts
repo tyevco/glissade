@@ -58,6 +58,7 @@ export interface Ctx2DLike<TPath, TDrawable> {
     h: number,
   ): void;
   setLineDash(segments: number[]): void;
+  lineDashOffset: number;
   fillStyle: unknown;
   strokeStyle: unknown;
   lineWidth: number;
@@ -351,9 +352,15 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           ctx.lineWidth = cmd.stroke.width;
           ctx.lineCap = cmd.stroke.cap ?? 'butt';
           ctx.lineJoin = cmd.stroke.join ?? 'miter';
-          if (cmd.stroke.dash) ctx.setLineDash(cmd.stroke.dash);
+          if (cmd.stroke.dash) {
+            ctx.setLineDash(cmd.stroke.dash);
+            ctx.lineDashOffset = cmd.stroke.dashOffset ?? 0;
+          }
           ctx.stroke(this.path(list.resources, cmd.path));
-          if (cmd.stroke.dash) ctx.setLineDash([]);
+          if (cmd.stroke.dash) {
+            ctx.setLineDash([]);
+            ctx.lineDashOffset = 0;
+          }
           const b = this.pathBounds(list.resources, cmd.path);
           if (b) {
             // miter joins reach up to miterLimit (default 10) × width/2 = 5w
