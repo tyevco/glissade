@@ -340,7 +340,7 @@ describe('synthesizeScript: the cache contract', () => {
         { id: 'x', text: 'b' },
       ],
     });
-    await expect(synthesizeScript(dup)).rejects.toThrow(/duplicate segment id 'x'/);
+    await expect(synthesizeScript(dup)).rejects.toThrow(/duplicate narration id 'x'/);
     const bad = join(dir, 'bad.narration.json');
     writeFileSync(bad, JSON.stringify({ narrationVersion: 2, segments: [] }));
     await expect(synthesizeScript(bad)).rejects.toThrow(/narrationVersion/);
@@ -353,5 +353,74 @@ describe('scriptPathFor', () => {
     expect(scriptPathFor(scriptPath)).toBe(scriptPath);
     expect(scriptPathFor(join(dir, 'scene.ts'))).toBe(scriptPath);
     expect(() => scriptPathFor(join(dir, 'missing.ts'))).toThrow(/no narration script/);
+  });
+});
+
+describe('synthesizeScript: pauses', () => {
+  it('a pause becomes an addressable window, suppresses the adjacent gap, and shifts later segments', async () => {
+    const script: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'fake',
+      leadIn: 0.2,
+      gap: 0.3,
+      segments: [
+        { id: 'one', text: 'Hello there world.' },
+        { id: 'beat', pause: 0.5, bed: 'silence' },
+        { id: 'two', text: 'After the pause.' },
+      ],
+    };
+    const r = await synthesizeScript(writeScript('pauses', script), {
+      providerImpl: fakeProvider(),
+      alignerImpl: null,
+    });
+    const segs = r.timing.segments;
+    expect(segs.map((s) => s.id)).toEqual(['one', 'two']); // pauses are NOT segments
+    const oneEnd = segs[0]!.start + segs[0]!.duration;
+    expect(r.timing.pauses).toEqual([{ id: 'beat', start: oneEnd, duration: 0.5, bed: 'silence' }]);
+    // the gap (0.3) is suppressed: 'two' starts exactly one pause after 'one' ends
+    expect(segs[1]!.start).toBeCloseTo(oneEnd + 0.5, 9);
+    expect(r.timing.totalDuration).toBeCloseTo(segs[1]!.start + segs[1]!.duration, 9);
+  });
+
+  it('a trailing pause extends totalDuration; bed defaults to hold', async () => {
+    const script: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'fake',
+      segments: [
+        { id: 's', text: 'A word.' },
+        { id: 'end', pause: 0.8 },
+      ],
+    };
+    const r = await synthesizeScript(writeScript('trailing-pause', script), {
+      providerImpl: fakeProvider(),
+      alignerImpl: null,
+    });
+    const sEnd = r.timing.segments[0]!.start + r.timing.segments[0]!.duration;
+    expect(r.timing.pauses).toEqual([{ id: 'end', start: sEnd, duration: 0.8, bed: 'hold' }]);
+    expect(r.timing.totalDuration).toBeCloseTo(sEnd + 0.8, 9); // trailing silence counts
+  });
+
+  it('rejects a duplicate id (segment vs pause) and a non-positive pause', async () => {
+    await expect(
+      synthesizeScript(
+        writeScript('dup-id', {
+          narrationVersion: 1,
+          provider: 'fake',
+          segments: [
+            { id: 'x', text: 'a' },
+            { id: 'x', pause: 0.5 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/duplicate narration id 'x'/);
+    await expect(
+      synthesizeScript(
+        writeScript('bad-pause', {
+          narrationVersion: 1,
+          provider: 'fake',
+          segments: [{ id: 'p', pause: 0 }],
+        }),
+      ),
+    ).rejects.toThrow(/pause 'p' needs pause > 0/);
   });
 });

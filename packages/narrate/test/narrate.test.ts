@@ -269,3 +269,100 @@ describe('music(): beat-grid anchors over the tempo manifest', () => {
     expect(music(noGain).clip('x.wav').gain).toBeUndefined();
   });
 });
+
+// pauses: explicit silence beats, addressable like segments, with a per-pause
+// music-bed mode. Segments flank a 1.5s pause window [1.5, 3.0].
+const PAUSED: NarrationTiming = {
+  timingVersion: 1,
+  provider: 'fake',
+  providerVersion: 'fake-1',
+  totalDuration: 4,
+  segments: [
+    { id: 'a', text: 'Before.', start: 0.5, duration: 1.0, file: 'a.wav' },
+    { id: 'b', text: 'After.', start: 3.0, duration: 1.0, file: 'b.wav' },
+  ],
+  pauses: [{ id: 'beat', start: 1.5, duration: 1.5, bed: 'hold' }],
+};
+
+/** linear-sample a keys-only gain envelope at time t */
+function sampleGain(env: { keys: { t: number; value: number }[] }, t: number): number {
+  const ks = env.keys;
+  if (t <= ks[0]!.t) return ks[0]!.value;
+  for (let i = 1; i < ks.length; i++) {
+    if (t <= ks[i]!.t) {
+      const a = ks[i - 1]!;
+      const b = ks[i]!;
+      const span = b.t - a.t || 1;
+      return a.value + (b.value - a.value) * ((t - a.t) / span);
+    }
+  }
+  return ks[ks.length - 1]!.value;
+}
+
+describe('pauses: addressable silence beats', () => {
+  it('start/end/duration/at resolve a pause by id, like a segment', () => {
+    const beats = narration(PAUSED);
+    expect(beats.start('beat')).toBe(1.5);
+    expect(beats.end('beat')).toBe(3.0);
+    expect(beats.duration('beat')).toBe(1.5);
+    expect(beats.at('beat', 0.5)).toBe(2.0); // a sub-beat inside the window
+    // segments still resolve
+    expect(beats.start('a')).toBe(0.5);
+  });
+
+  it('labels() includes pause beats alongside segments', () => {
+    const labels = narration(PAUSED).labels();
+    expect(labels['beat.start']).toBe(1.5);
+    expect(labels['beat.end']).toBe(3.0);
+    expect(Object.keys(labels)).toHaveLength(6); // a, b, beat × {start,end}
+  });
+
+  it('a pause id colliding with a segment id throws', () => {
+    const bad: NarrationTiming = {
+      ...PAUSED,
+      pauses: [{ id: 'a', start: 1.5, duration: 1.5, bed: 'hold' }],
+    };
+    expect(() => narration(bad)).toThrow(/duplicate narration id 'a'/);
+  });
+});
+
+describe('duckEnvelope: per-pause bed modes', () => {
+  // sample the middle of the pause window [1.5, 3.0] to read what the bed does
+  const mid = 2.25;
+
+  it("'hold' (default) keeps the bed ducked across the pause — one continuous dip", () => {
+    const env = duckEnvelope(PAUSED); // beat.bed = 'hold'
+    expect(sampleGain(env, mid)).toBeCloseTo(0.25, 9); // still at duck level
+    // no return to base anywhere strictly inside the window
+    const inside = env.keys.filter((k) => k.t > 1.5 && k.t < 3.0 && k.value === 1);
+    expect(inside).toHaveLength(0);
+  });
+
+  it("'silence' cuts the bed to the floor across the window", () => {
+    const env = duckEnvelope({ ...PAUSED, pauses: [{ id: 'beat', start: 1.5, duration: 1.5, bed: 'silence' }] });
+    expect(sampleGain(env, mid)).toBeCloseTo(0, 9); // true silence, not just duck
+    // a custom floor is honored
+    const floored = duckEnvelope(
+      { ...PAUSED, pauses: [{ id: 'beat', start: 1.5, duration: 1.5, bed: 'silence' }] },
+      { silence: 0.05 },
+    );
+    expect(sampleGain(floored, mid)).toBeCloseTo(0.05, 9);
+  });
+
+  it("'swell' lets the bed breathe back to base while the voice rests", () => {
+    const env = duckEnvelope({ ...PAUSED, pauses: [{ id: 'beat', start: 1.5, duration: 1.5, bed: 'swell' }] });
+    expect(sampleGain(env, mid)).toBeCloseTo(1, 9); // up at base — two separate dips
+    // the bed is ducked during the actual speech on either side
+    expect(sampleGain(env, 1.0)).toBeCloseTo(0.25, 9);
+    expect(sampleGain(env, 3.5)).toBeCloseTo(0.25, 9);
+  });
+
+  it('every bed mode yields a strictly time-ordered envelope', () => {
+    for (const bed of ['hold', 'silence', 'swell'] as const) {
+      const env = duckEnvelope({ ...PAUSED, pauses: [{ id: 'beat', start: 1.5, duration: 1.5, bed }] });
+      for (let i = 1; i < env.keys.length; i++) {
+        expect(env.keys[i]!.t).toBeGreaterThan(env.keys[i - 1]!.t);
+      }
+    }
+  });
+});

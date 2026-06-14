@@ -21,6 +21,38 @@ export interface NarrationSegment {
   gapAfter?: number;
 }
 
+/** What the music bed does across a pause window. */
+export type BedMode =
+  /** hold the current (ducked) level across the pause — no swell, the default */
+  | 'hold'
+  /** cut the bed to a floor for the window (a dramatic silence) */
+  | 'silence'
+  /** let the bed breathe back up to base while the voice rests */
+  | 'swell';
+
+/**
+ * An explicit silence beat between segments — an addressable WINDOW, not just
+ * dead air. It shifts every later segment's start (re-flows on re-narrate) and
+ * gives you anchors (`beats.start/end/duration('id')`) to hang visuals and SFX
+ * on, plus a per-pause `bed` mode for the music. A pause supplies its own
+ * silence, so it suppresses the default inter-segment gap around it.
+ */
+export interface NarrationPause {
+  id: string;
+  /** the silence length in seconds */
+  pause: number;
+  /** what the music bed does across this window; default 'hold' */
+  bed?: BedMode;
+}
+
+/** A script element: a spoken segment or an explicit pause beat. */
+export type NarrationElement = NarrationSegment | NarrationPause;
+
+/** A pause element is the one carrying a numeric `pause` field. */
+export function isPause(el: NarrationElement): el is NarrationPause {
+  return typeof (el as NarrationPause).pause === 'number';
+}
+
 export interface NarrationScript {
   narrationVersion: 1;
   provider?: string;
@@ -37,7 +69,8 @@ export interface NarrationScript {
    * segments word-less. Providers that supply their own words ignore this.
    */
   align?: string;
-  segments: NarrationSegment[];
+  /** spoken segments and explicit pause beats, in playback order */
+  segments: NarrationElement[];
 }
 
 // ---- the generated timing manifest (committed; the render-time input) ----
@@ -60,12 +93,22 @@ export interface TimedSegment {
   words?: TimedWord[];
 }
 
+/** A resolved pause window in the committed manifest. */
+export interface TimedPause {
+  id: string;
+  start: number;
+  duration: number;
+  bed: BedMode;
+}
+
 export interface NarrationTiming {
   timingVersion: 1;
   provider: string;
   providerVersion: string;
   totalDuration: number;
   segments: TimedSegment[];
+  /** explicit pause windows, addressable like segments; omitted when none */
+  pauses?: TimedPause[];
 }
 
 export class NarrationError extends Error {
@@ -78,13 +121,15 @@ export class NarrationError extends Error {
 // ---- anchors: visual beats addressed by narration, not hand-timed seconds ----
 
 export interface NarrationAnchors {
-  /** segment start, absolute timeline seconds */
+  /** segment OR pause start, absolute timeline seconds */
   start(id: string): number;
-  /** segment end (start + duration) */
+  /** segment OR pause end (start + duration) */
   end(id: string): number;
   duration(id: string): number;
+  /** start + offset — a sub-beat inside a segment or pause window */
+  at(id: string, offset?: number): number;
   readonly totalDuration: number;
-  /** '<id>.start' / '<id>.end' labels — merge into the timeline for studio visibility */
+  /** '<id>.start' / '<id>.end' labels (segments + pauses) — merge into the timeline for studio visibility */
   labels(): Record<string, number>;
   /** narration clips on the existing AudioClip machinery; baseUrl prefixes each file */
   clips(baseUrl: string): AudioClip[];
@@ -93,22 +138,32 @@ export interface NarrationAnchors {
 }
 
 export function narration(timing: NarrationTiming): NarrationAnchors {
-  const byId = new Map(timing.segments.map((s) => [s.id, s]));
-  const seg = (id: string): TimedSegment => {
-    const s = byId.get(id);
-    if (!s) throw new NarrationError(`no narration segment '${id}' (have: ${[...byId.keys()].join(', ')})`);
-    return s;
+  // segments and pauses share one id namespace — both are addressable beats
+  const byId = new Map<string, { start: number; duration: number }>();
+  for (const s of timing.segments) {
+    if (byId.has(s.id)) throw new NarrationError(`duplicate narration id '${s.id}'`);
+    byId.set(s.id, { start: s.start, duration: s.duration });
+  }
+  for (const p of timing.pauses ?? []) {
+    if (byId.has(p.id)) throw new NarrationError(`duplicate narration id '${p.id}' (segment and pause collide)`);
+    byId.set(p.id, { start: p.start, duration: p.duration });
+  }
+  const beat = (id: string): { start: number; duration: number } => {
+    const b = byId.get(id);
+    if (!b) throw new NarrationError(`no narration beat '${id}' (have: ${[...byId.keys()].join(', ')})`);
+    return b;
   };
   return {
-    start: (id) => seg(id).start,
-    end: (id) => seg(id).start + seg(id).duration,
-    duration: (id) => seg(id).duration,
+    start: (id) => beat(id).start,
+    end: (id) => beat(id).start + beat(id).duration,
+    duration: (id) => beat(id).duration,
+    at: (id, offset = 0) => beat(id).start + offset,
     totalDuration: timing.totalDuration,
     labels: () => {
       const out: Record<string, number> = {};
-      for (const s of timing.segments) {
-        out[`${s.id}.start`] = s.start;
-        out[`${s.id}.end`] = s.start + s.duration;
+      for (const [id, b] of byId) {
+        out[`${id}.start`] = b.start;
+        out[`${id}.end`] = b.start + b.duration;
       }
       return out;
     },
@@ -214,12 +269,16 @@ export interface DuckOptions {
   mergeGap?: number;
   /** the music clip's `at` on the timeline; gain keys are CLIP-local. Default 0. */
   clipAt?: number;
+  /** gain a 'silence' pause ducks the bed to; default 0 (a true cut). */
+  silence?: number;
 }
 
 /**
  * The bed-ducking envelope every narrated video needs: duck windows are the
- * narration segments, with attack/release ramps and near-window merging.
- * Pure function of the committed manifest — re-narrate and the ducking
+ * narration segments, with attack/release ramps and near-window merging. Pause
+ * beats join in by their `bed` mode — `hold` (default) keeps the bed ducked
+ * across the pause, `silence` cuts it to a floor, `swell` lets it breathe back
+ * to base. Pure function of the committed manifest — re-narrate and the ducking
  * re-flows. Returns a keys-only gain envelope for AudioClip.gain.
  */
 export function duckEnvelope(timing: NarrationTiming, opts: DuckOptions = {}): { keys: Key<number>[] } {
@@ -229,36 +288,95 @@ export function duckEnvelope(timing: NarrationTiming, opts: DuckOptions = {}): {
   const release = opts.release ?? 0.4;
   const mergeGap = opts.mergeGap ?? 0.5;
   const clipAt = opts.clipAt ?? 0;
+  const silence = opts.silence ?? 0;
 
-  // merge segments whose silence would be shorter than ramps + mergeGap
-  const windows: { start: number; end: number }[] = [];
-  for (const s of [...timing.segments].sort((a, b) => a.start - b.start)) {
-    const last = windows[windows.length - 1];
-    if (last && s.start - last.end < attack + release + mergeGap) {
-      last.end = Math.max(last.end, s.start + s.duration);
+  // every speaking segment ducks; a pause carries the level of its bed mode —
+  // 'hold' ducks like a segment (so close speech+pause+speech stays low),
+  // 'silence' dips to the floor, 'swell' sits at base (a barrier that keeps
+  // flanking ducks from merging across it, so the bed breathes up)
+  const levelOf = (bed: BedMode): number => (bed === 'silence' ? silence : bed === 'swell' ? base : duck);
+  const raw: { start: number; end: number; level: number }[] = [
+    ...timing.segments.map((s) => ({ start: s.start, end: s.start + s.duration, level: duck })),
+    ...(timing.pauses ?? []).map((p) => ({ start: p.start, end: p.start + p.duration, level: levelOf(p.bed) })),
+  ].sort((a, b) => a.start - b.start);
+
+  // merge adjacent windows of the SAME level whose silence would be shorter
+  // than ramps + mergeGap (no pumping between close beats)
+  const merged: { start: number; end: number; level: number }[] = [];
+  for (const w of raw) {
+    const last = merged[merged.length - 1];
+    if (last && last.level === w.level && w.start - last.end < attack + release + mergeGap) {
+      last.end = Math.max(last.end, w.end);
     } else {
-      windows.push({ start: s.start, end: s.start + s.duration });
+      merged.push({ ...w });
     }
   }
 
-  const keys: Key<number>[] = [];
-  for (const w of windows) {
-    const rampStart = w.start - attack - clipAt;
-    const down = w.start - clipAt;
-    const up = w.end - clipAt;
-    const rampEnd = w.end + release - clipAt;
-    if (rampEnd <= 0) continue; // window entirely before the clip starts
-    // hold base until the ramp; clamp pre-clip ramps to an immediate duck
-    if (rampStart > 0) keys.push(key(rampStart, base));
-    if (down > 0) keys.push(key(down, duck));
-    else if (keys.length === 0) keys.push(key(0, duck));
-    keys.push(key(Math.max(up, 1e-6), duck));
-    keys.push(key(rampEnd, base));
+  // base-level (swell) windows leave a base gap that produces the breath — they
+  // only had to split same-level merges, which they've now done
+  const active = merged.filter((w) => w.level !== base);
+  if (active.length === 0) return { keys: [key(0, base)] };
+
+  // a base-filled step function: each active window is a region at its level,
+  // with an implicit base region in every gap between them
+  const regions: { start: number; end: number; level: number }[] = [];
+  for (const w of active) {
+    const prev = regions[regions.length - 1];
+    if (prev && w.start > prev.end) regions.push({ start: prev.end, end: w.start, level: base });
+    regions.push({ ...w });
   }
-  if (keys.length === 0) keys.push(key(0, base));
+
+  // each step transition becomes a ramp: DOWN (more ducking) completes at the
+  // boundary (anticipatory, over `attack`); UP (less ducking) starts at it
+  // (over `release`). Contiguous regions of different level ramp directly
+  // between their levels — no spurious return to base.
+  const transitions: { t: number; from: number; to: number }[] = [{ t: regions[0]!.start, from: base, to: regions[0]!.level }];
+  for (let i = 0; i < regions.length - 1; i++) {
+    if (regions[i]!.level !== regions[i + 1]!.level) {
+      transitions.push({ t: regions[i]!.end, from: regions[i]!.level, to: regions[i + 1]!.level });
+    }
+  }
+  const lastRegion = regions[regions.length - 1]!;
+  transitions.push({ t: lastRegion.end, from: lastRegion.level, to: base });
+
+  let keys: Key<number>[] = [];
+  for (const tr of transitions) {
+    if (tr.to === tr.from) continue;
+    if (tr.to < tr.from) {
+      keys.push(key(tr.t - attack, tr.from), key(tr.t, tr.to));
+    } else {
+      keys.push(key(tr.t, tr.from), key(tr.t + release, tr.to));
+    }
+  }
+
+  // make the keys clip-local, then keep them strictly time-ordered (a no-op for
+  // the pause-free path, whose windows never interleave)
+  keys = keys.map((k) => ({ t: k.t - clipAt, value: k.value })).sort((a, b) => a.t - b.t);
+  const ordered: Key<number>[] = [];
+  for (const k of keys) {
+    const prev = ordered[ordered.length - 1];
+    if (prev && k.t <= prev.t) prev.value = k.value;
+    else ordered.push(k);
+  }
+
+  // clamp the head to t >= 0: pre-clip keys collapse to the bed's level at 0
+  const out: Key<number>[] = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const k = ordered[i]!;
+    if (k.t < 0) {
+      const next = ordered[i + 1];
+      if (!next || next.t >= 0) {
+        const v = next && next.t > k.t ? k.value + (next.value - k.value) * ((0 - k.t) / (next.t - k.t)) : k.value;
+        out.push(key(0, v));
+      }
+      continue;
+    }
+    out.push(k);
+  }
+  if (out.length === 0) out.push(key(0, base));
   // a leading base key so the bed starts at full level before the first ramp
-  if (keys[0]!.t > 0) keys.unshift(key(0, base));
-  return { keys };
+  if (out[0]!.t > 0) out.unshift(key(0, base));
+  return { keys: out };
 }
 
 // ---- music: the tempo sibling of the narration manifest ----

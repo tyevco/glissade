@@ -13,7 +13,15 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { NarrationError, type NarrationScript, type NarrationTiming, type TimedSegment, type TimedWord } from './index.js';
+import {
+  isPause,
+  NarrationError,
+  type NarrationScript,
+  type NarrationTiming,
+  type TimedPause,
+  type TimedSegment,
+  type TimedWord,
+} from './index.js';
 
 export interface TtsRequest {
   text: string;
@@ -532,9 +540,10 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
   const raw = JSON.parse(readFileSync(scriptPath, 'utf8')) as NarrationScript;
   if (raw.narrationVersion !== 1) throw new NarrationError(`unsupported narrationVersion ${String(raw.narrationVersion)}`);
   const ids = new Set<string>();
-  for (const s of raw.segments) {
-    if (ids.has(s.id)) throw new NarrationError(`duplicate segment id '${s.id}'`);
-    ids.add(s.id);
+  for (const el of raw.segments) {
+    if (ids.has(el.id)) throw new NarrationError(`duplicate narration id '${el.id}'`);
+    ids.add(el.id);
+    if (isPause(el) && !(el.pause > 0)) throw new NarrationError(`pause '${el.id}' needs pause > 0`);
   }
 
   const provider = opts.providerImpl ?? providerById(opts.provider ?? raw.provider ?? 'espeak');
@@ -564,9 +573,20 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
   const reused: string[] = [];
   const aligned: string[] = [];
   const segments: TimedSegment[] = [];
+  const pauses: TimedPause[] = [];
   let cursor = raw.leadIn ?? 0;
+  const elements = raw.segments;
 
-  for (const seg of raw.segments) {
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i]!;
+    // a pause is silence we don't synthesize: record the window, advance the
+    // clock. It supplies its own silence, so no default gap is added around it.
+    if (isPause(el)) {
+      pauses.push({ id: el.id, start: cursor, duration: el.pause, bed: el.bed ?? 'hold' });
+      cursor += el.pause;
+      continue;
+    }
+    const seg = el;
     const req: { text: string; voice?: string; rate?: number } = { text: seg.text };
     const voice = seg.voice ?? raw.voice;
     const rate = seg.rate ?? raw.rate;
@@ -619,19 +639,29 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
       );
     }
     segments.push(timed);
-    cursor += duration + (seg.gapAfter ?? raw.gap ?? 0.35);
+    cursor += duration;
+    // the default inter-segment gap applies only BETWEEN two segments; a pause
+    // brings its own silence, so suppress the gap when one is adjacent
+    const next = elements[i + 1];
+    if (next && !isPause(next)) cursor += seg.gapAfter ?? raw.gap ?? 0.35;
   }
 
   // stable key order keeps the committed manifest diff-friendly
   cache.entries = Object.fromEntries(Object.entries(cache.entries).sort(([a], [b]) => a.localeCompare(b)));
   writeFileSync(cachePath, JSON.stringify(cache, null, 2) + '\n');
 
+  // totalDuration spans everything, including a trailing pause (intentional silence)
+  const ends = [
+    ...segments.map((s) => s.start + s.duration),
+    ...pauses.map((p) => p.start + p.duration),
+  ];
   const timing: NarrationTiming = {
     timingVersion: 1,
     provider: provider.id,
     providerVersion,
-    totalDuration: segments.length > 0 ? segments[segments.length - 1]!.start + segments[segments.length - 1]!.duration : 0,
+    totalDuration: ends.length > 0 ? Math.max(...ends) : 0,
     segments,
+    ...(pauses.length > 0 ? { pauses } : {}),
   };
   const timingPath = `${base}.narration.timing.json`;
   writeFileSync(timingPath, JSON.stringify(timing, null, 2) + '\n');

@@ -123,6 +123,34 @@ track('panel/opacity', 'number', [
 
 Re-narrate with different durations and every anchored beat re-flows. Nothing else changes.
 
+## Pacing: pause beats
+
+The hardest part of narration timing is the **silence** — the dramatic beats where nothing is said. Hand-timing them breaks the moment you re-record. So make a pause a first-class, named element of the script:
+
+```json
+{
+  "narrationVersion": 1,
+  "provider": "piper",
+  "segments": [
+    { "id": "claim", "text": "Render is a pure function of time." },
+    { "pause": 0.8, "id": "beat", "bed": "swell" },
+    { "id": "payoff", "text": "So every frame is addressable." }
+  ]
+}
+```
+
+A pause is an **addressable window**, not just dead air. It produces the same anchors a segment does — `beats.start('beat')`, `beats.end('beat')`, `beats.duration('beat')` — and `beats.at('beat', 0.3)` is a sub-beat 0.3s into the window. Hang a visual (or an SFX) on it and it survives a re-record: a pause supplies its own silence (suppressing the default inter-segment `gap` around it) and shifts every later segment's start, so the whole track re-flows. `beats.labels()` exposes `beat.start` / `beat.end` for studio visibility; captions clear automatically across the pause.
+
+The optional **`bed`** controls what the music bed does across the window (it feeds [`duckEnvelope`](#ducking-the-music-bed)):
+
+| `bed` | The bed… | For |
+| --- | --- | --- |
+| `hold` (default) | stays ducked through the pause — no swell | a beat mid-thought, no jarring music bump |
+| `silence` | cuts to a floor (default 0; `{ silence }` to set it) | a hard dramatic cut |
+| `swell` | breathes back up to base while the voice rests | letting the music land before the next line |
+
+Pauses are pure manifest data, so the ducking, the anchors, and the caption clears all re-derive from the committed file — no clock, golden-stable.
+
 ## Captions are tracks
 
 A caption is a **string track with hold keys** plus a styled `Text` node — plain document data, so it lives in the timeline JSON, evaluates deterministically, and golden-frame CI covers it like any other pixel:
