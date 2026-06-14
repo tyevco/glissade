@@ -381,3 +381,43 @@ describe('narration().require — batch fast-fail on stale ids', () => {
     expect(() => narration(PAUSED).require(['ghost'])).toThrow(/unknown id 'ghost'/);
   });
 });
+
+// auto-fit: long caption segments must stay in-frame (load-bearing for muted
+// 9:16 cutdowns). A char-proportional measurer makes wrapping/shrink testable.
+import type { TextMeasurer } from '@glissade/scene';
+const capMeasurer: TextMeasurer = {
+  measureText: (t, f) => ({ width: t.length * f.size * 0.3, ascent: f.size, descent: 0 }),
+};
+function caption(text: string, style = {}) {
+  const node = captionNode({ w: 400, h: 200 }, { fontSize: 40, fontFamily: 'x', maxLines: 2, minScale: 0.5, ...style });
+  node.measurerSource = () => capMeasurer;
+  node.text.set(text);
+  return node;
+}
+
+describe('captionNode() auto-fit (overflow guard)', () => {
+  it('a short caption keeps the base font and sits at the bottom inset', () => {
+    const n = caption('Hi there');
+    expect(n.fontSize()).toBe(40);
+    expect(n.position()).toEqual([200, 180]); // bottomY = round(200 * 0.9)
+  });
+
+  it('a long caption auto-shrinks toward the floor and bottom-anchors (grows UP, not off-frame)', () => {
+    const n = caption('one two three four five six seven eight nine ten eleven twelve thirteen fourteen');
+    expect(n.fontSize()).toBeLessThan(40); // shrunk to fit maxLines
+    expect(n.fontSize()).toBeGreaterThanOrEqual(20); // floored at minScale (40 * 0.5)
+    expect(n.position()[1]).toBeLessThan(180); // anchored above the inset — grew upward
+  });
+
+  it('respects an explicit minScale floor even when it still overflows', () => {
+    const wall = 'word '.repeat(60).trim(); // far too long to ever fit 2 lines
+    const n = caption(wall, { minScale: 0.8 });
+    expect(n.fontSize()).toBe(Math.round(40 * 0.8)); // pinned at the floor, not below
+  });
+
+  it('is deterministic', () => {
+    const a = caption('alpha bravo charlie delta echo foxtrot golf hotel india');
+    const b = caption('alpha bravo charlie delta echo foxtrot golf hotel india');
+    expect([a.fontSize(), a.position()]).toEqual([b.fontSize(), b.position()]);
+  });
+});

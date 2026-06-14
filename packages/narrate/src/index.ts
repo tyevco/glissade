@@ -7,7 +7,16 @@
  */
 
 import { key, track, type AssetRef, type AudioClip, type Key, type Track } from '@glissade/core';
-import { glow, Text, type FilterSpec } from '@glissade/scene';
+import {
+  breakLines,
+  estimatingMeasurer,
+  glow,
+  quantize,
+  Text,
+  type FilterSpec,
+  type FontSpec,
+  type TextMeasurer,
+} from '@glissade/scene';
 
 // ---- the authored script (committed next to the scene module) ----
 
@@ -244,6 +253,10 @@ export interface CaptionStyle {
   /** bottom inset as a fraction of scene height; defaults 0.10 (landscape) / 0.18 (portrait) */
   bottomInsetFrac?: number;
   lineHeight?: number;
+  /** lines a caption may use before it auto-shrinks to fit; default 2 */
+  maxLines?: number;
+  /** floor for auto-shrink, as a fraction of the base font size; default 0.7 */
+  minScale?: number;
 }
 
 /**
@@ -254,19 +267,55 @@ export interface CaptionStyle {
 export function captionNode(size: { w: number; h: number }, style: CaptionStyle = {}): Text {
   const portrait = size.h > size.w;
   const inset = style.bottomInsetFrac ?? (portrait ? 0.18 : 0.1);
-  const fontSize = style.fontSize ?? Math.round(Math.min(size.w, size.h) * (portrait ? 0.052 : 0.06));
-  return new Text({
+  const baseFont = style.fontSize ?? Math.round(Math.min(size.w, size.h) * (portrait ? 0.052 : 0.06));
+  const fontFamily = style.fontFamily ?? 'sans-serif';
+  const width = Math.round(size.w * (style.widthFrac ?? 0.82));
+  const lineHeight = style.lineHeight ?? 1.3;
+  const maxLines = Math.max(1, style.maxLines ?? 2);
+  const minFont = Math.max(1, Math.round(baseFont * (style.minScale ?? 0.7)));
+  const bottomY = Math.round(size.h * (1 - inset));
+
+  const node = new Text({
     id: 'captions',
     text: '',
     align: 'center',
-    fontSize,
+    fontSize: baseFont,
     ...(style.fontFamily !== undefined ? { fontFamily: style.fontFamily } : {}),
     fill: style.fill ?? '#ffffff',
-    width: Math.round(size.w * (style.widthFrac ?? 0.82)),
-    lineHeight: style.lineHeight ?? 1.3,
-    position: [size.w / 2, Math.round(size.h * (1 - inset))],
+    width,
+    lineHeight,
+    position: [size.w / 2, bottomY],
     filters: style.filters ?? glow('#000000cc', 3, 1),
   });
+
+  // a long narration segment wraps to many lines and, drawn top-down from a
+  // fixed baseline, runs off the bottom of frame — fatal for muted 9:16
+  // cutdowns where burned captions are load-bearing. Fix both ends, pull-based
+  // and deterministic: AUTO-SHRINK the font until the wrap fits `maxLines`
+  // (floored at minScale), and BOTTOM-ANCHOR the block so it grows upward into
+  // the safe area instead of off the edge.
+  const lineCountAt = (font: number, m: TextMeasurer): number => {
+    const t = node.text();
+    if (!t) return 0;
+    const spec: FontSpec = { family: fontFamily, size: font, weight: node.fontWeight };
+    return breakLines(t, spec, width > 0 ? width : undefined, m).length;
+  };
+
+  node.fontSize.bindSource(() => {
+    const m = node.measurerSource?.() ?? estimatingMeasurer;
+    let font = baseFont;
+    while (font > minFont && lineCountAt(font, m) > maxLines) font -= 1;
+    return font;
+  });
+
+  node.position.bindSource(() => {
+    const m = node.measurerSource?.() ?? estimatingMeasurer;
+    const lines = Math.max(1, lineCountAt(node.fontSize(), m));
+    const step = quantize(node.fontSize() * lineHeight);
+    return [size.w / 2, bottomY - (lines - 1) * step];
+  });
+
+  return node;
 }
 
 // ---- ducking: a music-bed gain envelope derived from the narration ----

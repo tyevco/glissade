@@ -19,6 +19,7 @@ import goldenFilters from '../../examples/src/scenes/golden-filters.js';
 import goldenPaths from '../../examples/src/scenes/golden-paths.js';
 import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
 import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
+import goldenCaptionsLong from '../../examples/src/scenes/golden-captions-long.js';
 import goldenMarker from '../../examples/src/scenes/golden-marker.js';
 import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
@@ -49,6 +50,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // narration-anchored captions, both safe-area aspect ratios (§narrate)
   { name: 'captions', mod: goldenCaptions },
   { name: 'captions-portrait', mod: goldenCaptionsPortrait },
+  // long-caption overflow guard: auto-shrink + bottom-anchor keeps it in-frame
+  { name: 'captions-long', mod: goldenCaptionsLong },
   // anchors (placement + pivot) and the marker highlight sweep
   { name: 'marker', mod: goldenMarker },
   // typewriter reveal + caret (partial-line masking, wrap, cursor blink)
