@@ -22,6 +22,7 @@
   },
   "changesets": [
     "caption-autofit",
+    "gs-prepare",
     "motion-path-morph",
     "motion-path",
     "narration-automix",
@@ -34,7 +35,11 @@
     "sfx-core",
     "sfx-keystroke",
     "sfx-verbose",
+    "sketch-drawon",
+    "sketch-styles",
+    "stroke-dashoffset",
     "typewriter-edits",
+    "typewriter-gap",
     "typewriter-reveal",
     "typewriter-steps"
   ]
