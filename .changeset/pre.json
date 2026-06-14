@@ -21,6 +21,7 @@
   },
   "changesets": [
     "narration-automix",
-    "piper-and-alignment"
+    "piper-and-alignment",
+    "piper-detect-vosk-align"
   ]
 }
