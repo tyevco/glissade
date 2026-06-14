@@ -65,6 +65,27 @@ timeline({
 
 Whitespace is skipped by default, a backspace can take a distinct `deleteVoice`, and the per-key variation is index-seeded — so the typing track stays alive instead of machine-gun identical. The `marks` are neutral data; the policy (which sample, what to skip) lives here.
 
+### Real keyboard foley
+
+A genuine mechanical-keyboard pack rotates several keypress recordings so the typing doesn't sound looped. Pass a pool to `insertVoices` (and `deleteVoices`) and `keystrokeClips` round-robins it with an index-seeded pick — deterministic, never the same loop. Bring the pack in with [`samplePackSource`](#sample-packs-license-checked):
+
+```ts
+const keys = samplePackSource({
+  id: 'mech-keys', license: 'CC0-1.0', source: 'freesound.org/.../packs/45678',
+  samples: { k1, k2, k3, back },          // Uint8Array WAV bytes
+});
+// write the cache the clip urls resolve against
+for (const [f, bytes] of Object.entries(renderSfxAssets(keys, ['k1','k2','k3','back'])))
+  writeFileSync(`./sfx-cache/${f}`, bytes);
+
+const audio = keystrokeClips(tw.marks, keys, {
+  baseUrl: './sfx-cache',
+  insertVoices: ['k1', 'k2', 'k3'],       // round-robin the keypresses
+  deleteVoice: 'back',
+  jitterRate: 0.04,                        // a touch of pitch variation on top
+});
+```
+
 ## Zero-config: the `gs sfx` prepare step
 
 Like narration and music, effects have an explicit prepare step so `gs render` stays a pure read of committed files. Write a `<scene>.sfx.json` next to the module — hits can anchor to a **narration beat** (resolved against the sibling `*.narration.timing.json`, so they re-flow when you re-narrate) or use an absolute `at`:

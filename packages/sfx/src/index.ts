@@ -331,6 +331,14 @@ export interface KeystrokeOptions extends SfxClipOptions {
   insertVoice?: string;
   /** voice for deletes (a backspace); default = insertVoice */
   deleteVoice?: string;
+  /**
+   * Round-robin pool for inserts (overrides insertVoice) — a real keyboard
+   * foley pack rotates several keypress recordings so the typing doesn't sound
+   * looped. The per-keystroke pick is index-seeded (deterministic).
+   */
+  insertVoices?: readonly string[];
+  /** round-robin pool for deletes (overrides deleteVoice; default = the insert pool) */
+  deleteVoices?: readonly string[];
   /** graphemes to NOT click; default whitespace (space, tab, newline) */
   skip?: (grapheme: string) => boolean;
 }
@@ -341,20 +349,31 @@ const isWhitespace = (g: string): boolean => /^\s+$/.test(g);
  * One AudioClip per keystroke, placed at its time — the SFX side of the
  * typewriter, the analogue of buildNarrationClips. Consumes the typewriter's
  * `marks` (insert + delete) or a monotonic `revealSchedule` (inserts only).
- * Char-class policy lives HERE: whitespace is skipped by default, and a
- * backspace can take a distinct voice — the marks stay neutral data. Per-key
- * variation is index-seeded, so it's a pure function of position.
+ * Char-class policy lives HERE: whitespace is skipped by default, a backspace
+ * can take a distinct voice, and a multi-sample pool round-robins (index-seeded)
+ * for non-looping foley. The marks stay neutral data; everything is a pure
+ * function of position.
  */
 export function keystrokeClips(
   marks: readonly KeystrokeMark[],
   source: SfxSource,
   opts: KeystrokeOptions = {},
 ): AudioClip[] {
-  const insertVoice = opts.insertVoice ?? 'type';
-  const deleteVoice = opts.deleteVoice ?? insertVoice;
+  const insertPool = opts.insertVoices ?? [opts.insertVoice ?? 'type'];
+  const deletePool = opts.deleteVoices ?? (opts.deleteVoice ? [opts.deleteVoice] : insertPool);
   const skip = opts.skip ?? isWhitespace;
+  const seed = opts.seed ?? 0;
   const hits: SfxHit[] = marks
     .filter((m) => !skip(m.grapheme))
-    .map((m) => ({ voice: m.kind === 'delete' ? deleteVoice : insertVoice, at: m.time }));
+    .map((m, index) => {
+      const pool = m.kind === 'delete' ? deletePool : insertPool;
+      let voice = pool[0]!;
+      if (pool.length > 1) {
+        // a separate seeded stream from buildSfxClips's pitch/gain jitter
+        const r = random((seed ^ hashStr('keystroke') ^ Math.imul(index + 1, 0x85ebca6b)) >>> 0)();
+        voice = pool[Math.min(pool.length - 1, Math.floor(r * pool.length))]!;
+      }
+      return { voice, at: m.time };
+    });
   return buildSfxClips(hits, source, opts);
 }

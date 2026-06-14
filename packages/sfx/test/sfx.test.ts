@@ -192,4 +192,16 @@ describe('keystrokeClips: one click per typed/deleted character', () => {
     const opts = { seed: 3, jitterRate: 0.05 };
     expect(keystrokeClips(marks, src, opts)).toEqual(keystrokeClips(marks, src, opts));
   });
+
+  it('round-robins a multi-sample pool (non-looping foley), deterministically', () => {
+    const typed = [...'abcdefgh'].map((g, i) => ({ time: i + 1, grapheme: g, kind: 'insert' as const }));
+    const opts = { insertVoices: ['k1', 'k2', 'k3'], baseUrl: '.' };
+    const clips = keystrokeClips(typed, src, opts);
+    const used = new Set(clips.map((c) => c.asset.url));
+    expect(used.size).toBeGreaterThan(1); // not a single looped sample
+    // every pick is from the pool
+    for (const c of clips) expect(['k1', 'k2', 'k3'].some((v) => c.asset.url.endsWith(sfxFileName('sfxr', v)))).toBe(true);
+    // deterministic
+    expect(keystrokeClips(typed, src, opts)).toEqual(clips);
+  });
 })
