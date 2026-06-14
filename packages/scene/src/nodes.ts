@@ -3,8 +3,9 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { signal, type BindableSignal, type PathValue, type Track } from '@glissade/core';
+import { random, signal, type BindableSignal, type PathValue, type Track } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type PathSeg } from './displayList.js';
+import { hashStr, roughen, validateSketch, type SketchStyle } from './sketch.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import {
   breakLines,
@@ -66,12 +67,18 @@ export interface ShapeProps extends NodeProps {
   fill?: PropInit<string>;
   stroke?: PropInit<string>;
   strokeWidth?: PropInit<number>;
+  /** hand-drawn look: the outline is geometrically roughened (see sketch.ts) */
+  sketch?: SketchStyle;
+  /** seed for the roughening; default a stable hash of the node id */
+  sketchSeed?: number;
 }
 
 abstract class Shape extends Node {
   readonly fill: BindableSignal<string>;
   readonly stroke: BindableSignal<string>;
   readonly strokeWidth: BindableSignal<number>;
+  readonly sketch: SketchStyle | undefined;
+  readonly sketchSeed: number;
 
   constructor(props: ShapeProps = {}) {
     super(props);
@@ -81,12 +88,16 @@ abstract class Shape extends Node {
     this.registerTarget('fill', this.fill);
     this.registerTarget('stroke', this.stroke);
     this.registerTarget('strokeWidth', this.strokeWidth);
+    if (props.sketch) validateSketch(props.sketch);
+    this.sketch = props.sketch;
+    this.sketchSeed = props.sketchSeed ?? (this.id !== undefined ? hashStr(this.id) : 0);
   }
 
   protected abstract pathSegs(): PathSeg[];
 
   protected draw(out: DisplayListBuilder): void {
     const segs = this.pathSegs();
+    if (this.sketch) return this.drawSketch(out, segs);
     const path = out.resource({ kind: 'path', segs });
     const fill = this.fill();
     if (fill) out.push({ op: 'fillPath', path, paint: { kind: 'color', color: fill } });
@@ -94,6 +105,28 @@ abstract class Shape extends Node {
     const width = this.strokeWidth();
     if (stroke && width > 0) {
       out.push({ op: 'strokePath', path, paint: { kind: 'color', color: stroke }, stroke: { width } });
+    }
+  }
+
+  /** Hand-drawn render: solid fill (if any) under roughened, multi-pass strokes.
+   * The seed is consumed fresh each draw, so re-evaluation is byte-identical. */
+  private drawSketch(out: DisplayListBuilder, segs: PathSeg[]): void {
+    const fill = this.fill();
+    if (fill) {
+      const path = out.resource({ kind: 'path', segs });
+      out.push({ op: 'fillPath', path, paint: { kind: 'color', color: fill } });
+    }
+    const { strokes, resolved } = roughen(segs, this.sketch!, random(this.sketchSeed >>> 0));
+    const ink = this.stroke() || fill || '#000000';
+    for (const passSegs of strokes) {
+      if (passSegs.length === 0) continue;
+      const path = out.resource({ kind: 'path', segs: passSegs });
+      out.push({
+        op: 'strokePath',
+        path,
+        paint: { kind: 'color', color: ink },
+        stroke: { width: resolved.width, cap: 'round', join: 'round', ...(resolved.dash ? { dash: resolved.dash } : {}) },
+      });
     }
   }
 }

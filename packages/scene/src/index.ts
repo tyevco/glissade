@@ -55,6 +55,19 @@ export {
   type VideoProps,
 } from './nodes.js';
 
+export {
+  roughen,
+  flatten,
+  arcLength,
+  sketchStrokes,
+  validateSketch,
+  resolveSketch,
+  SketchValidationError,
+  type SketchStyle,
+  type Polyline,
+  type ResolvedSketch,
+} from './sketch.js';
+
 export { Highlight, highlight, type HighlightProps } from './highlight.js';
 export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
 export { typewriter, type TypeEdit, type EditMark, type StepMark, type TypewriterResult } from './typewriter.js';

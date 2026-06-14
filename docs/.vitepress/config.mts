@@ -28,6 +28,7 @@ export default defineConfig({
           { text: 'Sound effects', link: '/sfx' },
           { text: 'Typewriter & text reveal', link: '/typewriter' },
           { text: 'Motion along a path', link: '/motion-path' },
+          { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },

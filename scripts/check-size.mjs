@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
   core: 11, // raised 8→10→11 (v2 §B.6: derivative registry + retarget math; tree-shaken out of real embeds); total stays 35
-  scene: 12,
+  scene: 13, // raised 12→13 (0.5.x: typewriter reveal, motion-path samplers, sketch roughening); base total stays ≤ 35
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
