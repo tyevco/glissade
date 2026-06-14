@@ -88,6 +88,8 @@ export interface PrepareSfxResult {
   cacheDir: string;
   voices: string[];
   clipCount: number;
+  /** the resolved hits, in order — for a --verbose echo of voice → time */
+  clips: SfxTimedClip[];
 }
 
 /**
@@ -160,7 +162,7 @@ export function prepareSfx(scriptPath: string): PrepareSfxResult {
   const timingPath = `${base}.sfx.timing.json`;
   writeFileSync(timingPath, JSON.stringify(timing, null, 2) + '\n');
 
-  return { timingPath, cacheDir, voices: Object.keys(assets), clipCount: timedClips.length };
+  return { timingPath, cacheDir, voices: Object.keys(assets), clipCount: timedClips.length, clips: timedClips };
 }
 
 /**

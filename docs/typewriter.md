@@ -59,6 +59,32 @@ timeline({ tracks: [tw.track, ...] });   // drives Text.text
 
 Drive `Text.text` with `tw.track` and leave `reveal` at its default (Infinity): the whole current string shows, so deletion just works, and `textCursor` rides the end of the live text with no extra wiring. `{ perChar }` (global or per step) sets the keystroke cadence; `{ hold }` inserts a pause; `tw.duration` is when the performance ends.
 
+A complete cold-open — text node, blinking caret, and the edit track wired together:
+
+```ts
+import { Text, textCursor, typewriter, createScene } from '@glissade/scene';
+import { timeline } from '@glissade/core';
+
+const prompt = new Text({ id: 'prompt', fontFamily: 'DejaVu Sans', fontSize: 28 });
+// NOTE: don't set `reveal` — leaving it at Infinity shows the whole current
+// string, so the caret sits at the end of whatever `tw.track` last typed.
+
+const tw = typewriter('prompt/text', [
+  { type: 'make it pop' },
+  { hold: 0.4 },
+  { delete: 3 },          // backspace 'pop'
+  { type: 'sing' },
+]);
+
+createScene({
+  children: [prompt, textCursor(prompt, { id: 'caret', blinkPeriod: 0.8 })],
+});
+
+timeline({ tracks: [tw.track] }); // the only track the cold-open needs
+```
+
+`textCursor` reads `prompt.revealHead()` each frame; with `reveal` at Infinity that's the end of the current string, so the caret follows the typing **and** the deletes for free.
+
 ## Keystroke sync (the SFX contract)
 
 Both reveal paths produce a per-keystroke schedule for audio. For the monotonic case, `revealSchedule(text, revealTrack)` is the pure bridge — geometry from the text, timing from the track:

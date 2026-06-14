@@ -366,3 +366,18 @@ describe('duckEnvelope: per-pause bed modes', () => {
     }
   });
 });
+
+describe('narration().require — batch fast-fail on stale ids', () => {
+  it('passes when every id exists, and returns the anchors (chainable)', () => {
+    const beats = narration(PAUSED).require(['a', 'beat', 'b']);
+    expect(beats.start('a')).toBe(0.5); // got the anchors back
+  });
+
+  it('throws ONE error listing ALL unknown ids at once', () => {
+    expect(() => narration(PAUSED).require(['a', 'nope1', 'beat', 'nope2'])).toThrow(
+      /unknown ids 'nope1', 'nope2' — have: a, b, beat/,
+    );
+    // singular wording for a single miss
+    expect(() => narration(PAUSED).require(['ghost'])).toThrow(/unknown id 'ghost'/);
+  });
+});

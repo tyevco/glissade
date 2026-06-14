@@ -128,6 +128,12 @@ export interface NarrationAnchors {
   duration(id: string): number;
   /** start + offset — a sub-beat inside a segment or pause window */
   at(id: string, offset?: number): number;
+  /**
+   * Assert every id exists in the manifest — a build-time fast-fail that lists
+   * ALL unknown ids at once (vs. discovering stale refs one render at a time
+   * after rewiring). Returns the anchors, so chain it: `narration(t).require([...])`.
+   */
+  require(ids: readonly string[]): NarrationAnchors;
   readonly totalDuration: number;
   /** '<id>.start' / '<id>.end' labels (segments + pauses) — merge into the timeline for studio visibility */
   labels(): Record<string, number>;
@@ -153,11 +159,22 @@ export function narration(timing: NarrationTiming): NarrationAnchors {
     if (!b) throw new NarrationError(`no narration beat '${id}' (have: ${[...byId.keys()].join(', ')})`);
     return b;
   };
-  return {
+  const anchors: NarrationAnchors = {
     start: (id) => beat(id).start,
     end: (id) => beat(id).start + beat(id).duration,
     duration: (id) => beat(id).duration,
     at: (id, offset = 0) => beat(id).start + offset,
+    require: (ids) => {
+      const missing = ids.filter((id) => !byId.has(id));
+      if (missing.length > 0) {
+        throw new NarrationError(
+          `narration references unknown id${missing.length > 1 ? 's' : ''} ${missing
+            .map((m) => `'${m}'`)
+            .join(', ')} — have: ${[...byId.keys()].join(', ')}`,
+        );
+      }
+      return anchors;
+    },
     totalDuration: timing.totalDuration,
     labels: () => {
       const out: Record<string, number> = {};
@@ -180,6 +197,7 @@ export function narration(timing: NarrationTiming): NarrationAnchors {
       return out;
     },
   };
+  return anchors;
 }
 
 // ---- the caption track: hold keys in the document, golden-coverable ----

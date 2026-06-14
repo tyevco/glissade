@@ -65,6 +65,13 @@ describe('prepareSfx', () => {
     const wavs = readdirSync(r.cacheDir).filter((f) => f.endsWith('.wav'));
     expect(wavs.sort()).toEqual(['sfxr-pop.wav', 'sfxr-success.wav']);
     expect(readFileSync(join(r.cacheDir, 'sfxr-pop.wav')).length).toBeGreaterThan(44);
+
+    // the resolved hit list is returned for a --verbose echo (voice → time)
+    expect(r.clips.map((c) => [c.voice, c.at])).toEqual([
+      ['pop', 0.5],
+      ['success', 1.7],
+      ['pop', 3.0],
+    ]);
   });
 
   it('bakes deterministic jitter into the committed manifest', () => {

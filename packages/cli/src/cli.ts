@@ -48,7 +48,7 @@ const USAGE = `usage:
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
-  gs sfx <scene-module|script.sfx.json>
+  gs sfx <scene-module|script.sfx.json> [--verbose]
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -115,6 +115,17 @@ async function main(): Promise<void> {
         `gs sfx: ${result.clipCount} ${result.clipCount === 1 ? 'hit' : 'hits'}, ` +
           `${result.voices.length} ${result.voices.length === 1 ? 'voice' : 'voices'} rendered → ${result.timingPath}\n`,
       );
+      if (flags.has('verbose')) {
+        for (const c of result.clips) {
+          const extra = [
+            c.gain !== undefined ? `gain ${c.gain.toFixed(2)}` : null,
+            c.playbackRate !== undefined ? `rate ${c.playbackRate.toFixed(3)}` : null,
+          ].filter(Boolean);
+          process.stderr.write(
+            `  ${c.at.toFixed(3)}s  ${c.voice}${extra.length ? `  (${extra.join(', ')})` : ''}\n`,
+          );
+        }
+      }
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
