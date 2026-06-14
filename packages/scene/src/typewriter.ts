@@ -79,10 +79,14 @@ const DEFAULT_PER_CHAR = 0.06;
 export function typewriter(
   target: string,
   edits: readonly TypeEdit[],
-  opts: { start?: number; perChar?: number } = {},
+  opts: { start?: number; perChar?: number; gap?: number } = {},
 ): TypewriterResult {
   const start = opts.start ?? 0;
   const globalPer = opts.perChar ?? DEFAULT_PER_CHAR;
+  // a default pause inserted BETWEEN steps (>= 0; default 0 = unchanged). It is
+  // dead time, NOT counted in either adjacent step's start/end — so a counter
+  // riding steps[i].end is unaffected — and composes with explicit { hold }.
+  const gap = opts.gap ?? 0;
 
   let t = start;
   const shown: string[] = []; // current visible graphemes
@@ -114,6 +118,7 @@ export function typewriter(
     }
     if (edit.hold !== undefined) t += edit.hold;
     steps.push({ index: ei, start: stepStart, end: t, value: shown.join('') });
+    if (gap > 0 && ei < edits.length - 1) t += gap; // dead time before the next step
   }
 
   return { track: track(target, 'string', keys), marks, steps, duration: t };

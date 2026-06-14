@@ -224,6 +224,15 @@ describe('typewriter() — edit-event-aware (type / delete / retype)', () => {
     expect(tw.marks[6]).toEqual({ time: 7, kind: 'insert', grapheme: 's', value: 's' });
   });
 
+  it('opts.gap inserts dead time BETWEEN steps, excluded from step.end', () => {
+    const tw = typewriter('t/text', [{ type: 'a' }, { type: 'b' }, { type: 'c' }], { perChar: 1, gap: 0.5 });
+    // 'a' at t=1; gap 0.5; 'b' at t=2.5; gap 0.5; 'c' at t=4
+    expect(tw.marks.map((m) => m.time)).toEqual([1, 2.5, 4]);
+    // step.end excludes the trailing gap (a counter on step.end is unaffected)
+    expect(tw.steps.map((s) => s.end)).toEqual([1, 2.5, 4]);
+    expect(tw.steps[1]!.start).toBe(1.5); // step 0 ended at 1, + gap 0.5
+  });
+
   it('hold advances time without a keystroke; per-step perChar overrides', () => {
     const tw = typewriter('t/text', [{ type: 'hi', perChar: 0.1 }, { hold: 0.5 }, { type: 'x' }], { perChar: 1 });
     const times = tw.marks.map((m) => m.time);
