@@ -128,6 +128,17 @@ export interface CompiledTimeline {
 
 export { setDevWarning, emitDevWarning, type DevWarning } from './devWarning.js';
 
+/**
+ * Sample-indexed clip offset — the single A/V-sync source of truth (§5.3),
+ * `round(at * sampleRate)`. Both the CLI (FFmpeg) and the browser
+ * (OfflineAudioContext) mixers derive their delay from this, so A/V offsets
+ * agree across paths by construction rather than one rounding to milliseconds
+ * and the other to raw float seconds. Default rate is the canonical mix grid.
+ */
+export function audioOffsetSamples(at: number, sampleRate = 48000): number {
+  return Math.round(at * sampleRate);
+}
+
 function rebaseKeys(keys: Key[], at: number, timeScale: number): Key[] {
   return keys.map((k) => ({ ...k, t: at + k.t / timeScale }));
 }

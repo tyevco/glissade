@@ -91,6 +91,7 @@ export {
 
 export {
   compileTimeline,
+  audioOffsetSamples,
   setDevWarning,
   emitDevWarning,
   TimelineValidationError,

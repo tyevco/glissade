@@ -20,7 +20,7 @@ import {
   type VideoCodec,
   type AudioCodec,
 } from 'mediabunny';
-import { compileTimeline, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
+import { compileTimeline, audioOffsetSamples, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
 import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { MediabunnyVideoFrameSource } from './videoSource.js';
@@ -103,6 +103,8 @@ export async function mixAudio(clips: AudioClip[], duration: number, sampleRate 
   const ctx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
   for (const clip of clips) {
     if (clip.at >= duration) continue;
+    // snap the start to the sample grid (§5.3) — the same offset the CLI path uses
+    const startAt = audioOffsetSamples(clip.at, sampleRate) / sampleRate;
     const resp = await fetch(clip.asset.url);
     if (!resp.ok) throw new Error(`audio asset fetch failed (${resp.status}): ${clip.asset.url}`);
     const decoded = await ctx.decodeAudioData(await resp.arrayBuffer());
@@ -118,9 +120,9 @@ export async function mixAudio(clips: AudioClip[], duration: number, sampleRate 
       const keys = clip.gain.keys;
       // gain envelopes are keys-only; build a sampling track around them
       const gainTrack: Track = { target: 'clip/gain', type: 'number', keys };
-      gainNode.gain.setValueAtTime(Number(keys[0]!.value), Math.max(0, clip.at));
+      gainNode.gain.setValueAtTime(Number(keys[0]!.value), Math.max(0, startAt));
       for (const k of keys) {
-        gainNode.gain.linearRampToValueAtTime(Number(sampleTrack(gainTrack, k.t)), clip.at + k.t);
+        gainNode.gain.linearRampToValueAtTime(Number(sampleTrack(gainTrack, k.t)), startAt + k.t);
       }
       tail.connect(gainNode);
       tail = gainNode;
@@ -129,8 +131,8 @@ export async function mixAudio(clips: AudioClip[], duration: number, sampleRate 
 
     const offset = clip.trim?.start ?? 0;
     const sourceDur = clip.trim ? clip.trim.end - clip.trim.start : undefined;
-    if (sourceDur !== undefined) node.start(Math.max(0, clip.at), offset, sourceDur);
-    else node.start(Math.max(0, clip.at), offset);
+    if (sourceDur !== undefined) node.start(Math.max(0, startAt), offset, sourceDur);
+    else node.start(Math.max(0, startAt), offset);
   }
   return ctx.startRendering();
 }

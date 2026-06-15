@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  audioOffsetSamples,
   compileTimeline,
   key,
   sampleTrack,
@@ -222,5 +223,16 @@ describe('audio clips (§5.3)', () => {
     const compiled = compileTimeline(doc);
     expect(compiled.audio[0]!.at).toBe(1.5);
     expect(compiled.audio[0]!.playbackRate).toBe(2);
+  });
+});
+
+describe('audio offset (§5.3 sample-accurate A/V)', () => {
+  it('offsetSamples = round(at*sampleRate); default rate is the canonical 48000 grid', () => {
+    expect(audioOffsetSamples(1.5, 48000)).toBe(72000);
+    expect(audioOffsetSamples(1 / 3, 48000)).toBe(16000); // round(48000/3)
+    expect(audioOffsetSamples(1.5)).toBe(72000); // default rate
+    // snapping to the grid: a non-aligned offset moves, a clean one doesn't
+    expect(audioOffsetSamples(1 / 3) / 48000).toBe(16000 / 48000);
+    expect(audioOffsetSamples(1.5) / 48000).toBe(1.5);
   });
 });

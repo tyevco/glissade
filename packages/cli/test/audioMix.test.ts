@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { key } from '@glissade/core';
+import { key, audioOffsetSamples } from '@glissade/core';
 import { atempoChain, gainExpression, planAudioMix, resolveAssetPath, AudioMixError } from '../src/audioMix.js';
 import { ffmpegAvailable, render } from '../src/render.js';
 
@@ -45,6 +45,14 @@ describe('planAudioMix', () => {
     expect(plan.filterComplex).toContain('adelay=1500:all=1');
     expect(plan.filterComplex).toContain('amix=inputs=2:normalize=0');
     expect(plan.filterComplex).toContain('[aout]');
+  });
+
+  it('derives the delay from the sample grid — matches the browser path offset by construction (§5.3)', () => {
+    const at = 1 / 3; // a non-frame-aligned offset
+    const plan = planAudioMix([clip(at)], '/x/mod.ts', 3)!;
+    // both paths quantize to the same sample, so CLI delay-seconds === browser start-seconds
+    const expectedMs = (audioOffsetSamples(at) / 48000) * 1000;
+    expect(plan.filterComplex).toContain(`adelay=${expectedMs}:all=1`);
   });
 
   it('rejects remote URLs for now', () => {

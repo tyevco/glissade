@@ -6,7 +6,7 @@
  */
 
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { type AudioClip, type Key } from '@glissade/core';
+import { audioOffsetSamples, type AudioClip, type Key } from '@glissade/core';
 
 export class AudioMixError extends Error {
   constructor(detail: string) {
@@ -91,7 +91,9 @@ export function planAudioMix(clips: AudioClip[], modulePath: string, duration: n
       steps.push(`volume='${gainExpression(clip.gain.keys)}':eval=frame`);
     }
     if (clip.at > 0) {
-      const ms = Math.round(clip.at * 1000);
+      // delay expressed in ms but derived from the SAMPLE grid (§5.3), so the
+      // offset lands on exactly the same sample the browser path uses
+      const ms = (audioOffsetSamples(clip.at) / 48000) * 1000;
       steps.push(`adelay=${ms}:all=1`);
     }
     steps.push('apad'); // pad so amix keeps full length regardless of clip ends
