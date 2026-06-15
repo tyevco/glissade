@@ -5,6 +5,7 @@
  * independently of the API (§7.4) — breaking it orphans users' files.
  */
 
+import { emitDevWarning } from './devWarning.js';
 import { spring as springFactory } from './spring.js';
 import { type Timeline } from './timeline.js';
 import { type Key, type Track } from './track.js';
@@ -13,7 +14,7 @@ export interface SidecarDoc {
   sidecarVersion: 1;
   /** Editor-owned tracks, replacing same-target code tracks wholesale. */
   tracks: Track[];
-  /** Editor-owned labels; merged over code labels by name. */
+  /** Editor-created labels; code labels are authoritative and win on a name collision (§6.2). */
   labels?: Record<string, number>;
 }
 
@@ -80,7 +81,13 @@ export function mergeSidecar(code: Timeline, sidecar: SidecarDoc | null | undefi
   }
   const merged: Timeline = { ...code, tracks };
   if (sidecar.labels && Object.keys(sidecar.labels).length > 0) {
-    merged.labels = { ...code.labels, ...sidecar.labels };
+    const codeLabels = code.labels ?? {};
+    const shadowed = Object.keys(sidecar.labels).filter((n) => n in codeLabels);
+    if (shadowed.length) {
+      emitDevWarning(`sidecar label(s) ${shadowed.join(', ')} collide with code labels; code wins (§6.2)`);
+    }
+    // code labels are authoritative; editor-only labels fill in the rest
+    merged.labels = { ...sidecar.labels, ...codeLabels };
   }
   return merged;
 }

@@ -5,6 +5,7 @@ import {
   key,
   mergeSidecar,
   sampleTrack,
+  setDevWarning,
   timeline,
   track,
   SidecarVersionError,
@@ -39,15 +40,19 @@ describe('sidecar merge (§6.2)', () => {
     expect(merged.tracks.find((t) => t.target === 'a/opacity')!.keys).toEqual([key(0, 1)]);
   });
 
-  it('editor-created tracks are added; labels merge by name', () => {
+  it('editor-created tracks are added; code labels win on collision, editor-only labels fill in (§6.2)', () => {
+    const warnings: string[] = [];
+    setDevWarning((m) => warnings.push(m));
     const sidecar: SidecarDoc = {
       sidecarVersion: 1,
       tracks: [track('a/rotation', 'number', [key(0, 0), key(1, 90)])],
-      labels: { mid: 0.75, end: 2 },
+      labels: { mid: 0.75, end: 2 }, // 'mid' collides with the code label (0.5)
     };
     const merged = mergeSidecar(code(), sidecar);
     expect(merged.tracks.map((t) => t.target)).toContain('a/rotation');
-    expect(merged.labels).toEqual({ mid: 0.75, end: 2 });
+    expect(merged.labels).toEqual({ mid: 0.5, end: 2 }); // code 'mid' wins; editor 'end' added
+    expect(warnings.some((w) => w.includes('mid') && /code wins/.test(w))).toBe(true);
+    setDevWarning(() => {});
   });
 
   it('does not mutate inputs and survives JSON round trips', () => {
