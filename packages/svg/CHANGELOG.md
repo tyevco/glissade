@@ -1,5 +1,12 @@
 # @glissade/svg
 
+## 0.6.1
+
+### Patch Changes
+
+- @glissade/core@0.6.1
+- @glissade/scene@0.6.1
+
 ## 0.6.0
 
 ### Minor Changes
