@@ -85,7 +85,7 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
       for (const frame of FRAMES) {
         const t = frame / FPS;
         skia.render(evaluate(scene, mod.timeline, t));
-        const skiaPixels = skia.readPixels();
+        const skiaPixels = await skia.readPixels();
         const chromePixels = await browserPixels(name, t);
         const score = ssim(chromePixels, new Uint8ClampedArray(skiaPixels), 640, 360);
         // eslint-disable-next-line no-console

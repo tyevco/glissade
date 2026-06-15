@@ -8,15 +8,21 @@
 
 import { createCanvas, GlobalFonts, Path2D, type Canvas, type Image } from '@napi-rs/canvas';
 import {
+  ALL_FILTER_KINDS,
   Raster2D,
   fontString,
+  type BackendCaps,
   type Ctx2DLike,
   type DisplayList,
   type FontSpec,
+  type RenderBackend,
   type TextMeasurer,
   type TextMetricsLite,
   type VideoFrameSource,
 } from '@glissade/scene';
+
+/** Largest dimension @napi-rs/canvas will allocate (Skia's default surface cap). */
+const MAX_TEXTURE = 16384;
 
 type Drawable = Canvas | Image;
 
@@ -40,9 +46,12 @@ export function createMeasurer(opts: { fonts?: Record<string, string> } = {}): T
   };
 }
 
-export class SkiaBackend {
+export class SkiaBackend implements RenderBackend {
   private readonly canvas: Canvas;
   private readonly raster: Raster2D<Canvas, Path2D, Drawable>;
+
+  /** Headless CPU Skia: all document filters, no GPU shader pass (§3.4/§3.7). */
+  readonly caps: BackendCaps = { filters: ALL_FILTER_KINDS, shaders: false, maxTextureSize: MAX_TEXTURE };
 
   constructor(width: number, height: number) {
     this.canvas = createCanvas(width, height);
@@ -76,10 +85,10 @@ export class SkiaBackend {
     this.raster.render(this.canvas, list);
   }
 
-  /** Raw RGBA — the FFmpeg pipe path (§5.1d). Synchronous; no GPU readback. */
-  readPixels(): Uint8ClampedArray {
+  /** Raw RGBA — the FFmpeg pipe path (§5.1d). Resolves synchronously (no GPU readback) but typed Promise to match the RenderBackend contract. */
+  readPixels(): Promise<Uint8ClampedArray> {
     const ctx = this.canvas.getContext('2d');
-    return ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
+    return Promise.resolve(ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data);
   }
 
   /** Deterministic PNG bytes for golden frames and `gs render` output. */

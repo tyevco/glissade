@@ -156,6 +156,8 @@ export interface ShaderRef {
   wgsl: string;
   /** Scalar uniforms, packed as f32 in SORTED KEY ORDER into the Uniforms struct. */
   uniforms: Record<string, number>;
+  /** Named texture inputs: binding name → image/video asset id (the source canvas is binding 0). Reserved for multi-input passes. */
+  textures?: Record<string, string>;
 }
 
 export type DrawCommand =

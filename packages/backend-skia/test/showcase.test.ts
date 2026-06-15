@@ -23,7 +23,7 @@ const GALLERY: Record<string, SceneModule> = { spinners, loaders, dashboard, tra
 
 describe('showcase gallery', () => {
   for (const [name, mod] of Object.entries(GALLERY)) {
-    it(`'${name}' renders non-empty frames across its duration, purely`, () => {
+    it(`'${name}' renders non-empty frames across its duration, purely`, async () => {
       const scene = mod.createScene();
       const compiled = compileTimeline(mod.timeline);
       expect(compiled.duration).toBeGreaterThanOrEqual(2);
@@ -36,7 +36,7 @@ describe('showcase gallery', () => {
       for (const f of [0.2, 0.45, 0.7]) {
         const t = f * compiled.duration;
         backend.render(evaluate(scene, mod.timeline, t));
-        const px = backend.readPixels();
+        const px = await backend.readPixels();
         let nonBackground = 0;
         for (let i = 0; i < px.length; i += 4 * 97) {
           // sample sparsely: anything not near-black counts as content
@@ -73,7 +73,7 @@ describe('caps.shaders (§3.7): headless degradation, never GPU', () => {
     backend.render(evaluate(scene, timeline({ duration: 1 }), 0));
     backend.render(evaluate(scene, timeline({ duration: 1 }), 0.5));
     // passthrough: the circle still drew (no GPU here, no crash, no blank)
-    const px = backend.readPixels();
+    const px = await backend.readPixels();
     const center = (30 * 60 + 30) * 4;
     expect(px[center]).toBeGreaterThan(200); // red circle visible
     // exactly one warning, naming the policy

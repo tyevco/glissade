@@ -6,12 +6,15 @@
  */
 
 import {
+  ALL_FILTER_KINDS,
   Raster2D,
   fontString,
+  type BackendCaps,
   type Ctx2DLike,
   type DisplayList,
   type DrawCommand,
   type FontSpec,
+  type RenderBackend,
   type ShaderCaps,
   type ShaderRef,
   type TextMetricsLite,
@@ -40,9 +43,17 @@ type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 export type { TextMetricsLite } from '@glissade/scene';
 
-export class Canvas2DBackend {
+/** Largest canvas dimension browsers reliably allocate. */
+const MAX_TEXTURE = 16384;
+
+export class Canvas2DBackend implements RenderBackend {
   private readonly target: AnyCanvas;
   private readonly raster: Raster2D<AnyCanvas, Path2D, Drawable>;
+
+  /** All document filters; shaders only when an effects-webgpu runner is registered (§3.7). */
+  get caps(): BackendCaps {
+    return { filters: ALL_FILTER_KINDS, shaders: shaderRunner !== null, maxTextureSize: MAX_TEXTURE };
+  }
 
   constructor(target: AnyCanvas, opts: { shaderCaps?: ShaderCaps } = {}) {
     this.target = target;

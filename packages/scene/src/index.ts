@@ -79,6 +79,12 @@ export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from '
 export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
 export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
 export {
+  ALL_FILTER_KINDS,
+  type RenderBackend,
+  type BackendCaps,
+  type FilterKind,
+} from './renderBackend.js';
+export {
   FollowPath,
   followPath,
   motionPath,

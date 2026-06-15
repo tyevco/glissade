@@ -76,7 +76,7 @@ export default mod;
 
     // before the clip starts: pure background
     backend.render(evaluate(scene, mod.timeline, 0.2));
-    let px = backend.readPixels();
+    let px = await backend.readPixels();
     const at = (x: number, y: number) => {
       const o = (y * 640 + x) * 4;
       return [px[o], px[o + 1], px[o + 2]];
@@ -86,7 +86,7 @@ export default mod;
     // at t=1.5 the video shows source-time 1.0: bounce scene's dark bg
     // (#10131a) fills the video frame region around its center
     backend.render(evaluate(scene, mod.timeline, 1.5));
-    px = backend.readPixels();
+    px = await backend.readPixels();
     const [r, g, b] = at(200, 120); // inside the 320x180 video rect, away from the ball
     // h264 is lossy: assert near the bounce background, far from the embed bg
     expect(Math.abs(r! - 0x10)).toBeLessThan(12);
