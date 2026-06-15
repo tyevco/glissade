@@ -27,6 +27,7 @@ import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
+import goldenWhiteboard from '../../examples/src/scenes/golden-whiteboard.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
@@ -75,6 +76,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'sketch-drawon', mod: goldenSketchDrawon },
   // plain-shape draw-on (reveal on a non-sketch Path/Rect) + pathFromSegs
   { name: 'path-drawon', mod: goldenPathDrawon },
+  // whiteboard kit: drawOnEach cascades sketched shapes drawing themselves on
+  { name: 'whiteboard', mod: goldenWhiteboard },
 ];
 
 for (const { name, mod } of CORPUS) {
