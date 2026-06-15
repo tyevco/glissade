@@ -19,7 +19,9 @@ import {
   mapAsrToScript,
   piperProvider,
   providerById,
+  resolvePiperVoice,
   scriptPathFor,
+  stderrTail,
   synthesizeScript,
   voskAligner,
   wavDuration,
@@ -112,6 +114,61 @@ describe('piperProvider (feature-detected, like espeak/openai)', () => {
 
   it('synthesize needs a model', () => {
     expect(() => piperProvider().synthesize({ text: 'hi' })).toThrow(/needs a voice model/);
+  });
+});
+
+describe('resolvePiperVoice (piper-tts 1.x needs a path/key, not a bare .onnx name)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'glissade-voices-'));
+  const onnx = join(dir, 'en_US-joe-medium.onnx');
+  writeFileSync(onnx, 'x'); // a stand-in voice file
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('passes an existing path straight through (absolutized)', () => {
+    expect(resolvePiperVoice(onnx)).toBe(onnx);
+  });
+
+  it('resolves a bare <name>.onnx under voicesDir', () => {
+    expect(resolvePiperVoice('en_US-joe-medium.onnx', dir)).toBe(onnx);
+  });
+
+  it('resolves a bare key (no extension) by appending .onnx under voicesDir', () => {
+    expect(resolvePiperVoice('en_US-joe-medium', dir)).toBe(onnx);
+  });
+
+  it('honors the PIPER_VOICES env when no voicesDir is given', () => {
+    const prev = process.env['PIPER_VOICES'];
+    process.env['PIPER_VOICES'] = dir;
+    try {
+      expect(resolvePiperVoice('en_US-joe-medium.onnx')).toBe(onnx);
+    } finally {
+      if (prev === undefined) delete process.env['PIPER_VOICES'];
+      else process.env['PIPER_VOICES'] = prev;
+    }
+  });
+
+  it('throws a clear error when a .onnx name resolves nowhere (names the dir)', () => {
+    expect(() => resolvePiperVoice('en_US-nope-medium.onnx', dir)).toThrow(/not found.*voices dir/s);
+  });
+
+  it('passes a bare voice KEY (no .onnx) through unchanged so piper can download it', () => {
+    expect(resolvePiperVoice('en_US-joe-medium', join(dir, 'empty'))).toBe('en_US-joe-medium');
+  });
+});
+
+describe('stderrTail (Python tracebacks put the real exception last)', () => {
+  it('returns the TAIL, not the head, when over the cap', () => {
+    const head = 'Traceback (most recent call last):\n  File "__main__.py", line 143\n';
+    const tail = 'ValueError: Unable to find voice: en_US-joe-medium.onnx';
+    const out = stderrTail(head + 'x'.repeat(500) + '\n' + tail, 400);
+    expect(out).toContain('ValueError: Unable to find voice');
+    expect(out).not.toContain('Traceback (most recent call last)');
+    expect(out.startsWith('…')).toBe(true);
+  });
+
+  it('passes short output through and reports empty as no output', () => {
+    expect(stderrTail('boom')).toBe('boom');
+    expect(stderrTail('   ')).toBe('no output');
+    expect(stderrTail(undefined)).toBe('no output');
   });
 });
 

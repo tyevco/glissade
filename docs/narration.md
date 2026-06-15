@@ -48,6 +48,8 @@ Each segment is cached by `sha256(text, voice, rate, provider, providerVersion)`
 
 `piper` needs a voice model: pass it as `--provider piper` with the model path in the script's `voice` (per-segment or top-level), or construct `piperProvider({ model })`. Most providers emit **no word timings** — the [alignment step](#word-timing-alignment) fills those in.
 
+**Voice resolution.** piper-tts's `--model` wants a filesystem **path** (or a downloadable voice **key**), not a bare `.onnx` filename. glissade resolves the voice for you: an existing path is used as-is; a bare `"en_US-joe-medium.onnx"` (or the keyless `"en_US-joe-medium"`) is looked up under the voices dir — `piperProvider({ voicesDir })`, else the `PIPER_VOICES` env var, else `~/.local/share/piper-voices`. A `.onnx` name that resolves nowhere is a clear error naming the dir searched; a bare key with no `.onnx` is passed through so piper can download it. piper failures surface the **tail** of its stderr (where the Python exception actually is).
+
 Piper is **deterministic by default**: VITS adds noise (generator + a stochastic duration predictor), so vanilla piper re-synthesizes the same text to slightly different audio/durations — which would re-pin any goldens anchored to narration timing. glissade zeroes both noise scales so re-synthesis is **byte-identical**. For piper's more natural (but drifting) prosody, opt out with its native defaults and wire via `providerImpl`:
 
 ```ts

@@ -10,8 +10,8 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import {
   isPause,
@@ -184,7 +184,40 @@ export function openaiProvider(opts: { model?: string } = {}): TtsProvider {
  * (`{ noiseScale: 0.667, noiseWScale: 0.8 }`) and wire via `providerImpl`.
  * The noise mode is part of `version()`, so changing it invalidates the cache.
  */
-export function piperProvider(opts: { model?: string; noiseScale?: number; noiseWScale?: number } = {}): TtsProvider {
+/**
+ * Resolve a piper voice to something piper-tts 1.x can actually open. piper's
+ * `--model` wants a filesystem PATH to the `.onnx`, or a downloadable voice KEY
+ * — it does NOT search for a bare `.onnx` filename. So: an existing path is used
+ * as-is (absolutized); a bare `<name>`/`<name>.onnx` is looked up under the
+ * voices dir (`voicesDir` option → `PIPER_VOICES` env → `~/.local/share/piper-voices`);
+ * a `.onnx` name that resolves nowhere is a clear error; a bare key with no
+ * `.onnx` is passed through so piper can resolve/download it.
+ */
+export function resolvePiperVoice(model: string, voicesDir?: string): string {
+  if (existsSync(model)) return resolve(model); // a real path (absolute or relative to cwd)
+  if (isAbsolute(model)) return model; // absolute but missing — let piper report the real path
+  const dir = voicesDir ?? process.env['PIPER_VOICES'] ?? join(homedir(), '.local', 'share', 'piper-voices');
+  const named = model.endsWith('.onnx') ? model : `${model}.onnx`;
+  for (const cand of [join(dir, model), join(dir, named)]) {
+    if (existsSync(cand)) return resolve(cand);
+  }
+  if (model.endsWith('.onnx')) {
+    throw new NarrationError(
+      `piper voice '${model}' not found — it is not a path and is absent from the voices dir '${dir}'. ` +
+        `Put the .onnx there, pass an absolute path as the voice, or set PIPER_VOICES / { voicesDir }.`,
+    );
+  }
+  return model; // bare voice KEY (no .onnx extension) — let piper resolve/download it
+}
+
+/** Surface the TAIL of a child's stderr — Python tracebacks put the real exception last. */
+export function stderrTail(stderr: unknown, max = 400): string {
+  const s = (stderr == null ? '' : String(stderr)).trim();
+  if (!s) return 'no output';
+  return s.length > max ? `…${s.slice(-max)}` : s;
+}
+
+export function piperProvider(opts: { model?: string; voicesDir?: string; noiseScale?: number; noiseWScale?: number } = {}): TtsProvider {
   const noiseScale = opts.noiseScale ?? 0;
   const noiseWScale = opts.noiseWScale ?? 0;
   return {
@@ -213,12 +246,14 @@ export function piperProvider(opts: { model?: string; noiseScale?: number; noise
       return Promise.resolve([v, noise, opts.model ? basename(opts.model) : null].filter(Boolean).join(' '));
     },
     synthesize: (req) => {
-      const model = req.voice ?? opts.model;
-      if (!model) {
+      const raw = req.voice ?? opts.model;
+      if (!raw) {
         throw new NarrationError(
-          'piper needs a voice model (.onnx) — pass { model }, or set the segment voice to its path',
+          'piper needs a voice model (.onnx) — pass { model }, or set the segment voice to its path or name',
         );
       }
+      // piper can't open a bare ".onnx" name — resolve it to a real path first
+      const model = resolvePiperVoice(raw, opts.voicesDir);
       const tag = createHash('sha256').update(req.text).digest('hex').slice(0, 8);
       const out = join(tmpdir(), `glissade-piper-${process.pid}-${tag}.wav`);
       // noise scales 0/0 (default) make synthesis byte-deterministic (§verified
@@ -238,7 +273,7 @@ export function piperProvider(opts: { model?: string; noiseScale?: number; noise
       const r = spawnSync('piper', args, { input: req.text, maxBuffer: 64 * 1024 * 1024 });
       try {
         if (r.status !== 0 || !existsSync(out)) {
-          throw new NarrationError(`piper failed: ${r.stderr?.toString().slice(0, 300) ?? 'no output'}`);
+          throw new NarrationError(`piper failed: ${stderrTail(r.stderr)}`);
         }
         const wav = readFileSync(out);
         return Promise.resolve({ wav, duration: wavDuration(wav) });
