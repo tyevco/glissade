@@ -3,8 +3,8 @@
  * Shape.draw integration (multi-pass roughened strokes, deterministic).
  */
 
-import { describe, expect, it } from 'vitest';
-import { random } from '@glissade/core';
+import { afterEach, describe, expect, it } from 'vitest';
+import { random, setDevWarning } from '@glissade/core';
 import {
   arcLength,
   flatten,
@@ -169,6 +169,24 @@ describe('hachureLines (sketchy fill)', () => {
     expect(c.some((x) => x.op === 'save')).toBe(true);
     expect(c.some((x) => x.op === 'clip')).toBe(true);
     expect(c.some((x) => x.op === 'restore')).toBe(true);
+  });
+});
+
+describe('sketchFill-without-sketch dev warning', () => {
+  afterEach(() => setDevWarning(() => {}));
+
+  it('warns when sketchFill is set but sketch is not', () => {
+    const msgs: string[] = [];
+    setDevWarning((m) => msgs.push(m));
+    new Rect({ id: 'hatched', width: 40, height: 30, sketchFill: { angleRad: 0, gap: 6 } });
+    expect(msgs.some((m) => m.includes('sketchFill is ignored without sketch') && m.includes('hatched'))).toBe(true);
+  });
+
+  it('does not warn when both sketchFill and sketch are set', () => {
+    const msgs: string[] = [];
+    setDevWarning((m) => msgs.push(m));
+    new Rect({ id: 'ok', width: 40, height: 30, sketch: { kind: 'pencil' }, sketchFill: { angleRad: 0, gap: 6 } });
+    expect(msgs).toHaveLength(0);
   });
 });
 

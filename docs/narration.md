@@ -186,7 +186,7 @@ For cues too long to fit even the floor, **split** the segment into timed sub-cu
 { "narrationVersion": 1, "captionSplit": { "maxChars": 32 }, "segments": [ … ] }
 ```
 
-`captionTrack`, `toSrt`, and `toVtt` all call the same `splitCaption(segment, maxChars)` — chunking on word boundaries and timing each sub-cue from its first word (per-word alignment), or dividing the segment window evenly when words are absent. Omit `captionSplit` for no split (the default, byte-identical).
+`captionTrack`, `toSrt`, and `toVtt` all call the same `splitCaption(segment, maxChars)` — chunking on word boundaries and timing each sub-cue from its first word (per-word alignment). When a segment has **no** per-word timings, it falls back to dividing the segment window **evenly by sub-cue count** (not weighted by each cue's text length) — so prefer an aligner that emits word timings (`gs narrate --align heuristic` gives them) for tighter sub-cue timing. Omit `captionSplit` for no split (the default, byte-identical).
 
 ## Render modes & sidecars
 

@@ -37,7 +37,7 @@ Things to notice:
 
 - **No generators, no awaited tweens.** The builder chain *compiles* to a serializable keyframe document; nothing executes at play time, so seeking to any `t` is a lookup, never a replay.
 - **Position grammar**: `at: '<'` (align with previous start), `'>'`, `'+=0.5'`, labels — the GSAP vocabulary, but from-values resolve against the document, never the live scene.
-- **Springs are closed-form.** `spring(cfg)` knows its own duration (`spring.duration(cfg)`), so "after the spring settles" just works.
+- **Springs are closed-form.** `spring(cfg)` knows its own duration (`spring.duration(cfg)`), so "after the spring settles" just works. Reach for a named preset instead of tuning constants — `springPresets.wobbly` / `.gentle` / `.stiff` / `.slow` / `.molasses` / `.default`. Authoring a spring on a **raw** `track()` (not the builder)? Use `springTo(endT, from, to, preset)` — it does the launch-time arithmetic for you (`...springTo(2, 0, 320, springPresets.wobbly)`); a hand-written `key(t, …, spring(cfg))` throws unless `t` lands exactly `prevKey.t + spring.duration(cfg)`.
 
 ## Play it in a page
 

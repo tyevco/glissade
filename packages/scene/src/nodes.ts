@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { random, signal, type BindableSignal, type PathValue, type Track, type Vec2 } from '@glissade/core';
+import { emitDevWarning, random, signal, type BindableSignal, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
 import {
   arcLength,
@@ -111,6 +111,11 @@ abstract class Shape extends Node {
     this.registerTarget('reveal', this.reveal);
     if (props.sketch) validateSketch(props.sketch);
     if (props.sketchFill) validateHachure(props.sketchFill);
+    if (props.sketchFill && !props.sketch) {
+      emitDevWarning(
+        `${this.id !== undefined ? `'${this.id}': ` : ''}sketchFill is ignored without sketch — hachure fill is drawn only by the sketch renderer. Set a sketch style (e.g. { kind: 'pencil' }) to see it.`,
+      );
+    }
     this.sketch = props.sketch;
     this.sketchFill = props.sketchFill;
     this.sketchSeed = props.sketchSeed ?? (this.id !== undefined ? hashStr(this.id) : 0);
