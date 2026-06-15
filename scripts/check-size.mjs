@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
   core: 12, // raised 8→10→11→12 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings — tree-shaken out of real embeds; base path stays ~27/35)
-  scene: 14, // raised 12→13→14 (0.5.x: typewriter, motion-path, sketch roughening + draw-on + pathFromSegs + hachure); base total stays ≤ 35
+  scene: 15, // raised 12→13→14→15 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit — DEV/export-only, tree-shaken from real embeds; base total stays ≤ 35)
   'backend-canvas2d': 8,
   player: 4,
   element: 5,

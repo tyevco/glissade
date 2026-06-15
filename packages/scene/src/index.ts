@@ -77,6 +77,7 @@ export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
 export { typewriter, type TypeEdit, type EditMark, type StepMark, type TypewriterResult } from './typewriter.js';
 export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from './drawOn.js';
 export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
+export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
 export {
   FollowPath,
   followPath,
