@@ -30,6 +30,8 @@ const ALLOWED = {
   interact: ['core', 'scene', 'player'],
   lottie: ['core', 'scene'],
   svg: ['core', 'scene'],
+  'eslint-plugin': [], // standalone dev tool: imports no @glissade packages
+
   cli: ['core', 'scene', 'backend-skia', 'interact', 'player', 'lottie', 'svg', 'narrate', 'sfx'], // interact/player: machine replay + the gs dev harness; lottie/svg: gs import
   studio: ['core', 'scene', 'backend-canvas2d', 'player', 'react', 'vite-plugin', 'export-web'],
   examples: null, // leaf consumer: anything goes

@@ -13,12 +13,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:deps": "node scripts/check-deps.mjs",
-    "check:size": "node scripts/check-size.mjs"
+    "check:size": "node scripts/check-size.mjs",
+    "lint": "eslint packages/core/src packages/scene/src"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@glissade/eslint-plugin": "workspace:*",
     "@types/node": "^25.9.2",
+    "@typescript-eslint/parser": "^8.0.0",
     "esbuild": "^0.28.0",
+    "eslint": "^9.0.0",
     "playwright": "^1.60.0",
     "tsdown": "^0.12.9",
     "turbo": "^2.5.4",
