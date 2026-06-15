@@ -134,15 +134,27 @@ function rebaseKeys(keys: Key[], at: number, timeScale: number): Key[] {
 
 interface FlatEntry {
   track: Track;
-  /** true = sync-child unit: coalesces as a block, last-wins still applies. */
-  opaque: boolean;
+  /**
+   * Opaque-unit id. Unit 0 = the root plus every `add`-descendant flattened into
+   * it (these coalesce together, last-wins). Each `sync` subtree gets a fresh
+   * unit id: sync children are opaque (§2.3), so their targets must be disjoint
+   * from every other unit — a collision is an error, never silent last-wins.
+   */
+  unit: number;
 }
 
-function flatten(doc: Timeline, at: number, timeScale: number, opaque: boolean, out: FlatEntry[]): void {
+function flatten(
+  doc: Timeline,
+  at: number,
+  timeScale: number,
+  unit: number,
+  out: FlatEntry[],
+  counter: { n: number },
+): void {
   for (const tr of doc.tracks) {
     validateTrack(tr);
     validateSpringKeys(tr);
-    out.push({ track: { ...tr, keys: rebaseKeys(tr.keys, at, timeScale) }, opaque });
+    out.push({ track: { ...tr, keys: rebaseKeys(tr.keys, at, timeScale) }, unit });
   }
   for (const child of doc.children ?? []) {
     const scale = child.mode === 'sync' ? (child.timeScale ?? 1) : 1;
@@ -150,8 +162,10 @@ function flatten(doc: Timeline, at: number, timeScale: number, opaque: boolean, 
       throw new TimelineValidationError("timeScale is only valid on mode:'sync' children (§2.3)");
     }
     if (scale <= 0) throw new TimelineValidationError('sync timeScale must be > 0');
+    // a sync child opens a fresh opaque unit; add children stay in the parent's unit
+    const childUnit = child.mode === 'sync' ? ++counter.n : unit;
     // child.at is parent-local time; map to the root axis through the parent's scale
-    flatten(child.timeline, at + child.at / timeScale, timeScale * scale, opaque || child.mode === 'sync', out);
+    flatten(child.timeline, at + child.at / timeScale, timeScale * scale, childUnit, out, counter);
   }
 }
 
@@ -161,32 +175,42 @@ function flatten(doc: Timeline, at: number, timeScale: number, opaque: boolean, 
  * track's [first.t, last.t] span are dropped.
  */
 function coalesce(entries: FlatEntry[]): Map<string, Track> {
-  const byTarget = new Map<string, Track>();
-  for (const { track: tr } of entries) {
+  const byTarget = new Map<string, { track: Track; unit: number }>();
+  for (const { track: tr, unit } of entries) {
     const existing = byTarget.get(tr.target);
     if (!existing) {
-      byTarget.set(tr.target, { ...tr, keys: [...tr.keys] });
+      byTarget.set(tr.target, { track: { ...tr, keys: [...tr.keys] }, unit });
       continue;
     }
-    if (existing.type !== tr.type) {
+    if (existing.unit !== unit) {
+      // a sync (opaque) child shares a target with another unit — sync children
+      // are black boxes (§2.3), so this is an error, never silent last-wins
       throw new TimelineValidationError(
-        `target '${tr.target}' has conflicting value types '${existing.type}' and '${tr.type}'`,
+        `target '${tr.target}' is animated by a sync (opaque) child and another timeline unit; ` +
+          'sync children must own disjoint targets (no last-writer-wins across the sync boundary, §2.3)',
+      );
+    }
+    if (existing.track.type !== tr.type) {
+      throw new TimelineValidationError(
+        `target '${tr.target}' has conflicting value types '${existing.track.type}' and '${tr.type}'`,
       );
     }
     const start = tr.keys[0]!.t;
     const end = tr.keys[tr.keys.length - 1]!.t;
-    const existingStart = existing.keys[0]!.t;
-    const existingEnd = existing.keys[existing.keys.length - 1]!.t;
-    const kept = existing.keys.filter((k) => k.t < start || k.t > end);
+    const existingStart = existing.track.keys[0]!.t;
+    const existingEnd = existing.track.keys[existing.track.keys.length - 1]!.t;
+    const kept = existing.track.keys.filter((k) => k.t < start || k.t > end);
     if (existingStart <= end && start <= existingEnd) {
       devWarn(
         `overlapping tracks for '${tr.target}' in [${start}, ${end}]: later insertion wins ` +
-          `(${existing.keys.length - kept.length} earlier key(s) dropped)`,
+          `(${existing.track.keys.length - kept.length} earlier key(s) dropped)`,
       );
     }
-    existing.keys = [...kept, ...tr.keys].sort((a, b) => a.t - b.t);
+    existing.track.keys = [...kept, ...tr.keys].sort((a, b) => a.t - b.t);
   }
-  return byTarget;
+  const result = new Map<string, Track>();
+  for (const [target, { track }] of byTarget) result.set(target, track);
+  return result;
 }
 
 function childExtent(child: ChildEntry): number {
@@ -211,7 +235,7 @@ export function compileTimeline(doc: Timeline): CompiledTimeline {
     throw new TimelineValidationError(`unsupported timeline document version ${String(doc.version)}`);
   }
   const flat: FlatEntry[] = [];
-  flatten(doc, 0, 1, false, flat);
+  flatten(doc, 0, 1, 0, flat, { n: 0 });
   const tracks = coalesce(flat);
   const labels: Record<string, number> = { ...doc.labels };
   const markers: Marker[] = [...(doc.markers ?? [])];

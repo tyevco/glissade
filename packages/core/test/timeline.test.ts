@@ -124,7 +124,7 @@ describe('nesting (§2.3 add vs sync)', () => {
     expect(compiled.duration).toBe(1.5);
   });
 
-  it('add children coalesce against parent tracks; sync children stay opaque units', () => {
+  it('add children coalesce against parent tracks (last-wins, with overlap warning)', () => {
     const warn = vi.fn();
     setDevWarning(warn);
     const overlapping = timeline({ tracks: [track('a/x', 'number', [key(0, 100), key(1, 200)])] });
@@ -135,6 +135,38 @@ describe('nesting (§2.3 add vs sync)', () => {
     const merged = compileTimeline(doc).tracks.get('a/x')!;
     expect(warn).toHaveBeenCalled(); // child landed inside the parent's span → overlap rule
     expect(sampleTrack(merged, 1.5)).toBe(200);
+  });
+
+  it('sync children stay opaque: a target shared with the parent is an error, not last-wins (§2.3)', () => {
+    setDevWarning(() => {});
+    const syncChild = timeline({ tracks: [track('a/x', 'number', [key(0, 100), key(1, 200)])] });
+    const doc = timeline({
+      tracks: [track('a/x', 'number', [key(0, 0), key(2, 10)])], // same target as the sync child
+      children: [{ timeline: syncChild, at: 0.5, mode: 'sync' }],
+    });
+    expect(() => compileTimeline(doc)).toThrow(/sync.*disjoint targets/s);
+  });
+
+  it('two sync children sharing a target also error (disjoint across opaque units)', () => {
+    const a = timeline({ tracks: [track('z/x', 'number', [key(0, 0), key(1, 1)])] });
+    const b = timeline({ tracks: [track('z/x', 'number', [key(0, 0), key(1, 1)])] });
+    const doc = timeline({
+      children: [
+        { timeline: a, at: 0, mode: 'sync' },
+        { timeline: b, at: 0, mode: 'sync' },
+      ],
+    });
+    expect(() => compileTimeline(doc)).toThrow(/disjoint targets/s);
+  });
+
+  it('a sync child with disjoint targets flattens into compiled.tracks under its own target', () => {
+    const doc = timeline({
+      tracks: [track('a/x', 'number', [key(0, 0), key(1, 1)])],
+      children: [{ timeline: child(), at: 0, mode: 'sync' }], // child targets b/x — no collision
+    });
+    const compiled = compileTimeline(doc);
+    expect(compiled.tracks.has('a/x')).toBe(true);
+    expect(compiled.tracks.has('b/x')).toBe(true); // opaque sync track present under its own target
   });
 
   it('nested sync scales compose', () => {
