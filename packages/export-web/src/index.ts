@@ -20,7 +20,7 @@ import {
   type VideoCodec,
   type AudioCodec,
 } from 'mediabunny';
-import { compileTimeline, audioOffsetSamples, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
+import { compileTimeline, audioOffsetSamples, emitDevWarning, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
 import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { MediabunnyVideoFrameSource } from './videoSource.js';
@@ -71,29 +71,64 @@ const WEBM_VIDEO: VideoCodec[] = ['vp9', 'vp8', 'av1'];
 const MP4_AUDIO: AudioCodec[] = ['aac', 'opus'];
 const WEBM_AUDIO: AudioCodec[] = ['opus'];
 
-async function pickCodecs(
+/** Encodability probes — the real ones wrap mediabunny; tests inject fakes. */
+export type VideoProbe = (codecs: VideoCodec[]) => Promise<VideoCodec | null>;
+export type AudioProbe = (codecs: AudioCodec[]) => Promise<AudioCodec | null>;
+
+export interface ExportSupport {
+  format: 'mp4' | 'webm';
+  /** first encodable video codec, or null if none. */
+  video: VideoCodec | null;
+  /** first encodable audio codec, or null if none. */
+  audio: AudioCodec | null;
+  /** true when video can encode (audio is optional — falls back to video-only). */
+  supported: boolean;
+}
+
+/**
+ * The resolved encodability matrix (§5.2): one row per container, so a UI can
+ * grey out options instead of failing mid-render. Audio absence is not a
+ * blocker — the export falls back to video-only.
+ */
+export async function probeExportSupport(
+  opts: { width?: number; height?: number; bitrate?: number } = {},
+): Promise<ExportSupport[]> {
+  const { width = 1920, height = 1080, bitrate = 8e6 } = opts;
+  const probeVideo: VideoProbe = (codecs) => getFirstEncodableVideoCodec(codecs, { width, height, bitrate });
+  const probeAudio: AudioProbe = (codecs) => getFirstEncodableAudioCodec(codecs);
+  const out: ExportSupport[] = [];
+  for (const format of ['mp4', 'webm'] as const) {
+    const video = await probeVideo(format === 'mp4' ? MP4_VIDEO : WEBM_VIDEO);
+    const audio = await probeAudio(format === 'mp4' ? MP4_AUDIO : WEBM_AUDIO);
+    out.push({ format, video, audio, supported: video !== null });
+  }
+  return out;
+}
+
+/**
+ * Choose a (format, video, audio) triple. When audio is requested but no audio
+ * codec encodes, fall back to **video-only** (§5.2 — Safari 16.4–18.x is
+ * video-only) with a warning, instead of failing the whole format. Throws only
+ * when no video codec encodes at all. Probes are injected for testability.
+ */
+export async function pickCodecs(
   format: 'mp4' | 'webm' | 'auto',
-  width: number,
-  height: number,
-  bitrate: number,
   needAudio: boolean,
+  probeVideo: VideoProbe,
+  probeAudio: AudioProbe,
 ): Promise<{ format: 'mp4' | 'webm'; video: VideoCodec; audio: AudioCodec | null }> {
-  const tryFormat = async (f: 'mp4' | 'webm') => {
-    const video = await getFirstEncodableVideoCodec(f === 'mp4' ? MP4_VIDEO : WEBM_VIDEO, {
-      width,
-      height,
-      bitrate,
-    });
-    if (!video) return null;
-    const audio = needAudio
-      ? await getFirstEncodableAudioCodec(f === 'mp4' ? MP4_AUDIO : WEBM_AUDIO)
-      : null;
-    if (needAudio && !audio) return null;
-    return { format: f, video, audio };
-  };
+  let videoOnly: { format: 'mp4' | 'webm'; video: VideoCodec } | null = null;
   for (const f of format === 'auto' ? (['mp4', 'webm'] as const) : ([format] as const)) {
-    const picked = await tryFormat(f);
-    if (picked) return picked;
+    const video = await probeVideo(f === 'mp4' ? MP4_VIDEO : WEBM_VIDEO);
+    if (!video) continue;
+    if (!needAudio) return { format: f, video, audio: null };
+    const audio = await probeAudio(f === 'mp4' ? MP4_AUDIO : WEBM_AUDIO);
+    if (audio) return { format: f, video, audio };
+    videoOnly ??= { format: f, video }; // remember the first video-capable format
+  }
+  if (videoOnly) {
+    emitDevWarning(`no encodable audio codec for '${format}'; exporting video-only (§5.2)`);
+    return { ...videoOnly, audio: null };
   }
   throw new ExportUnsupportedError(`format '${format}'${needAudio ? ' with audio' : ''}`);
 }
@@ -159,7 +194,12 @@ export async function exportVideo(
   const { w, h } = scene.size;
   const videoBitrate = opts.videoBitrate ?? 8e6;
 
-  const picked = await pickCodecs(opts.format ?? 'auto', w, h, videoBitrate, compiled.audio.length > 0);
+  const picked = await pickCodecs(
+    opts.format ?? 'auto',
+    compiled.audio.length > 0,
+    (codecs) => getFirstEncodableVideoCodec(codecs, { width: w, height: h, bitrate: videoBitrate }),
+    (codecs) => getFirstEncodableAudioCodec(codecs),
+  );
 
   const canvas = new OffscreenCanvas(w, h);
   const backend = new Canvas2DBackend(canvas);
