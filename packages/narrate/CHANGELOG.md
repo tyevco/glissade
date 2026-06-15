@@ -1,5 +1,20 @@
 # @glissade/narrate
 
+## 0.6.0-pre.0
+
+### Minor Changes
+
+- e249f0d: Caption split-cues — a long narration segment can split into timed sub-cues instead of overflowing or shrinking to the floor. Opt in with `captionSplit: { maxChars }` in the script; it's persisted into the timing manifest so `captionTrack` (burned) and `toSrt`/`toVtt` (sidecars) all call the same exported `splitCaption(segment, maxChars)` and split at identical boundaries — chunking on word boundaries and timing each sub-cue from its first word (per-word alignment), or dividing the window evenly when words are absent. Omitted by default ⇒ no split ⇒ byte-identical.
+
+### Patch Changes
+
+- 1aa2228: `captionNode` autoFit now computes the fitted font and its actual wrapped line count together, so the bottom-anchor always agrees with the draw — including at the `minScale` floor, where the wrap can still exceed `maxLines` (a best-effort regime; split the segment to truly fit). No change to non-floor output.
+- Updated dependencies [301fd07]
+- Updated dependencies [4c6424d]
+- Updated dependencies [37e48be]
+  - @glissade/scene@0.6.0-pre.0
+  - @glissade/core@0.6.0-pre.0
+
 ## 0.5.0
 
 ### Minor Changes
