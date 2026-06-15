@@ -1,5 +1,22 @@
 # @glissade/export-web
 
+## 0.7.0-pre.0
+
+### Patch Changes
+
+- 0c0a583: A/V sync offsets are now sample-accurate and identical across export paths by construction (§5.3). A new `audioOffsetSamples(at, sampleRate)` in core (`round(at * sampleRate)`) is the single source of truth: the CLI mixer derives its `adelay` from the sample grid instead of rounding to milliseconds, and the browser `OfflineAudioContext` mixer snaps clip starts (and gain-envelope times) to the same grid instead of using raw float seconds. Previously the two paths could drift sub-frame and a non-frame-aligned `at` passed through silently.
+- Updated dependencies [0c0a583]
+- Updated dependencies [9a360b2]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [9aa42e6]
+- Updated dependencies [25c5986]
+- Updated dependencies [ecdece8]
+  - @glissade/core@0.7.0-pre.0
+  - @glissade/scene@0.7.0-pre.0
+  - @glissade/backend-canvas2d@0.7.0-pre.0
+
 ## 0.6.1
 
 ### Patch Changes

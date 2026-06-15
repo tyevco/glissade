@@ -1,5 +1,33 @@
 # @glissade/cli
 
+## 0.7.0-pre.0
+
+### Minor Changes
+
+- 8f4fa6c: `gs render --range` is now **frame-indexed** (`--range 0..120` = inclusive frame indices), matching the spec's rule that export APIs take frames while Player APIs take seconds. Decimal/garbage ranges are rejected. New flags: `--frame N` (render a single still through the same path) and `--format png-seq` (force a PNG sequence even when `--out` looks like a video). `--workers` and `--watch` are recognized but print an honest not-yet-implemented note (parallel sharding is tracked separately). The programmatic `render({ range })` still accepts seconds for back-compat; new `frame`/`frameRange`/`format` options drive the frame-indexed path.
+
+### Patch Changes
+
+- 0c0a583: A/V sync offsets are now sample-accurate and identical across export paths by construction (§5.3). A new `audioOffsetSamples(at, sampleRate)` in core (`round(at * sampleRate)`) is the single source of truth: the CLI mixer derives its `adelay` from the sample grid instead of rounding to milliseconds, and the browser `OfflineAudioContext` mixer snaps clip starts (and gain-envelope times) to the same grid instead of using raw float seconds. Previously the two paths could drift sub-frame and a non-frame-aligned `at` passed through silently.
+- 9aa42e6: Render-mode determinism guards (§5.5): `withDeterminismGuards(mode, fn)` from `@glissade/scene` patches the banned globals (`Math.random`, `Date.now`, `performance.now`, `setTimeout`, `setInterval`, `requestAnimationFrame`) for the synchronous scope of a single `evaluate()` — throwing a `DeterminismViolationError` under `throw` mode (CLI/CI), warning-once-then-delegating under `warn` (dev), and always restoring them afterward. `gs render` now wraps every frame's `evaluate()` in `throw` mode, so a scene that reads a wall clock or unseeded random is rejected at render time instead of producing a silently nondeterministic export. This is the runtime backstop to the static `@glissade/eslint-plugin` rules.
+- Updated dependencies [0c0a583]
+- Updated dependencies [9a360b2]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [9aa42e6]
+- Updated dependencies [25c5986]
+- Updated dependencies [ecdece8]
+  - @glissade/core@0.7.0-pre.0
+  - @glissade/scene@0.7.0-pre.0
+  - @glissade/backend-skia@0.7.0-pre.0
+  - @glissade/interact@0.7.0-pre.0
+  - @glissade/lottie@0.7.0-pre.0
+  - @glissade/narrate@0.7.0-pre.0
+  - @glissade/player@0.7.0-pre.0
+  - @glissade/sfx@0.7.0-pre.0
+  - @glissade/svg@0.7.0-pre.0
+
 ## 0.6.1
 
 ### Patch Changes

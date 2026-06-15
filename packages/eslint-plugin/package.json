@@ -1,15 +1,35 @@
 {
   "name": "@glissade/eslint-plugin",
-  "version": "0.6.1",
+  "version": "0.7.0-pre.0",
   "description": "ESLint rules enforcing glissade's determinism contract in scene code: no wall-clock reads, no unseeded Math.random, no async in the evaluate() path.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
-  "publishConfig": { "access": "public" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "scripts": { "build": "tsdown", "typecheck": "tsc --noEmit" },
-  "peerDependencies": { "eslint": ">=9" },
-  "devDependencies": { "eslint": "^9.0.0" },
-  "repository": { "type": "git", "url": "git+https://github.com/tyevco/glissade.git", "directory": "packages/eslint-plugin" }
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/eslint-plugin"
+  }
 }

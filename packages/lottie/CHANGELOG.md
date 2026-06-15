@@ -1,5 +1,20 @@
 # @glissade/lottie
 
+## 0.7.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies [0c0a583]
+- Updated dependencies [9a360b2]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [9aa42e6]
+- Updated dependencies [25c5986]
+- Updated dependencies [ecdece8]
+  - @glissade/core@0.7.0-pre.0
+  - @glissade/scene@0.7.0-pre.0
+
 ## 0.6.1
 
 ### Patch Changes

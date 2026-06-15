@@ -1,6 +1,6 @@
 {
   "name": "@glissade/react",
-  "version": "0.6.1",
+  "version": "0.7.0-pre.0",
   "description": "glissade React bindings: signals via useSyncExternalStore, player hooks.",
   "license": "Apache-2.0",
   "type": "module",

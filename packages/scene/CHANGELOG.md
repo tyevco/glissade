@@ -1,5 +1,22 @@
 # @glissade/scene
 
+## 0.7.0-pre.0
+
+### Minor Changes
+
+- 9a360b2: New `auditCacheCold(createScene, doc, t)` DEV harness (§2.1/§5.5): evaluates two fresh scenes from the same factory at the same `t` — the coldest possible re-eval, which (unlike merely clearing the binding cache) also defeats a signal cache that doesn't depend on the playhead — and confirms the DisplayLists are byte-identical. On a mismatch it returns the id of the first node whose isolated `emit()` diverged (preferring the specific leaf over its container Group), so an impure node (wall clock, unseeded random, cross-frame state) is named rather than silently degrading the render. The runtime complement to the static eslint rules and the render-mode guards.
+- 9aa42e6: Render-mode determinism guards (§5.5): `withDeterminismGuards(mode, fn)` from `@glissade/scene` patches the banned globals (`Math.random`, `Date.now`, `performance.now`, `setTimeout`, `setInterval`, `requestAnimationFrame`) for the synchronous scope of a single `evaluate()` — throwing a `DeterminismViolationError` under `throw` mode (CLI/CI), warning-once-then-delegating under `warn` (dev), and always restoring them afterward. `gs render` now wraps every frame's `evaluate()` in `throw` mode, so a scene that reads a wall clock or unseeded random is rejected at render time instead of producing a silently nondeterministic export. This is the runtime backstop to the static `@glissade/eslint-plugin` rules.
+
+### Patch Changes
+
+- Updated dependencies [0c0a583]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [0848530]
+- Updated dependencies [25c5986]
+- Updated dependencies [ecdece8]
+  - @glissade/core@0.7.0-pre.0
+
 ## 0.6.1
 
 ### Patch Changes
