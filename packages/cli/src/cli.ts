@@ -46,7 +46,7 @@ function parseArgs(argv: string[]) {
 const USAGE = `usage:
   gs render <scene-module> [options]
   gs dev <scene-module> [--record] [--port <n>]
-  gs import <lottie.json> [--out <dir>] [--allow-degraded]
+  gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
   gs sfx <scene-module|script.sfx.json> [--verbose]
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
@@ -67,9 +67,9 @@ dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
   --port <n>       listen port (default: any free port)
 
-import options:
+import options (.json = Lottie; .svg = static SVG → a scene that defers to @glissade/svg):
   --out <dir>          output directory for the generated scene module (default: .)
-  --allow-degraded     downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
+  --allow-degraded     (Lottie only) downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
 
 narrate options (the explicit TTS prepare step; render itself stays offline):
   --provider <id>  fake | espeak | piper | openai (default: the script's provider, else espeak)
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   }
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
-  if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json>' : '<scene-module>'}\n${USAGE}`);
+  if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json|asset.svg>' : '<scene-module>'}\n${USAGE}`);
 
   if (command === 'narrate') {
     const { narrateCommand } = await import('./narrate.js');

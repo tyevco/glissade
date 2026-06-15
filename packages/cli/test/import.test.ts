@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileTimeline } from '@glissade/core';
@@ -35,5 +35,22 @@ describe('gs import', () => {
     await expect(importCommand({ input: docsText, out: outDir })).rejects.toThrow(
       /unsupported-layer-type/,
     );
+  });
+
+  it('imports a .svg into a renderable scene module, surfacing drop warnings', async () => {
+    const svgPath = join(outDir, 'logo.svg');
+    writeFileSync(
+      svgPath,
+      `<svg viewBox="0 0 120 80"><circle cx="60" cy="40" r="20" fill="#39f"/><text>x</text></svg>`,
+    );
+    const result = await importCommand({ input: svgPath, out: outDir });
+    expect(result.out).toBe(join(outDir, 'logo.ts'));
+    expect(result.warnings.some((w) => w.includes('<text>'))).toBe(true);
+    expect(readFileSync(result.out, 'utf8')).toContain('importSvg');
+
+    const mod = await loadSceneModule(result.out);
+    const scene = mod.createScene();
+    expect(scene.size).toEqual({ w: 120, h: 80 });
+    expect(scene.nodes.size).toBeGreaterThan(0);
   });
 });

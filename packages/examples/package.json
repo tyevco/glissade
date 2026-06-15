@@ -16,7 +16,8 @@
     "@glissade/interact": "workspace:*",
     "@glissade/narrate": "workspace:*",
     "@glissade/player": "workspace:*",
-    "@glissade/scene": "workspace:*"
+    "@glissade/scene": "workspace:*",
+    "@glissade/svg": "workspace:*"
   },
   "devDependencies": {
     "vite": "^7.0.0"

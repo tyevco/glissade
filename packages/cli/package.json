@@ -25,6 +25,7 @@
     "@glissade/core": "workspace:*",
     "@glissade/interact": "workspace:*",
     "@glissade/lottie": "workspace:*",
+    "@glissade/svg": "workspace:*",
     "@glissade/narrate": "workspace:*",
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*",

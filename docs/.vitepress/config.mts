@@ -29,6 +29,7 @@ export default defineConfig({
           { text: 'Typewriter & text reveal', link: '/typewriter' },
           { text: 'Motion along a path', link: '/motion-path' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
+          { text: 'SVG import', link: '/svg' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },

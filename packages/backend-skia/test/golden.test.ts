@@ -28,6 +28,7 @@ import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-m
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
 import goldenWhiteboard from '../../examples/src/scenes/golden-whiteboard.js';
+import goldenSvg from '../../examples/src/scenes/golden-svg.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
@@ -78,6 +79,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'path-drawon', mod: goldenPathDrawon },
   // whiteboard kit: drawOnEach cascades sketched shapes drawing themselves on
   { name: 'whiteboard', mod: goldenWhiteboard },
+  // SVG import: a parsed SVG document rendered as a static scene
+  { name: 'svg', mod: goldenSvg },
 ];
 
 for (const { name, mod } of CORPUS) {
