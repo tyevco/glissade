@@ -100,6 +100,18 @@ describe('sidecar merge (§6.2, v2)', () => {
     expect(withId.map((k) => k.id)).toEqual(['k0', 'k2', 'k1']);
   });
 
+  it('re-resolves derived leading keys against the merged document (no value pop, §2.6)', () => {
+    setDevWarning(() => {});
+    const derivedKeys = [key(0, 0), { ...key(1, 0), derived: true as const }, key(2, 300)];
+    const codeTl = timeline({ tracks: [{ target: 'a/x', type: 'number', keys: derivedKeys }] });
+    // an edit bumps the upstream key to 50 but carried the derived key's stale value (0)
+    const edited = [key(0, 50), { ...key(1, 0), derived: true as const }, key(2, 300)];
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', edited, derivedKeys);
+    const merged = mergeSidecar(codeTl, sc);
+    const x = merged.tracks.find((t) => t.target === 'a/x')!;
+    expect(x.keys.find((k) => k.derived)!.value).toBe(50); // re-resolved, not stale 0
+  });
+
   it('rejects unknown sidecar versions', () => {
     expect(() => migrateSidecar({ sidecarVersion: 9 } as unknown as SidecarDoc)).toThrow(SidecarVersionError);
   });

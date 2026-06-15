@@ -127,6 +127,17 @@ export function setSidecarTrack(
   };
 }
 
+/**
+ * Re-resolve `derived:true` leading keys against the merged track (§2.6): a
+ * derived from-key duplicates the preceding key's held value, so an upstream
+ * edit must flow into it or the segment pops at its start. Build-time derived
+ * keys are already correct; this fixes the ones an edit moved beneath.
+ */
+function reresolveDerived(keys: Key[]): Key[] {
+  if (!keys.some((k) => k.derived)) return keys;
+  return keys.map((k, i) => (k.derived && i > 0 ? { ...k, value: keys[i - 1]!.value } : k));
+}
+
 export interface MergeResult {
   timeline: Timeline;
   /** targets whose code baseline changed beneath the editor's keys (§6.2 rule 2). */
@@ -161,7 +172,7 @@ export function mergeSidecarDetailed(
       return t; // keep the code track; the stale editor entry is parked
     }
     if (entry.baseHash !== null && entry.baseHash !== hashKeys(t.keys)) drift.push(t.target);
-    return { ...t, keys: entry.keys.map((k) => ({ ...k })), editable: true };
+    return { ...t, keys: reresolveDerived(entry.keys.map((k) => ({ ...k }))), editable: true };
   });
 
   for (const [target, entry] of overlay) {
@@ -170,7 +181,7 @@ export function mergeSidecarDetailed(
       orphans[target] = { type: entry.type, keys: entry.keys, reason: 'prop-missing' };
     } else {
       // editor-created track for a prop code never animated → add it
-      tracks.push({ target, type: entry.type, keys: entry.keys.map((k) => ({ ...k })), editable: true });
+      tracks.push({ target, type: entry.type, keys: reresolveDerived(entry.keys.map((k) => ({ ...k }))), editable: true });
     }
   }
 
