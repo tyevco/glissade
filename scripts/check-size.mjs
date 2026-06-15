@@ -15,6 +15,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const BUDGETS = {
   core: 12, // raised 8→10→11→12 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings — tree-shaken out of real embeds; base path stays ~27/35)
   scene: 15, // raised 12→13→14→15 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit — DEV/export-only, tree-shaken from real embeds; base total stays ≤ 35)
+  'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
@@ -76,5 +77,24 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
 const baseOk = baseTotal <= 35;
 if (!baseOk) failed = true;
 console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 35 kB)`);
+
+// §3.2 guard: the BASE scene bundle must NOT pull in Yoga — flexbox layout is a
+// separately-budgeted entry (@glissade/scene/layout). A static import would
+// silently blow the embed budget, so assert it on every run via the metafile.
+const sceneIndex = await build({
+  entryPoints: [`${root}packages/scene/dist/index.js`],
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'browser',
+  write: false,
+  external: ['@glissade/*'],
+  metafile: true,
+  logLevel: 'silent',
+});
+const yogaInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => i.includes('yoga-layout'));
+const yogaOk = yogaInBase.length === 0;
+if (!yogaOk) failed = true;
+console.log(`${yogaOk ? 'ok  ' : 'FAIL'} base scene excludes yoga-layout${yogaOk ? '' : ` (leaked: ${yogaInBase.length} input(s))`}`);
 
 process.exit(failed ? 1 : 0);
