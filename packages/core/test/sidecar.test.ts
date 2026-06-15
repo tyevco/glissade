@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assignKeyIds,
   compileTimeline,
   emptySidecar,
   key,
   mergeSidecar,
+  mergeSidecarDetailed,
+  migrateSidecar,
   sampleTrack,
   setDevWarning,
+  setSidecarTrack,
   timeline,
   track,
   SidecarVersionError,
   type SidecarDoc,
+  type SidecarDocV1,
 } from '../src/index.js';
 
 const code = () =>
@@ -21,57 +26,90 @@ const code = () =>
     labels: { mid: 0.5 },
   });
 
-describe('sidecar merge (§6.2)', () => {
+const xBaseline = () => code().tracks[0]!.keys;
+
+describe('sidecar merge (§6.2, v2)', () => {
   it('null/empty sidecars are identity', () => {
     expect(mergeSidecar(code(), null)).toEqual(code());
     expect(mergeSidecar(code(), emptySidecar()).tracks).toEqual(code().tracks);
   });
 
   it('sidecar tracks replace same-target code tracks wholesale and mark them editable', () => {
-    const sidecar: SidecarDoc = {
-      sidecarVersion: 1,
-      tracks: [track('a/x', 'number', [key(0, 0), key(2, 500)])],
-    };
-    const merged = mergeSidecar(code(), sidecar);
-    const x = compileTimeline(merged).tracks.get('a/x')!;
-    expect(sampleTrack(x, 2)).toBe(500);
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0), key(2, 500)], xBaseline());
+    const merged = mergeSidecar(code(), sc);
+    expect(sampleTrack(compileTimeline(merged).tracks.get('a/x')!, 2)).toBe(500);
     expect(merged.tracks.find((t) => t.target === 'a/x')!.editable).toBe(true);
-    // untouched code track passes through
     expect(merged.tracks.find((t) => t.target === 'a/opacity')!.keys).toEqual([key(0, 1)]);
   });
 
-  it('editor-created tracks are added; code labels win on collision, editor-only labels fill in (§6.2)', () => {
+  it('editor-created track added (baseHash null); code labels win on collision (§6.2)', () => {
     const warnings: string[] = [];
     setDevWarning((m) => warnings.push(m));
-    const sidecar: SidecarDoc = {
-      sidecarVersion: 1,
-      tracks: [track('a/rotation', 'number', [key(0, 0), key(1, 90)])],
-      labels: { mid: 0.75, end: 2 }, // 'mid' collides with the code label (0.5)
-    };
-    const merged = mergeSidecar(code(), sidecar);
+    let sc = setSidecarTrack(emptySidecar(), 'main', 'a/rotation', 'number', [key(0, 0), key(1, 90)], null);
+    sc = { ...sc, timelines: { main: { ...sc.timelines['main']!, labels: { mid: 0.75, end: 2 } } } };
+    const merged = mergeSidecar(code(), sc);
     expect(merged.tracks.map((t) => t.target)).toContain('a/rotation');
     expect(merged.labels).toEqual({ mid: 0.5, end: 2 }); // code 'mid' wins; editor 'end' added
     expect(warnings.some((w) => w.includes('mid') && /code wins/.test(w))).toBe(true);
     setDevWarning(() => {});
   });
 
-  it('does not mutate inputs and survives JSON round trips', () => {
-    const base = code();
-    const sidecar: SidecarDoc = {
+  it('migrates a v1 document forward and merges it', () => {
+    setDevWarning(() => {});
+    const v1: SidecarDocV1 = {
       sidecarVersion: 1,
-      tracks: [track('a/x', 'number', [key(0, 7)])],
+      tracks: [track('a/x', 'number', [key(0, 0), key(2, 500)])],
+      labels: { end: 3 },
     };
-    const merged = mergeSidecar(base, sidecar);
-    expect(base.tracks[0]!.keys[0]!.value).toBe(0);
-    expect(JSON.parse(JSON.stringify(merged))).toEqual(merged);
-    merged.tracks[0]!.keys[0]!.value = 999;
-    expect(sidecar.tracks[0]!.keys[0]!.value).toBe(7);
+    const migrated = migrateSidecar(v1)!;
+    expect(migrated.sidecarVersion).toBe(2);
+    expect(migrated.timelines['main']!.tracks['a/x']!.baseHash).toBeNull();
+    const merged = mergeSidecar(code(), v1); // accepts v1 directly
+    expect(sampleTrack(compileTimeline(merged).tracks.get('a/x')!, 2)).toBe(500);
+  });
+
+  it('a type-changed sidecar entry is orphaned, not merged (code track survives)', () => {
+    setDevWarning(() => {});
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'vec2', [key(0, [0, 0] as const)], null);
+    const { timeline: merged, orphans } = mergeSidecarDetailed(code(), sc);
+    expect(orphans['a/x']!.reason).toBe('type-changed');
+    expect(merged.tracks.find((t) => t.target === 'a/x')!.type).toBe('number'); // code track kept
+  });
+
+  it('a sidecar track whose code track vanished is orphaned (prop-missing)', () => {
+    setDevWarning(() => {});
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/gone', 'number', [key(0, 0), key(1, 1)], [key(0, 0), key(1, 1)]);
+    expect(mergeSidecarDetailed(code(), sc).orphans['a/gone']!.reason).toBe('prop-missing');
+  });
+
+  it('flags drift when the code baseline changed beneath the edit (§6.2 rule 2)', () => {
+    setDevWarning(() => {});
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0), key(1, 200)], xBaseline());
+    expect(mergeSidecarDetailed(code(), sc).drift).toEqual([]); // baseline unchanged
+    const changed = timeline({
+      tracks: [track('a/x', 'number', [key(0, 0), key(1, 999)]), track('a/opacity', 'number', [key(0, 1)])],
+    });
+    expect(mergeSidecarDetailed(changed, sc).drift).toContain('a/x');
+  });
+
+  it('assigns stable k<N> ids to keys', () => {
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0), key(1, 100)], null);
+    expect(sc.timelines['main']!.tracks['a/x']!.keys.map((k) => k.id)).toEqual(['k0', 'k1']);
+    // inserting preserves existing ids and mints a fresh one past the max
+    const withId = assignKeyIds([{ ...key(0, 0), id: 'k0' }, key(0.5, 50), { ...key(1, 100), id: 'k1' }]);
+    expect(withId.map((k) => k.id)).toEqual(['k0', 'k2', 'k1']);
   });
 
   it('rejects unknown sidecar versions', () => {
-    expect(() =>
-      mergeSidecar(code(), { sidecarVersion: 2 as unknown as 1, tracks: [] }),
-    ).toThrow(SidecarVersionError);
+    expect(() => migrateSidecar({ sidecarVersion: 9 } as unknown as SidecarDoc)).toThrow(SidecarVersionError);
+  });
+
+  it('does not mutate inputs and survives JSON round trips', () => {
+    const base = code();
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 7)], null);
+    const merged = mergeSidecar(base, sc);
+    expect(base.tracks[0]!.keys[0]!.value).toBe(0);
+    expect(JSON.parse(JSON.stringify(merged))).toEqual(merged);
   });
 });
 

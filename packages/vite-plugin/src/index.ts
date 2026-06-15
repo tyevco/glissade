@@ -96,9 +96,9 @@ export function glissade(options: GlissadeSidecarOptions = {}): Plugin {
           req.on('end', () => {
             try {
               const doc = JSON.parse(body) as { sidecarVersion?: number };
-              if (doc === null || doc.sidecarVersion !== 1) {
+              if (doc === null || (doc.sidecarVersion !== 1 && doc.sidecarVersion !== 2)) {
                 res.statusCode = 422;
-                res.end(JSON.stringify({ error: 'body must be a sidecarVersion 1 document' }));
+                res.end(JSON.stringify({ error: 'body must be a sidecarVersion 1 or 2 document' }));
                 return;
               }
               writeFileSync(sidecarPath, JSON.stringify(doc, null, 2) + '\n');

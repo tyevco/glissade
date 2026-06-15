@@ -10,11 +10,12 @@ import {
   compileTimeline,
   emptySidecar,
   mergeSidecar,
+  migrateSidecar,
+  setSidecarTrack,
   type CompiledTimeline,
   type EaseSpec,
   type Key,
   type SidecarDoc,
-  type Track,
 } from '@glissade/core';
 import {
   addKeyAt,
@@ -113,7 +114,7 @@ export function App() {
     void fetch(sidecarUrl(entry.path))
       .then((r) => r.json())
       .then((doc: SidecarDoc | null) => {
-        setSidecar(doc);
+        setSidecar(migrateSidecar(doc)); // v1 files lift forward to v2 on load
         setSidecarLoaded(true);
       });
   }, [entry]);
@@ -160,11 +161,9 @@ export function App() {
       const current = sidecar ?? emptySidecar();
       // drags snapshot once at their first move, then stream without (one drag = one undo)
       if (snapshot) undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
-      const tracks: Track[] = [
-        ...current.tracks.filter((t) => t.target !== target),
-        { target, type: sourceTrack.type, keys },
-      ];
-      const next: SidecarDoc = { ...current, tracks };
+      // record the code baseline so drift surfaces if the code changes beneath the edit (§6.2)
+      const codeBaseline = entry.mod.timeline.tracks.find((t) => t.target === target)?.keys ?? null;
+      const next = setSidecarTrack(current, 'main', target, sourceTrack.type, keys, codeBaseline);
       setSidecar(next);
       persist(next);
       if (reselectT !== undefined && keys.length > 0) {
@@ -217,7 +216,9 @@ export function App() {
   const undo = useCallback(() => {
     const prev = undoStack.current.pop();
     if (prev === undefined) return;
-    const restored = prev.tracks.length === 0 && !prev.labels ? null : prev;
+    const main = prev.timelines['main'];
+    const empty = !main || (Object.keys(main.tracks).length === 0 && !main.labels);
+    const restored = empty ? null : prev;
     setSidecar(restored);
     setSelectedKey(null); // the snapshot may not contain the selected key
     persist(restored ?? emptySidecar());
