@@ -248,3 +248,21 @@ describe('string-target from-values (dogfooding fixes)', () => {
     expect(warnings.some((w) => w.includes("'n/y'") && w.includes('from'))).toBe(true);
   });
 });
+
+describe('cue / adBreak markers (§ad-break)', () => {
+  it('emit serialized markers; adBreak carries data.kind', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.to('a/x', 1, { duration: 2 })
+          .cue(0.5, 'chapter-1', { kind: 'chapter' })
+          .adBreak(1, { id: 'midroll', duration: 30 });
+      }),
+    );
+    const cue = doc.markers.find((m) => m.name === 'chapter-1')!;
+    expect(cue.t).toBe(0.5);
+    expect((cue.data as { kind: string }).kind).toBe('chapter');
+    const ad = doc.markers.find((m) => m.name === 'midroll')!;
+    expect(ad.t).toBe(1);
+    expect(ad.data).toEqual({ kind: 'ad-break', duration: 30 });
+  });
+});

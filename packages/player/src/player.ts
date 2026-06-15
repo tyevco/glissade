@@ -63,6 +63,8 @@ export interface Player {
   seek(t: number): void;
   /** Register a marker callback; fired only when continuous playback crosses it. */
   onMarker(name: string, cb: (marker: Marker) => void): () => void;
+  /** Like onMarker but matches a cue's `data.kind` (e.g. 'ad-break') across all names. */
+  onCue(kind: string, cb: (marker: Marker) => void): () => void;
   /**
    * Wire a machine to the host clock (v2 §A.5): step(now) on every tick, in
    * attach order, before evaluation — even while linear playback is paused.
@@ -78,6 +80,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   const driver = init.driver ?? clockDriver();
   const loop: LoopMode = opts.loop ?? false;
   const callbacks = new Map<string, Set<(m: Marker) => void>>();
+  const cueCallbacks = new Map<string, Set<(m: Marker) => void>>();
 
   let rate = opts.rate ?? 1;
   let playing = false;
@@ -94,13 +97,14 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   let resolveFinished: ((completed: boolean) => void) | null = null;
 
   function fireMarkers(from: number, to: number): void {
-    if (from === to || callbacks.size === 0) return;
+    if (from === to || (callbacks.size === 0 && cueCallbacks.size === 0)) return;
     const forward = to > from;
     for (const m of markers) {
       const crossed = forward ? m.t > from && m.t <= to : m.t >= to && m.t < from;
-      if (crossed) {
-        for (const cb of callbacks.get(m.name) ?? []) cb(m);
-      }
+      if (!crossed) continue;
+      for (const cb of callbacks.get(m.name) ?? []) cb(m);
+      const kind = (m.data as { kind?: unknown } | undefined)?.kind;
+      if (typeof kind === 'string') for (const cb of cueCallbacks.get(kind) ?? []) cb(m);
     }
   }
 
@@ -227,6 +231,15 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
       if (!set) {
         set = new Set();
         callbacks.set(name, set);
+      }
+      set.add(cb);
+      return () => set.delete(cb);
+    },
+    onCue(kind, cb) {
+      let set = cueCallbacks.get(kind);
+      if (!set) {
+        set = new Set();
+        cueCallbacks.set(kind, set);
       }
       set.add(cb);
       return () => set.delete(cb);

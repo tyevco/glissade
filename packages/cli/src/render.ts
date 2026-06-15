@@ -39,6 +39,8 @@ export interface RenderOptions {
   narration?: 'auto' | 'off';
   /** auto (default): mix effect hits from a sibling *.sfx.timing.json. */
   sfx?: 'auto' | 'off';
+  /** also write WebVTT chapters from cue markers ('vtt'); cues.json is always written when cues exist. */
+  chapters?: 'vtt' | 'off';
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -98,6 +100,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // only when the scene actually has one (an unbound target would throw).
   const captionsMode = opts.captions ?? 'burn';
   const { hideCaptionsDoc, timingPathFor, writeCaptionSidecars } = await import('./captions.js');
+  const { writeCueSidecars } = await import('./cues.js');
   if (captionsMode !== 'burn' && scene.resolveTarget('captions/opacity') !== undefined) {
     doc = hideCaptionsDoc(doc);
   }
@@ -197,18 +200,26 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     process.stderr.write(`captions: ${srt}, ${vtt}\n`);
   };
 
+  // composer cue signaling (§ad-break): cue markers → <stem>.cues.json (+ chapters)
+  const emitCues = (target: string): void => {
+    const written = writeCueSidecars(target, compiled.markers, duration, opts.chapters === 'vtt');
+    if (written.length) process.stderr.write(`cues: ${written.join(', ')}\n`);
+  };
+
   if (!isVideo) {
     if (singleFile) return { frames: 1, out: resolve(opts.out) }; // one still, no sequence/sidecars
     if (compiled.audio.length > 0) {
       process.stderr.write('note: PNG-sequence output ignores timeline audio; render to .mp4/.webm to mix it\n');
     }
     emitSidecars(framesDir);
+    emitCues(framesDir);
     return { frames: total, out: framesDir };
   }
 
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
   emitSidecars(outAbs);
+  emitCues(outAbs);
   const isWebm = /\.webm$/i.test(outAbs);
   const container = isWebm ? ('webm' as const) : ('mp4' as const);
 

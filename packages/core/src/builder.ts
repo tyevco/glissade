@@ -17,6 +17,7 @@ import {
   timeline as makeTimeline,
   TimelineValidationError,
   type ChildEntry,
+  type Json,
   type Marker,
   type Timeline,
   type TimelineInit,
@@ -44,6 +45,10 @@ export interface TimelineBuilder {
   add(child: Timeline, at?: Position, opts?: { mode?: 'add' | 'sync'; timeScale?: number }): TimelineBuilder;
   /** Compiles to a marker; the callback is Player-registered, never serialized (§4.2). */
   call(fn: () => void, at?: Position): TimelineBuilder;
+  /** A named cue marker (serialized, fired on crossing) — the composer-signal substrate. */
+  cue(at: Position, name: string, data?: Json): TimelineBuilder;
+  /** An ad-break cue: a marker with `data.kind: 'ad-break'` + optional duration (§ad-break). */
+  adBreak(at: Position, opts?: { id?: string; duration?: number }): TimelineBuilder;
   /** Mark the preceding track editable for the studio (§6.2). */
   editable(): TimelineBuilder;
 }
@@ -191,6 +196,15 @@ export function buildTimeline(
       const name = `call:${callCount++}`;
       markers.push({ t, name });
       callbacks.set(name, fn);
+      return builder;
+    },
+    cue(at, name, data) {
+      markers.push(data !== undefined ? { t: resolvePosition(at), name, data } : { t: resolvePosition(at), name });
+      return builder;
+    },
+    adBreak(at, opts = {}) {
+      const data: Json = { kind: 'ad-break', ...(opts.duration !== undefined ? { duration: opts.duration } : {}) };
+      markers.push({ t: resolvePosition(at), name: opts.id ?? 'ad-break', data });
       return builder;
     },
     editable() {

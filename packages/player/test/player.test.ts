@@ -160,6 +160,20 @@ describe('markers (§4.2: continuous crossing only)', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
+  it('onCue fires for any marker matching a data.kind on crossing', () => {
+    const cued: Marker[] = [{ t: 1.0, name: 'midroll', data: { kind: 'ad-break', duration: 30 } }];
+    const { player, tick } = makePlayer({}, cued);
+    const cb = vi.fn();
+    player.onCue('ad-break', cb);
+    player.play();
+    tick(0);
+    tick(0.9);
+    expect(cb).not.toHaveBeenCalled();
+    tick(1.1);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect((cb.mock.calls[0]![0] as Marker).name).toBe('midroll');
+  });
+
   it('fires on backward crossing under reverse rate', () => {
     const { player, tick } = makePlayer({ rate: -1 }, markers);
     const cb = vi.fn();

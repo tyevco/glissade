@@ -64,6 +64,7 @@ render options:
   --narration <m>  auto (default): mix the voice from a sibling *.narration.timing.json | off
   --music <m>      auto (default): mix a sibling *.music.timing.json bed, ducked under narration | off
   --sfx <m>        auto (default): mix effect hits from a sibling *.sfx.timing.json | off
+  --chapters <m>   vtt: also write WebVTT chapters from cue markers (cues.json is always written when cues exist)
 
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
@@ -216,6 +217,7 @@ async function main(): Promise<void> {
       ...(frame !== undefined ? { frame } : {}),
       ...(frameRange ? { frameRange } : {}),
       ...(formatFlag === 'png-seq' ? { format: 'png-seq' as const } : {}),
+      ...(flags.get('chapters') === 'vtt' ? { chapters: 'vtt' as const } : {}),
       ...(flags.has('trace') ? { trace: flags.get('trace')! } : {}),
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),
