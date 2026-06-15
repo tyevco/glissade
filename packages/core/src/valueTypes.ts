@@ -35,6 +35,9 @@ export interface ValueType<T> {
   scale?(a: T, k: number): T;
   /** Type-class handoff default (§B.1): spring for kinetic, cut for hold-only. */
   defaultHandoff?: HandoffKind;
+  /** Document (de)serialization; default identity for JSON-native types (§2.2). */
+  serialize?(value: T): unknown;
+  deserialize?(raw: unknown): T;
 }
 
 export type ValueTypeId = 'number' | 'vec2' | 'color' | 'string' | 'boolean' | (string & {});
@@ -80,6 +83,25 @@ export const vec2Type: ValueType<Vec2> = {
   sub: (a, b) => [a[0] - b[0], a[1] - b[1]],
   scale: (a, k) => [a[0] * k, a[1] * k],
   defaultHandoff: 'spring',
+};
+
+/** vec2 swept along a circular arc: polar lerp of radius + shortest-path angle (§2.2). */
+export const vec2ArcType: ValueType<Vec2> = {
+  id: 'vec2-arc',
+  lerp: (a, b, t) => {
+    const ra = Math.hypot(a[0], a[1]);
+    const rb = Math.hypot(b[0], b[1]);
+    const angA = Math.atan2(a[1], a[0]);
+    let dAng = Math.atan2(b[1], b[0]) - angA;
+    while (dAng > Math.PI) dAng -= 2 * Math.PI;
+    while (dAng < -Math.PI) dAng += 2 * Math.PI;
+    const r = ra + (rb - ra) * t;
+    const ang = angA + dAng * t;
+    return [r * Math.cos(ang), r * Math.sin(ang)];
+  },
+  extrapolates: true,
+  equals: vec2Equals,
+  defaultHandoff: 'blend-from-frozen', // nonlinear: no linear offset for the spring handoff
 };
 
 export const colorType: ValueType<string> = {
@@ -200,6 +222,7 @@ export function inferValueType(value: unknown): ValueTypeId {
 
 registerValueType(numberType);
 registerValueType(vec2Type);
+registerValueType(vec2ArcType);
 registerValueType(colorType);
 registerValueType(stringType);
 registerValueType(booleanType);

@@ -54,6 +54,7 @@ export {
 
 export {
   registerValueType,
+  vec2ArcType,
   getValueType,
   numberType,
   vec2Type,

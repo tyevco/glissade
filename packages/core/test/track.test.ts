@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { key, sampleTrack, spring, springTo, track, TrackValidationError, type Track, type Vec2 } from '../src/index.js';
+import { compileTimeline, key, sampleTrack, spring, springTo, timeline, track, TrackValidationError, type Track, type Vec2 } from '../src/index.js';
 
 const demo = () =>
   track('circle/opacity', 'number', [
@@ -21,6 +21,15 @@ describe('track validation', () => {
   it('rejects empty tracks and malformed targets', () => {
     expect(() => track('a/x', 'number', [])).toThrow(TrackValidationError);
     expect(() => track('no-slash', 'number', [key(0, 0)])).toThrow(TrackValidationError);
+  });
+
+  it('accepts the reserved from:\'live\' key sentinel (§4.7) and additive track flag (§2.2)', () => {
+    // both are v1-reserved schema slots: accepted + validated, but inert in v1
+    const tr = track('a/x', 'number', [{ ...key(0, 0), from: 'live' as const }, key(1, 1)]);
+    expect(tr.keys[0]!.from).toBe('live');
+    const additive: Track = { target: 'a/x', type: 'number', keys: [key(0, 0), key(1, 1)], additive: true };
+    expect(() => compileTimeline(timeline({ tracks: [additive] }))).not.toThrow();
+    expect(JSON.parse(JSON.stringify(additive)).additive).toBe(true); // serializes
   });
 
   it('coerces non-hold keys on discrete (string/boolean) tracks to hold (§2.2)', () => {

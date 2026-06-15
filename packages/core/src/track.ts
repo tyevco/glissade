@@ -26,6 +26,8 @@ export interface Key<T = unknown> {
   id?: string;
   /** Builder-resolved implicit from-value; re-resolved on merge (§2.6, §6.2). */
   derived?: boolean;
+  /** Reserved (§4.7): a v2 synthesized-transition leading key reads the live value. v1 accepts but ignores it. */
+  from?: 'live';
 }
 
 export interface Track<T = unknown> {
@@ -36,6 +38,8 @@ export interface Track<T = unknown> {
   keys: Key<T>[];
   /** Studio may own this track's keys via sidecar (§6.2). */
   editable?: boolean;
+  /** Reserved (§2.2/§B.6): v2 additive blending. v1 accepts but ignores it (coalesce stays last-wins). */
+  additive?: boolean;
 }
 
 export class TrackValidationError extends Error {

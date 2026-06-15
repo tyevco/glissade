@@ -102,3 +102,34 @@ describe('seeded RNG', () => {
     }
   });
 });
+
+describe('ValueType registry extensions (§2.2)', () => {
+  it('vec2-arc lerps along a circular arc (polar), not a straight line', async () => {
+    const { getValueType } = await import('../src/index.js');
+    const arc = getValueType<readonly [number, number]>('vec2-arc');
+    // quarter-sweep from (10,0) to (0,10): midpoint sits on the unit-radius arc, not the chord
+    const mid = arc.lerp([10, 0], [0, 10], 0.5);
+    expect(Math.hypot(mid[0], mid[1])).toBeCloseTo(10, 6); // radius preserved
+    expect(mid[0]).toBeCloseTo(10 * Math.cos(Math.PI / 4), 6);
+    expect(mid[1]).toBeCloseTo(10 * Math.sin(Math.PI / 4), 6);
+  });
+
+  it('a custom type with serialize/deserialize round-trips through a track sample', async () => {
+    const { registerValueType, track, key, sampleTrack } = await import('../src/index.js');
+    // a "money" type stored as cents, lerped linearly, (de)serialized to/from a string
+    registerValueType<number>({
+      id: 'cents',
+      lerp: (a, b, t) => Math.round(a + (b - a) * t),
+      extrapolates: true,
+      equals: (a, b) => a === b,
+      serialize: (v) => `$${(v / 100).toFixed(2)}`,
+      deserialize: (raw) => Math.round(parseFloat(String(raw).replace('$', '')) * 100),
+    });
+    const tr = track('x/price', 'cents', [key(0, 0), key(1, 1000)]);
+    expect(sampleTrack(tr, 0.5)).toBe(500);
+    const { getValueType } = await import('../src/index.js');
+    const vt = getValueType<number>('cents');
+    expect(vt.serialize!(500)).toBe('$5.00');
+    expect(vt.deserialize!('$5.00')).toBe(500);
+  });
+});
