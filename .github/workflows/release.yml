@@ -28,7 +28,21 @@ jobs:
       - run: pnpm test
       - run: node scripts/check-deps.mjs
       - run: node scripts/check-size.mjs
-      - run: pnpm changeset publish
+      # changesets@2.31.0 (the latest) can crash in its POST-publish
+      # isAlreadyPublishedError check (`error.message.includes` on undefined)
+      # AFTER packages actually published — reddening a successful release.
+      # Tolerate that case: a non-zero exit is only a real failure when the
+      # "packages published successfully" marker is absent from the output.
+      - name: Publish (tolerate the known changesets post-publish crash)
+        run: |
+          set +e
+          pnpm changeset publish 2>&1 | tee publish.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ] && grep -q "packages published successfully" publish.log; then
+            echo "::warning::changeset publish exited $code after a successful publish (known changesets@2.31.0 isAlreadyPublishedError post-publish crash); treating as success"
+            exit 0
+          fi
+          exit "$code"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
