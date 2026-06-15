@@ -104,6 +104,23 @@ export function springTo<T>(endT: number, from: T, to: T, cfg: SpringConfig): [K
   return [key(endT - d, from), key(endT, to, springFactory(cfg))];
 }
 
+/**
+ * Cascade a set of tracks by shifting each one's key times — the classic
+ * stagger for animating a list of nodes with a delay between them. `delay` is
+ * the per-index gap in seconds, or a function of the index for non-linear
+ * cascades. Pure: returns new tracks, leaving the inputs untouched.
+ *
+ *   stagger(items.map((it, i) => track(`${it.id}/opacity`, 'number',
+ *     [key(0, 0), key(0.3, 1, 'easeOutCubic')])), 0.08)
+ */
+export function stagger<T>(tracks: readonly Track<T>[], delay: number | ((index: number) => number)): Track<T>[] {
+  const at = typeof delay === 'function' ? delay : (i: number): number => i * delay;
+  return tracks.map((tr, i) => {
+    const d = at(i);
+    return { ...tr, keys: tr.keys.map((k) => ({ ...k, t: k.t + d })) };
+  });
+}
+
 export function track<T>(
   target: string,
   type: ValueTypeId,

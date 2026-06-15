@@ -33,6 +33,7 @@ export {
 
 export {
   spring,
+  springPresets,
   springEasing,
   springEasingDerivative,
   type SpringConfig,
@@ -76,6 +77,7 @@ export {
   key,
   track,
   springTo,
+  stagger,
   sampleTrack,
   velocityAt,
   validateTrack,

@@ -190,6 +190,20 @@ export const spring: SpringFactory = Object.assign(
 );
 
 /**
+ * Named spring feels (react-spring conventions, mass 1) — a vocabulary instead
+ * of hand-tuned stiffness/damping. Use `spring(springPresets.wobbly)` or
+ * `springTo(t, a, b, springPresets.gentle)`.
+ */
+export const springPresets = {
+  default: { stiffness: 170, damping: 26 },
+  gentle: { stiffness: 120, damping: 14 },
+  wobbly: { stiffness: 180, damping: 12 },
+  stiff: { stiffness: 210, damping: 20 },
+  slow: { stiffness: 280, damping: 60 },
+  molasses: { stiffness: 280, damping: 120 },
+} as const satisfies Record<string, SpringConfig>;
+
+/**
  * The spring as a normalized easing over a segment whose length must equal
  * spring.duration(cfg) (validated at the document layer, §2.7).
  */
