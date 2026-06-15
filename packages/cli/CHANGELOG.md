@@ -1,5 +1,34 @@
 # @glissade/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- c5dbc0e: New `@glissade/svg` package: static SVG import. `importSvg(svgString)` parses an SVG document into a glissade scene — `<path d>` strings (full M/L/H/V/C/S/Q/T/A/Z command set, with arcs converted to native ellipse-arc segments), the basic shapes (`rect`/`circle`/`ellipse`/`line`/`polyline`/`polygon`), `<g>` grouping, `transform` (translate/scale/rotate/matrix → node TRS), and fill/stroke/stroke-width with SVG presentation inheritance. Unsupported features (text, images, gradients, filters, masks) are dropped with warnings. Returns `{ size, root, warnings, toSceneModule() }`.
+
+  `gs import` now accepts `.svg` alongside `.json`: it emits a scene module that defers to `importSvg` (the conversion's single source of truth), renderable by `gs render`.
+
+### Patch Changes
+
+- Updated dependencies [1aa2228]
+- Updated dependencies [e249f0d]
+- Updated dependencies [6c07c96]
+- Updated dependencies [301fd07]
+- Updated dependencies [4c6424d]
+- Updated dependencies [37e48be]
+- Updated dependencies [12c5841]
+- Updated dependencies [c5dbc0e]
+- Updated dependencies [977b3d5]
+  - @glissade/narrate@0.6.0
+  - @glissade/core@0.6.0
+  - @glissade/scene@0.6.0
+  - @glissade/svg@0.6.0
+  - @glissade/backend-skia@0.6.0
+  - @glissade/interact@0.6.0
+  - @glissade/lottie@0.6.0
+  - @glissade/player@0.6.0
+  - @glissade/sfx@0.6.0
+
 ## 0.6.0-pre.1
 
 ### Minor Changes
