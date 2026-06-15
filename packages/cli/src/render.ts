@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createJiti } from 'jiti';
-import { evaluate, type SceneModule } from '@glissade/scene';
+import { evaluate, withDeterminismGuards, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '@glissade/backend-skia';
 
 export interface RenderOptions {
@@ -167,7 +167,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     }
   }
   for (let f = firstFrame; f <= lastFrame; f++) {
-    backend.render(evaluate(scene, doc, f / fps));
+    // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
+    backend.render(withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps)));
     const name = `frame-${String(f).padStart(5, '0')}.png`;
     writeFileSync(join(framesDir, name), backend.encodePng());
     opts.onProgress?.(f - firstFrame + 1, total);
