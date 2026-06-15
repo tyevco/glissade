@@ -4,7 +4,7 @@
  *   gs render <scene-module> [--out <dir|file.mp4|file.webm>] [--fps N] [--range a..b]
  */
 
-import { render } from './render.js';
+import { render, parseFrameRange } from './render.js';
 import { parseCaptionsMode, type CaptionsMode } from './captions.js';
 
 function fail(msg: string): never {
@@ -54,7 +54,9 @@ const USAGE = `usage:
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
   --fps <n>        frames per second (default: timeline fps, else 60)
-  --range <a..b>   seconds to render (default: 0..duration)
+  --range <a..b>   integer FRAME indices to render, inclusive (default: whole timeline)
+  --frame <n>      render a single frame index (a still, through the same path)
+  --format png-seq force a PNG sequence even when --out looks like a video
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
@@ -177,12 +179,31 @@ async function main(): Promise<void> {
     return; // keeps serving until ^C
   }
 
-  let range: [number, number] | undefined;
+  // --range is frame-indexed (§5: export APIs take frames; Player APIs take seconds)
+  let frameRange: [number, number] | undefined;
   const rangeFlag = flags.get('range');
   if (rangeFlag) {
-    const m = /^([\d.]+)\.\.([\d.]+)$/.exec(rangeFlag);
-    if (!m) fail(`--range must be 'a..b' in seconds, got '${rangeFlag}'`);
-    range = [parseFloat(m[1]!), parseFloat(m[2]!)];
+    try {
+      frameRange = parseFrameRange(rangeFlag);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+  const frameFlag = flags.get('frame');
+  let frame: number | undefined;
+  if (frameFlag !== undefined) {
+    if (!/^\d+$/.test(frameFlag)) fail(`--frame must be a non-negative integer frame index, got '${frameFlag}'`);
+    frame = Number(frameFlag);
+  }
+  const formatFlag = flags.get('format');
+  if (formatFlag !== undefined && formatFlag !== 'png-seq') {
+    fail(`--format must be 'png-seq', got '${formatFlag}'`);
+  }
+  if (flags.has('workers')) {
+    process.stderr.write('note: --workers is accepted but parallel sharding is not yet implemented; rendering single-threaded\n');
+  }
+  if (flags.has('watch')) {
+    process.stderr.write('note: --watch is not yet implemented in this release; rendering once\n');
   }
 
   const fpsFlag = flags.get('fps');
@@ -192,7 +213,9 @@ async function main(): Promise<void> {
       modulePath,
       out: flags.get('out') ?? 'out',
       ...(fpsFlag ? { fps: parseInt(fpsFlag, 10) } : {}),
-      ...(range ? { range } : {}),
+      ...(frame !== undefined ? { frame } : {}),
+      ...(frameRange ? { frameRange } : {}),
+      ...(formatFlag === 'png-seq' ? { format: 'png-seq' as const } : {}),
       ...(flags.has('trace') ? { trace: flags.get('trace')! } : {}),
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),

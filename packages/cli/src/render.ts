@@ -17,8 +17,14 @@ export interface RenderOptions {
   modulePath: string;
   out: string;
   fps?: number;
-  /** seconds; defaults to [0, duration] */
+  /** seconds; defaults to [0, duration] (programmatic API — the CLI uses frame indices). */
   range?: [number, number];
+  /** inclusive FRAME indices [first, last] (§5: export APIs are frame-indexed). Wins over `range`. */
+  frameRange?: [number, number];
+  /** a single FRAME index — a still through the same path. Wins over `frameRange`/`range`. */
+  frame?: number;
+  /** force a PNG sequence even when `out` has a video extension. */
+  format?: 'png-seq';
   /** InputTrace file: replay → bake → render (v2 §A.6 route 2). */
   trace?: string;
   /** Render one machine state's timeline linearly (route 3). */
@@ -44,6 +50,22 @@ export class SceneModuleError extends Error {
     );
     this.name = 'SceneModuleError';
   }
+}
+
+/**
+ * Parse the CLI `--range a..b` flag as INCLUSIVE integer FRAME indices (§5:
+ * export APIs are frame-indexed; Player APIs are seconds). Decimal or malformed
+ * ranges are rejected, since a frame index is an integer.
+ */
+export function parseFrameRange(flag: string): [number, number] {
+  const m = /^(\d+)\.\.(\d+)$/.exec(flag.trim());
+  if (!m) {
+    throw new Error(`--range must be integer frames 'a..b' (e.g. 0..120), got '${flag}'`);
+  }
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (b < a) throw new Error(`--range end (${b}) is before start (${a})`);
+  return [a, b];
 }
 
 export async function loadSceneModule(modulePath: string): Promise<SceneModule> {
@@ -83,12 +105,22 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   const { compileTimeline } = await import('@glissade/core');
   const compiled = compileTimeline(doc);
   const duration = compiled.duration;
-  const [from, to] = opts.range ?? [0, duration];
-  const firstFrame = Math.round(from * fps);
-  const lastFrame = Math.max(firstFrame, Math.ceil(to * fps) - 1);
+  let firstFrame: number;
+  let lastFrame: number;
+  if (opts.frame !== undefined) {
+    firstFrame = lastFrame = opts.frame;
+  } else if (opts.frameRange) {
+    [firstFrame, lastFrame] = opts.frameRange;
+    lastFrame = Math.max(firstFrame, lastFrame);
+  } else {
+    const [from, to] = opts.range ?? [0, duration];
+    firstFrame = Math.round(from * fps);
+    lastFrame = Math.max(firstFrame, Math.ceil(to * fps) - 1);
+  }
   const total = lastFrame - firstFrame + 1;
 
-  const isVideo = /\.(mp4|webm)$/i.test(opts.out);
+  // --format png-seq forces a PNG sequence even if `out` looks like a video name
+  const isVideo = opts.format !== 'png-seq' && /\.(mp4|webm)$/i.test(opts.out);
   if (isVideo && !ffmpegAvailable()) {
     throw new Error(
       `'${opts.out}' needs FFmpeg on PATH and none was found. ` +
