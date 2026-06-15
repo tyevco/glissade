@@ -1,14 +1,33 @@
 {
   "name": "@glissade/svg",
-  "version": "0.6.0-pre.0",
+  "version": "0.6.0-pre.1",
   "description": "glissade SVG import: parse an SVG into a deterministic scene module — <path d> and the basic shapes become Path/Rect/Circle nodes with fills, strokes, and transforms.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
-  "publishConfig": { "access": "public" },
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "scripts": { "build": "tsdown", "typecheck": "tsc --noEmit" },
-  "dependencies": { "@glissade/core": "workspace:*", "@glissade/scene": "workspace:*" },
-  "repository": { "type": "git", "url": "git+https://github.com/tyevco/glissade.git", "directory": "packages/svg" }
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/svg"
+  }
 }

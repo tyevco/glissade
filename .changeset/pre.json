@@ -18,13 +18,17 @@
     "@glissade/scene": "0.5.0",
     "@glissade/sfx": "0.5.0",
     "@glissade/studio": "0.0.0",
-    "@glissade/vite-plugin": "0.5.0"
+    "@glissade/vite-plugin": "0.5.0",
+    "@glissade/svg": "0.6.0-pre.0"
   },
   "changesets": [
     "caption-floor-anchor",
     "caption-split-cues",
+    "motion-polish",
     "path-from-segs",
     "plain-shape-drawon",
-    "sketch-hachure"
+    "sketch-hachure",
+    "svg-import",
+    "whiteboard-kit"
   ]
 }

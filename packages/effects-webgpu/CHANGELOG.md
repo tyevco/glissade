@@ -1,5 +1,13 @@
 # @glissade/effects-webgpu
 
+## 0.6.0-pre.1
+
+### Patch Changes
+
+- Updated dependencies [977b3d5]
+  - @glissade/scene@0.6.0-pre.1
+  - @glissade/backend-canvas2d@0.6.0-pre.1
+
 ## 0.6.0-pre.0
 
 ### Patch Changes
