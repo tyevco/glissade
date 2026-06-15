@@ -99,6 +99,16 @@ describe('easing derivative registry (§B.6): analytic ≡ numeric', () => {
     delete easings['customWiggle'];
     setDevWarning(() => {});
   });
+
+  it('the numeric fallback uses the §B.5-pinned step h=1/1024 (cross-engine reproducible)', () => {
+    setDevWarning(() => {});
+    easings['cubePin'] = (u) => u ** 3; // no registered derivative → numeric fallback
+    // central difference of u^3 at 0.5 is exactly 3·0.5² + h² = 0.75 + h²
+    const d = resolveEaseDerivative('cubePin')(0.5);
+    expect(d).toBeCloseTo(0.75 + (1 / 1024) ** 2, 12); // pins h=1/1024
+    expect(d).not.toBeCloseTo(0.75 + 1e-5 ** 2, 12); // not the old h=1e-5
+    delete easings['cubePin'];
+  });
 });
 
 describe('spring.retarget (§B.3): the velocity-matched offset oscillator', () => {

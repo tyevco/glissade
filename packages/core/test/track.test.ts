@@ -22,6 +22,18 @@ describe('track validation', () => {
     expect(() => track('a/x', 'number', [])).toThrow(TrackValidationError);
     expect(() => track('no-slash', 'number', [key(0, 0)])).toThrow(TrackValidationError);
   });
+
+  it('coerces non-hold keys on discrete (string/boolean) tracks to hold (§2.2)', () => {
+    // a non-hold key on a hold-only type would silently degrade to a t=1 snap;
+    // validateTrack canonicalizes it to an explicit hold (behaviorally a no-op)
+    const s = track('a/text', 'string', [key(0, 'a'), key(1, 'b')]);
+    expect(s.keys.every((k) => k.interp === 'hold')).toBe(true);
+    const b = track('a/on', 'boolean', [key(0, false), key(1, true, { interp: 'default' })]);
+    expect(b.keys.every((k) => k.interp === 'hold')).toBe(true);
+    // numeric tracks are untouched
+    const n = track('a/x', 'number', [key(0, 0), key(1, 1)]);
+    expect(n.keys.some((k) => k.interp === 'hold')).toBe(false);
+  });
 });
 
 describe('sampling (§2.4)', () => {

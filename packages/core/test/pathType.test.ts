@@ -85,6 +85,17 @@ describe("the 'path' value type (§2.2, Lottie S0)", () => {
     expect(mid[0]!.v[1]![0]).toBeLessThanOrEqual(30);
   });
 
+  it('warns once per track when a non-extrapolating (path) type clamps an overshooting ease (§2.7)', () => {
+    const tr = track<PathValue>('n/back', 'path', [
+      key(0, square(10)),
+      key(1, square(30), 'easeOutBack'), // overshoots above 1 mid-segment
+    ]) as Track<PathValue>;
+    for (let t = 0.1; t < 1; t += 0.1) sampleTrack(tr, t); // some samples exceed [0,1]
+    const clampWarns = warnings.filter((w) => w.includes('clamped an out-of-range'));
+    expect(clampWarns).toHaveLength(1); // once per track, not per sample
+    expect(clampWarns[0]).toContain('n/back');
+  });
+
   it('inferValueType sniffs PathValue so the builder authoring surface works', () => {
     expect(inferValueType(square(10))).toBe('path');
     expect(inferValueType([1, 2])).toBe('vec2'); // no clash with the vec2 sniff

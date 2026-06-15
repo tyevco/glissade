@@ -46,9 +46,18 @@ export class TrackValidationError extends Error {
 }
 
 export function validateTrack(track: Track): void {
-  getValueType(track.type); // throws on unknown type
+  const vt = getValueType(track.type); // throws on unknown type
   if (track.keys.length === 0) {
     throw new TrackValidationError(track.target, 'must have at least one key');
+  }
+  // Discrete (hold-only) types can't interpolate; a non-hold key would silently
+  // degrade to a t=1 snap. Canonicalize to an explicit hold — behaviorally a
+  // no-op for these types (lerp already returns prev until t≥1), but it makes
+  // the document honest and a curve editor can't offer a meaningless ease. (§2.2)
+  if (vt.defaultHandoff === 'cut') {
+    for (const k of track.keys) {
+      if (k.interp !== 'hold') k.interp = 'hold';
+    }
   }
   for (let i = 1; i < track.keys.length; i++) {
     const prev = track.keys[i - 1]!;
@@ -161,7 +170,7 @@ export function resolveEaseDerivative(spec: EaseSpec | undefined): EasingFn {
           'register one in easingDerivatives for exact interruption handoff',
       );
     }
-    const h = 1e-5;
+    const h = 1 / 1024; // §B.5 pins the symmetric-difference step for cross-engine replay reproducibility
     return (u) => (fn(Math.min(1, u + h)) - fn(Math.max(0, u - h))) / (Math.min(1, u + h) - Math.max(0, u - h));
   }
   if (spec.kind === 'cubicBezier') return cubicBezierDerivative(...spec.pts);
@@ -172,6 +181,8 @@ interface SamplerState {
   /** Index of the segment's arrival key last used; hint only. */
   cursor: number;
   easeCache: (EasingFn | undefined)[];
+  /** True once we've warned that a non-extrapolating type clamped an out-of-range eased value. */
+  warnedClamp?: boolean;
 }
 
 const samplerStates = new WeakMap<Track, SamplerState>();
@@ -262,6 +273,16 @@ export function sampleTrack<T>(tr: Track<T>, t: number): T {
   const vt = getValueType<T>(tr.type);
   const p = (t - prev.t) / (arrival.t - prev.t);
   let easedT = easeFor(tr as Track, s, i)(p);
-  if (!vt.extrapolates) easedT = Math.min(1, Math.max(0, easedT));
+  if (!vt.extrapolates && (easedT < 0 || easedT > 1)) {
+    // overshoot on a path/discrete type can't extrapolate — clamp, but say so once
+    if (!s.warnedClamp) {
+      s.warnedClamp = true;
+      emitDevWarning(
+        `track '${tr.target}' (type '${tr.type}') clamped an out-of-range eased value — ` +
+          `non-extrapolating types can't overshoot, so a spring/overshooting ease on this track is flattened`,
+      );
+    }
+    easedT = Math.min(1, Math.max(0, easedT));
+  }
   return vt.lerp(prev.value, arrival.value, easedT);
 }
