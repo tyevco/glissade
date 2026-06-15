@@ -112,5 +112,31 @@ export const rules = {
   'no-async-in-evaluate': noAsyncInEvaluate,
 };
 
-const plugin = { meta: { name: '@glissade/eslint-plugin' }, rules };
+const allRules = {
+  'gas/no-wall-clock': 'error',
+  'gas/no-unseeded-random': 'error',
+  'gas/no-async-in-evaluate': 'error',
+} as const;
+
+interface Plugin {
+  meta: { name: string };
+  rules: typeof rules;
+  configs: Record<string, unknown>;
+}
+
+const plugin: Plugin = { meta: { name: '@glissade/eslint-plugin' }, rules, configs: {} };
+
+// Flat-config preset: apply all three rules, but never to test files (async
+// golden tests legitimately await — the rules can't tell test code from
+// evaluate code). Spread into your eslint.config.js and scope with `files` as
+// needed: `export default [...glissade.configs.recommended]`.
+plugin.configs['recommended'] = [
+  {
+    name: 'glissade/recommended',
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/test/**', '**/tests/**'],
+    plugins: { gas: plugin },
+    rules: allRules,
+  },
+];
+
 export default plugin;

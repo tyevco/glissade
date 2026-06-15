@@ -1,6 +1,19 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { RuleTester } from 'eslint';
 import plugin from '../src/index.js';
+
+describe('configs.recommended', () => {
+  it('is a flat config that applies all three rules and ignores test files', () => {
+    const cfg = (plugin.configs['recommended'] as Array<Record<string, unknown>>)[0]!;
+    expect(cfg['rules']).toMatchObject({
+      'gas/no-wall-clock': 'error',
+      'gas/no-unseeded-random': 'error',
+      'gas/no-async-in-evaluate': 'error',
+    });
+    expect(cfg['ignores']).toContain('**/*.test.ts');
+    expect((cfg['plugins'] as { gas: unknown }).gas).toBe(plugin); // self-referential, ready to spread
+  });
+});
 
 // wire RuleTester's lifecycle to vitest (no eslint globals in this runner)
 RuleTester.describe = describe as unknown as typeof RuleTester.describe;

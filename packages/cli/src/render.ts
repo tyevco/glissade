@@ -121,6 +121,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   // --format png-seq forces a PNG sequence even if `out` looks like a video name
   const isVideo = opts.format !== 'png-seq' && /\.(mp4|webm)$/i.test(opts.out);
+  // a single frame to a *.png path writes THAT one file, not a directory of frames
+  const singleFile = !isVideo && total === 1 && /\.png$/i.test(opts.out);
   if (isVideo && !ffmpegAvailable()) {
     throw new Error(
       `'${opts.out}' needs FFmpeg on PATH and none was found. ` +
@@ -128,7 +130,11 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     );
   }
 
-  const framesDir = isVideo ? mkdtempSync(join(tmpdir(), 'glissade-frames-')) : resolve(opts.out);
+  const framesDir = isVideo
+    ? mkdtempSync(join(tmpdir(), 'glissade-frames-'))
+    : singleFile
+      ? dirname(resolve(opts.out))
+      : resolve(opts.out);
   mkdirSync(framesDir, { recursive: true });
 
   const backend = new SkiaBackend(scene.size.w, scene.size.h);
@@ -169,8 +175,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   for (let f = firstFrame; f <= lastFrame; f++) {
     // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
     backend.render(withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps)));
-    const name = `frame-${String(f).padStart(5, '0')}.png`;
-    writeFileSync(join(framesDir, name), backend.encodePng());
+    const file = singleFile ? resolve(opts.out) : join(framesDir, `frame-${String(f).padStart(5, '0')}.png`);
+    writeFileSync(file, backend.encodePng());
     opts.onProgress?.(f - firstFrame + 1, total);
   }
   backend.dispose();
@@ -192,6 +198,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   };
 
   if (!isVideo) {
+    if (singleFile) return { frames: 1, out: resolve(opts.out) }; // one still, no sequence/sidecars
     if (compiled.audio.length > 0) {
       process.stderr.write('note: PNG-sequence output ignores timeline audio; render to .mp4/.webm to mix it\n');
     }

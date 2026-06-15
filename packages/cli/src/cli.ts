@@ -55,7 +55,7 @@ render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
   --fps <n>        frames per second (default: timeline fps, else 60)
   --range <a..b>   integer FRAME indices to render, inclusive (default: whole timeline)
-  --frame <n>      render a single frame index (a still, through the same path)
+  --frame <n>      render a single frame; --out foo.png writes that one file, --out <dir> writes a PNG into it
   --format png-seq force a PNG sequence even when --out looks like a video
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly

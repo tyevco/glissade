@@ -5,7 +5,7 @@
  * back-compat of the seconds-based programmatic `range`.
  */
 
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,5 +60,13 @@ describe('render frame-indexing', () => {
     const result = await render({ modulePath: MODULE, out, frame: 0, format: 'png-seq' });
     expect(result.frames).toBe(1);
     expect(pngCount(out)).toBe(1);
+  });
+
+  it('a single frame to a *.png path writes ONE file, not a directory', async () => {
+    const out = join(outDir, 'still.png');
+    const result = await render({ modulePath: MODULE, out, frame: 7 });
+    expect(result.out).toBe(out);
+    expect(existsSync(out)).toBe(true);
+    expect(statSync(out).isFile()).toBe(true); // a file at the path, not out/frame-00007.png
   });
 });
