@@ -22,6 +22,8 @@ jobs:
       - run: pnpm test
       - run: node scripts/check-deps.mjs
       - run: node scripts/check-size.mjs
+      - run: node scripts/check-types.mjs # attw: published type resolution (esm-only profile)
+      - run: node scripts/api-report.mjs # api-extractor: committed *.api.md surface is current
 
   browser-suites:
     runs-on: ubuntu-latest
