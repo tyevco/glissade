@@ -1,5 +1,19 @@
 # @glissade/backend-skia
 
+## 0.8.0
+
+### Patch Changes
+
+- 7290397: Declare a `RenderBackend` interface (§3.4) in `@glissade/scene` — the renderer extension seam both v1 backends now `implement`. It `extends TextMeasurer` and adds a queryable `caps: { filters, shaders, maxTextureSize }`, `render`, `readPixels(): Promise<Uint8ClampedArray>` (reconciling Skia's previously-sync readPixels to the Promise contract so callers await uniformly), an optional `toVideoFrame`, and the asset setters. `SkiaBackend.caps.shaders` is `false` (headless CPU); `Canvas2DBackend.caps.shaders` reflects whether an effects-webgpu runner is registered. `ShaderRef` gains an optional reserved `textures` map for future multi-input passes.
+- Updated dependencies [1d56c0a]
+- Updated dependencies [dac15c9]
+- Updated dependencies [7290397]
+- Updated dependencies [bc75e7c]
+- Updated dependencies [8820f3f]
+- Updated dependencies [bc15866]
+  - @glissade/core@0.8.0
+  - @glissade/scene@0.8.0
+
 ## 0.8.0-pre.1
 
 ### Patch Changes

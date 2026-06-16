@@ -1,5 +1,23 @@
 # @glissade/export-web
 
+## 0.8.0
+
+### Minor Changes
+
+- 09c7df7: Add `probeExportSupport()` (§5.2): returns the resolved encodability matrix (`{ format, video, audio, supported }` per container) so a UI can grey out unsupported options instead of failing mid-render. And `exportVideo` no longer rejects the whole format when audio can't encode — it falls back to **video-only** (with a dev warning), matching Safari 16.4–18.x being video-only. Codec selection is now an exported, probe-injectable `pickCodecs` so the fallback logic is testable without WebCodecs.
+
+### Patch Changes
+
+- Updated dependencies [1d56c0a]
+- Updated dependencies [dac15c9]
+- Updated dependencies [7290397]
+- Updated dependencies [bc75e7c]
+- Updated dependencies [8820f3f]
+- Updated dependencies [bc15866]
+  - @glissade/core@0.8.0
+  - @glissade/scene@0.8.0
+  - @glissade/backend-canvas2d@0.8.0
+
 ## 0.8.0-pre.1
 
 ### Patch Changes

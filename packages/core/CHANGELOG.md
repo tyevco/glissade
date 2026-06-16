@@ -1,5 +1,25 @@
 # @glissade/core
 
+## 0.8.0
+
+### Minor Changes
+
+- 1d56c0a: Composer cue signaling (the ad-break feature). Author cues on the builder: `tl.cue(at, name, data?)` and `tl.adBreak(at, { id, duration })` emit serialized `Marker`s (an ad-break carries `data.kind: 'ad-break'`). At runtime `player.onCue(kind, cb)` fires for any cue of that kind on forward crossing (sugar over `onMarker`). At render, `gs render` writes a deterministic `<stem>.cues.json` (`{ t, kind, name, duration }`) next to the output whenever cue markers exist, plus `--chapters vtt` for a WebVTT chapters file — so a downstream NLE / ad-insertion pipeline has machine-readable break points. Rides the existing pure marker substrate; no new evaluation surface.
+- 8820f3f: Reshape the editor sidecar to `sidecarVersion: 2` (§6.2) — the foundation for safe code↔editor round-tripping. Edits are now namespaced by timeline id (`'main'` for the linear timeline; v2 machines add more), tracks are keyed by canonical target and carry the code `baseHash` they branched from, keys get stable `k<N>` ids, and tracks whose target drifted are parked as `orphans` (with a reason) instead of failing to bind the whole overlay. New core API: `migrateSidecar` (lifts v1 documents forward on load), `setSidecarTrack` (the studio write path, assigns key ids + baseHash), `mergeSidecarDetailed` (returns the bindable timeline + drift list + orphans), `hashKeys`, `assignKeyIds`. `mergeSidecar` keeps returning a bindable `Timeline` and now accepts v1 or v2 input. The studio and vite-plugin read/write v2 (v1 files migrate automatically). The drift-badge / orphan-relink studio UI is a follow-up.
+- bc15866: Registry & schema completeness (§2.2/§4.7/§B.6):
+  - `ValueType` gains optional `serialize`/`deserialize` (default identity for JSON-native types), so a custom value type can round-trip through the Timeline document.
+  - New registered `vec2-arc` value type: interpolates a vec2 along a circular arc (polar lerp of radius + shortest-path angle) instead of a straight chord.
+  - Reserved schema slots accepted (but inert) in v1 so v2 needs no migration: `Key.from: 'live'` (the §4.7 synthesized-transition sentinel) and `Track.additive` (the §B.6 blending flag — v1 stays last-wins).
+
+### Patch Changes
+
+- dac15c9: Cue→chapters polish (downstream validation follow-ups on the 0.8 ad-break feature):
+
+  - **Plain `cue()` now serializes.** `cue(at, name, data?)` stamps `data.kind: 'cue'` by default (a caller-supplied `kind` still wins), so a cue authored without an explicit kind now lands in `cues.json` and fires `player.onCue('cue', …)` instead of being silently dropped. The `data.kind` gate that excludes `.call()`/label markers stays intact.
+  - **`--chapters vtt` shows the human title, not the kind.** The WebVTT cue text is now `data.title ?? name` (was the machine `kind`), and a `00:00` "Intro" chapter is auto-anchored when the earliest cue starts later — making the output a drop-in for a YouTube description chapter block (YouTube reads the cue text as the title and requires a 0:00 start). `cues.json` is unchanged (keeps `kind` for machines) and stays byte-deterministic.
+
+- bc75e7c: `mergeSidecar` now re-resolves `derived:true` leading keys against the merged track (§2.6): a derived from-key duplicates the preceding key's held value, so an upstream edit (a sidecar that bumped the prior key) flows into it instead of leaving a stale value that pops at the segment start. Build-time derived keys are already correct; this only touches the ones an edit moved beneath.
+
 ## 0.8.0-pre.1
 
 ### Patch Changes

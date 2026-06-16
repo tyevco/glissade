@@ -1,5 +1,37 @@
 # @glissade/cli
 
+## 0.8.0
+
+### Minor Changes
+
+- 1d56c0a: Composer cue signaling (the ad-break feature). Author cues on the builder: `tl.cue(at, name, data?)` and `tl.adBreak(at, { id, duration })` emit serialized `Marker`s (an ad-break carries `data.kind: 'ad-break'`). At runtime `player.onCue(kind, cb)` fires for any cue of that kind on forward crossing (sugar over `onMarker`). At render, `gs render` writes a deterministic `<stem>.cues.json` (`{ t, kind, name, duration }`) next to the output whenever cue markers exist, plus `--chapters vtt` for a WebVTT chapters file — so a downstream NLE / ad-insertion pipeline has machine-readable break points. Rides the existing pure marker substrate; no new evaluation surface.
+
+### Patch Changes
+
+- dac15c9: Cue→chapters polish (downstream validation follow-ups on the 0.8 ad-break feature):
+
+  - **Plain `cue()` now serializes.** `cue(at, name, data?)` stamps `data.kind: 'cue'` by default (a caller-supplied `kind` still wins), so a cue authored without an explicit kind now lands in `cues.json` and fires `player.onCue('cue', …)` instead of being silently dropped. The `data.kind` gate that excludes `.call()`/label markers stays intact.
+  - **`--chapters vtt` shows the human title, not the kind.** The WebVTT cue text is now `data.title ?? name` (was the machine `kind`), and a `00:00` "Intro" chapter is auto-anchored when the earliest cue starts later — making the output a drop-in for a YouTube description chapter block (YouTube reads the cue text as the title and requires a 0:00 start). `cues.json` is unchanged (keeps `kind` for machines) and stays byte-deterministic.
+
+- Updated dependencies [1d56c0a]
+- Updated dependencies [dac15c9]
+- Updated dependencies [dac15c9]
+- Updated dependencies [012d9c0]
+- Updated dependencies [1c9a303]
+- Updated dependencies [7290397]
+- Updated dependencies [bc75e7c]
+- Updated dependencies [8820f3f]
+- Updated dependencies [bc15866]
+  - @glissade/core@0.8.0
+  - @glissade/player@0.8.0
+  - @glissade/scene@0.8.0
+  - @glissade/backend-skia@0.8.0
+  - @glissade/interact@0.8.0
+  - @glissade/lottie@0.8.0
+  - @glissade/narrate@0.8.0
+  - @glissade/sfx@0.8.0
+  - @glissade/svg@0.8.0
+
 ## 0.8.0-pre.1
 
 ### Patch Changes
