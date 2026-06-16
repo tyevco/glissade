@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPlayhead, type Marker } from '@glissade/core';
-import { createPlayer, type Driver } from '../src/index.js';
+import { createPlayhead, timeline, type Marker } from '@glissade/core';
+import { createPlayer, swapOnHmr, type Driver, type Mounted } from '../src/index.js';
 
 /** Manual clock: tests advance elapsed seconds explicitly. */
 function manualDriver() {
@@ -193,5 +193,67 @@ describe('markers (§4.2: continuous crossing only)', () => {
     player.seek(0);
     void tick;
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe('swap (§4.3: HMR rebind preserves the playhead)', () => {
+  it('rebinds duration + markers and keeps the current playhead', () => {
+    const { player, playhead, tick } = makePlayer({}, [{ t: 1, name: 'old' }]);
+    player.play();
+    tick(0);
+    tick(1.2);
+    player.swap({ duration: 5, markers: [{ t: 3, name: 'new' }] });
+    expect(player.duration).toBe(5);
+    expect(playhead.peek()).toBeCloseTo(1.2, 9); // no replay-to-frame
+  });
+
+  it('clamps the playhead into a shorter new duration', () => {
+    const { player, playhead } = makePlayer();
+    player.seek(2.4);
+    player.swap({ duration: 1 });
+    expect(player.duration).toBe(1);
+    expect(playhead.peek()).toBe(1);
+  });
+
+  it('fires markers from the swapped timeline and keeps playing continuously', () => {
+    const { player, playhead, tick } = makePlayer({}, [{ t: 1, name: 'old' }]);
+    const cb = vi.fn();
+    player.onMarker('new', cb);
+    player.play();
+    tick(0);
+    tick(0.5);
+    player.swap({ duration: 5, markers: [{ t: 2, name: 'new' }] });
+    expect(player.playing).toBe(true);
+    tick(2.5); // continuous from 0.5 → crosses t=2 in the new timeline
+    expect(playhead.peek()).toBeCloseTo(2.5, 9);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('swapOnHmr (§4.3 vite glue)', () => {
+  it('swaps the mount and warns when an edit drops a label', () => {
+    const before = timeline((tl) => {
+      tl.label('intro').to('a/x', 1, { duration: 1 });
+    });
+    const swaps: Array<{ timeline: unknown }> = [];
+    const mounted = { swap: (n: { timeline: unknown }) => swaps.push(n) } as unknown as Mounted;
+    const accept = swapOnHmr(mounted, before, (mod) => ({ timeline: mod.timeline as never }));
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const after = timeline((tl) => {
+      tl.to('a/x', 1, { duration: 1 }); // 'intro' label gone
+    });
+    accept({ timeline: after });
+    expect(swaps).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'intro'"));
+    warn.mockRestore();
+  });
+
+  it('a null module (broken edit) is a no-op', () => {
+    const t = timeline((tl) => tl.to('a/x', 1, { duration: 1 }));
+    const swaps: unknown[] = [];
+    const mounted = { swap: () => swaps.push(1) } as unknown as Mounted;
+    swapOnHmr(mounted, t, (m) => ({ timeline: m.timeline as never }))(undefined);
+    expect(swaps).toHaveLength(0);
   });
 });

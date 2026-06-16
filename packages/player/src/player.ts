@@ -61,6 +61,13 @@ export interface Player {
   pause(): void;
   /** Direct playhead write: pure, never fires marker callbacks (§4.2). */
   seek(t: number): void;
+  /**
+   * Rebind to a recompiled timeline (HMR, §4.3): swap duration/markers/targets
+   * in place and **preserve the current playhead** (clamped to the new
+   * duration) — no replay-to-frame. Playing state and registered marker/cue
+   * callbacks survive; range resets to the new full span.
+   */
+  swap(next: { duration: number; markers?: Marker[]; targets?: Iterable<string> }): void;
   /** Register a marker callback; fired only when continuous playback crosses it. */
   onMarker(name: string, cb: (marker: Marker) => void): () => void;
   /** Like onMarker but matches a cue's `data.kind` (e.g. 'ad-break') across all names. */
@@ -75,8 +82,9 @@ export interface Player {
 }
 
 export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player {
-  const { playhead, duration } = init;
-  const markers = init.markers ?? [];
+  const { playhead } = init;
+  let liveDuration = init.duration;
+  let markers = init.markers ?? [];
   const driver = init.driver ?? clockDriver();
   const loop: LoopMode = opts.loop ?? false;
   const callbacks = new Map<string, Set<(m: Marker) => void>>();
@@ -85,14 +93,14 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   let rate = opts.rate ?? 1;
   let playing = false;
   let driverRunning = false;
-  const ownTargets = new Set(init.targets ?? []);
+  let ownTargets = new Set(init.targets ?? []);
   const machines: AttachedMachine[] = [];
 
   // playback math: t = base + (elapsed - elapsedOrigin) * rate
   let base = 0;
   let elapsedOrigin: number | null = null;
   let lastElapsed = 0;
-  let range: [number, number] = [0, duration];
+  let range: [number, number] = [0, liveDuration];
   let loopsDone = 0;
   let resolveFinished: ((completed: boolean) => void) | null = null;
 
@@ -164,14 +172,16 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     if (driverRunning) return;
     driverRunning = true;
     driver.start(onElapsed, {
-      duration,
+      duration: liveDuration,
       visibility: init.visibility ?? (() => 'visible'),
     });
   }
 
   return {
     playhead,
-    duration,
+    get duration() {
+      return liveDuration;
+    },
     get playing() {
       return playing;
     },
@@ -186,7 +196,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     },
     play(playOpts) {
       if (resolveFinished) settle(false); // a new play() interrupts the pending one
-      range = playOpts?.range ?? [0, duration];
+      range = playOpts?.range ?? [0, liveDuration];
       const t = playhead.peek();
       const [lo, hi] = range;
       base = rate >= 0 ? (t >= hi || t < lo ? lo : t) : t <= lo || t > hi ? hi : t;
@@ -206,9 +216,22 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
       settle(false);
     },
     seek(t) {
-      base = Math.min(Math.max(t, 0), duration);
+      base = Math.min(Math.max(t, 0), liveDuration);
       elapsedOrigin = playing ? lastElapsed : null;
       playhead.set(base);
+    },
+    swap(next) {
+      liveDuration = next.duration;
+      markers = next.markers ?? [];
+      ownTargets = new Set(next.targets ?? []);
+      // preserve the playhead (no replay): clamp into the new span, rebase so
+      // in-flight playback stays continuous across the swap
+      const t = Math.min(playhead.peek(), liveDuration);
+      range = [0, liveDuration];
+      base = t;
+      elapsedOrigin = playing ? lastElapsed : null;
+      loopsDone = 0;
+      playhead.set(t);
     },
     attach(machine) {
       if (machine.targets) {

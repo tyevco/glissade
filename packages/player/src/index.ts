@@ -19,3 +19,4 @@ export {
   type LoopMode,
 } from './player.js';
 export { mount, type Mounted } from './mount.js';
+export { swapOnHmr, type SceneModuleShape } from './hmr.js';

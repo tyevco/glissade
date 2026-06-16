@@ -48,7 +48,7 @@ export type LoopMode = boolean | {
 };
 
 // @public (undocumented)
-export function mount(scene: Scene, doc: Timeline, canvas: HTMLCanvasElement | OffscreenCanvas, opts?: PlayerOptions): Mounted;
+export function mount(initialScene: Scene, initialDoc: Timeline, canvas: HTMLCanvasElement | OffscreenCanvas, opts?: PlayerOptions): Mounted;
 
 // @public (undocumented)
 export interface Mounted {
@@ -59,6 +59,10 @@ export interface Mounted {
     // (undocumented)
     player: Player;
     render(): void;
+    swap(next: {
+        scene?: Scene;
+        timeline: Timeline;
+    }): void;
 }
 
 // @public (undocumented)
@@ -83,6 +87,11 @@ export interface Player {
     // (undocumented)
     rate: number;
     seek(t: number): void;
+    swap(next: {
+        duration: number;
+        markers?: Marker[];
+        targets?: Iterable<string>;
+    }): void;
 }
 
 // @public (undocumented)
@@ -114,6 +123,14 @@ export interface PlayHandle {
     finished: Promise<boolean>;
 }
 
+// @public (undocumented)
+export interface SceneModuleShape {
+    // (undocumented)
+    scene?: Scene;
+    // (undocumented)
+    timeline: Timeline;
+}
+
 // @public
 export function scrollDriver(opts: ScrollDriverOptions): Driver;
 
@@ -125,6 +142,9 @@ export interface ScrollDriverOptions {
     // (undocumented)
     source: Element | (Window & typeof globalThis);
 }
+
+// @public
+export function swapOnHmr(mounted: Mounted, initialTimeline: Timeline, rerun: (mod: Record<string, unknown>) => SceneModuleShape): (mod: Record<string, unknown> | undefined) => void;
 
 // @public
 export class TargetOverlapError extends Error {

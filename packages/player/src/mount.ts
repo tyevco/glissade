@@ -14,21 +14,35 @@ export interface Mounted {
   backend: Canvas2DBackend;
   /** Force a synchronous render of the current playhead time. */
   render(): void;
+  /**
+   * Hot-swap the bound scene and/or timeline (HMR, §4.3) while preserving the
+   * playhead: recompiles, rebinds the player (duration/markers/targets), and
+   * re-renders at the current time. A scene node a track targeted but the new
+   * scene no longer has simply stops being written (stale binding) — it keeps
+   * its last value rather than erroring.
+   */
+  swap(next: { scene?: Scene; timeline: Timeline }): void;
   dispose(): void;
 }
 
 export function mount(
-  scene: Scene,
-  doc: Timeline,
+  initialScene: Scene,
+  initialDoc: Timeline,
   canvas: HTMLCanvasElement | OffscreenCanvas,
   opts: PlayerOptions = {},
 ): Mounted {
+  // scene/doc are mutable so swap() can rebind them; the playhead captured here
+  // is the single source of truth across swaps (we always evaluate at its time,
+  // never a swapped scene's own playhead)
+  let scene = initialScene;
+  let doc = initialDoc;
   const compiled = compileTimeline(doc);
   const backend = new Canvas2DBackend(canvas);
   scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
+  const playhead = scene.playhead;
   const player = createPlayer(
     {
-      playhead: scene.playhead,
+      playhead,
       duration: compiled.duration,
       markers: compiled.markers,
       targets: compiled.tracks.keys(), // v2 §A.1: attach() validates machine disjointness against these
@@ -36,7 +50,7 @@ export function mount(
     opts,
   );
 
-  const renderNow = () => backend.render(evaluate(scene, doc, scene.playhead.peek()));
+  const renderNow = () => backend.render(evaluate(scene, doc, playhead.peek()));
 
   let scheduled = false;
   const schedule = () => {
@@ -47,19 +61,22 @@ export function mount(
       renderNow();
     });
   };
-  const unsubscribe = scene.playhead.subscribe(schedule);
+  const unsubscribe = playhead.subscribe(schedule);
 
-  // explicit fonts (§3.6): register declared font assets; realtime embeds
-  // paint immediately and re-render when each face arrives (the export
-  // paths await instead — frame-exactness lives there)
-  if (typeof FontFace !== 'undefined') {
-    for (const [family, ref] of Object.entries(doc.assets ?? {})) {
+  // explicit fonts (§3.6): register a timeline's declared font faces once.
+  const loadFonts = (forDoc: Timeline) => {
+    if (typeof FontFace === 'undefined') return;
+    for (const [family, ref] of Object.entries(forDoc.assets ?? {})) {
       if (ref.kind !== 'font') continue;
       const face = new FontFace(family, `url(${ref.url})`);
       (document.fonts as unknown as { add(f: FontFace): void }).add(face);
       void face.load().then(() => renderNow(), () => undefined);
     }
-  }
+  };
+
+  // realtime embeds paint immediately and re-render when each face arrives (the
+  // export paths await instead — frame-exactness lives there)
+  loadFonts(doc);
 
   renderNow(); // first paint at the current playhead
   if (opts.autoplay) player.play();
@@ -68,6 +85,21 @@ export function mount(
     player,
     backend,
     render: renderNow,
+    swap(next) {
+      if (next.scene) {
+        scene = next.scene;
+        scene.setTextMeasurer(backend);
+      }
+      doc = next.timeline;
+      const recompiled = compileTimeline(doc);
+      player.swap({
+        duration: recompiled.duration,
+        markers: recompiled.markers,
+        targets: recompiled.tracks.keys(),
+      });
+      loadFonts(doc); // pick up any newly declared faces
+      renderNow(); // repaint at the preserved playhead
+    },
     dispose() {
       unsubscribe();
       player.dispose();
