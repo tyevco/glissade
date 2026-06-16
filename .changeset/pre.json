@@ -25,6 +25,9 @@
   "changesets": [
     "ad-break-cues",
     "api-surface-tooling",
+    "background-default-heads-up",
+    "cue-chapters-polish",
+    "eslint-plugin-readme",
     "player-swap-hmr",
     "probe-export-support",
     "reduced-motion-background",

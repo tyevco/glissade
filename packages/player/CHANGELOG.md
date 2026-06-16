@@ -1,5 +1,15 @@
 # @glissade/player
 
+## 0.8.0-pre.1
+
+### Patch Changes
+
+- dac15c9: Heads-up (behavior change in 0.8): `PlayerOptions.background` defaults to `'pause'` — a hidden tab now freezes and resumes where it left off rather than advancing by the hidden wall-clock duration. Embedders running ambient/looping players who relied on the old advance-through-hidden behavior should pass `background: 'run'` explicitly.
+- Updated dependencies [dac15c9]
+  - @glissade/core@0.8.0-pre.1
+  - @glissade/backend-canvas2d@0.8.0-pre.1
+  - @glissade/scene@0.8.0-pre.1
+
 ## 0.8.0-pre.0
 
 ### Minor Changes
