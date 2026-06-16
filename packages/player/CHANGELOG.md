@@ -1,5 +1,27 @@
 # @glissade/player
 
+## 0.8.0-pre.0
+
+### Minor Changes
+
+- 1d56c0a: Composer cue signaling (the ad-break feature). Author cues on the builder: `tl.cue(at, name, data?)` and `tl.adBreak(at, { id, duration })` emit serialized `Marker`s (an ad-break carries `data.kind: 'ad-break'`). At runtime `player.onCue(kind, cb)` fires for any cue of that kind on forward crossing (sugar over `onMarker`). At render, `gs render` writes a deterministic `<stem>.cues.json` (`{ t, kind, name, duration }`) next to the output whenever cue markers exist, plus `--chapters vtt` for a WebVTT chapters file — so a downstream NLE / ad-insertion pipeline has machine-readable break points. Rides the existing pure marker substrate; no new evaluation surface.
+- 012d9c0: Hot-swap a live embed (vite HMR, §4.3). `Player.swap({ duration, markers, targets })` rebinds to a recompiled timeline **preserving the current playhead** (clamped to the new duration — no replay-to-frame); playing state and registered marker/cue callbacks survive. `Mounted.swap({ scene?, timeline })` recompiles, rebinds the player, and repaints at the held time — a track whose target the new scene dropped simply stops being written (it keeps its last value rather than erroring). `swapOnHmr(mounted, initialTimeline, rerun)` returns the `import.meta.hot.accept` callback that wires a scene-module edit to a swap and warns when an edit removes a label.
+- 1c9a303: Accessibility + background playback (§4.2 / §4.1), realizing two PlayerOptions the spec described but the runtime ignored.
+
+  - `reducedMotion: 'respect' | 'ignore' | (doc) => Timeline` (default `'respect'`). Under `prefers-reduced-motion: reduce`, `'respect'` suppresses autoplay and holds the poster frame (`timeline.posterTime`, default = end state); the function form swaps in a calmer alternative timeline (rides the new `Player.swap`). `mount()` detects the media query (override with `prefersReducedMotion`). The decision logic is the pure, exported `planReducedMotion`.
+  - `background: 'pause' | 'run'` (default `'pause'`). While the tab is hidden, `'pause'` freezes and resumes where it left off — no wall-clock jump on return; `'run'` advances by the hidden duration (correct for ambient loops). Wires the previously-inert driver `visibility` hook.
+
+### Patch Changes
+
+- Updated dependencies [1d56c0a]
+- Updated dependencies [7290397]
+- Updated dependencies [bc75e7c]
+- Updated dependencies [8820f3f]
+- Updated dependencies [bc15866]
+  - @glissade/core@0.8.0-pre.0
+  - @glissade/scene@0.8.0-pre.0
+  - @glissade/backend-canvas2d@0.8.0-pre.0
+
 ## 0.7.0
 
 ### Patch Changes

@@ -1,0 +1,36 @@
+{
+  "mode": "pre",
+  "tag": "pre",
+  "initialVersions": {
+    "@glissade/backend-canvas2d": "0.7.0",
+    "@glissade/backend-skia": "0.7.0",
+    "@glissade/cli": "0.7.0",
+    "@glissade/core": "0.7.0",
+    "@glissade/effects-webgpu": "0.7.0",
+    "@glissade/element": "0.7.0",
+    "@glissade/eslint-plugin": "0.7.0",
+    "@glissade/examples": "0.0.0",
+    "@glissade/export-web": "0.7.0",
+    "@glissade/interact": "0.7.0",
+    "@glissade/lottie": "0.7.0",
+    "@glissade/narrate": "0.7.0",
+    "@glissade/player": "0.7.0",
+    "@glissade/react": "0.7.0",
+    "@glissade/scene": "0.7.0",
+    "@glissade/sfx": "0.7.0",
+    "@glissade/studio": "0.0.0",
+    "@glissade/svg": "0.7.0",
+    "@glissade/vite-plugin": "0.7.0"
+  },
+  "changesets": [
+    "ad-break-cues",
+    "api-surface-tooling",
+    "player-swap-hmr",
+    "probe-export-support",
+    "reduced-motion-background",
+    "render-backend-interface",
+    "sidecar-derived-reresolve",
+    "sidecar-v2",
+    "valuetype-and-reserves"
+  ]
+}

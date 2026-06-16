@@ -1,6 +1,5 @@
 ---
 '@glissade/core': minor
-'@glissade/studio': patch
 '@glissade/vite-plugin': patch
 ---
 
