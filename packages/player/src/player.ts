@@ -7,6 +7,7 @@
 
 import { type Marker, type Playhead } from '@glissade/core';
 import { clockDriver, type Driver } from './driver.js';
+import type { ReducedMotionMode } from './reducedMotion.js';
 
 export type LoopMode = boolean | { mode: 'restart' | 'alternate'; count?: number };
 
@@ -14,6 +15,20 @@ export interface PlayerOptions {
   loop?: LoopMode;
   rate?: number;
   autoplay?: boolean;
+  /**
+   * What playback does while the tab is hidden (§4.1, via the driver's
+   * `visibility`). `'pause'` (default) freezes and resumes where it left off —
+   * no wall-clock jump on return; `'run'` advances by the hidden duration.
+   */
+  background?: 'pause' | 'run';
+  /**
+   * prefers-reduced-motion policy (applied by mount(), §4.2). `'respect'`
+   * (default) holds the poster frame and suppresses autoplay; `'ignore'` opts
+   * out; a function returns a calmer alternative timeline.
+   */
+  reducedMotion?: ReducedMotionMode;
+  /** Override reduced-motion detection (defaults to the media query). */
+  prefersReducedMotion?: () => boolean;
 }
 
 export interface PlayHandle {
@@ -87,6 +102,8 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   let markers = init.markers ?? [];
   const driver = init.driver ?? clockDriver();
   const loop: LoopMode = opts.loop ?? false;
+  const background = opts.background ?? 'pause';
+  const visibility = init.visibility ?? (() => 'visible' as const);
   const callbacks = new Map<string, Set<(m: Marker) => void>>();
   const cueCallbacks = new Map<string, Set<(m: Marker) => void>>();
 
@@ -130,6 +147,13 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     // a paused ambient timeline must not kill button hover (§A.5)
     for (const m of machines) m.step(elapsed);
     if (!playing) return;
+    if (background === 'pause' && visibility() === 'hidden') {
+      // freeze while backgrounded: re-origin so the first visible tick resumes
+      // from here instead of jumping ahead by the hidden wall-clock duration
+      base = playhead.peek();
+      elapsedOrigin = null;
+      return;
+    }
     elapsedOrigin ??= elapsed;
     const prev = playhead.peek();
     let t = base + (elapsed - elapsedOrigin) * rate;
@@ -173,7 +197,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     driverRunning = true;
     driver.start(onElapsed, {
       duration: liveDuration,
-      visibility: init.visibility ?? (() => 'visible'),
+      visibility,
     });
   }
 

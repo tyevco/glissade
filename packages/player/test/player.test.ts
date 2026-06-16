@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPlayhead, timeline, type Marker } from '@glissade/core';
-import { createPlayer, swapOnHmr, type Driver, type Mounted } from '../src/index.js';
+import {
+  createPlayer,
+  planReducedMotion,
+  swapOnHmr,
+  type Driver,
+  type Mounted,
+} from '../src/index.js';
 
 /** Manual clock: tests advance elapsed seconds explicitly. */
 function manualDriver() {
@@ -227,6 +233,79 @@ describe('swap (§4.3: HMR rebind preserves the playhead)', () => {
     tick(2.5); // continuous from 0.5 → crosses t=2 in the new timeline
     expect(playhead.peek()).toBeCloseTo(2.5, 9);
     expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('background visibility (§4.1)', () => {
+  function bgPlayer(background: 'pause' | 'run', visibility: () => 'visible' | 'hidden') {
+    const playhead = createPlayhead();
+    const { driver, tick } = manualDriver();
+    const player = createPlayer({ playhead, duration: 10, driver, visibility }, { background });
+    return { playhead, player, tick };
+  }
+
+  it("'pause' freezes while hidden and resumes without a wall-clock jump", () => {
+    let vis: 'visible' | 'hidden' = 'visible';
+    const { player, playhead, tick } = bgPlayer('pause', () => vis);
+    player.play();
+    tick(0);
+    tick(1); // playhead at 1
+    vis = 'hidden';
+    tick(6); // 5s elapse while hidden — must NOT advance
+    expect(playhead.peek()).toBeCloseTo(1, 9);
+    vis = 'visible';
+    tick(6.5); // first visible tick re-origins here (resumes at 1, no 5s jump)
+    expect(playhead.peek()).toBeCloseTo(1, 9);
+    tick(7); // only the post-return delta advances
+    expect(playhead.peek()).toBeCloseTo(1.5, 9);
+  });
+
+  it("'run' advances by the hidden duration", () => {
+    let vis: 'visible' | 'hidden' = 'visible';
+    const { player, playhead, tick } = bgPlayer('run', () => vis);
+    player.play();
+    tick(0);
+    tick(1);
+    vis = 'hidden';
+    tick(6); // wall-clock advances through the hidden span
+    expect(playhead.peek()).toBeCloseTo(6, 9);
+  });
+});
+
+describe('reduced motion (§4.2: planReducedMotion is Player policy, pure)', () => {
+  const doc = timeline((tl) => {
+    tl.to('a/x', 1, { duration: 4 });
+  });
+  const docWithPoster = timeline((tl) => {
+    tl.to('a/x', 1, { duration: 4 });
+  });
+  docWithPoster.posterTime = 1.5;
+
+  it('respect (default): suppresses autoplay and seeks the poster (= duration)', () => {
+    const plan = planReducedMotion(undefined, true, doc, 4, true);
+    expect(plan).toEqual({ autoplay: false, seekTo: 4 });
+  });
+
+  it('respect: honors an explicit posterTime', () => {
+    const plan = planReducedMotion('respect', true, docWithPoster, 4, true);
+    expect(plan.seekTo).toBe(1.5);
+    expect(plan.autoplay).toBe(false);
+  });
+
+  it('ignore: behaves as if there were no preference', () => {
+    expect(planReducedMotion('ignore', true, doc, 4, true)).toEqual({ autoplay: true });
+  });
+
+  it('no preference: the mode is inert', () => {
+    expect(planReducedMotion('respect', false, doc, 4, true)).toEqual({ autoplay: true });
+  });
+
+  it('function form: swaps in the calmer alternative (rides §4.3 swap)', () => {
+    const calm = timeline((tl) => tl.to('a/x', 1, { duration: 1 }));
+    const plan = planReducedMotion(() => calm, true, doc, 4, true);
+    expect(plan.swapTo).toBe(calm);
+    expect(plan.autoplay).toBe(true);
+    expect(plan.seekTo).toBeUndefined();
   });
 });
 

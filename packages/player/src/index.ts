@@ -20,3 +20,9 @@ export {
 } from './player.js';
 export { mount, type Mounted } from './mount.js';
 export { swapOnHmr, type SceneModuleShape } from './hmr.js';
+export {
+  planReducedMotion,
+  mediaPrefersReducedMotion,
+  type ReducedMotionMode,
+  type ReducedMotionPlan,
+} from './reducedMotion.js';

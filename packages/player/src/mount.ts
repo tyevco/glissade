@@ -8,6 +8,7 @@ import { compileTimeline, type Timeline } from '@glissade/core';
 import { evaluate, type Scene } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { createPlayer, type Player, type PlayerOptions } from './player.js';
+import { planReducedMotion, mediaPrefersReducedMotion } from './reducedMotion.js';
 
 export interface Mounted {
   player: Player;
@@ -78,8 +79,20 @@ export function mount(
   // export paths await instead — frame-exactness lives there)
   loadFonts(doc);
 
-  renderNow(); // first paint at the current playhead
-  if (opts.autoplay) player.play();
+  // prefers-reduced-motion (§4.2): hold the poster, suppress autoplay, or swap
+  // in a calmer alternative timeline — decided before first paint.
+  const prefersReduced = (opts.prefersReducedMotion ?? mediaPrefersReducedMotion)();
+  const plan = planReducedMotion(opts.reducedMotion, prefersReduced, doc, compiled.duration, !!opts.autoplay);
+  if (plan.swapTo) {
+    doc = plan.swapTo;
+    const recompiled = compileTimeline(doc);
+    player.swap({ duration: recompiled.duration, markers: recompiled.markers, targets: recompiled.tracks.keys() });
+    loadFonts(doc);
+  }
+  if (plan.seekTo !== undefined) player.seek(plan.seekTo);
+
+  renderNow(); // first paint at the (possibly poster) playhead
+  if (plan.autoplay) player.play();
 
   return {
     player,

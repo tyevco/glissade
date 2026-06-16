@@ -47,6 +47,9 @@ export type LoopMode = boolean | {
     count?: number;
 };
 
+// @public
+export function mediaPrefersReducedMotion(): boolean;
+
 // @public (undocumented)
 export function mount(initialScene: Scene, initialDoc: Timeline, canvas: HTMLCanvasElement | OffscreenCanvas, opts?: PlayerOptions): Mounted;
 
@@ -64,6 +67,9 @@ export interface Mounted {
         timeline: Timeline;
     }): void;
 }
+
+// @public (undocumented)
+export function planReducedMotion(mode: ReducedMotionMode | undefined, prefersReduced: boolean, doc: Timeline, duration: number, autoplayRequested: boolean): ReducedMotionPlan;
 
 // @public (undocumented)
 export interface Player {
@@ -112,15 +118,28 @@ export interface PlayerInit {
 export interface PlayerOptions {
     // (undocumented)
     autoplay?: boolean;
+    background?: 'pause' | 'run';
     // (undocumented)
     loop?: LoopMode;
+    prefersReducedMotion?: () => boolean;
     // (undocumented)
     rate?: number;
+    reducedMotion?: ReducedMotionMode;
 }
 
 // @public (undocumented)
 export interface PlayHandle {
     finished: Promise<boolean>;
+}
+
+// @public (undocumented)
+export type ReducedMotionMode = 'respect' | 'ignore' | ((doc: Timeline) => Timeline);
+
+// @public (undocumented)
+export interface ReducedMotionPlan {
+    autoplay: boolean;
+    seekTo?: number;
+    swapTo?: Timeline;
 }
 
 // @public (undocumented)
