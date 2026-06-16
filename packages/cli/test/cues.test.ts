@@ -16,23 +16,41 @@ const outDir = mkdtempSync(join(here, '.tmp-cues-'));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
 
 describe('collectCues / cuesToVtt', () => {
-  it('keeps only markers carrying a data.kind, sorted by t', () => {
+  it('keeps only markers carrying a data.kind, sorted by t; extracts title', () => {
     const cues = collectCues([
       { t: 2, name: 'mid', data: { kind: 'ad-break', duration: 30 } },
       { t: 0.5, name: 'call:0' }, // a .call() marker — no data.kind, excluded
-      { t: 1, name: 'chapter-1', data: { kind: 'chapter' } },
+      { t: 1, name: 'chapter-1', data: { kind: 'chapter', title: 'Act One' } },
     ]);
     expect(cues).toEqual([
-      { t: 1, kind: 'chapter', name: 'chapter-1' },
+      { t: 1, kind: 'chapter', name: 'chapter-1', title: 'Act One' },
       { t: 2, kind: 'ad-break', name: 'mid', duration: 30 },
     ]);
   });
 
-  it('renders WebVTT chapters running to duration or the next cue', () => {
-    const vtt = cuesToVtt(collectCues([{ t: 1, name: 'a', data: { kind: 'ad-break', duration: 5 } }, { t: 10, name: 'b', data: { kind: 'chapter' } }]), 20);
-    expect(vtt.startsWith('WEBVTT')).toBe(true);
-    expect(vtt).toContain('00:00:01.000 --> 00:00:06.000'); // a: t..t+duration
-    expect(vtt).toContain('00:00:10.000 --> 00:00:20.000'); // b: next cue absent → total duration
+  it('VTT cue text is the human title (falls back to name), never the kind', () => {
+    const vtt = cuesToVtt(
+      collectCues([
+        { t: 0, name: 'start', data: { kind: 'chapter', title: 'Cold Open' } },
+        { t: 10, name: 'b', data: { kind: 'chapter' } }, // no title → name
+      ]),
+      20,
+    );
+    expect(vtt).toContain('00:00:00.000 --> 00:00:10.000\nCold Open'); // title, not 'chapter'
+    expect(vtt).toContain('00:00:10.000 --> 00:00:20.000\nb'); // name fallback
+    expect(vtt).not.toContain('\nchapter\n'); // kind never shown
+  });
+
+  it('auto-anchors a 00:00 Intro chapter when the first cue starts later (YouTube needs 0:00)', () => {
+    const vtt = cuesToVtt(collectCues([{ t: 5, name: 'one', data: { kind: 'chapter', title: 'One' } }]), 20);
+    expect(vtt).toContain('00:00:00.000 --> 00:00:05.000\nIntro');
+    expect(vtt).toContain('00:00:05.000 --> 00:00:20.000\nOne');
+  });
+
+  it('no anchor when a cue already starts at 0', () => {
+    const vtt = cuesToVtt(collectCues([{ t: 0, name: 'zero', data: { kind: 'chapter', title: 'Zero' } }]), 20);
+    expect(vtt).not.toContain('Intro');
+    expect(vtt).toContain('00:00:00.000 --> 00:00:20.000\nZero');
   });
 });
 

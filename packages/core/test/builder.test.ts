@@ -265,4 +265,16 @@ describe('cue / adBreak markers (§ad-break)', () => {
     expect(ad.t).toBe(1);
     expect(ad.data).toEqual({ kind: 'ad-break', duration: 30 });
   });
+
+  it("a plain cue() defaults data.kind to 'cue' (so it serializes), preserving extra data", () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.to('a/x', 1, { duration: 2 })
+          .cue(0.5, 'plain')
+          .cue(1, 'titled', { title: 'Act One' });
+      }),
+    );
+    expect(doc.markers.find((m) => m.name === 'plain')!.data).toEqual({ kind: 'cue' });
+    expect(doc.markers.find((m) => m.name === 'titled')!.data).toEqual({ kind: 'cue', title: 'Act One' });
+  });
 });

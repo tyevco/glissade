@@ -13,6 +13,8 @@ export interface Cue {
   t: number;
   kind: string;
   name: string;
+  /** Human-readable label (`data.title`); the chapter text in `--chapters vtt`. */
+  title?: string;
   duration?: number;
 }
 
@@ -20,12 +22,13 @@ export interface Cue {
 export function collectCues(markers: readonly Marker[]): Cue[] {
   const cues: Cue[] = [];
   for (const m of markers) {
-    const data = m.data as { kind?: unknown; duration?: unknown } | undefined;
+    const data = m.data as { kind?: unknown; title?: unknown; duration?: unknown } | undefined;
     if (!data || typeof data !== 'object' || typeof data.kind !== 'string') continue;
     cues.push({
       t: m.t,
       kind: data.kind,
       name: m.name,
+      ...(typeof data.title === 'string' ? { title: data.title } : {}),
       ...(typeof data.duration === 'number' ? { duration: data.duration } : {}),
     });
   }
@@ -38,12 +41,22 @@ function vttTime(seconds: number): string {
   return `${p(Math.floor(ms / 3600000))}:${p(Math.floor((ms % 3600000) / 60000))}:${p(Math.floor((ms % 60000) / 1000))}.${p(ms % 1000, 3)}`;
 }
 
-/** WebVTT chapters from cues; each runs until its duration or the next cue. */
+/**
+ * WebVTT chapters from cues; each runs until its duration or the next cue. The
+ * cue text is the human `title` (falling back to `name`), not the machine
+ * `kind`. When the earliest cue starts after 0, a `00:00` "Intro" chapter is
+ * auto-anchored — both valid WebVTT and required for YouTube description
+ * chapters (which read the cue text as the title and need a 0:00 start).
+ */
 export function cuesToVtt(cues: Cue[], totalDuration: number): string {
+  const anchored: Cue[] =
+    cues.length > 0 && cues[0]!.t > 0
+      ? [{ t: 0, kind: 'chapter', name: 'Intro', title: 'Intro' }, ...cues]
+      : cues;
   let out = 'WEBVTT\n\n';
-  cues.forEach((c, i) => {
-    const end = c.duration !== undefined ? c.t + c.duration : (cues[i + 1]?.t ?? totalDuration);
-    out += `${c.name}\n${vttTime(c.t)} --> ${vttTime(end)}\n${c.kind}\n\n`;
+  anchored.forEach((c, i) => {
+    const end = c.duration !== undefined ? c.t + c.duration : (anchored[i + 1]?.t ?? totalDuration);
+    out += `${c.name}\n${vttTime(c.t)} --> ${vttTime(end)}\n${c.title ?? c.name}\n\n`;
   });
   return out;
 }

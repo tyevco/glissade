@@ -45,7 +45,13 @@ export interface TimelineBuilder {
   add(child: Timeline, at?: Position, opts?: { mode?: 'add' | 'sync'; timeScale?: number }): TimelineBuilder;
   /** Compiles to a marker; the callback is Player-registered, never serialized (§4.2). */
   call(fn: () => void, at?: Position): TimelineBuilder;
-  /** A named cue marker (serialized, fired on crossing) — the composer-signal substrate. */
+  /**
+   * A named cue marker — the composer-signal substrate. Fired on crossing via
+   * `player.onCue(kind, …)` and emitted to the render-time `cues.json`. Every
+   * cue carries a `data.kind` (default `'cue'`); pass your own to group them
+   * (e.g. `{ kind: 'chapter', title: '…' }`). `data.title` becomes the chapter
+   * label in `--chapters vtt`.
+   */
   cue(at: Position, name: string, data?: Json): TimelineBuilder;
   /** An ad-break cue: a marker with `data.kind: 'ad-break'` + optional duration (§ad-break). */
   adBreak(at: Position, opts?: { id?: string; duration?: number }): TimelineBuilder;
@@ -199,7 +205,11 @@ export function buildTimeline(
       return builder;
     },
     cue(at, name, data) {
-      markers.push(data !== undefined ? { t: resolvePosition(at), name, data } : { t: resolvePosition(at), name });
+      // every cue carries a `kind` (default 'cue') so it serializes to the
+      // render-time cues.json and fires onCue() — a caller-supplied kind wins
+      const isObj = data !== undefined && data !== null && typeof data === 'object' && !Array.isArray(data);
+      const merged: Json = isObj ? { kind: 'cue', ...(data as Record<string, Json>) } : { kind: 'cue' };
+      markers.push({ t: resolvePosition(at), name, data: merged });
       return builder;
     },
     adBreak(at, opts = {}) {
