@@ -1,5 +1,12 @@
 # @glissade/backend-skia
 
+## 0.8.1
+
+### Patch Changes
+
+- @glissade/core@0.8.1
+- @glissade/scene@0.8.1
+
 ## 0.8.1-pre.1
 
 ### Patch Changes
