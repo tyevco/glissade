@@ -7,6 +7,7 @@ const src = (pkg: string) => fileURLToPath(new URL(`./packages/${pkg}/src/index.
 export default defineConfig({
   resolve: {
     alias: {
+      '@glissade/core/studio-host': src('core').replace('index.ts', 'studioHost.ts'),
       '@glissade/core': src('core'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene': src('scene'),

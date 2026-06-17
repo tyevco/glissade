@@ -9,14 +9,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   compileTimeline,
   emptySidecar,
+  hashKeys,
   mergeSidecar,
   migrateSidecar,
-  setSidecarTrack,
   type CompiledTimeline,
   type EaseSpec,
   type Key,
   type SidecarDoc,
 } from '@glissade/core';
+import { type TimelinePatch } from '@glissade/core/studio-host';
+import { createInProcessHost, type InProcessHost } from './inProcessHost.js';
 import {
   addKeyAt,
   closestIndex,
@@ -67,9 +69,10 @@ export function App() {
   const [selectedKey, setSelectedKey] = useState<KeyRef | null>(null);
   const [sidecar, setSidecar] = useState<SidecarDoc | null>(null);
   const [sidecarLoaded, setSidecarLoaded] = useState(false);
-  const undoStack = useRef<SidecarDoc[]>([]);
+  // undo = inverse-patch lists over the document only (§6.3), NOT doc snapshots
+  const undoStack = useRef<TimelinePatch[][]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [session, setSession] = useState<{ scene: Scene; mounted: Mounted } | null>(null);
+  const [session, setSession] = useState<{ scene: Scene; mounted: Mounted; host: InProcessHost } | null>(null);
   const lastTime = useRef(0);
 
   const entry = corpus[sceneName]!;
@@ -125,11 +128,14 @@ export function App() {
     if (!canvas || !sidecarLoaded) return;
     const scene = entry.mod.createScene();
     const mounted = mount(scene, merged, canvas, { loop: true });
+    // the studio talks to the runtime through the host (§6.4): edits route
+    // through host.applyPatch; it owns the current sidecar over the code baseline
+    const host = createInProcessHost({ scene, codeTimeline: entry.mod.timeline, sidecar });
     mounted.player.seek(Math.min(lastTime.current, mounted.player.duration));
     const stopTracking = scene.playhead.subscribe(() => {
       lastTime.current = scene.playhead.peek();
     });
-    setSession({ scene, mounted });
+    setSession({ scene, mounted, host });
     return () => {
       stopTracking();
       mounted.dispose();
@@ -157,20 +163,31 @@ export function App() {
   const writeKeys = useCallback(
     (target: string, keys: Key[] | null, reselectT?: number, snapshot = true) => {
       const sourceTrack = compiled.tracks.get(target);
-      if (!keys || !sourceTrack) return;
-      const current = sidecar ?? emptySidecar();
-      // drags snapshot once at their first move, then stream without (one drag = one undo)
-      if (snapshot) undoStack.current.push(JSON.parse(JSON.stringify(current)) as SidecarDoc);
-      // record the code baseline so drift surfaces if the code changes beneath the edit (§6.2)
+      if (!keys || !sourceTrack || !session) return;
+      // every edit is a TimelinePatch transaction (§6.3). The edit ops in
+      // edits.ts produce a normalized key array; commit it as a whole-track set,
+      // carrying the code baseHash so drift surfaces if code changes beneath (§6.2).
       const codeBaseline = entry.mod.timeline.tracks.find((t) => t.target === target)?.keys ?? null;
-      const next = setSidecarTrack(current, 'main', target, sourceTrack.type, keys, codeBaseline);
-      setSidecar(next);
-      persist(next);
+      const patch: TimelinePatch = {
+        op: 'setTrackKeys',
+        timelineId: 'main',
+        target,
+        type: sourceTrack.type,
+        keys,
+        baseHash: codeBaseline ? hashKeys(codeBaseline) : null,
+      };
+      const result = session.host.applyPatch([patch]);
+      if (!result.ok) return;
+      // drags push their inverse once at the first move (one drag = one undo);
+      // streaming moves reuse it — the snapshot-restore inverse holds pre-drag state
+      if (snapshot) undoStack.current.push(result.inverse);
+      setSidecar(result.doc);
+      persist(result.doc);
       if (reselectT !== undefined && keys.length > 0) {
         setSelectedKey({ target, t: keys[closestIndex(keys, reselectT)]!.t });
       }
     },
-    [compiled, sidecar, persist],
+    [compiled, session, persist, entry],
   );
 
   const trackOf = useCallback((target: string) => compiled.tracks.get(target), [compiled]);
@@ -214,15 +231,19 @@ export function App() {
   );
 
   const undo = useCallback(() => {
-    const prev = undoStack.current.pop();
-    if (prev === undefined) return;
-    const main = prev.timelines['main'];
+    const inverse = undoStack.current.pop();
+    if (!inverse || !session) return;
+    const result = session.host.applyPatch(inverse);
+    if (!result.ok) return;
+    const main = result.doc.timelines['main'];
     const empty = !main || (Object.keys(main.tracks).length === 0 && !main.labels);
-    const restored = empty ? null : prev;
+    const restored = empty ? null : result.doc;
     setSidecar(restored);
-    setSelectedKey(null); // the snapshot may not contain the selected key
+    // selection is EXCLUDED from undo (§6.3): the inverse restores the track
+    // (keys + their stable ids), so a key selected before the edit stays valid —
+    // do NOT clear it.
     persist(restored ?? emptySidecar());
-  }, [persist]);
+  }, [session, persist]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
