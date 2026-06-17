@@ -26,9 +26,20 @@
     "@glissade/core": "workspace:*",
     "@glissade/scene": "workspace:*"
   },
+  "peerDependencies": {
+    "kokoro-js": "^1.2.0"
+  },
+  "peerDependenciesMeta": {
+    "kokoro-js": {
+      "optional": true
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tyevco/glissade.git",
     "directory": "packages/narrate"
+  },
+  "devDependencies": {
+    "kokoro-js": "^1.2.1"
   }
 }

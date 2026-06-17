@@ -75,7 +75,8 @@ import options (.json = Lottie; .svg = static SVG → a scene that defers to @gl
   --allow-degraded     (Lottie only) downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
 
 narrate options (the explicit TTS prepare step; render itself stays offline):
-  --provider <id>  fake | espeak | piper | openai (default: the script's provider, else espeak)
+  --provider <id>  fake | espeak | piper | kokoro | openai (default: the script's provider, else espeak)
+                   (kokoro = Apache-2.0 offline neural voice; needs 'npm i kokoro-js')
   --align <id>     heuristic (default) | vosk | none — word timings for providers that emit none
   --force          ignore the cache and re-synthesize every segment
 `;

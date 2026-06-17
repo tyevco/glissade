@@ -73,7 +73,7 @@ export interface NarrationScript {
   leadIn?: number;
   /**
    * Word-timing aligner for providers that don't emit word timestamps
-   * (espeak / openai / piper). 'heuristic' (default) estimates from text;
+   * (espeak / openai / piper / kokoro). 'heuristic' (default) estimates from text;
    * 'vosk' derives real timings from the audio (offline ASR); 'none' leaves
    * segments word-less. Providers that supply their own words ignore this.
    */

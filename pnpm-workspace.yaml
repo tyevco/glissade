@@ -3,3 +3,8 @@ packages:
   - apps/*
 allowBuilds:
   esbuild: true
+  # kokoro-js (optional peer of @glissade/narrate) pulls these; their CPU
+  # binaries ship prebuilt, so we intentionally skip their build scripts.
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

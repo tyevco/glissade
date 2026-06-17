@@ -13,9 +13,11 @@ import {
   alignerById,
   cacheKey,
   fakeProvider,
+  floatToWav,
   heuristicAligner,
   heuristicWords,
   interpolateMissing,
+  kokoroProvider,
   mapAsrToScript,
   piperProvider,
   providerById,
@@ -93,8 +95,46 @@ describe('wavDuration', () => {
 
 describe('providerById', () => {
   it('rejects unknown providers, listing the real ones', () => {
-    expect(() => providerById('elevenlabs')).toThrow(/fake, espeak, piper, openai/);
+    expect(() => providerById('elevenlabs')).toThrow(/fake, espeak, piper, kokoro, openai/);
   });
+  it('resolves kokoro', () => {
+    expect(providerById('kokoro').id).toBe('kokoro');
+  });
+});
+
+describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
+  it('version() pins lib version + model + dtype (the cache key); absence throws the install hint', async () => {
+    // kokoro-js is a devDep here, so version() reads its real version without
+    // touching the model; a consumer without the optional peer gets the hint.
+    try {
+      expect(await kokoroProvider().version()).toMatch(/kokoro-js [\d.]+ Kokoro-82M.* dtype=q8/);
+      expect(await kokoroProvider({ dtype: 'fp32' }).version()).toMatch(/dtype=fp32/);
+    } catch (e) {
+      expect((e as Error).message).toMatch(/kokoro-js not found.*npm install kokoro-js/s);
+    }
+  });
+
+  it('floatToWav is deterministic PCM16 and round-trips through wavDuration', () => {
+    const samples = Float32Array.from({ length: 2400 }, (_, i) => Math.sin(i / 10) * 0.5);
+    const a = floatToWav(samples, 24000);
+    const b = floatToWav(samples, 24000);
+    expect(a.equals(b)).toBe(true); // same samples → byte-identical
+    expect(wavDuration(a)).toBeCloseTo(2400 / 24000, 9);
+  });
+});
+
+// gated: downloads the kokoro model (~q8 92MB) and runs onnxruntime — opt in
+// with KOKORO=1 locally / in CI. This is the byte-determinism GATE for the
+// provider (validated 2026-06: same text → identical PCM).
+const KOKORO_GATED = process.env['KOKORO'] === '1';
+(KOKORO_GATED ? describe : describe.skip)('kokoro synthesis (gated: KOKORO=1)', () => {
+  it('re-synth of the same text is byte-identical (determinism contract)', async () => {
+    const p = kokoroProvider({ dtype: 'q8' });
+    const a = await p.synthesize({ text: 'Hello world, this is a determinism test.' });
+    const b = await p.synthesize({ text: 'Hello world, this is a determinism test.' });
+    expect(a.wav.equals(b.wav)).toBe(true);
+    expect(a.duration).toBeCloseTo(b.duration, 9);
+  }, 180_000);
 });
 
 describe('piperProvider (feature-detected, like espeak/openai)', () => {

@@ -44,6 +44,7 @@ Each segment is cached by `sha256(text, voice, rate, provider, providerVersion)`
 | `fake` | local, pure JS | a tone | yes (synthetic) | nothing — CI, tests, previews |
 | `espeak` | local, offline | robotic | no | `espeak-ng` on PATH |
 | `piper` | local, offline | **natural** (neural) | no | a `.onnx` voice model ([rhasspy/piper](https://github.com/rhasspy/piper)) |
+| `kokoro` | local, offline | **most natural** (neural) | no | `npm i kokoro-js` (Apache-2.0, pure Node) |
 | `openai` | cloud | natural | no | `OPENAI_API_KEY` (`gpt-4o-mini-tts`) |
 
 `piper` needs a voice model: pass it as `--provider piper` with the model path in the script's `voice` (per-segment or top-level), or construct `piperProvider({ model })`. Most providers emit **no word timings** — the [alignment step](#word-timing-alignment) fills those in.
@@ -57,6 +58,14 @@ synthesizeScript(script, { providerImpl: piperProvider({ model, noiseScale: 0.66
 ```
 
 The noise mode is part of the provider version, so switching deterministic↔natural invalidates the cache and re-synthesizes. (Either way, the committed manifest + cache is the practical determinism boundary — don't re-narrate unless the script changes.)
+
+`kokoro` is an **Apache-2.0, 82M-param neural voice** — markedly more natural than espeak/piper, fully offline on CPU, no API key. Unlike piper there's no `pip install` or external binary: it runs **pure-Node** through [`kokoro-js`](https://www.npmjs.com/package/kokoro-js) (Transformers.js + onnxruntime), an **optional** peer dependency — `npm i kokoro-js` only if you use it. The model (`onnx-community/Kokoro-82M-v1.0-ONNX`) downloads and caches on first use. Pick a voice via the script's `voice` (e.g. `"af_heart"`, `"am_adam"`, `"bf_emma"`) and the quant via `kokoroProvider({ dtype })` (`q8` default ≈ 92 MB; `fp32` ≈ 326 MB for top quality):
+
+```ts
+synthesizeScript(script, { providerImpl: kokoroProvider({ dtype: 'fp32', voice: 'af_heart' }) });
+```
+
+Kokoro is **deterministic by construction** — inference uses a fixed voice/style embedding (not diffusion-sampled per call), so the same text re-synthesizes byte-identical with no noise to zero out. `version()` pins the `kokoro-js` version + model + dtype, so any of those moving invalidates the cache.
 
 The `TtsProvider` interface is three members (`id`, `version()`, `synthesize()`) — bring your own (ElevenLabs, Azure, Polly…) and pass the instance via `synthesizeScript({ providerImpl })`; a provider that returns `words` skips alignment entirely.
 

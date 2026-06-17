@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   hash: false,
   clean: true,
-  external: [/^@glissade\//],
+  external: [/^@glissade\//, 'kokoro-js'],
 });

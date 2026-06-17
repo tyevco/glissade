@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import {
   isPause,
   NarrationError,
@@ -284,6 +285,116 @@ export function piperProvider(opts: { model?: string; voicesDir?: string; noiseS
   };
 }
 
+// ---- Kokoro: local NEURAL TTS (kokoro-js / Transformers.js) — offline, Apache-2.0 ----
+
+/** PCM16 mono WAV from float samples in [-1, 1]. Round-to-nearest → deterministic. */
+export function floatToWav(samples: Float32Array, sampleRate: number): Buffer {
+  const data = Buffer.alloc(samples.length * 2);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]!));
+    data.writeInt16LE(Math.round(s * 32767), i * 2);
+  }
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
+export type KokoroDtype = 'fp32' | 'fp16' | 'q8' | 'q4' | 'q4f16';
+
+// the slice of kokoro-js we use, typed locally so the build never hard-depends
+// on it (it is an OPTIONAL peer — present for tests, absent for embedders who
+// don't author narration with `--provider kokoro`)
+interface KokoroAudio {
+  audio: Float32Array;
+  sampling_rate: number;
+}
+interface KokoroModel {
+  generate(text: string, opts: { voice?: string; speed?: number }): Promise<KokoroAudio>;
+}
+interface KokoroLib {
+  KokoroTTS: { from_pretrained(id: string, opts: { dtype?: string; device?: string }): Promise<KokoroModel> };
+}
+
+const KOKORO_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+const KOKORO_DEFAULT_VOICE = 'af_heart';
+
+/**
+ * Apache-2.0 82M neural TTS — markedly more natural than espeak/piper, fully
+ * offline on CPU via onnxruntime, no API key. Pure-Node through `kokoro-js`
+ * (Transformers.js), so unlike piper there is no `pip install` / external
+ * binary; `kokoro-js` is an OPTIONAL peer dep, lazy-loaded here.
+ *
+ * DETERMINISTIC by construction: inference takes tokenized phonemes + a FIXED
+ * voice/style embedding (not diffusion-sampled per call), so the same text →
+ * byte-identical PCM — no noise to zero out (piper's trick). `version()` pins
+ * the lib version + model + dtype, so any of those moving invalidates the
+ * cache. The model (~q8 92MB / fp32 326MB) downloads + caches on first use; it
+ * stays out of the bundle and the determinism-critical path.
+ */
+export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: KokoroDtype } = {}): TtsProvider {
+  const modelId = opts.model ?? KOKORO_MODEL;
+  const dtype: KokoroDtype = opts.dtype ?? 'q8';
+  let loaded: Promise<KokoroModel> | null = null;
+
+  const loadLib = async (): Promise<KokoroLib> => {
+    try {
+      return (await import('kokoro-js')) as unknown as KokoroLib;
+    } catch {
+      throw new NarrationError(
+        'kokoro-js not found — `npm install kokoro-js` (it pulls onnxruntime-node), or use --provider piper/espeak/openai',
+      );
+    }
+  };
+  const getModel = (): Promise<KokoroModel> =>
+    (loaded ??= loadLib().then((k) => k.KokoroTTS.from_pretrained(modelId, { dtype, device: 'cpu' })));
+
+  return {
+    id: 'kokoro',
+    version: () => {
+      // read the installed kokoro-js version so an upgrade invalidates the
+      // cache (its g2p/phonemizer + model packaging can move bytes); throw the
+      // install hint when the optional peer is absent (feature-detection)
+      let lib = 'kokoro-js';
+      try {
+        const req = createRequire(import.meta.url);
+        const pkg = JSON.parse(readFileSync(req.resolve('kokoro-js/package.json'), 'utf8')) as { version?: string };
+        if (pkg.version) lib = `kokoro-js ${pkg.version}`;
+      } catch {
+        throw new NarrationError(
+          'kokoro-js not found — `npm install kokoro-js` (it pulls onnxruntime-node), or use --provider piper/espeak/openai',
+        );
+      }
+      return Promise.resolve(`${lib} ${basename(modelId)} dtype=${dtype}`);
+    },
+    synthesize: async (req) => {
+      const tts = await getModel();
+      const voice = req.voice ?? opts.voice ?? KOKORO_DEFAULT_VOICE;
+      const genOpts: { voice: string; speed?: number } =
+        req.rate !== undefined && req.rate > 0 ? { voice, speed: req.rate } : { voice };
+      let audio: KokoroAudio;
+      try {
+        audio = await tts.generate(req.text, genOpts);
+      } catch (e) {
+        throw new NarrationError(`kokoro synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      const wav = floatToWav(audio.audio, audio.sampling_rate);
+      return { wav, duration: wavDuration(wav) };
+    },
+  };
+}
+
 export function providerById(id: string): TtsProvider {
   switch (id) {
     case 'fake':
@@ -292,10 +403,12 @@ export function providerById(id: string): TtsProvider {
       return espeakProvider();
     case 'piper':
       return piperProvider();
+    case 'kokoro':
+      return kokoroProvider();
     case 'openai':
       return openaiProvider();
     default:
-      throw new NarrationError(`unknown TTS provider '${id}' (have: fake, espeak, piper, openai)`);
+      throw new NarrationError(`unknown TTS provider '${id}' (have: fake, espeak, piper, kokoro, openai)`);
   }
 }
 
