@@ -59,13 +59,15 @@ synthesizeScript(script, { providerImpl: piperProvider({ model, noiseScale: 0.66
 
 The noise mode is part of the provider version, so switching deterministic↔natural invalidates the cache and re-synthesizes. (Either way, the committed manifest + cache is the practical determinism boundary — don't re-narrate unless the script changes.)
 
-`kokoro` is an **Apache-2.0, 82M-param neural voice** — markedly more natural than espeak/piper, fully offline on CPU, no API key. Unlike piper there's no `pip install` or external binary: it runs **pure-Node** through [`kokoro-js`](https://www.npmjs.com/package/kokoro-js) (Transformers.js + onnxruntime), an **optional** peer dependency — `npm i kokoro-js` only if you use it. The model (`onnx-community/Kokoro-82M-v1.0-ONNX`) downloads and caches on first use. Pick a voice via the script's `voice` (e.g. `"af_heart"`, `"am_adam"`, `"bf_emma"`) and the quant via `kokoroProvider({ dtype })` (`q8` default ≈ 92 MB; `fp32` ≈ 326 MB for top quality):
+`kokoro` is an **Apache-2.0, 82M-param neural voice** — markedly more natural than espeak/piper, fully offline on CPU, no API key. Unlike piper there's no `pip install` or external binary: it runs **pure-Node** through [`kokoro-js`](https://www.npmjs.com/package/kokoro-js) (Transformers.js + onnxruntime), an **optional** peer dependency — add it to your project only if you use it (`npm i kokoro-js` / `pnpm add kokoro-js` / `yarn add kokoro-js`). It's resolved from your project root, so it works under pnpm's isolated layout. The model (`onnx-community/Kokoro-82M-v1.0-ONNX`) downloads and caches on first use. Pick a voice via the script's `voice` (e.g. `"af_heart"`, `"am_adam"`, `"bf_emma"`) and the quant via `kokoroProvider({ dtype })` (`q8` default ≈ 92 MB; `fp32` ≈ 326 MB for top quality):
 
 ```ts
 synthesizeScript(script, { providerImpl: kokoroProvider({ dtype: 'fp32', voice: 'af_heart' }) });
 ```
 
 Kokoro is **deterministic by construction** — inference uses a fixed voice/style embedding (not diffusion-sampled per call), so the same text re-synthesizes byte-identical with no noise to zero out. `version()` pins the `kokoro-js` version + model + dtype, so any of those moving invalidates the cache.
+
+**pnpm note.** `kokoro-js` pulls native deps (`onnxruntime-node`, `sharp`, `protobufjs`) whose build scripts pnpm ignores by default — and under pnpm ≥ 10 that ignored-builds gate makes `pnpm install --frozen-lockfile` exit **non-zero** (failing CI). The prebuilt CPU binaries work without those scripts, so allow/ignore them in your own project: add them to `pnpm.ignoredBuiltDependencies` (package.json) or `allowBuilds: { onnxruntime-node: false, sharp: false, protobufjs: false }` (pnpm-workspace.yaml). This is a one-time downstream config, required only if you use `--provider kokoro`.
 
 The `TtsProvider` interface is three members (`id`, `version()`, `synthesize()`) — bring your own (ElevenLabs, Azure, Polly…) and pass the instance via `synthesizeScript({ providerImpl })`; a provider that returns `words` skips alignment entirely.
 

@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import {
   isPause,
   NarrationError,
@@ -343,19 +344,75 @@ const KOKORO_DEFAULT_VOICE = 'af_heart';
  * cache. The model (~q8 92MB / fp32 326MB) downloads + caches on first use; it
  * stays out of the bundle and the determinism-critical path.
  */
+/** kokoro-js version read by walking up from its entry (it does not export
+ * `./package.json`, so the subpath can't be resolved directly). */
+function kokoroVersionFrom(entry: string): string {
+  let dir = dirname(entry);
+  for (let i = 0; i < 8; i++) {
+    const p = join(dir, 'package.json');
+    if (existsSync(p)) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8')) as { name?: string; version?: string };
+        if (j.name === 'kokoro-js' && j.version) return j.version;
+      } catch {
+        /* keep walking */
+      }
+    }
+    const up = dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return 'unknown';
+}
+
+/**
+ * Resolve the OPTIONAL peer `kokoro-js` from the USER'S project first. Under
+ * pnpm's isolated layout a peer is NOT linked into `@glissade/narrate`'s own
+ * store dir, so a bare `import('kokoro-js')` from this module fails; resolving
+ * relative to `process.cwd()` (where the user ran `add kokoro-js`) finds it.
+ * Falls back to this module for hoisted/global installs. Returns a `file://`
+ * entry URL (so the dynamic import is never bundled) + the resolved version.
+ * Throws a NarrationError that carries the REAL resolution error.
+ */
+function resolveKokoro(): { entryUrl: string; version: string } {
+  const bases = [pathToFileURL(join(process.cwd(), 'package.json')).href, import.meta.url];
+  let lastErr: NodeJS.ErrnoException | undefined;
+  for (const base of bases) {
+    try {
+      const entry = createRequire(base).resolve('kokoro-js');
+      return { entryUrl: pathToFileURL(entry).href, version: kokoroVersionFrom(entry) };
+    } catch (e) {
+      lastErr = e as NodeJS.ErrnoException;
+    }
+  }
+  throw new NarrationError(
+    `kokoro-js could not be resolved from ${process.cwd()} (${lastErr?.code ?? 'error'}: ${lastErr?.message ?? 'not found'}) — ` +
+      'install it in your project (npm / pnpm / yarn add kokoro-js; pnpm users must also allow its native build scripts — see the narration docs), ' +
+      'or use --provider piper/espeak/openai',
+  );
+}
+
 export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: KokoroDtype } = {}): TtsProvider {
   const modelId = opts.model ?? KOKORO_MODEL;
   const dtype: KokoroDtype = opts.dtype ?? 'q8';
   let loaded: Promise<KokoroModel> | null = null;
 
   const loadLib = async (): Promise<KokoroLib> => {
+    const { entryUrl } = resolveKokoro(); // throws (with the real error) if absent
+    let mod: Record<string, unknown>;
     try {
-      return (await import('kokoro-js')) as unknown as KokoroLib;
-    } catch {
+      mod = (await import(entryUrl)) as Record<string, unknown>;
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
       throw new NarrationError(
-        'kokoro-js not found — `npm install kokoro-js` (it pulls onnxruntime-node), or use --provider piper/espeak/openai',
+        `kokoro-js failed to load from ${entryUrl} (${err?.code ?? 'error'}: ${err?.message ?? String(e)}) — ` +
+          'ensure kokoro-js and onnxruntime-node are installed, or use --provider piper/espeak/openai',
       );
     }
+    // dual-package interop: ESM exposes named exports; CJS lands under `default`
+    const lib = (mod['KokoroTTS'] ? mod : (mod['default'] as Record<string, unknown>)) as unknown as KokoroLib;
+    if (!lib?.KokoroTTS) throw new NarrationError(`kokoro-js loaded but exposes no KokoroTTS export (from ${entryUrl})`);
+    return lib;
   };
   const getModel = (): Promise<KokoroModel> =>
     (loaded ??= loadLib().then((k) => k.KokoroTTS.from_pretrained(modelId, { dtype, device: 'cpu' })));
@@ -363,20 +420,11 @@ export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: K
   return {
     id: 'kokoro',
     version: () => {
-      // read the installed kokoro-js version so an upgrade invalidates the
-      // cache (its g2p/phonemizer + model packaging can move bytes); throw the
-      // install hint when the optional peer is absent (feature-detection)
-      let lib = 'kokoro-js';
-      try {
-        const req = createRequire(import.meta.url);
-        const pkg = JSON.parse(readFileSync(req.resolve('kokoro-js/package.json'), 'utf8')) as { version?: string };
-        if (pkg.version) lib = `kokoro-js ${pkg.version}`;
-      } catch {
-        throw new NarrationError(
-          'kokoro-js not found — `npm install kokoro-js` (it pulls onnxruntime-node), or use --provider piper/espeak/openai',
-        );
-      }
-      return Promise.resolve(`${lib} ${basename(modelId)} dtype=${dtype}`);
+      // the kokoro-js version is in the cache key (its g2p/phonemizer + model
+      // packaging can move bytes); resolveKokoro throws the install hint +
+      // real error when the optional peer is absent (feature-detection)
+      const { version } = resolveKokoro();
+      return Promise.resolve(`kokoro-js ${version} ${basename(modelId)} dtype=${dtype}`);
     },
     synthesize: async (req) => {
       const tts = await getModel();

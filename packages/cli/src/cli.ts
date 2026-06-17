@@ -76,7 +76,7 @@ import options (.json = Lottie; .svg = static SVG → a scene that defers to @gl
 
 narrate options (the explicit TTS prepare step; render itself stays offline):
   --provider <id>  fake | espeak | piper | kokoro | openai (default: the script's provider, else espeak)
-                   (kokoro = Apache-2.0 offline neural voice; needs 'npm i kokoro-js')
+                   (kokoro = Apache-2.0 offline neural voice; add 'kokoro-js' to your project; pnpm: allow its native build scripts)
   --align <id>     heuristic (default) | vosk | none — word timings for providers that emit none
   --force          ignore the cache and re-synthesize every segment
 `;
