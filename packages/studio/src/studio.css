@@ -68,6 +68,11 @@ body {
 }
 .inspector .node:hover { background: var(--panel-2); }
 .inspector .node.selected { background: var(--line); }
+/* outline tree: nested rows; un-id'd nodes are dimmed and non-clickable (§6.2 rule 4) */
+.inspector .outline-node { display: flex; gap: 6px; align-items: baseline; }
+.inspector .outline-node.unselectable { cursor: default; color: var(--muted); }
+.inspector .outline-type { color: var(--muted); font-size: 11px; }
+.inspector .outline-id { color: var(--accent); }
 .inspector table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .inspector td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
 .inspector td.value { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); }
@@ -154,6 +159,20 @@ body {
   padding: 1px 5px;
   text-align: right;
 }
+/* a non-editable prop's preview input: code-owned, session-transient (§6.2 rule 4) */
+.prop-edit.preview { border-style: dashed; opacity: 0.85; }
+.copy-code, .extract-edit {
+  margin-left: 6px;
+  background: transparent;
+  border: 1px solid #2c313c;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.copy-code:hover, .extract-edit:hover { color: #e6e9ef; }
+.extract-edits { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 
 /* studio UX: spring keys, stacked keys, ruler markers */
 .timeline .key.spring {

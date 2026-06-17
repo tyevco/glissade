@@ -56,6 +56,9 @@ export interface SidecarDocV1 {
 
 const MAIN = 'main';
 
+// (isEditableNodeId — the node half of the editability rule — lives in
+// targetRef.ts, the addressing module, shared by the builder/scene/host.)
+
 export class SidecarVersionError extends Error {
   constructor(version: unknown) {
     super(`unsupported sidecar version ${String(version)}; this build reads sidecarVersion 1 or 2`);
@@ -124,6 +127,23 @@ export function setSidecarTrack(
   return {
     ...doc,
     timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks: { ...tl.tracks, [target]: entry } } },
+  };
+}
+
+/**
+ * Remove one editor-owned track from the sidecar (§6.2 rule 7 write-back): the
+ * "extract edits to code" affordance deletes the sidecar entry after copying its
+ * `key(...)` source to the clipboard. Source is never mutated — the user pastes
+ * the generated calls themselves. A missing entry is a no-op (returns the input
+ * unchanged); the document is never mutated in place.
+ */
+export function deleteSidecarTrack(doc: SidecarDoc, timelineId: string, target: string): SidecarDoc {
+  const tl = doc.timelines[timelineId];
+  if (!tl || !(target in tl.tracks)) return doc;
+  const { [target]: _removed, ...rest } = tl.tracks;
+  return {
+    ...doc,
+    timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks: rest } },
   };
 }
 

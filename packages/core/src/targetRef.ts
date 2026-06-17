@@ -42,8 +42,8 @@ export function targetNodeId(target: string): string {
  * track targets. Lives here (the addressing module) so the builder guard, the
  * scene, and the studio host all share ONE definition.
  */
-export function isEditableNodeId(id: string | undefined): id is string {
-  return typeof id === 'string' && id.length > 0 && !id.startsWith('~');
+export function isEditableNodeId(id: string | undefined | null): id is string {
+  return typeof id === 'string' && id.length > 0 && id !== '__root' && !id.startsWith('~');
 }
 
 export function resolveTweenTarget(target: TweenTarget): string {

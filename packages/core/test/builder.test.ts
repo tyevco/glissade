@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileTimeline,
   getTimelineCallbacks,
+  isDurationEditable,
   key,
   sampleTrack,
   signal,
@@ -309,5 +310,28 @@ describe("nD76: structural / un-id'd targets are not editable hosts (§6.4/§6.5
       tl.to('box/opacity', 1, { duration: 1 }).editable();
     });
     expect(doc.tracks[0]!.editable).toBe(true);
+  });
+});
+
+describe('editableDuration() / isDurationEditable() (§6.2 rule 4)', () => {
+  it('the duration is code-owned (not editable) by default', () => {
+    const doc = timeline((tl) => tl.to('a/x', 1, { duration: 1 }));
+    expect(doc.editableDuration).toBeUndefined();
+    expect(isDurationEditable(doc)).toBe(false);
+  });
+
+  it('editableDuration() opts the duration into studio editing — order-independent', () => {
+    const doc = timeline((tl) => tl.editableDuration().to('a/x', 1, { duration: 1 }));
+    expect(doc.editableDuration).toBe(true);
+    expect(isDurationEditable(doc)).toBe(true);
+
+    const after = timeline((tl) => tl.to('a/x', 1, { duration: 1 }).editableDuration());
+    expect(isDurationEditable(after)).toBe(true);
+  });
+
+  it('round-trips through the raw timeline init and JSON', () => {
+    const raw = timeline({ tracks: [track('a/x', 'number', [key(0, 0)])], editableDuration: true });
+    expect(isDurationEditable(raw)).toBe(true);
+    expect(isDurationEditable(JSON.parse(JSON.stringify(raw)) as typeof raw)).toBe(true);
   });
 });

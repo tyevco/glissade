@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   assignKeyIds,
   compileTimeline,
+  deleteSidecarTrack,
   emptySidecar,
+  isEditableNodeId,
   key,
   mergeSidecar,
   mergeSidecarDetailed,
@@ -122,6 +124,74 @@ describe('sidecar merge (§6.2, v2)', () => {
     const merged = mergeSidecar(base, sc);
     expect(base.tracks[0]!.keys[0]!.value).toBe(0);
     expect(JSON.parse(JSON.stringify(merged))).toEqual(merged);
+  });
+});
+
+describe('isEditableNodeId (§6.2 sub-decision — the node half of the editable gate)', () => {
+  it('an explicit, stable id is editable', () => {
+    expect(isEditableNodeId('title')).toBe(true);
+    expect(isEditableNodeId('a')).toBe(true);
+  });
+
+  it('the structural fallback id (~Group.2/Rect.0) is never editable (§6.5)', () => {
+    expect(isEditableNodeId('~Group.2/Rect.0')).toBe(false);
+    expect(isEditableNodeId('~Rect.0')).toBe(false);
+  });
+
+  it('the root sentinel, empty, and absent ids are not editable', () => {
+    expect(isEditableNodeId('__root')).toBe(false);
+    expect(isEditableNodeId('')).toBe(false);
+    expect(isEditableNodeId(undefined)).toBe(false);
+    expect(isEditableNodeId(null)).toBe(false);
+  });
+});
+
+describe('the three editable-track branches (§6.2 locked rule)', () => {
+  // editable IFF the node has an explicit id (isEditableNodeId) AND a
+  // merged/editor-created track exists (track.editable).
+  const isEditable = (merged: ReturnType<typeof mergeSidecar>, target: string) => {
+    const nodeId = target.slice(0, target.indexOf('/'));
+    return isEditableNodeId(nodeId) && merged.tracks.find((t) => t.target === target)?.editable === true;
+  };
+
+  it('code-only track on an id\'d node ⇒ read-only (no editable flag, no sidecar)', () => {
+    const merged = mergeSidecar(code(), null);
+    expect(merged.tracks.find((t) => t.target === 'a/x')!.editable).toBeUndefined();
+    expect(isEditable(merged, 'a/x')).toBe(false);
+  });
+
+  it('editable overlay on an id\'d node ⇒ editable', () => {
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0), key(2, 9)], code().tracks[0]!.keys);
+    expect(isEditable(mergeSidecar(code(), sc), 'a/x')).toBe(true);
+  });
+
+  it('un-id\'d (structural) node ⇒ never editable, even with an overlay flag', () => {
+    const structural = timeline({ tracks: [{ target: '~Rect.0/x', type: 'number', keys: [key(0, 0)], editable: true }] });
+    expect(isEditable(structural, '~Rect.0/x')).toBe(false);
+  });
+});
+
+describe('deleteSidecarTrack (§6.2 rule 7 write-back)', () => {
+  it('removes the entry without mutating the input', () => {
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0)], null);
+    const next = deleteSidecarTrack(sc, 'main', 'a/x');
+    expect(next.timelines['main']!.tracks['a/x']).toBeUndefined();
+    expect(sc.timelines['main']!.tracks['a/x']).toBeDefined(); // input untouched
+  });
+
+  it('after extraction the merge drops back to the code baseline', () => {
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0), key(2, 500)], code().tracks[0]!.keys);
+    expect(sampleTrack(compileTimeline(mergeSidecar(code(), sc)).tracks.get('a/x')!, 2)).toBe(500);
+    const deleted = deleteSidecarTrack(sc, 'main', 'a/x');
+    const back = mergeSidecar(code(), deleted);
+    expect(back.tracks.find((t) => t.target === 'a/x')!.editable).toBeUndefined(); // code-owned again
+    expect(sampleTrack(compileTimeline(back).tracks.get('a/x')!, 1)).toBe(100); // code values
+  });
+
+  it('a missing target / timeline is a no-op (returns the same doc)', () => {
+    const sc = setSidecarTrack(emptySidecar(), 'main', 'a/x', 'number', [key(0, 0)], null);
+    expect(deleteSidecarTrack(sc, 'main', 'a/nope')).toBe(sc);
+    expect(deleteSidecarTrack(sc, 'other', 'a/x')).toBe(sc);
   });
 });
 

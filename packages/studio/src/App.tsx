@@ -10,12 +10,16 @@ import {
   compileTimeline,
   emptySidecar,
   hashKeys,
+  isEditableNodeId,
   mergeSidecar,
   migrateSidecar,
+  sampleTrack,
+  setSidecarTrack,
   type CompiledTimeline,
   type EaseSpec,
   type Key,
   type SidecarDoc,
+  type Track,
 } from '@glissade/core';
 import { type TimelinePatch } from '@glissade/core/studio-host';
 import { createInProcessHost, type InProcessHost } from './inProcessHost.js';
@@ -40,6 +44,7 @@ import { ExportPanel } from './ExportPanel.js';
 import { Transport } from './Transport.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import { Inspector } from './Inspector.js';
+import { previewSource, trackSource } from './codegen.js';
 
 /**
  * Scene auto-discovery (§6.1): glob the project's scene modules — anything
@@ -68,6 +73,11 @@ export function App() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<KeyRef | null>(null);
   const [sidecar, setSidecar] = useState<SidecarDoc | null>(null);
+  // Session-transient preview overlay (§6.2 rule 4): non-editable props can be
+  // previewed live, but this NEVER persists (no POST) and is cleared on scene
+  // change or on any committed edit. It layers on top of the persisted sidecar
+  // for the bound timeline only.
+  const [preview, setPreview] = useState<SidecarDoc | null>(null);
   const [sidecarLoaded, setSidecarLoaded] = useState(false);
   // undo = inverse-patch lists over the document only (§6.3), NOT doc snapshots
   const undoStack = useRef<TimelinePatch[][]>([]);
@@ -78,6 +88,10 @@ export function App() {
   const entry = corpus[sceneName]!;
   // an invalid sidecar must degrade to the code baseline with a visible
   // warning (§6.2: surfaced, never a crash and never silently dropped)
+  // `compiled` (editability gating, timeline panel, write paths) reflects the
+  // PERSISTED document only. `merged` (what the player binds) additionally
+  // layers the session-transient preview overlay so the viewport shows it live
+  // without it ever reaching the sidecar/compiled state.
   const { merged, compiled, sidecarError } = useMemo((): {
     merged: ReturnType<typeof mergeSidecar>;
     compiled: CompiledTimeline;
@@ -85,7 +99,9 @@ export function App() {
   } => {
     const candidate = mergeSidecar(entry.mod.timeline, sidecar);
     try {
-      return { merged: candidate, compiled: compileTimeline(candidate), sidecarError: null };
+      const compiledDoc = compileTimeline(candidate);
+      const withPreview = preview ? mergeSidecar(candidate, preview) : candidate;
+      return { merged: withPreview, compiled: compiledDoc, sidecarError: null };
     } catch (e) {
       return {
         merged: entry.mod.timeline,
@@ -93,7 +109,7 @@ export function App() {
         sidecarError: e instanceof Error ? e.message : String(e),
       };
     }
-  }, [entry, sidecar]);
+  }, [entry, sidecar, preview]);
 
   // glissade.project.json (§6.2): shared markers (+ render presets for the export UI)
   useEffect(() => {
@@ -112,6 +128,7 @@ export function App() {
   useEffect(() => {
     setSidecarLoaded(false);
     setSidecar(null);
+    setPreview(null); // transient preview never crosses a scene change (§6.2 rule 4)
     setSelectedKey(null);
     undoStack.current = [];
     void fetch(sidecarUrl(entry.path))
@@ -182,6 +199,7 @@ export function App() {
       // streaming moves reuse it — the snapshot-restore inverse holds pre-drag state
       if (snapshot) undoStack.current.push(result.inverse);
       setSidecar(result.doc);
+      setPreview(null); // a committed edit clears any live preview (§6.2 rule 4)
       persist(result.doc);
       if (reselectT !== undefined && keys.length > 0) {
         setSelectedKey({ target, t: keys[closestIndex(keys, reselectT)]!.t });
@@ -228,6 +246,76 @@ export function App() {
       writeKeys(target, upsertKeyAt(tr, t, value), t);
     },
     [trackOf, session, writeKeys],
+  );
+
+  /**
+   * The locked editability rule (§6.2 sub-decision): editable IFF the target's
+   * node has an explicit id (isEditableNodeId) AND a merged/editor-created track
+   * exists with `editable: true`. `compiled.tracks` reflects the persisted
+   * document, so a transient preview never flips a prop to editable.
+   */
+  const editableOf = useCallback(
+    (target: string) => {
+      const nodeId = target.slice(0, target.indexOf('/'));
+      return isEditableNodeId(nodeId) && compiled.tracks.get(target)?.editable === true;
+    },
+    [compiled],
+  );
+
+  /**
+   * Session-transient preview write for a non-editable prop (§6.2 rule 4):
+   * overlays a key at the playhead onto the bound timeline so the viewport
+   * updates live — but writes ONLY to `preview` state, never the sidecar/POST.
+   * Cleared on scene change or any committed edit.
+   */
+  const previewValue = useCallback(
+    (target: string, raw: string) => {
+      const tr = trackOf(target);
+      if (!tr || !session) return;
+      const value = parseValue(tr.type, raw);
+      if (value === null) return;
+      const t = session.scene.playhead.peek();
+      const base = preview ?? emptySidecar();
+      // baseline keys null ⇒ an editor-created overlay track (no merge-conflict class)
+      setPreview(setSidecarTrack(base, 'main', target, tr.type, upsertKeyAt(tr, t, value), null));
+    },
+    [trackOf, session, preview],
+  );
+
+  /** Copy a non-editable prop's current value as `key(...)` source — clipboard only (§6.2 rule 4). */
+  const copyAsCode = useCallback(
+    (target: string) => {
+      const tr = trackOf(target);
+      if (!tr || !session) return;
+      const t = session.scene.playhead.peek();
+      void navigator.clipboard?.writeText(previewSource(target, t, sampleTrack(tr, t)));
+    },
+    [trackOf, session],
+  );
+
+  /**
+   * Extract an editable track's keys to the clipboard as `track(...)` source,
+   * then remove the sidecar entry (§6.2 rule 7) — clipboard-only write-back, the
+   * source is never mutated. Snapshots for undo, then persists the deletion.
+   */
+  const extractEdits = useCallback(
+    (target: string) => {
+      const tr = compiled.tracks.get(target);
+      if (!tr || !session) return;
+      void navigator.clipboard?.writeText(trackSource(tr as Track));
+      // remove the sidecar entry through the host (atomic, undoable) — the
+      // clipboard holds the code; the source is never mutated (§6.2 rule 7)
+      const result = session.host.applyPatch([{ op: 'removeTrack', timelineId: 'main', target }]);
+      if (!result.ok) return;
+      undoStack.current.push(result.inverse);
+      const main = result.doc.timelines['main'];
+      const empty = !main || (Object.keys(main.tracks).length === 0 && !main.labels);
+      const restored = empty ? null : result.doc;
+      setSidecar(restored);
+      setPreview(null);
+      persist(restored ?? emptySidecar());
+    },
+    [compiled, session, persist],
   );
 
   const undo = useCallback(() => {
@@ -297,8 +385,11 @@ export function App() {
             scene={session.scene}
             selected={selectedNode}
             onSelect={setSelectedNode}
-            hasTrack={(target) => compiled.tracks.has(target)}
+            editableOf={editableOf}
             onEditValue={setValueAtPlayhead}
+            onPreviewValue={previewValue}
+            onCopyAsCode={copyAsCode}
+            onExtractEdits={extractEdits}
           />
         )}
       </div>

@@ -82,6 +82,12 @@ export interface ChildEntry {
 export interface Timeline {
   version: 1;
   duration?: number;
+  /**
+   * Studio opt-in (§6.2 rule 4): the timeline duration is code-owned and
+   * read-only in the editor UNLESS this flag is set (via `editableDuration()`
+   * on the builder, or directly). Mirrors `track.editable` for tracks.
+   */
+  editableDuration?: boolean;
   fps?: number;
   posterTime?: number;
   tracks: Track[];
@@ -95,6 +101,8 @@ export interface Timeline {
 export interface TimelineInit {
   tracks?: Track[];
   duration?: number;
+  /** Studio opt-in: expose the duration to editor editing (§6.2 rule 4). */
+  editableDuration?: boolean;
   fps?: number;
   posterTime?: number;
   labels?: Record<string, number>;
@@ -107,6 +115,7 @@ export interface TimelineInit {
 export function timeline(init: TimelineInit): Timeline {
   const doc: Timeline = { version: 1, tracks: init.tracks ?? [] };
   if (init.duration !== undefined) doc.duration = init.duration;
+  if (init.editableDuration !== undefined) doc.editableDuration = init.editableDuration;
   if (init.fps !== undefined) doc.fps = init.fps;
   if (init.posterTime !== undefined) doc.posterTime = init.posterTime;
   if (init.labels !== undefined) doc.labels = init.labels;
@@ -246,6 +255,14 @@ function coalesce(entries: FlatEntry[]): Map<string, Track> {
   const result = new Map<string, Track>();
   for (const [target, { track }] of byTarget) result.set(target, track);
   return result;
+}
+
+/**
+ * Studio reader (§6.2 rule 4): is this timeline's duration opted into editor
+ * editing? Code-owned and read-only by default; `editableDuration()` flips it.
+ */
+export function isDurationEditable(doc: Timeline): boolean {
+  return doc.editableDuration === true;
 }
 
 function childExtent(child: ChildEntry): number {
