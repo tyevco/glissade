@@ -23,6 +23,7 @@
     "@glissade/vite-plugin": "0.8.0"
   },
   "changesets": [
+    "kokoro-pnpm-resolution",
     "kokoro-tts-provider"
   ]
 }
