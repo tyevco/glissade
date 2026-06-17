@@ -1,5 +1,7 @@
 # @glissade/core
 
+## 0.8.1-pre.0
+
 ## 0.8.0
 
 ### Minor Changes
