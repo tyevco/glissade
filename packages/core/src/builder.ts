@@ -57,6 +57,12 @@ export interface TimelineBuilder {
   adBreak(at: Position, opts?: { id?: string; duration?: number }): TimelineBuilder;
   /** Mark the preceding track editable for the studio (§6.2). */
   editable(): TimelineBuilder;
+  /**
+   * Opt the timeline duration into studio editing (§6.2 rule 4). Duration is
+   * code-owned and read-only in the editor by default; this mirrors
+   * `.editable()` for the duration itself. Order-independent within the chain.
+   */
+  editableDuration(): TimelineBuilder;
 }
 
 interface Insertion {
@@ -102,6 +108,7 @@ export function buildTimeline(
   const children: (ChildEntry & { _pos: Position | undefined })[] = [];
   const markers: Marker[] = [];
   const callbacks = new Map<string, () => void>();
+  let durationEditable = false;
 
   // resolved cursor state, updated per insertion as positions resolve eagerly
   let prevStart = 0;
@@ -223,6 +230,10 @@ export function buildTimeline(
       last.editable = true;
       return builder;
     },
+    editableDuration() {
+      durationEditable = true;
+      return builder;
+    },
   };
 
   build(builder);
@@ -287,6 +298,7 @@ export function buildTimeline(
     ...init,
     tracks,
     labels,
+    ...(durationEditable ? { editableDuration: true } : {}),
     ...(markers.length ? { markers } : {}),
     ...(children.length ? { children: children.map(({ _pos, ...c }) => c) } : {}),
   });

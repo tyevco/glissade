@@ -172,6 +172,9 @@ export interface CurveSampler {
 export const DEFAULT_EASE = "easeInOutCubic";
 
 // @public
+export function deleteSidecarTrack(doc: SidecarDoc, timelineId: string, target: string): SidecarDoc;
+
+// @public
 export type DevWarning = (message: string) => void;
 
 // @public (undocumented)
@@ -235,6 +238,12 @@ export function inferValueType(value: unknown): ValueTypeId;
 
 // @public (undocumented)
 export function inReadPhase(): boolean;
+
+// @public
+export function isDurationEditable(doc: Timeline): boolean;
+
+// @public
+export function isEditableNodeId(id: string | undefined | null): id is string;
 
 // @public (undocumented)
 export type Json = null | boolean | number | string | Json[] | {
@@ -562,6 +571,7 @@ export interface Timeline {
     children?: ChildEntry[];
     // (undocumented)
     duration?: number;
+    editableDuration?: boolean;
     // (undocumented)
     fps?: number;
     // (undocumented)
@@ -596,6 +606,7 @@ export interface TimelineBuilder {
     call(fn: () => void, at?: Position): TimelineBuilder;
     cue(at: Position, name: string, data?: Json): TimelineBuilder;
     editable(): TimelineBuilder;
+    editableDuration(): TimelineBuilder;
     // (undocumented)
     fromTo<T>(target: TweenTarget, from: T, to: T, opts?: TweenOpts<T>): TimelineBuilder;
     // (undocumented)
@@ -617,6 +628,7 @@ export interface TimelineInit {
     children?: ChildEntry[];
     // (undocumented)
     duration?: number;
+    editableDuration?: boolean;
     // (undocumented)
     fps?: number;
     // (undocumented)

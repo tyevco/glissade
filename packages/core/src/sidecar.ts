@@ -56,6 +56,21 @@ export interface SidecarDocV1 {
 
 const MAIN = 'main';
 
+/**
+ * Editable-id predicate (§6.2 sub-decision, §6.5): only a node with an
+ * explicit, stable `id` may host editable or editor-created tracks. The
+ * structural fallback ids minted for un-id'd nodes (`~Group.2/Rect.0`, §6.5)
+ * are reorder-fragile and never editable; the scene root sentinel (`__root`)
+ * is structural too. Gating on explicit ids eliminates the worst drift class.
+ *
+ * This is the *node* half of the locked editability rule — a target is
+ * editable IFF its node id passes here AND a merged/editor-created track
+ * exists (`track.editable`, set by mergeSidecarDetailed).
+ */
+export function isEditableNodeId(id: string | undefined | null): id is string {
+  return typeof id === 'string' && id.length > 0 && id !== '__root' && !id.startsWith('~');
+}
+
 export class SidecarVersionError extends Error {
   constructor(version: unknown) {
     super(`unsupported sidecar version ${String(version)}; this build reads sidecarVersion 1 or 2`);
@@ -124,6 +139,23 @@ export function setSidecarTrack(
   return {
     ...doc,
     timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks: { ...tl.tracks, [target]: entry } } },
+  };
+}
+
+/**
+ * Remove one editor-owned track from the sidecar (§6.2 rule 7 write-back): the
+ * "extract edits to code" affordance deletes the sidecar entry after copying its
+ * `key(...)` source to the clipboard. Source is never mutated — the user pastes
+ * the generated calls themselves. A missing entry is a no-op (returns the input
+ * unchanged); the document is never mutated in place.
+ */
+export function deleteSidecarTrack(doc: SidecarDoc, timelineId: string, target: string): SidecarDoc {
+  const tl = doc.timelines[timelineId];
+  if (!tl || !(target in tl.tracks)) return doc;
+  const { [target]: _removed, ...rest } = tl.tracks;
+  return {
+    ...doc,
+    timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks: rest } },
   };
 }
 

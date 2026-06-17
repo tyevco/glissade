@@ -92,6 +92,7 @@ export {
 
 export {
   compileTimeline,
+  isDurationEditable,
   audioOffsetSamples,
   setDevWarning,
   emitDevWarning,
@@ -153,6 +154,8 @@ export {
   mergeSidecarDetailed,
   migrateSidecar,
   setSidecarTrack,
+  deleteSidecarTrack,
+  isEditableNodeId,
   hashKeys,
   assignKeyIds,
   emptySidecar,

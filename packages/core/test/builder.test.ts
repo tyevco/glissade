@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileTimeline,
   getTimelineCallbacks,
+  isDurationEditable,
   key,
   sampleTrack,
   signal,
@@ -276,5 +277,28 @@ describe('cue / adBreak markers (§ad-break)', () => {
     );
     expect(doc.markers.find((m) => m.name === 'plain')!.data).toEqual({ kind: 'cue' });
     expect(doc.markers.find((m) => m.name === 'titled')!.data).toEqual({ kind: 'cue', title: 'Act One' });
+  });
+});
+
+describe('editableDuration() / isDurationEditable() (§6.2 rule 4)', () => {
+  it('the duration is code-owned (not editable) by default', () => {
+    const doc = timeline((tl) => tl.to('a/x', 1, { duration: 1 }));
+    expect(doc.editableDuration).toBeUndefined();
+    expect(isDurationEditable(doc)).toBe(false);
+  });
+
+  it('editableDuration() opts the duration into studio editing — order-independent', () => {
+    const doc = timeline((tl) => tl.editableDuration().to('a/x', 1, { duration: 1 }));
+    expect(doc.editableDuration).toBe(true);
+    expect(isDurationEditable(doc)).toBe(true);
+
+    const after = timeline((tl) => tl.to('a/x', 1, { duration: 1 }).editableDuration());
+    expect(isDurationEditable(after)).toBe(true);
+  });
+
+  it('round-trips through the raw timeline init and JSON', () => {
+    const raw = timeline({ tracks: [track('a/x', 'number', [key(0, 0)])], editableDuration: true });
+    expect(isDurationEditable(raw)).toBe(true);
+    expect(isDurationEditable(JSON.parse(JSON.stringify(raw)) as typeof raw)).toBe(true);
   });
 });

@@ -7,9 +7,13 @@ const src = (pkg: string) => fileURLToPath(new URL(`./packages/${pkg}/src/index.
 export default defineConfig({
   resolve: {
     alias: {
-      '@glissade/core': src('core'),
+      // Subpath aliases MUST precede their bare-package alias: the string alias
+      // greedily prefix-matches, so '@glissade/scene' would otherwise swallow
+      // '@glissade/scene/layout'. Mirror this ordering for any new subentry.
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
+      '@glissade/core': src('core'),
       '@glissade/scene': src('scene'),
+      '@glissade/react': src('react'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/player': src('player'),
       '@glissade/backend-skia': src('backend-skia'),
@@ -23,6 +27,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/*/test/**/*.test.ts'],
+    // Default environment stays node so the golden/parity suite renders
+    // byte-identically; studio component tests opt into jsdom per-file with a
+    // `// @vitest-environment jsdom` docblock (only `.tsx` files do this).
+    environment: 'node',
+    include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx'],
   },
 });
