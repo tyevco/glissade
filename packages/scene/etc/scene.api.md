@@ -7,7 +7,10 @@
 import { BindableSignal } from '@glissade/core';
 import { BoundTimeline } from '@glissade/core';
 import { CompiledTimeline } from '@glissade/core';
+import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
+import { FontMode } from '@glissade/core';
+import { FontUsage } from '@glissade/core';
 import { PathValue } from '@glissade/core';
 import { Playhead } from '@glissade/core';
 import { ReadonlySignal } from '@glissade/core';
@@ -100,6 +103,9 @@ export class ColdAssetError extends Error {
     readonly detail: string;
     readonly mediaT: number | undefined;
 }
+
+// @public
+export function collectTextUsages(scene: Scene): FontUsage[];
 
 // @public (undocumented)
 export function createDisplayListBuilder(size: {
@@ -349,6 +355,9 @@ export interface FollowPathProps extends NodeProps {
     samplesPerSegment?: number;
     target: Node_2;
 }
+
+// @public
+export type FontByteLoader = (url: string) => Promise<ArrayBuffer | undefined>;
 
 // @public (undocumented)
 export interface FontSpec {
@@ -1028,6 +1037,8 @@ class Text_2 extends Node_2 {
     // (undocumented)
     readonly fontSize: BindableSignal<number>;
     // (undocumented)
+    readonly fontStyle: 'normal' | 'italic';
+    // (undocumented)
     readonly fontWeight: number;
     graphemes(measurer?: TextMeasurer): string[];
     // (undocumented)
@@ -1116,6 +1127,7 @@ export interface TextProps extends NodeProps {
     fontFamily?: string;
     // (undocumented)
     fontSize?: PropInit<number>;
+    fontStyle?: 'normal' | 'italic';
     // (undocumented)
     fontWeight?: number;
     lineHeight?: number;
@@ -1201,6 +1213,16 @@ export function validateFilters(filters: readonly FilterSpec[]): void;
 
 // @public (undocumented)
 export function validateHachure(h: HachureSpec): void;
+
+// @public
+export function validateSceneFonts(scene: Scene, doc: Timeline, loadBytes: FontByteLoader, options?: ValidateSceneFontsOptions): Promise<CoverageReport>;
+
+// @public (undocumented)
+export interface ValidateSceneFontsOptions {
+    // (undocumented)
+    mode?: FontMode;
+    osFamilies?: ReadonlySet<string> | undefined;
+}
 
 // @public
 export function validateSketch(s: SketchStyle): void;

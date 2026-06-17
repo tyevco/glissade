@@ -102,6 +102,13 @@ export {
   type TokenRange,
 } from './tokenHighlight.js';
 
+export {
+  collectTextUsages,
+  validateSceneFonts,
+  type FontByteLoader,
+  type ValidateSceneFontsOptions,
+} from './fontUsage.js';
+
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';
 export {

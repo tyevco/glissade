@@ -162,6 +162,7 @@ export interface RenderOptions {
     range?: [number, number];
     sfx?: 'auto' | 'off';
     state?: string;
+    strictFonts?: boolean;
     trace?: string;
 }
 

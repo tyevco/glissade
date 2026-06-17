@@ -580,6 +580,8 @@ export interface TextProps extends NodeProps {
   fontFamily?: string;
   fontSize?: PropInit<number>;
   fontWeight?: number;
+  /** Font style; default 'normal'. Threaded into FontSpec.style (§3.6). */
+  fontStyle?: 'normal' | 'italic';
   /** Horizontal alignment about the node position; default 'left'. */
   align?: 'left' | 'center' | 'right';
   /** Wrap width in px; unset = no wrapping (explicit \n still breaks). */
@@ -601,6 +603,7 @@ export class Text extends Node {
   readonly fontSize: BindableSignal<number>;
   readonly fontFamily: string;
   readonly fontWeight: number;
+  readonly fontStyle: 'normal' | 'italic';
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
@@ -613,6 +616,7 @@ export class Text extends Node {
     this.fontSize = initProp(signal(16), props.fontSize);
     this.fontFamily = props.fontFamily ?? 'sans-serif';
     this.fontWeight = props.fontWeight ?? 400;
+    this.fontStyle = props.fontStyle ?? 'normal';
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
@@ -627,7 +631,13 @@ export class Text extends Node {
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
     const text = this.text();
     if (!text) return { w: 0, h: 0 };
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, measurer);
     const widest = Math.max(...lines.map((l) => quantize(measurer.measureText(l, font).width)), 0);
@@ -638,7 +648,13 @@ export class Text extends Node {
   override drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const size = this.intrinsicSize(m);
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, m)[0] ?? '';
     const ascent = m.measureText(firstLine, font).ascent;
     const x = this.align === 'left' ? 0 : this.align === 'center' ? -size.w / 2 : -size.w;
@@ -665,7 +681,13 @@ export class Text extends Node {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const text = this.text();
     if (!text) return [];
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
     const step = quantize(font.size * this.lineHeight);
@@ -693,7 +715,13 @@ export class Text extends Node {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const text = this.text();
     if (!text) return [];
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
     const step = quantize(font.size * this.lineHeight);
@@ -739,7 +767,13 @@ export class Text extends Node {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
     const text = this.text();
     if (!text) return [];
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
     const out: string[] = [];
@@ -755,7 +789,13 @@ export class Text extends Node {
    */
   revealHead(measurer?: TextMeasurer): { x: number; y: number; h: number; line: number; index: number } {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     const lines = breakLines(this.text(), font, maxWidth > 0 ? maxWidth : undefined, m);
     const step = quantize(font.size * this.lineHeight);
@@ -787,7 +827,13 @@ export class Text extends Node {
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
     const text = this.text();
     if (!text) return;
-    const font: FontSpec = { family: this.fontFamily, size: this.fontSize(), weight: this.fontWeight };
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
     const maxWidth = this.width();
     // line breaking is ours (§3.6), measured by the injected backend measurer
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, ctx.measurer);
@@ -879,7 +925,12 @@ export function revealSchedule(text: Text, reveal: Track<number>, measurer?: Tex
   const m = measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
   const src = text.text();
   if (!src) return [];
-  const font: FontSpec = { family: text.fontFamily, size: text.fontSize(), weight: text.fontWeight };
+  const font: FontSpec = {
+    family: text.fontFamily,
+    size: text.fontSize(),
+    weight: text.fontWeight,
+    ...(text.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+  };
   const maxWidth = text.width();
   const lines = breakLines(src, font, maxWidth > 0 ? maxWidth : undefined, m);
   const step = quantize(font.size * text.lineHeight);

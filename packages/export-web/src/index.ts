@@ -20,8 +20,17 @@ import {
   type VideoCodec,
   type AudioCodec,
 } from 'mediabunny';
-import { compileTimeline, audioOffsetSamples, emitDevWarning, sampleTrack, type AudioClip, type Timeline, type Track } from '@glissade/core';
-import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
+import {
+  compileTimeline,
+  audioOffsetSamples,
+  buildFontRegistry,
+  emitDevWarning,
+  sampleTrack,
+  type AudioClip,
+  type Timeline,
+  type Track,
+} from '@glissade/core';
+import { evaluate, validateSceneFonts, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { MediabunnyVideoFrameSource } from './videoSource.js';
 
@@ -39,6 +48,13 @@ export interface WebExportOptions {
    * transfers the channels (§5.1 worker posture).
    */
   premixedAudio?: PremixedAudio;
+  /**
+   * Font validation (§3.6). `true` = strict: an unregistered non-generic family
+   * or an uncovered glyph throws before frame 0. Default (false) = dev-warn.
+   */
+  strictFonts?: boolean;
+  /** OS-installed families to treat as registered for strict mode. */
+  osFonts?: ReadonlySet<string>;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -207,18 +223,37 @@ export async function exportVideo(
 
   // Open and register timeline assets (§3.8); video sources warm on demand below.
   const videoSources = new Map<string, VideoFrameSource>();
+
+  // §3.6: register EVERY declared face (weight/style variants), not one per
+  // family, and await each before frame 0 (frame-exact; document.fonts.ready is
+  // the wrong primitive — it only settles currently-pending loads).
+  const fontRegistry = buildFontRegistry(doc.assets);
+  const g = globalThis as unknown as {
+    document?: { fonts?: { add(f: FontFace): void } };
+    fonts?: { add(f: FontFace): void };
+  };
+  const fontSet = g.document?.fonts ?? g.fonts;
+  for (const face of fontRegistry.faces()) {
+    const fontFace = new FontFace(face.family, `url(${face.url})`, { weight: String(face.weight), style: face.style });
+    fontSet?.add(fontFace);
+    await fontFace.load();
+  }
+
+  // §3.6 glyph-coverage / unregistered-family validation: dev-warn by default,
+  // strict throws before frame 0. Fetch face bytes for cmap parsing.
+  await validateSceneFonts(
+    scene,
+    doc,
+    async (url) => {
+      const resp = await fetch(url);
+      return resp.ok ? await resp.arrayBuffer() : undefined;
+    },
+    { mode: opts.strictFonts ? 'strict' : 'dev', ...(opts.osFonts !== undefined ? { osFamilies: opts.osFonts } : {}) },
+  );
+
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
     if (ref.kind === 'font') {
-      // frame-exact export awaits every declared face before frame 0 (§3.6)
-      const face = new FontFace(assetId, `url(${ref.url})`);
-      // FontFaceSet lives on document.fonts (main thread) or self.fonts (worker)
-      const g = globalThis as unknown as {
-        document?: { fonts?: { add(f: FontFace): void } };
-        fonts?: { add(f: FontFace): void };
-      };
-      const fontSet = g.document?.fonts ?? g.fonts;
-      fontSet?.add(face);
-      await face.load();
+      // faces already registered + awaited above
     } else if (ref.kind === 'image') {
       const resp = await fetch(ref.url);
       if (!resp.ok) throw new Error(`image asset fetch failed (${resp.status}): ${ref.url}`);

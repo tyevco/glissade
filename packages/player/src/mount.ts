@@ -4,8 +4,8 @@
  * invalidation schedules one rAF-coalesced render.
  */
 
-import { compileTimeline, type Timeline } from '@glissade/core';
-import { evaluate, type Scene } from '@glissade/scene';
+import { buildFontRegistry, compileTimeline, type Timeline } from '@glissade/core';
+import { evaluate, validateSceneFonts, type Scene } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { createPlayer, type Player, type PlayerOptions } from './player.js';
 import { planReducedMotion, mediaPrefersReducedMotion } from './reducedMotion.js';
@@ -64,15 +64,32 @@ export function mount(
   };
   const unsubscribe = playhead.subscribe(schedule);
 
-  // explicit fonts (§3.6): register a timeline's declared font faces once.
+  // explicit fonts (§3.6): register EVERY declared face (weight/style variants)
+  // once, and run font validation off the first paint (non-blocking — the
+  // export paths await; realtime just warns / rejects on strict).
   const loadFonts = (forDoc: Timeline) => {
     if (typeof FontFace === 'undefined') return;
-    for (const [family, ref] of Object.entries(forDoc.assets ?? {})) {
-      if (ref.kind !== 'font') continue;
-      const face = new FontFace(family, `url(${ref.url})`);
+    const registry = buildFontRegistry(forDoc.assets);
+    for (const f of registry.faces()) {
+      const face = new FontFace(f.family, `url(${f.url})`, { weight: String(f.weight), style: f.style });
       (document.fonts as unknown as { add(f: FontFace): void }).add(face);
       void face.load().then(() => renderNow(), () => undefined);
     }
+    // §3.6 coverage check, off the critical path: dev-warn by default, strict
+    // rejects (unhandled-rejection surfaces it without gating paint).
+    void validateSceneFonts(
+      scene,
+      forDoc,
+      async (url) => {
+        try {
+          const resp = await fetch(url);
+          return resp.ok ? await resp.arrayBuffer() : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      { mode: opts.strictFonts ? 'strict' : 'dev', ...(opts.osFonts !== undefined ? { osFamilies: opts.osFonts } : {}) },
+    );
   };
 
   // realtime embeds paint immediately and re-render when each face arrives (the

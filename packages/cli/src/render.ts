@@ -9,8 +9,10 @@ import { mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
-import { evaluate, withDeterminismGuards, type SceneModule } from '@glissade/scene';
+import { buildFontRegistry } from '@glissade/core';
+import { evaluate, validateSceneFonts, withDeterminismGuards, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '@glissade/backend-skia';
 
 export interface RenderOptions {
@@ -41,6 +43,8 @@ export interface RenderOptions {
   sfx?: 'auto' | 'off';
   /** also write WebVTT chapters from cue markers ('vtt'); cues.json is always written when cues exist. */
   chapters?: 'vtt' | 'off';
+  /** --strict: font validation throws on an unregistered family / missing glyph (§3.6). Default dev-warn. */
+  strictFonts?: boolean;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -155,21 +159,46 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   // Warm timeline assets before evaluation (§2.5 readiness precondition).
   const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
+  const { resolveAssetPath: resolveAsset } = await import('./audioMix.js');
+
+  // §3.6: register EVERY declared face under its family (the asset id IS the
+  // family name), not one path per asset, so weight/style variants resolve.
+  const fontRegistry = buildFontRegistry(doc.assets);
+  if (fontRegistry.faces().length > 0) {
+    const { GlobalFonts } = await import('@napi-rs/canvas');
+    for (const face of fontRegistry.faces()) {
+      GlobalFonts.registerFromPath(resolveAsset(face.url, opts.modulePath), face.family);
+    }
+  }
+
+  // §3.6 font validation: dev-warn by default, --strict throws on an
+  // unregistered non-generic family or an uncovered glyph.
+  await validateSceneFonts(
+    scene,
+    doc,
+    async (url) => {
+      try {
+        const buf = await readFile(resolveAsset(url, opts.modulePath));
+        return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      } catch {
+        return undefined;
+      }
+    },
+    { mode: opts.strictFonts ? 'strict' : 'dev' },
+  );
+
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
-    const { resolveAssetPath } = await import('./audioMix.js');
     if (ref.kind === 'font') {
-      // convention: the asset id IS the font family name (§3.6 explicit fonts)
-      const { GlobalFonts } = await import('@napi-rs/canvas');
-      GlobalFonts.registerFromPath(resolveAssetPath(ref.url, opts.modulePath), assetId);
+      // faces already registered above
     } else if (ref.kind === 'image') {
       const { loadImage } = await import('@napi-rs/canvas');
-      backend.setImageAsset(assetId, await loadImage(resolveAssetPath(ref.url, opts.modulePath)));
+      backend.setImageAsset(assetId, await loadImage(resolveAsset(ref.url, opts.modulePath)));
     } else if (ref.kind === 'video') {
       if (!ffmpegAvailable()) {
         throw new Error(`video asset '${assetId}' needs FFmpeg on PATH for frame extraction (§5.4)`);
       }
       const { FfmpegVideoFrameSource } = await import('./videoSource.js');
-      const source = new FfmpegVideoFrameSource(resolveAssetPath(ref.url, opts.modulePath));
+      const source = new FfmpegVideoFrameSource(resolveAsset(ref.url, opts.modulePath));
       await source.warm(0, source.duration); // v1: whole-source warm, trivially correct
       backend.setVideoAsset(assetId, source);
       videoSources.push(source);

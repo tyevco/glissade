@@ -131,7 +131,9 @@ export interface WebExportOptions {
     fps?: number;
     // (undocumented)
     onProgress?: (frame: number, total: number) => void;
+    osFonts?: ReadonlySet<string>;
     premixedAudio?: PremixedAudio;
+    strictFonts?: boolean;
     // (undocumented)
     videoBitrate?: number;
 }

@@ -6,6 +6,8 @@
 
 // @public (undocumented)
 export interface AssetRef {
+    faces?: FontFaceRef[] | undefined;
+    fallback?: string[] | undefined;
     // (undocumented)
     kind: 'font' | 'image' | 'audio' | 'video' | 'timeline';
     // (undocumented)
@@ -93,6 +95,9 @@ export interface BoundTimeline {
 }
 
 // @public (undocumented)
+export function buildFontRegistry(assets?: Record<string, AssetRef> | undefined): FontRegistry;
+
+// @public (undocumented)
 export function buildTimeline(build: (tl: TimelineBuilder) => void, init?: Omit<TimelineInit, 'tracks' | 'children' | 'markers'>): Timeline;
 
 // @public (undocumented)
@@ -152,6 +157,12 @@ export function compileTimeline(doc: Timeline): CompiledTimeline;
 export function computed<T>(fn: () => T, options?: SignalOptions<T>): ReadonlySignal<T>;
 
 // @public (undocumented)
+export interface CoverageReport {
+    missingGlyphs: MissingGlyphs[];
+    unregistered: string[];
+}
+
+// @public (undocumented)
 export function createPlayhead(initial?: number): Playhead;
 
 // @public
@@ -209,6 +220,42 @@ export type Equals<T> = (a: T, b: T) => boolean;
 // @public
 export function evaluateAt<R>(playhead: Playhead, t: number, read: () => R): R;
 
+// @public
+export interface FontFaceRef {
+    // (undocumented)
+    style?: 'normal' | 'italic' | undefined;
+    // (undocumented)
+    url: string;
+    // (undocumented)
+    weight?: number | undefined;
+}
+
+// @public (undocumented)
+export type FontMode = 'strict' | 'dev';
+
+// @public (undocumented)
+export interface FontRegistry {
+    faces(): ResolvedFace[];
+    fallbackChain(family: string): string[];
+    has(family: string): boolean;
+    resolveFace(family: string, weight?: number, style?: 'normal' | 'italic'): ResolvedFace | undefined;
+}
+
+// @public
+export interface FontUsage {
+    // (undocumented)
+    family: string;
+    // (undocumented)
+    text: string;
+}
+
+// @public (undocumented)
+export class FontValidationError extends Error {
+    constructor(report: CoverageReport);
+    // (undocumented)
+    readonly report: CoverageReport;
+}
+
 // @public (undocumented)
 export function formatColor(c: Rgba): string;
 
@@ -235,6 +282,9 @@ export function inferValueType(value: unknown): ValueTypeId;
 
 // @public (undocumented)
 export function inReadPhase(): boolean;
+
+// @public
+export function isExemptFamily(family: string, osFamilies?: ReadonlySet<string>): boolean;
 
 // @public (undocumented)
 export type Json = null | boolean | number | string | Json[] | {
@@ -292,6 +342,13 @@ export function mergeSidecarDetailed(code: Timeline, sidecar: SidecarDoc | Sidec
 export function migrateSidecar(doc: SidecarDoc | SidecarDocV1 | null | undefined): SidecarDoc | null;
 
 // @public (undocumented)
+export interface MissingGlyphs {
+    codePoints: number[];
+    // (undocumented)
+    family: string;
+}
+
+// @public (undocumented)
 export function namedEasing(name: string): EasingFn;
 
 // @public
@@ -317,6 +374,9 @@ export function oklabToRgba(c: OkLab): Rgba;
 
 // @public (undocumented)
 export type OrphanReason = 'node-missing' | 'prop-missing' | 'type-changed';
+
+// @public
+export function parseCmap(bytes: ArrayBuffer): Set<number>;
 
 // @public (undocumented)
 export function parseColor(input: string): Rgba;
@@ -365,6 +425,18 @@ export interface ReadonlySignal<T> {
 
 // @public (undocumented)
 export function registerValueType<T>(vt: ValueType<T>): void;
+
+// @public
+export interface ResolvedFace {
+    // (undocumented)
+    family: string;
+    // (undocumented)
+    style: 'normal' | 'italic';
+    // (undocumented)
+    url: string;
+    // (undocumented)
+    weight: number;
+}
 
 // @public (undocumented)
 export function resolveEase(spec: EaseSpec | undefined): EasingFn;
@@ -690,6 +762,14 @@ export class UnresolvableTargetError extends Error {
 
 // @public
 export function untracked<T>(fn: () => T): T;
+
+// @public
+export function validateFonts(usages: readonly FontUsage[], registry: FontRegistry, cmaps: ReadonlyMap<string, ReadonlySet<number>>, mode: FontMode, options?: ValidateFontsOptions): CoverageReport;
+
+// @public (undocumented)
+export interface ValidateFontsOptions {
+    osFamilies?: ReadonlySet<string> | undefined;
+}
 
 // @public (undocumented)
 export function validateTrack(track: Track): void;

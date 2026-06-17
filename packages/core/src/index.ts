@@ -102,11 +102,31 @@ export {
   type ChildEntry,
   type Marker,
   type AssetRef,
+  type FontFaceRef,
   type GainEnvelope,
   type AudioClip,
   type Json,
   type DevWarning,
 } from './timeline.js';
+
+export {
+  buildFontRegistry,
+  type FontRegistry,
+  type ResolvedFace,
+} from './fontRegistry.js';
+
+export { parseCmap } from './cmap.js';
+
+export {
+  validateFonts,
+  isExemptFamily,
+  FontValidationError,
+  type FontMode,
+  type FontUsage,
+  type CoverageReport,
+  type MissingGlyphs,
+  type ValidateFontsOptions,
+} from './fontValidation.js';
 
 export {
   timeline,

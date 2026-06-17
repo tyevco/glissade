@@ -29,6 +29,15 @@ export interface PlayerOptions {
   reducedMotion?: ReducedMotionMode;
   /** Override reduced-motion detection (defaults to the media query). */
   prefersReducedMotion?: () => boolean;
+  /**
+   * Font validation (§3.6). `true` = strict: an unregistered non-generic family
+   * or an uncovered glyph throws (rejects the async check). Default = dev-warn.
+   * Realtime is non-blocking — the check runs off the first paint, never gating
+   * it (the export paths await; frame-exactness lives there).
+   */
+  strictFonts?: boolean;
+  /** OS-installed families to treat as registered for strict mode. */
+  osFonts?: ReadonlySet<string>;
 }
 
 export interface PlayHandle {

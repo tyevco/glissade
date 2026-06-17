@@ -16,9 +16,33 @@ export interface Marker {
   data?: Json;
 }
 
+/**
+ * One concrete font face within a family — a (weight, style) variant at a URL.
+ * `weight`/`style` default to 400/'normal' (the CSS regular face). Lives on
+ * AssetRef.faces; a bare `{ kind: 'font', url }` is exactly the 400/normal face
+ * with no extra variants (so existing documents stay byte-identical, §3.6).
+ */
+export interface FontFaceRef {
+  url: string;
+  weight?: number | undefined;
+  style?: 'normal' | 'italic' | undefined;
+}
+
 export interface AssetRef {
   kind: 'font' | 'image' | 'audio' | 'video' | 'timeline';
   url: string;
+  /**
+   * Font only (§3.6): the explicit face set for this family. When present, the
+   * loaders register EVERY face (not the single `url`); the family-level `url`
+   * is the implicit 400/normal face. Omitted = the bare single-face form.
+   */
+  faces?: FontFaceRef[] | undefined;
+  /**
+   * Font only (§3.6): the explicit fallback family chain, in order. The
+   * registry resolves `[family, ...fallback]` for glyph coverage. Omitted = no
+   * declared fallback (system fallback still applies in the rasterizer).
+   */
+  fallback?: string[] | undefined;
 }
 
 /**

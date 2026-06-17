@@ -121,10 +121,12 @@ export interface PlayerOptions {
     background?: 'pause' | 'run';
     // (undocumented)
     loop?: LoopMode;
+    osFonts?: ReadonlySet<string>;
     prefersReducedMotion?: () => boolean;
     // (undocumented)
     rate?: number;
     reducedMotion?: ReducedMotionMode;
+    strictFonts?: boolean;
 }
 
 // @public (undocumented)
