@@ -142,6 +142,8 @@ export {
   TARGET_PATH,
   resolveTweenTarget,
   UnresolvableTargetError,
+  isEditableNodeId,
+  targetNodeId,
   type TweenTarget,
   type TargetCarrier,
 } from './targetRef.js';

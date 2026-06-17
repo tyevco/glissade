@@ -284,6 +284,9 @@ export function inferValueType(value: unknown): ValueTypeId;
 export function inReadPhase(): boolean;
 
 // @public
+export function isEditableNodeId(id: string | undefined): id is string;
+
+// @public
 export function isExemptFamily(family: string, osFamilies?: ReadonlySet<string>): boolean;
 
 // @public (undocumented)
@@ -624,6 +627,9 @@ export interface TargetCarrier {
     [TARGET_PATH]?: string;
 }
 
+// @public
+export function targetNodeId(target: string): string;
+
 // @public (undocumented)
 export interface Timeline {
     // (undocumented)
@@ -757,7 +763,7 @@ export class UnknownValueTypeError extends Error {
 
 // @public (undocumented)
 export class UnresolvableTargetError extends Error {
-    constructor();
+    constructor(message?: string);
 }
 
 // @public

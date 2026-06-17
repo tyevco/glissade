@@ -23,7 +23,7 @@ import {
   type TimelineInit,
 } from './timeline.js';
 import { type Key, type Track } from './track.js';
-import { resolveTweenTarget, type TweenTarget } from './targetRef.js';
+import { isEditableNodeId, resolveTweenTarget, targetNodeId, type TweenTarget } from './targetRef.js';
 import { inferValueType } from './valueTypes.js';
 
 export type Position = number | string;
@@ -220,6 +220,13 @@ export function buildTimeline(
     editable() {
       const last = insertions[insertions.length - 1];
       if (!last) throw new TimelineValidationError('.editable() requires a preceding insertion');
+      // only an explicit-id node can host an editable track (§6.4 locked predicate)
+      const nodeId = targetNodeId(last.target);
+      if (!isEditableNodeId(nodeId)) {
+        throw new TimelineValidationError(
+          `.editable() needs a node with an explicit id; '${nodeId}' is not an editable host (§6.4)`,
+        );
+      }
       last.editable = true;
       return builder;
     },

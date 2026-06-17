@@ -278,3 +278,36 @@ describe('cue / adBreak markers (§ad-break)', () => {
     expect(doc.markers.find((m) => m.name === 'titled')!.data).toEqual({ kind: 'cue', title: 'Act One' });
   });
 });
+
+describe("nD76: structural / un-id'd targets are not editable hosts (§6.4/§6.5)", () => {
+  it('rejects a structural ~Type.ordinal string target at track creation', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.to('~Group.0/x', 1, { duration: 1 });
+      }),
+    ).toThrow(/structural ids.*inspection-only/s);
+  });
+
+  it('.editable() on a target without an explicit node id throws a helpful error', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.to('/opacity', 1, { duration: 1 }).editable();
+      }),
+    ).toThrow(/explicit id/);
+  });
+
+  it('an anonymous-node property signal is still rejected (existing UnresolvableTargetError)', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.to(signal(0), 1, { duration: 1 });
+      }),
+    ).toThrow(UnresolvableTargetError);
+  });
+
+  it('a valid explicit-id target + .editable() works', () => {
+    const doc = timeline((tl) => {
+      tl.to('box/opacity', 1, { duration: 1 }).editable();
+    });
+    expect(doc.tracks[0]!.editable).toBe(true);
+  });
+});

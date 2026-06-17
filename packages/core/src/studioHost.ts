@@ -50,16 +50,9 @@ export interface StudioHost {
   on(ev: StudioEvent, cb: (...args: unknown[]) => void): Unsubscribe;
 }
 
-/**
- * The single editable-host rule (§6.4 sub-decision, the 0.9 locked predicate):
- * only a node with an EXPLICIT, non-structural id can host an editable or
- * editor-created track. Structural fallback ids (`~Type.ordinal`) are
- * inspection-only and reorder-fragile, so they are never editable. The full
- * editability of a prop composes this with "a merged/editable track exists".
- */
-export function isEditableNodeId(id: string | undefined): id is string {
-  return typeof id === 'string' && id.length > 0 && !id.startsWith('~');
-}
+// the single editable-host rule lives in the addressing module (embed-safe),
+// shared by the builder guard, the scene, and this host
+export { isEditableNodeId, targetNodeId } from './targetRef.js';
 
 // the patch engine ships in this same editor-only entry (kept out of the embed `.` bundle)
 export {
