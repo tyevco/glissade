@@ -67,7 +67,17 @@ synthesizeScript(script, { providerImpl: kokoroProvider({ dtype: 'fp32', voice: 
 
 Kokoro is **deterministic by construction** — inference uses a fixed voice/style embedding (not diffusion-sampled per call), so the same text re-synthesizes byte-identical with no noise to zero out. `version()` pins the `kokoro-js` version + model + dtype, so any of those moving invalidates the cache.
 
-**pnpm note.** `kokoro-js` pulls native deps (`onnxruntime-node`, `sharp`, `protobufjs`) whose build scripts pnpm ignores by default — and under pnpm ≥ 10 that ignored-builds gate makes `pnpm install --frozen-lockfile` exit **non-zero** (failing CI). The prebuilt CPU binaries work without those scripts, so allow/ignore them in your own project: add them to `pnpm.ignoredBuiltDependencies` (package.json) or `allowBuilds: { onnxruntime-node: false, sharp: false, protobufjs: false }` (pnpm-workspace.yaml). This is a one-time downstream config, required only if you use `--provider kokoro`.
+**pnpm note.** `kokoro-js` pulls native deps (`onnxruntime-node`, `sharp`, `protobufjs`) whose build scripts pnpm ignores by default — and under pnpm ≥ 10 that ignored-builds gate makes `pnpm install --frozen-lockfile` exit **non-zero** (failing CI). The prebuilt CPU binaries work without those scripts, so tell pnpm so explicitly in your own project. Under pnpm 11 the lever that actually silences the gate is **`allowBuilds`** in `pnpm-workspace.yaml` (the top-level `pnpm.ignoredBuiltDependencies` list did *not* suppress it in practice):
+
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
+```
+
+pnpm may first write `<pkg>: set this to true or false` placeholders — replace them with explicit `false`. This is a one-time downstream config, required only if you use `--provider kokoro`.
 
 The `TtsProvider` interface is three members (`id`, `version()`, `synthesize()`) — bring your own (ElevenLabs, Azure, Polly…) and pass the instance via `synthesizeScript({ providerImpl })`; a provider that returns `words` skips alignment entirely.
 
