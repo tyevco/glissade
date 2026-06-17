@@ -16,3 +16,6 @@ coverage/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 site/
+
+# background-agent worktrees
+.claude/worktrees/

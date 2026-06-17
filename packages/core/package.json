@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./studio-host": {
+      "types": "./dist/studioHost.d.ts",
+      "default": "./dist/studioHost.js"
     }
   },
   "files": [
