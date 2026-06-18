@@ -18,9 +18,18 @@ export interface TextMeasurer {
   measureText(text: string, font: FontSpec): TextMetricsLite;
 }
 
-/** §3.6 measurement quantum. */
+/**
+ * §3.6 measurement quantum (px). Scene-owned pre-measure quantizes every
+ * layout-feeding advance to this grid ONCE, then hands Yoga frozen integers —
+ * so sub-pixel measureText drift between Skia/HarfBuzz versions cannot move a
+ * whole layout. The single source of truth for the grid; `quantize` rounds to
+ * it. (Yoga's `setMeasureFunc` was considered and rejected — see DESIGN.md §3.6.)
+ */
+export const MEASURE_QUANTUM_PX = 0.5;
+
+/** §3.6 measurement quantum — round to the MEASURE_QUANTUM_PX grid. */
 export function quantize(v: number): number {
-  return Math.round(v * 2) / 2;
+  return Math.round(v / MEASURE_QUANTUM_PX) * MEASURE_QUANTUM_PX;
 }
 
 /**

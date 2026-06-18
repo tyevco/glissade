@@ -126,6 +126,7 @@ export {
   segmentWords,
   segmentGraphemes,
   quantize,
+  MEASURE_QUANTUM_PX,
   estimatingMeasurer,
   setDefaultMeasurer,
   type TextMeasurer,

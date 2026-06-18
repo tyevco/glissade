@@ -566,6 +566,9 @@ export function matchTokenRun(boxes: WordBox[], token: string, occurrence?: numb
 export function matEquals(a: Mat2x3, b: Mat2x3): boolean;
 
 // @public
+export const MEASURE_QUANTUM_PX = 0.5;
+
+// @public
 export function motionPath(path: PathValue, opts?: {
     samplesPerSegment?: number;
 }): PathSampler;
