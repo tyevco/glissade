@@ -1,5 +1,17 @@
 # @glissade/svg
 
+## 0.10.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies [b2f1fd7]
+- Updated dependencies [278ea05]
+- Updated dependencies [680f8ae]
+- Updated dependencies [0cc640f]
+- Updated dependencies [0a1844c]
+  - @glissade/core@0.10.0-pre.0
+  - @glissade/scene@0.10.0-pre.0
+
 ## 0.9.1
 
 ### Patch Changes
