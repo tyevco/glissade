@@ -152,7 +152,7 @@ describe('z-order (§3.1)', () => {
     const list = evaluate(scene, timeline({}), 0);
     const fills = list.commands
       .filter((c): c is Extract<typeof c, { op: 'fillPath' }> => c.op === 'fillPath')
-      .map((c) => c.paint.color);
+      .map((c) => (c.paint.kind === 'color' ? c.paint.color : undefined));
     expect(fills).toEqual(['#222222', '#111111', '#333333']);
   });
 });

@@ -14,12 +14,18 @@ import {
   type DisplayList,
   type FilterSpec,
   type FontSpec,
+  type Paint,
   type PathSeg,
   type Resource,
   type ShaderRef,
 } from './displayList.js';
 import { IDENTITY, multiply, type Mat2x3 } from './matrix.js';
 export { type TextMetricsLite } from './text.js';
+
+/** A backend gradient handle (DOM CanvasGradient and @napi-rs CanvasGradient both satisfy it). */
+export interface CanvasGradientLike {
+  addColorStop(offset: number, color: string): void;
+}
 
 /** The structural path surface buildPath drives — DOM Path2D and @napi-rs Path2D both satisfy it. */
 export interface PathLike {
@@ -58,6 +64,8 @@ export interface Ctx2DLike<TPath, TDrawable> {
     h: number,
   ): void;
   setLineDash(segments: number[]): void;
+  createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasGradientLike;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradientLike;
   lineDashOffset: number;
   fillStyle: unknown;
   strokeStyle: unknown;
@@ -76,6 +84,46 @@ export interface Ctx2DLike<TPath, TDrawable> {
 export interface CanvasLike {
   width: number;
   height: number;
+}
+
+/** Local-space bounds of the path being filled, for gradient defaults. */
+interface FillBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Resolve a Paint to a canvas fillStyle/strokeStyle value — a CSS string for
+ * `color`, a backend gradient for `radial`. The gradient is built in the
+ * CURRENT (local) transform, so it translates/scales with the shape. When
+ * `center`/`radius` are omitted, default to the filled path's bounds (center =
+ * bounds center, radius = half the diagonal so the edge reaches the corners).
+ * Pure function of (paint, bounds): the same inputs raster byte-identically.
+ */
+interface GradientCtx {
+  createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasGradientLike;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradientLike;
+}
+function resolveFill(ctx: GradientCtx, paint: Paint, bounds: FillBounds | null): string | CanvasGradientLike {
+  if (paint.kind === 'color') return paint.color;
+  let g: CanvasGradientLike;
+  if (paint.kind === 'radial') {
+    const cx = paint.center ? paint.center[0] : bounds ? (bounds.minX + bounds.maxX) / 2 : 0;
+    const cy = paint.center ? paint.center[1] : bounds ? (bounds.minY + bounds.maxY) / 2 : 0;
+    const r = paint.radius !== undefined ? paint.radius : bounds ? Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2 : 0;
+    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  } else {
+    // linear: from/to default to a vertical sweep across the bounds (top → bottom)
+    const fx = paint.from ? paint.from[0] : bounds ? (bounds.minX + bounds.maxX) / 2 : 0;
+    const fy = paint.from ? paint.from[1] : bounds ? bounds.minY : 0;
+    const tx = paint.to ? paint.to[0] : bounds ? (bounds.minX + bounds.maxX) / 2 : 0;
+    const ty = paint.to ? paint.to[1] : bounds ? bounds.maxY : 0;
+    g = ctx.createLinearGradient(fx, fy, tx, ty);
+  }
+  for (const s of paint.stops) g.addColorStop(s.offset, s.color);
+  return g;
 }
 
 /** What a backend supplies: constructors and context access for its canvas flavor. */
@@ -500,15 +548,16 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           break;
         case 'fillPath': {
           const ctx = ctxOf();
-          ctx.fillStyle = cmd.paint.color;
-          ctx.fill(this.path(list.resources, cmd.path));
           const b = this.pathBounds(list.resources, cmd.path);
+          ctx.fillStyle = resolveFill(ctx, cmd.paint, b);
+          ctx.fill(this.path(list.resources, cmd.path));
           if (b) accumulateRect(top(), mat, b.minX, b.minY, b.maxX, b.maxY);
           break;
         }
         case 'strokePath': {
           const ctx = ctxOf();
-          ctx.strokeStyle = cmd.paint.color;
+          const sb = this.pathBounds(list.resources, cmd.path);
+          ctx.strokeStyle = resolveFill(ctx, cmd.paint, sb);
           ctx.lineWidth = cmd.stroke.width;
           ctx.lineCap = cmd.stroke.cap ?? 'butt';
           ctx.lineJoin = cmd.stroke.join ?? 'miter';
@@ -521,18 +570,17 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             ctx.setLineDash([]);
             ctx.lineDashOffset = 0;
           }
-          const b = this.pathBounds(list.resources, cmd.path);
-          if (b) {
+          if (sb) {
             // miter joins reach up to miterLimit (default 10) × width/2 = 5w
             const o = cmd.stroke.width * ((cmd.stroke.join ?? 'miter') === 'miter' ? 5 : 1);
-            accumulateRect(top(), mat, b.minX - o, b.minY - o, b.maxX + o, b.maxY + o);
+            accumulateRect(top(), mat, sb.minX - o, sb.minY - o, sb.maxX + o, sb.maxY + o);
           }
           break;
         }
         case 'fillText': {
           const ctx = ctxOf();
           ctx.font = fontString(cmd.font);
-          ctx.fillStyle = cmd.paint.color;
+          ctx.fillStyle = resolveFill(ctx, cmd.paint, null);
           ctx.textBaseline = 'alphabetic';
           ctx.textAlign = cmd.align ?? 'left';
           ctx.fillText(cmd.text, cmd.x, cmd.y);

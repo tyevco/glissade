@@ -138,6 +138,14 @@ export class ColorParseError extends Error {
     constructor(input: string);
 }
 
+// @public
+export interface ColorStop {
+    // (undocumented)
+    color: string;
+    // (undocumented)
+    offset: number;
+}
+
 // @public (undocumented)
 export const colorType: ValueType<string>;
 
@@ -386,6 +394,25 @@ export function oklabToRgba(c: OkLab): Rgba;
 
 // @public (undocumented)
 export type OrphanReason = 'node-missing' | 'prop-missing' | 'type-changed';
+
+// @public
+export type Paint = {
+    kind: 'color';
+    color: string;
+} | {
+    kind: 'linear';
+    stops: ColorStop[];
+    from?: [number, number];
+    to?: [number, number];
+} | {
+    kind: 'radial';
+    stops: ColorStop[];
+    center?: [number, number];
+    radius?: number;
+};
+
+// @public
+export const paintType: ValueType<Paint>;
 
 // @public
 export function parseCmap(bytes: ArrayBuffer | ArrayBufferView): Set<number>;

@@ -95,8 +95,15 @@ export class Group extends Node {
   }
 }
 
+/** A color string is sugar for a solid `color` Paint; a Paint passes through. */
+export function toPaint(fill: string | Paint): Paint {
+  return typeof fill === 'string' ? { kind: 'color', color: fill } : fill;
+}
+
 export interface ShapeProps extends NodeProps {
-  fill?: PropInit<string>;
+  /** A CSS color string, or a `Paint` (e.g. a `radial` gradient — soft-light
+   * fills with no blur filter; center/radius default to the shape bounds). */
+  fill?: PropInit<string | Paint>;
   stroke?: PropInit<string>;
   strokeWidth?: PropInit<number>;
   /** hand-drawn look: the outline is geometrically roughened (see sketch.ts) */
@@ -113,7 +120,7 @@ export interface ShapeProps extends NodeProps {
 }
 
 abstract class Shape extends Node {
-  readonly fill: BindableSignal<string>;
+  readonly fill: BindableSignal<string | Paint>;
   readonly stroke: BindableSignal<string>;
   readonly strokeWidth: BindableSignal<number>;
   readonly sketch: SketchStyle | undefined;
@@ -123,7 +130,7 @@ abstract class Shape extends Node {
 
   constructor(props: ShapeProps = {}) {
     super(props);
-    this.fill = initProp(signal(''), props.fill);
+    this.fill = initProp(signal<string | Paint>(''), props.fill);
     this.stroke = initProp(signal(''), props.stroke);
     this.strokeWidth = initProp(signal(0), props.strokeWidth);
     this.reveal = initProp(signal(1), props.reveal);
@@ -150,7 +157,7 @@ abstract class Shape extends Node {
     if (this.sketch) return this.drawSketch(out, segs);
     const path = out.resource({ kind: 'path', segs });
     const fill = this.fill();
-    if (fill) out.push({ op: 'fillPath', path, paint: { kind: 'color', color: fill } });
+    if (fill) out.push({ op: 'fillPath', path, paint: toPaint(fill) });
     const stroke = this.stroke();
     const width = this.strokeWidth();
     if (stroke && width > 0) {
@@ -172,10 +179,11 @@ abstract class Shape extends Node {
     const fill = this.fill();
     if (fill) {
       const path = out.resource({ kind: 'path', segs });
-      out.push({ op: 'fillPath', path, paint: { kind: 'color', color: fill } });
+      out.push({ op: 'fillPath', path, paint: toPaint(fill) });
     }
     const { strokes, resolved } = roughen(segs, this.sketch!, rng);
-    const ink = this.stroke() || fill || '#000000';
+    // ink (the sketch outline color) must be a string; a gradient fill can't be one
+    const ink = this.stroke() || (typeof fill === 'string' ? fill : '') || '#000000';
     // hatch fill, clipped to the shape, UNDER the roughened outline. The rng is
     // consumed AFTER roughen (stable order) so the result stays byte-identical.
     if (this.sketchFill) {

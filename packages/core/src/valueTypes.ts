@@ -187,6 +187,105 @@ export const pathType: ValueType<PathValue> = {
   defaultHandoff: 'blend-from-frozen',
 };
 
+/** A gradient color stop: `offset` 0..1 along the gradient, `color` a CSS string. */
+export interface ColorStop {
+  offset: number;
+  color: string;
+}
+
+/**
+ * A fill/stroke paint (§2.2 animatable document value): a solid color, or a
+ * `linear`/`radial` gradient. Geometry (`from`/`to`, `center`/`radius`) is in
+ * the shape's LOCAL space; omit it to default to the filled path's bounds.
+ * Plain JSON — serializes with no hooks; animatable via `paintType`.
+ */
+export type Paint =
+  | { kind: 'color'; color: string }
+  | { kind: 'linear'; stops: ColorStop[]; from?: [number, number]; to?: [number, number] }
+  | { kind: 'radial'; stops: ColorStop[]; center?: [number, number]; radius?: number };
+
+const lerpN = (a: number, b: number, t: number): number => a + (b - a) * t;
+const lerpPt = (a: [number, number], b: [number, number], t: number): [number, number] => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t)];
+
+/** Lift a solid color to a uniform gradient matching `shape` (every stop = color),
+ * so a color↔gradient tween fades smoothly instead of snapping. */
+function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radial' }>): Paint {
+  const stops = shape.stops.map((s) => ({ offset: s.offset, color }));
+  return shape.kind === 'radial'
+    ? { kind: 'radial', stops, ...(shape.center ? { center: shape.center } : {}), ...(shape.radius !== undefined ? { radius: shape.radius } : {}) }
+    : { kind: 'linear', stops, ...(shape.from ? { from: shape.from } : {}), ...(shape.to ? { to: shape.to } : {}) };
+}
+
+let warnedPaintShape = false;
+function paintSnap<T>(t: number, a: T, b: T): T {
+  if (!warnedPaintShape) {
+    warnedPaintShape = true;
+    emitDevWarning(
+      'paint lerp across mismatched gradient shapes (different kind or stop count): snapping ' +
+        'instead of interpolating — match the kind + stop count on both keyframes (§2.2)',
+    );
+  }
+  return t >= 1 ? b : a;
+}
+
+const stopsEqual = (a: ColorStop[], b: ColorStop[]): boolean =>
+  a.length === b.length && a.every((s, i) => s.offset === b[i]!.offset && s.color === b[i]!.color);
+
+/**
+ * Gradient paint morphing (§2.2): a solid color lifts to a uniform gradient to
+ * meet the other side, then matched-kind/matched-stop-count gradients lerp their
+ * stops (offset + oklab color) and geometry pairwise; a mismatched kind or stop
+ * count snaps (hold a, then b at t ≥ 1) with a one-time dev warning. Lerp-only —
+ * no offsets under mismatch — so handoffs blend from the frozen value.
+ */
+export const paintType: ValueType<Paint> = {
+  id: 'paint',
+  lerp: (a, b, t) => {
+    if (a.kind === 'color' && b.kind === 'color') return { kind: 'color', color: lerpColor(a.color, b.color, t) };
+    let A: Paint = a;
+    let B: Paint = b;
+    if (A.kind === 'color' && B.kind !== 'color') A = liftColor(A.color, B);
+    else if (B.kind === 'color' && A.kind !== 'color') B = liftColor(B.color, A);
+    if (A.kind === 'color' || B.kind === 'color' || A.kind !== B.kind || A.stops.length !== B.stops.length) {
+      return paintSnap(t, a, b);
+    }
+    const stops = A.stops.map((sa, i) => ({ offset: lerpN(sa.offset, B.stops[i]!.offset, t), color: lerpColor(sa.color, B.stops[i]!.color, t) }));
+    if (A.kind === 'radial' && B.kind === 'radial') {
+      return {
+        kind: 'radial',
+        stops,
+        ...(A.center && B.center ? { center: lerpPt(A.center, B.center, t) } : A.center ? { center: A.center } : {}),
+        ...(A.radius !== undefined && B.radius !== undefined ? { radius: lerpN(A.radius, B.radius, t) } : A.radius !== undefined ? { radius: A.radius } : {}),
+      };
+    }
+    if (A.kind === 'linear' && B.kind === 'linear') {
+      return {
+        kind: 'linear',
+        stops,
+        ...(A.from && B.from ? { from: lerpPt(A.from, B.from, t) } : A.from ? { from: A.from } : {}),
+        ...(A.to && B.to ? { to: lerpPt(A.to, B.to, t) } : A.to ? { to: A.to } : {}),
+      };
+    }
+    return paintSnap(t, a, b);
+  },
+  extrapolates: false, // gradients clamp; spring overshoot on stops/geometry isn't meaningful
+  equals: (a, b) => {
+    if (a === b) return true;
+    if (a.kind !== b.kind) return false;
+    if (a.kind === 'color') return b.kind === 'color' && a.color === b.color;
+    if (b.kind === 'color') return false;
+    if (!stopsEqual(a.stops, b.stops)) return false;
+    if (a.kind === 'radial' && b.kind === 'radial') {
+      return JSON.stringify(a.center) === JSON.stringify(b.center) && a.radius === b.radius;
+    }
+    if (a.kind === 'linear' && b.kind === 'linear') {
+      return JSON.stringify(a.from) === JSON.stringify(b.from) && JSON.stringify(a.to) === JSON.stringify(b.to);
+    }
+    return false;
+  },
+  defaultHandoff: 'blend-from-frozen',
+};
+
 export class ValueTypeInferenceError extends Error {
   constructor(value: unknown) {
     super(`cannot infer a value type for ${JSON.stringify(value)}; register a custom type`);
@@ -199,10 +298,17 @@ const isContour = (c: unknown): c is PathContour =>
   typeof (c as PathContour).closed === 'boolean' &&
   Array.isArray((c as PathContour).v) && Array.isArray((c as PathContour).in) && Array.isArray((c as PathContour).out);
 
+const isPaint = (v: unknown): v is Paint =>
+  typeof v === 'object' && v !== null &&
+  ((v as Paint).kind === 'color' || (v as Paint).kind === 'linear' || (v as Paint).kind === 'radial');
+
 /** Infer a registered type id from a sample value (builder + bake authoring surfaces). */
 export function inferValueType(value: unknown): ValueTypeId {
   if (typeof value === 'number') return 'number';
   if (typeof value === 'boolean') return 'boolean';
+  // a Paint OBJECT (gradient or {kind:'color'}) is the animatable paint type;
+  // a bare color STRING stays the 'color' (string) type below
+  if (isPaint(value)) return 'paint';
   if (Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === 'number')) {
     return 'vec2';
   }
@@ -227,3 +333,4 @@ registerValueType(colorType);
 registerValueType(stringType);
 registerValueType(booleanType);
 registerValueType(pathType);
+registerValueType(paintType);

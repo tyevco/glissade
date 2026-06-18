@@ -11,6 +11,7 @@ import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
 import { FontMode } from '@glissade/core';
 import { FontUsage } from '@glissade/core';
+import { Paint } from '@glissade/core';
 import { PathValue } from '@glissade/core';
 import { Playhead } from '@glissade/core';
 import { ReadonlySignal } from '@glissade/core';
@@ -124,6 +125,12 @@ export interface Ctx2DLike<TPath, TDrawable> {
     clearRect(x: number, y: number, w: number, h: number): void;
     // (undocumented)
     clip(path: TPath, rule: 'nonzero' | 'evenodd'): void;
+    // (undocumented)
+    createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradientLike;
+    // Warning: (ae-forgotten-export) The symbol "CanvasGradientLike" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    createRadialGradient(x0: number, y0: number, r0: number, x1: number, y1: number, r1: number): CanvasGradientLike;
     // (undocumented)
     drawImage(image: TDrawable, x: number, y: number, w?: number, h?: number): void;
     // (undocumented)
@@ -660,11 +667,7 @@ export interface NodeProps {
     zIndex?: PropInit<number>;
 }
 
-// @public
-export type Paint = {
-    kind: 'color';
-    color: string;
-};
+export { Paint }
 
 // @public
 export class Path extends Shape {
@@ -963,10 +966,9 @@ export interface ShaderRef {
     wgsl: string;
 }
 
-// @public (undocumented)
+// @public
 export interface ShapeProps extends NodeProps {
-    // (undocumented)
-    fill?: PropInit<string>;
+    fill?: PropInit<string | Paint>;
     reveal?: PropInit<number>;
     sketch?: SketchStyle;
     sketchFill?: HachureSpec;

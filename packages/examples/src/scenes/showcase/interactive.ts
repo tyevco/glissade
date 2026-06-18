@@ -41,9 +41,10 @@ function toggleSpec(id: string, startOn: boolean): MachineSpec {
       // glow follows the machine: the fill is machine-animated, and filters
       // are signals, so the glow color/strength tracks the handoff live
       const pill = pillNode as InstanceType<typeof Rect>;
-      pill.filters.bindSource(() =>
-        machine.current() === 'on' ? glow(pill.fill(), 8, 2) : [],
-      );
+      pill.filters.bindSource(() => {
+        const f = pill.fill();
+        return machine.current() === 'on' && typeof f === 'string' ? glow(f, 8, 2) : [];
+      });
       L.click(pillNode, () => machine.input('on').set(!(machine.input('on')() as boolean)));
       return () => {
         pill.filters.unbindSource();

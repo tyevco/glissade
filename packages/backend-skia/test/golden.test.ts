@@ -32,6 +32,7 @@ import goldenSvg from '../../examples/src/scenes/golden-svg.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import goldenCache from '../../examples/src/scenes/golden-cache.js';
+import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -85,6 +86,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // §3.5 cross-frame raster cache: a cache:true static badge re-blits from the
   // LRU under a moving dot — byte-identical to the uncached render
   { name: 'cache', mod: goldenCache },
+  // §2.2/§3 gradient Paint: static radial + linear fills (bounds-defaulted) and a
+  // keyframe-animated radial sweeping/growing/recoloring via the paint value type
+  { name: 'gradient', mod: goldenGradient },
 ];
 
 for (const { name, mod } of CORPUS) {
