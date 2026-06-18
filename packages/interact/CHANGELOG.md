@@ -1,5 +1,13 @@
 # @glissade/interact
 
+## 0.9.1-pre.0
+
+### Patch Changes
+
+- @glissade/core@0.9.1-pre.0
+- @glissade/player@0.9.1-pre.0
+- @glissade/scene@0.9.1-pre.0
+
 ## 0.9.0
 
 ### Patch Changes
