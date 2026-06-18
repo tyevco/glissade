@@ -5,7 +5,16 @@
  * transitive dependents CHECK. A CHECK node re-validates dependency versions on
  * read and only recomputes if one actually changed; a recompute that produces an
  * equal value keeps its version, so dirtiness stops propagating at that node.
+ *
+ * Subscriber NOTIFICATION (only) is routed through the ticker (`./ticker.ts`,
+ * DESIGN.md §6.1): a write enqueues affected subscribers and the active
+ * scheduler decides when to flush. The default scheduler is synchronous and
+ * flushes at the end of the outermost write, reproducing the pre-ticker timing
+ * byte-for-byte. The read path (get/peek/updateIfNecessary) is untouched and
+ * stays fully synchronous.
  */
+
+import { enqueueNotification, beginNotify, endNotify } from './ticker.js';
 
 export type Equals<T> = (a: T, b: T) => boolean;
 
@@ -83,8 +92,13 @@ class SignalNode<T> {
 
   set(next: T): void {
     if (readPhaseDepth > 0) throw new WriteDuringEvaluationError();
-    if (this.fn) this.detachFn();
-    this.writeValue(next);
+    beginNotify();
+    try {
+      if (this.fn) this.detachFn();
+      this.writeValue(next);
+    } finally {
+      endNotify();
+    }
   }
 
   /**
@@ -93,16 +107,26 @@ class SignalNode<T> {
    * signal surface.
    */
   forceSet(next: T): void {
-    if (this.fn) this.detachFn();
-    this.writeValue(next);
+    beginNotify();
+    try {
+      if (this.fn) this.detachFn();
+      this.writeValue(next);
+    } finally {
+      endNotify();
+    }
   }
 
   /** Rewire this signal's source to a computation (timeline binding, §2.4). */
   bindSource(fn: () => T): void {
     if (readPhaseDepth > 0) throw new WriteDuringEvaluationError();
-    this.fn = fn;
-    this.state = State.Dirty;
-    this.invalidateDependents(State.Dirty);
+    beginNotify();
+    try {
+      this.fn = fn;
+      this.state = State.Dirty;
+      this.invalidateDependents(State.Dirty);
+    } finally {
+      endNotify();
+    }
   }
 
   /** Remove a bound source, freezing the signal at its last value. */
@@ -152,7 +176,9 @@ class SignalNode<T> {
     // does), recomputing dependents and mutating these sets mid-cascade
     for (const d of [...this.dependents]) d.markStale(level);
     if (this.subscribers.size > 0) {
-      for (const cb of [...this.subscribers]) cb();
+      // Route through the ticker: enqueue now, flush at the write boundary
+      // (default scheduler => synchronously, post-cascade — DESIGN.md §6.1).
+      for (const cb of [...this.subscribers]) enqueueNotification(cb);
     }
   }
 

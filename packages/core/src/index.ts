@@ -17,6 +17,13 @@ export {
   type Equals,
 } from './signal.js';
 
+export {
+  batch,
+  setScheduler,
+  synchronousScheduler,
+  type Scheduler,
+} from './ticker.js';
+
 export { vec2Signal, type Vec2Signal } from './vec2Signal.js';
 
 export {

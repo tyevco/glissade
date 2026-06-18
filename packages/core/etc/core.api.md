@@ -59,6 +59,9 @@ export class BakeError extends Error {
 }
 
 // @public
+export function batch<T>(fn: () => T): T;
+
+// @public
 export function beginReadPhase(): void;
 
 // @public
@@ -486,8 +489,14 @@ export type Rng = () => number;
 // @public
 export function sampleTrack<T>(tr: Track<T>, t: number): T;
 
+// @public
+export type Scheduler = (flush: () => void) => void;
+
 // @public (undocumented)
 export function setDevWarning(fn: DevWarning): void;
+
+// @public
+export function setScheduler(next?: Scheduler): Scheduler;
 
 // @public
 export function setSidecarTrack(doc: SidecarDoc, timelineId: string, target: string, type: ValueTypeId, keys: Key[], codeBaselineKeys: readonly Key[] | null): SidecarDoc;
@@ -623,6 +632,9 @@ export function stagger<T>(tracks: readonly Track<T>[], delay: number | ((index:
 
 // @public (undocumented)
 export const stringType: ValueType<string>;
+
+// @public
+export const synchronousScheduler: Scheduler;
 
 // @public
 export const TARGET_PATH: unique symbol;
