@@ -113,6 +113,8 @@ interface Layer<TPath extends PathLike, TDrawable, TCanvas extends CanvasLike> {
   bounds: Bounds | null;
   /** true once content can't be conservatively boxed → never clip, parent inherits */
   unbounded: boolean;
+  /** §3.5: full LRU key (cacheKey @ device transform) to STORE this layer under on popGroup; undefined = don't cache. */
+  cacheStoreKey?: string;
 }
 
 interface Bounds {
@@ -120,6 +122,37 @@ interface Bounds {
   minY: number;
   maxX: number;
   maxY: number;
+}
+
+/**
+ * §3.5 cross-frame raster cache entry: a rasterized group layer plus the exact
+ * bounds/unbounded state the composite (incl. the clippable fast path) needs —
+ * those can't be recomputed when the slice is fast-forwarded on a HIT, so they
+ * ride with the bitmap. The canvas is DEVICE-space (parent CTM baked in), which
+ * is why the LRU key folds in the inherited transform: a HIT blits at identity.
+ */
+interface CacheEntry<TCanvas extends CanvasLike> {
+  canvas: TCanvas;
+  bounds: Bounds | null;
+  unbounded: boolean;
+}
+
+/** Hardcoded LRU cap (§3.5). Evicted canvases return to the raster pool. */
+const RASTER_CACHE_CAP = 16;
+
+/**
+ * Round a device-transform component into the cache key. The layer bakes the
+ * parent CTM into its pixels, so two frames that share a cacheKey but differ in
+ * device transform are NOT interchangeable — they must key separately. Rounding
+ * to 1e-4 collapses float jitter from matrix re-multiplication of an unchanged
+ * transform (so a genuinely static parent HITs) while keeping any visible move
+ * to a distinct key (so a stale-CTM bitmap can never blit). The float is taken
+ * verbatim into the string — no lossy truncation that could alias two CTMs.
+ */
+function transformKey(m: Mat2x3): string {
+  // -0 → 0 (matrix.ts already normalizes, but the join is the contract surface)
+  const q = (v: number) => (Object.is(v, -0) ? '0' : String(Math.round(v * 1e4) / 1e4));
+  return `${q(m[0])},${q(m[1])},${q(m[2])},${q(m[3])},${q(m[4])},${q(m[5])}`;
 }
 
 /**
@@ -199,12 +232,28 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
   private readonly images = new Map<string, TDrawable>();
   private readonly videos = new Map<string, VideoFrameSource>();
   private warnedShaders = false;
+  /**
+   * §3.5 bitmap LRU: device-transform-qualified cacheKey → rasterized layer.
+   * A Map preserves insertion order, so the oldest key is `keys().next()` —
+   * touch-on-hit by delete+set keeps it a true LRU. Disabled (stays empty) when
+   * `cacheEnabled` is false, so cache-cold === cache-warm is testable directly.
+   */
+  private readonly rasterCache = new Map<string, CacheEntry<TCanvas>>();
+  private readonly cacheEnabled: boolean;
 
   constructor(
     private readonly host: Raster2DHost<TCanvas, TPath, TDrawable>,
     /** caps.shaders (§3.7): what happens when a shader can't run here. */
     private readonly shaderCaps: ShaderCaps = 'warn',
-  ) {}
+    /**
+     * §3.5: opt-OUT switch for the bitmap LRU. Defaults on, but the env var
+     * RASTER_CACHE=0 force-disables it (the equality test renders both ways).
+     * A disabled cache is byte-identical — it just always takes the miss path.
+     */
+    cacheEnabled: boolean = (globalThis.process?.env?.['RASTER_CACHE'] ?? '1') !== '0',
+  ) {
+    this.cacheEnabled = cacheEnabled;
+  }
 
   /** Register a decoded still (kind 'image' assets). */
   setImageAsset(assetId: string, image: TDrawable): void {
@@ -218,6 +267,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
 
   dispose(): void {
     this.pool.length = 0;
+    this.rasterCache.clear();
   }
 
   private resolveDrawable(res: Resource, id: number): TDrawable {
@@ -299,6 +349,114 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
     if (this.pool.length < 8) this.pool.push(canvas);
   }
 
+  /**
+   * §3.5 LRU insert with touch-on-hit + eviction-to-pool. Storing under a key
+   * that already holds a (different) canvas releases the old one first.
+   */
+  private cacheStore(key: string, entry: CacheEntry<TCanvas>): void {
+    const prior = this.rasterCache.get(key);
+    if (prior) {
+      this.rasterCache.delete(key);
+      if (prior.canvas !== entry.canvas) this.release(prior.canvas);
+    }
+    this.rasterCache.set(key, entry);
+    while (this.rasterCache.size > RASTER_CACHE_CAP) {
+      const oldest = this.rasterCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      const evicted = this.rasterCache.get(oldest)!;
+      this.rasterCache.delete(oldest);
+      this.release(evicted.canvas);
+    }
+  }
+
+  private cacheTouch(key: string): CacheEntry<TCanvas> | undefined {
+    const hit = this.rasterCache.get(key);
+    if (hit) {
+      // move to MRU
+      this.rasterCache.delete(key);
+      this.rasterCache.set(key, hit);
+    }
+    return hit;
+  }
+
+  /**
+   * §3.4/§3.5 composite of a finished group layer onto its parent — the EXACT
+   * same save/resetTransform/clip/globalAlpha/filter/blend/drawImage sequence
+   * for both the freshly-rasterized miss path and a cache-blit hit, so a HIT is
+   * byte-identical to a MISS. `bounds`/`unbounded` come from the layer (miss) or
+   * the cache entry (hit); the composite params (opacity/blend/filters) always
+   * come from the LIVE pushGroup command, never the cache.
+   */
+  private composite(
+    parent: Ctx2DLike<TPath, TDrawable>,
+    parentLayer: { bounds: Bounds | null; unbounded: boolean },
+    drawable: TDrawable,
+    bounds: Bounds | null,
+    unbounded: boolean,
+    shaderReplaced: boolean,
+    opacity: number,
+    blend: string,
+    filter: string | undefined,
+    filters: FilterSpec[] | undefined,
+    w: number,
+    h: number,
+  ): void {
+    const hasFilter = filter !== undefined && filter !== 'none';
+    const outset = hasFilter ? filterOutset(filters) : 0;
+
+    // propagate this layer's painted box to the parent. Anything other than
+    // source-over can touch destination pixels OUTSIDE the drawn content
+    // (copy/in/out modes clear them) — treat as unboundable.
+    if (unbounded || blend !== 'source-over') {
+      parentLayer.unbounded = true;
+    } else if (bounds) {
+      accumulateRect(
+        parentLayer,
+        IDENTITY,
+        bounds.minX - outset,
+        bounds.minY - outset,
+        bounds.maxX + outset,
+        bounds.maxY + outset,
+      );
+    }
+
+    // The composite draws the full-canvas layer, so ctx.filter pays for every
+    // destination pixel — clip to the painted box + filter reach. Pixel-snapped:
+    // identical inside, provably untouched outside. Only safe under source-over.
+    const clippable = hasFilter && !shaderReplaced && !unbounded && blend === 'source-over';
+    if (clippable && bounds === null) {
+      // nothing was painted; a filtered source-over composite is a no-op
+      return;
+    }
+
+    parent.save();
+    parent.resetTransform();
+    if (clippable && bounds) {
+      const x0 = Math.max(0, Math.floor(bounds.minX - outset));
+      const y0 = Math.max(0, Math.floor(bounds.minY - outset));
+      const x1 = Math.min(w, Math.ceil(bounds.maxX + outset));
+      const y1 = Math.min(h, Math.ceil(bounds.maxY + outset));
+      if (x0 >= x1 || y0 >= y1) {
+        // painted entirely offscreen; the filter can't reach back in
+        parent.restore();
+        return;
+      }
+      const clip = this.host.newPath();
+      clip.moveTo(x0, y0);
+      clip.lineTo(x1, y0);
+      clip.lineTo(x1, y1);
+      clip.lineTo(x0, y1);
+      clip.closePath();
+      parent.clip(clip, 'nonzero');
+    }
+    parent.globalAlpha = opacity;
+    // group filters (§3.4): applied on the composite draw; save/restore scopes it
+    if (hasFilter) parent.filter = filter;
+    parent.globalCompositeOperation = blend;
+    parent.drawImage(drawable, 0, 0);
+    parent.restore();
+  }
+
   /** The command walk — order and operations identical to the pre-extraction twins. */
   render(target: TCanvas, list: DisplayList): void {
     const { w, h } = list.size;
@@ -320,7 +478,9 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
     let mat: Mat2x3 = IDENTITY;
     const matStack: Mat2x3[] = [];
 
-    for (const cmd of list.commands) {
+    const commands = list.commands;
+    for (let ci = 0; ci < commands.length; ci++) {
+      const cmd = commands[ci]!;
       switch (cmd.op) {
         case 'save':
           matStack.push(mat);
@@ -405,6 +565,42 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
         }
         case 'pushGroup': {
           const parent = ctxOf();
+          // §3.5: a cacheKey + the inherited DEVICE transform (the layer bakes
+          // it into pixels) is the LRU key. Shaders bypass the cache — they're
+          // outside the determinism guarantee and mutate bounds post-raster.
+          const lruKey =
+            this.cacheEnabled && cmd.cacheKey !== undefined && cmd.shader === undefined
+              ? `${cmd.cacheKey}@${transformKey(mat)}`
+              : undefined;
+          if (lruKey !== undefined) {
+            const hit = this.cacheTouch(lruKey);
+            if (hit) {
+              // HIT: skip rasterizing the slice — composite the stored bitmap
+              // exactly as the miss path would, then fast-forward to the
+              // matching popGroup (balancing nested pushGroup depth).
+              this.composite(
+                parent,
+                top(),
+                hit.canvas as unknown as TDrawable,
+                hit.bounds,
+                hit.unbounded,
+                false,
+                cmd.opacity,
+                cmd.blend,
+                filtersToCanvasFilter(cmd.filters),
+                cmd.filters,
+                w,
+                h,
+              );
+              let depth = 1;
+              while (depth > 0 && ++ci < commands.length) {
+                const c = commands[ci]!;
+                if (c.op === 'pushGroup') depth++;
+                else if (c.op === 'popGroup') depth--;
+              }
+              break;
+            }
+          }
           const layerCanvas = this.acquire(w, h);
           const layerCtx = this.host.context(layerCanvas);
           layerCtx.resetTransform();
@@ -421,6 +617,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             ...(cmd.shader !== undefined ? { shader: cmd.shader } : {}),
             bounds: null,
             unbounded: false,
+            ...(lruKey !== undefined ? { cacheStoreKey: lruKey } : {}),
           });
           break;
         }
@@ -451,66 +648,34 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             }
           }
 
-          const hasFilter = layer.filter !== undefined && layer.filter !== 'none';
-          const outset = hasFilter ? filterOutset(layer.filters) : 0;
-
-          // propagate this layer's painted box to the parent. Anything other
-          // than source-over can touch destination pixels OUTSIDE the drawn
-          // content (copy/in/out modes clear them) — treat as unboundable.
-          const parentLayer = top();
-          if (layer.unbounded || layer.blend !== 'source-over') {
-            parentLayer.unbounded = true;
-          } else if (layer.bounds) {
-            accumulateRect(
-              parentLayer,
-              IDENTITY,
-              layer.bounds.minX - outset,
-              layer.bounds.minY - outset,
-              layer.bounds.maxX + outset,
-              layer.bounds.maxY + outset,
-            );
-          }
-
-          // The composite draws the full-canvas layer, so ctx.filter pays for
-          // every destination pixel — clip to the painted box + filter reach
-          // (16× on software rasterizers). Pixel-snapped: identical inside,
-          // provably untouched outside. Only safe under source-over.
-          const clippable =
-            hasFilter && !shaderReplaced && !layer.unbounded && layer.blend === 'source-over';
-          if (clippable && layer.bounds === null) {
-            // nothing was painted; a filtered source-over composite is a no-op
+          this.composite(
+            parent,
+            top(),
+            drawable,
+            layer.bounds,
+            layer.unbounded,
+            shaderReplaced,
+            layer.opacity,
+            layer.blend,
+            layer.filter,
+            layer.filters,
+            w,
+            h,
+          );
+          // §3.5: cache the rasterized layer instead of releasing it, so a
+          // later frame with the same cacheKey + device transform re-blits it.
+          // Only the un-shadered raw layer is cached (a shader replacement is a
+          // fresh drawable, possibly not a pooled canvas). bounds/unbounded
+          // ride along — the hit path can't recompute them.
+          if (layer.cacheStoreKey !== undefined && !shaderReplaced) {
+            this.cacheStore(layer.cacheStoreKey, {
+              canvas: layer.canvas,
+              bounds: layer.bounds,
+              unbounded: layer.unbounded,
+            });
+          } else {
             this.release(layer.canvas);
-            break;
           }
-
-          parent.save();
-          parent.resetTransform();
-          if (clippable && layer.bounds) {
-            const x0 = Math.max(0, Math.floor(layer.bounds.minX - outset));
-            const y0 = Math.max(0, Math.floor(layer.bounds.minY - outset));
-            const x1 = Math.min(w, Math.ceil(layer.bounds.maxX + outset));
-            const y1 = Math.min(h, Math.ceil(layer.bounds.maxY + outset));
-            if (x0 >= x1 || y0 >= y1) {
-              // painted entirely offscreen; the filter can't reach back in
-              parent.restore();
-              this.release(layer.canvas);
-              break;
-            }
-            const clip = this.host.newPath();
-            clip.moveTo(x0, y0);
-            clip.lineTo(x1, y0);
-            clip.lineTo(x1, y1);
-            clip.lineTo(x0, y1);
-            clip.closePath();
-            parent.clip(clip, 'nonzero');
-          }
-          parent.globalAlpha = layer.opacity;
-          // group filters (§3.4): applied on the composite draw; save/restore scopes it
-          if (hasFilter) parent.filter = layer.filter!;
-          parent.globalCompositeOperation = layer.blend;
-          parent.drawImage(drawable, 0, 0);
-          parent.restore();
-          this.release(layer.canvas);
           break;
         }
       }

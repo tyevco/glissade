@@ -90,6 +90,16 @@ export interface NodeProps {
   filters?: PropInit<FilterSpec[]>;
   /** Placement point + transform pivot on the intrinsic box; default 'center'. */
   anchor?: AnchorSpec;
+  /**
+   * §3.5 cross-frame raster cache: FORCE this subtree into a group and stamp a
+   * cacheKey on its pushGroup, so a backend with the bitmap LRU re-blits an
+   * unchanged subtree under a moving parent instead of re-rasterizing it. A
+   * pure performance hint — semantics are byte-identical with the cache off
+   * (the cache key folds in the inherited device transform, so a stale CTM can
+   * never blit). OFF by default: a scene that never sets it emits ZERO extra
+   * groups and is byte-identical to before. Best for expensive STATIC subtrees.
+   */
+  cache?: boolean;
 }
 
 export interface BindablePropTarget {
@@ -127,6 +137,8 @@ export abstract class Node {
   readonly anchor: Vec2;
   /** True only when the author SET an anchor — unset keeps the legacy origin. */
   readonly hasAnchor: boolean;
+  /** §3.5: opt-in cross-frame raster cache. Forces a group + a stamped cacheKey. */
+  readonly cache: boolean;
 
   parent: Node | null = null;
   #warnedAnchor = false;
@@ -162,6 +174,7 @@ export abstract class Node {
     this.filters = initScalar(signal<FilterSpec[]>([]), props.filters);
     this.hasAnchor = props.anchor !== undefined;
     this.anchor = resolveAnchor(props.anchor ?? 'center');
+    this.cache = props.cache === true;
 
     this.localMatrix = computed(
       () => {
@@ -283,10 +296,24 @@ export abstract class Node {
     const local = this.localMatrix();
     const isIdentity = matEquals(local, IDENTITY);
     const shader = this.groupShader();
-    const group = this.requiresGroup() || shader !== undefined;
+    // §3.5: `cache:true` FORCES a group even when nothing else demands one, so a
+    // plain static subtree (opacity 1 / source-over / no filter) is cacheable.
+    // Strictly gated: without `cache:true` the group set is unchanged, so every
+    // pre-existing scene emits identical IR and every golden stays byte-stable.
+    const group = this.requiresGroup() || shader !== undefined || this.cache;
+    // §3.5 cacheKey ride-along: only `cache:true` nodes use the builder's
+    // mark/cacheKey/patchCacheKey seam. Those are optional on the interface so
+    // non-cache emits (and the lightweight mock builders in tests) never touch
+    // them — preserving byte-identity and back-compat for every other node.
+    const wantsKey = this.cache && out.mark !== undefined;
     out.push({ op: 'save' });
     if (!isIdentity) out.push({ op: 'transform', m: local });
+    // Mark BEFORE pushGroup so the cacheKey covers exactly the draw() slice
+    // (the group's children), not the pushGroup itself — the LRU re-composites
+    // with this node's live opacity/blend/filter, so those stay out of the key.
+    let pushIdx = -1;
     if (group) {
+      if (wantsKey) pushIdx = out.mark!();
       out.push({
         op: 'pushGroup',
         opacity,
@@ -295,8 +322,16 @@ export abstract class Node {
         ...(shader !== undefined ? { shader } : {}),
       });
     }
+    const drawStart = wantsKey ? out.mark!() : -1;
     this.draw(out, ctx);
-    if (group) out.push({ op: 'popGroup' });
+    if (group) {
+      if (wantsKey) {
+        const key = out.cacheKey!(drawStart, out.mark!());
+        // back-patch the cacheKey onto the pushGroup now that the slice exists
+        if (key !== undefined) out.patchCacheKey!(pushIdx, key);
+      }
+      out.push({ op: 'popGroup' });
+    }
     out.push({ op: 'restore' });
   }
 }

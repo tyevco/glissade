@@ -31,6 +31,7 @@ import goldenWhiteboard from '../../examples/src/scenes/golden-whiteboard.js';
 import goldenSvg from '../../examples/src/scenes/golden-svg.js';
 import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.js';
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
+import goldenCache from '../../examples/src/scenes/golden-cache.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -81,6 +82,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'whiteboard', mod: goldenWhiteboard },
   // SVG import: a parsed SVG document rendered as a static scene
   { name: 'svg', mod: goldenSvg },
+  // §3.5 cross-frame raster cache: a cache:true static badge re-blits from the
+  // LRU under a moving dot — byte-identical to the uncached render
+  { name: 'cache', mod: goldenCache },
 ];
 
 for (const { name, mod } of CORPUS) {

@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
   core: 14, // raised 8→10→11→12→14 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings; 0.9 §3.6 FontRegistry + hand-rolled cmap reader (formats 4/12) + font validation — DEV/export-path only, never in evaluate(), tree-shaken out of real embeds; base embed path stays ~31/35)
-  scene: 15, // raised 12→13→14→15 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit — DEV/export-only, tree-shaken from real embeds; base total stays ≤ 35)
+  scene: 16, // raised 12→13→14→15→16 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a in the builder and the bitmap LRU in the shared Raster2D, ~0.5 kB — the LRU is the real-render perf path (not tree-shaken) but earns its keep, and the base embed path stays ~32/35)
   'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
   'backend-canvas2d': 8,
   player: 4,

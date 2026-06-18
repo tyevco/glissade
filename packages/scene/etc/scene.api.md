@@ -200,6 +200,9 @@ export interface DisplayList {
 
 // @public (undocumented)
 export interface DisplayListBuilder {
+    cacheKey?(start: number, end: number): string | undefined;
+    mark?(): number;
+    patchCacheKey?(i: number, key: string): void;
     // (undocumented)
     push(cmd: DrawCommand): void;
     // (undocumented)
@@ -583,6 +586,7 @@ abstract class Node_2 {
     protected anchorShift(measurer?: TextMeasurer): Vec2;
     // (undocumented)
     readonly blend: BindableSignal<BlendMode>;
+    readonly cache: boolean;
     protected abstract draw(out: DisplayListBuilder, ctx: EvalContext): void;
     drawOffset(measurer?: TextMeasurer): {
         x: number;
@@ -638,6 +642,7 @@ export interface NodeProps {
     anchor?: AnchorSpec;
     // (undocumented)
     blend?: PropInit<BlendMode>;
+    cache?: boolean;
     filters?: PropInit<FilterSpec[]>;
     // (undocumented)
     id?: string;
@@ -741,7 +746,8 @@ export function quantize(v: number): number;
 
 // @public (undocumented)
 export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawable> {
-    constructor(host: Raster2DHost<TCanvas, TPath, TDrawable>, shaderCaps?: ShaderCaps);
+    constructor(host: Raster2DHost<TCanvas, TPath, TDrawable>, shaderCaps?: ShaderCaps,
+    cacheEnabled?: boolean);
     // (undocumented)
     dispose(): void;
     render(target: TCanvas, list: DisplayList): void;

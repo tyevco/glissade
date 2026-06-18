@@ -181,6 +181,50 @@ export interface DisplayList {
 export interface DisplayListBuilder {
   push(cmd: DrawCommand): void;
   resource(res: Resource): ResourceId;
+  /**
+   * §3.5 cacheKey seam — OPTIONAL so non-cache emits and lightweight mock
+   * builders never need them. `createDisplayListBuilder` supplies all three;
+   * `Node.emit` calls them only for `cache:true` nodes when present.
+   */
+  /** Count of commands emitted so far — a markpoint for cacheKey ranges. */
+  mark?(): number;
+  /**
+   * A stable hash of the command slice [start, end) plus the FULL content of
+   * every resource those commands reference (not just ids — interned ids are a
+   * per-list detail). Pure function of the slice; identical slices at two times
+   * hash equal, so a static subtree caches. Opaque buffers collapse to a length
+   * marker (mirrors cacheColdAudit's serializer). Undefined for an empty slice.
+   */
+  cacheKey?(start: number, end: number): string | undefined;
+  /** Stamp a cacheKey onto the pushGroup already emitted at index `i`. */
+  patchCacheKey?(i: number, key: string): void;
+}
+
+/**
+ * Resource ids that appear in a draw command — only path/image/video draws
+ * carry one. Keeps the cacheKey serializer in lockstep with DrawCommand.
+ */
+function commandResourceIds(cmd: DrawCommand): number[] {
+  switch (cmd.op) {
+    case 'clip':
+    case 'fillPath':
+    case 'strokePath':
+      return [cmd.path];
+    case 'drawImage':
+      return [cmd.image];
+    default:
+      return [];
+  }
+}
+
+/** FNV-1a over a string → an 8-hex-digit stable token (no crypto dep, ESM-safe). */
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 export function createDisplayListBuilder(size: { w: number; h: number }): DisplayListBuilder & {
@@ -202,6 +246,44 @@ export function createDisplayListBuilder(size: { w: number; h: number }): Displa
       resources.push(res);
       interned.set(k, id);
       return id;
+    },
+    mark: () => commands.length,
+    cacheKey: (start, end) => {
+      if (end <= start) return undefined;
+      // Serialize the slice, but inline each referenced resource's CONTENT so
+      // the key reflects geometry/asset identity, not list-local interned ids.
+      // A local id→ordinal remap makes the key invariant to where the resource
+      // happens to land in the shared table (two structurally-identical slices
+      // emitted in different orders still hash equal).
+      const localIds = new Map<number, number>();
+      const usedResources: Resource[] = [];
+      const remap = (id: number): number => {
+        let local = localIds.get(id);
+        if (local === undefined) {
+          local = localIds.size;
+          localIds.set(id, local);
+          usedResources.push(resources[id] as Resource);
+        }
+        return local;
+      };
+      const sliceCmds = commands.slice(start, end).map((cmd) => {
+        const ids = commandResourceIds(cmd);
+        if (ids.length === 0) return cmd;
+        // shallow-clone with remapped ids; the original command is untouched
+        if (cmd.op === 'drawImage') return { ...cmd, image: remap(cmd.image) };
+        return { ...cmd, path: remap((cmd as { path: number }).path) };
+      });
+      const payload = JSON.stringify({ c: sliceCmds, r: usedResources }, (_k, value) => {
+        if (value instanceof ArrayBuffer) return `ab:${value.byteLength}`;
+        if (ArrayBuffer.isView(value)) return `view:${(value as ArrayBufferView).byteLength}`;
+        if (typeof value === 'function') return undefined;
+        return value;
+      });
+      return fnv1a(payload);
+    },
+    patchCacheKey: (i, key) => {
+      const cmd = commands[i];
+      if (cmd && cmd.op === 'pushGroup') cmd.cacheKey = key;
     },
     finish: () => ({ commands, resources, size }),
   };
