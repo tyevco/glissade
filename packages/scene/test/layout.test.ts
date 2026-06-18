@@ -167,6 +167,109 @@ describe('anchor-aware flow (Text baseline origins)', () => {
   });
 });
 
+describe('layout memo is computed()-backed (pALZ): dependency-tracked invalidation', () => {
+  beforeAll(async () => {
+    await loadYogaLayoutEngine();
+  });
+
+  /** Wrap the active engine's compute() in a counting spy; restore on cleanup. */
+  function spyOnCompute() {
+    const engine = getLayoutEngine()!;
+    const original = engine.compute.bind(engine);
+    let calls = 0;
+    engine.compute = (container, children) => {
+      calls += 1;
+      return original(container, children);
+    };
+    return {
+      get calls() {
+        return calls;
+      },
+      restore() {
+        engine.compute = original;
+      },
+    };
+  }
+
+  it('a PARTICIPATING-signal change re-invokes Yoga; a NON-participating one does NOT', () => {
+    const child = new Rect({ id: 'a', width: 50, height: 40, fill: '#f00' });
+    const panel = new Layout({
+      id: 'bar',
+      width: 300,
+      height: 100,
+      direction: 'row',
+      gap: 10,
+      padding: 10,
+      children: [child],
+    });
+    createScene({ size: { w: 640, h: 360 }, children: [panel] });
+
+    const spy = spyOnCompute();
+    try {
+      // prime the memo (first pull computes once)
+      const before = panel.computedSize();
+      expect(before).toEqual({ w: 300, h: 100 });
+      expect(spy.calls).toBe(1);
+
+      // a cached re-read does not re-invoke Yoga
+      panel.computedSize();
+      expect(spy.calls).toBe(1);
+
+      // NON-participating: the container's opacity is not a layout input.
+      panel.opacity.set(0.5);
+      panel.computedSize();
+      expect(spy.calls).toBe(1); // <- the headline: no re-compute
+
+      // NON-participating: a child prop the flow never reads (fill/opacity).
+      child.opacity.set(0.25);
+      panel.computedSize();
+      expect(spy.calls).toBe(1);
+
+      // PARTICIPATING: the container gap is read by #computeUncached.
+      panel.gap.set(20);
+      panel.computedSize();
+      expect(spy.calls).toBe(2); // <- re-computed
+
+      // PARTICIPATING: a child's intrinsic width feeds the child spec.
+      child.width.set(80);
+      panel.computedSize();
+      expect(spy.calls).toBe(3); // <- re-computed
+    } finally {
+      spy.restore();
+    }
+  });
+
+  it('a non-default custom measurer bypasses the cache (uncached escape hatch)', () => {
+    const panel = new Layout({
+      id: 'mlayout',
+      width: 200,
+      height: 'auto',
+      direction: 'column',
+      padding: 0,
+      children: [new Text({ id: 't', text: 'hello', fontSize: 16 })],
+    });
+    createScene({ size: { w: 640, h: 360 }, children: [panel] });
+
+    const customMeasurer = {
+      measureText() {
+        return { width: 123, ascent: 12, descent: 4 };
+      },
+    };
+
+    const spy = spyOnCompute();
+    try {
+      // each custom-measurer pull computes fresh (never reads/poisons the
+      // scene-singleton-keyed memo), so two pulls => two Yoga invocations.
+      const a = panel.computedSize(customMeasurer);
+      const b = panel.computedSize(customMeasurer);
+      expect(a).toEqual(b); // deterministic result
+      expect(spy.calls).toBe(2); // uncached: one per call
+    } finally {
+      spy.restore();
+    }
+  });
+});
+
 describe('auto-sized containers (Yoga content sizing)', () => {
   beforeAll(async () => {
     await loadYogaLayoutEngine();

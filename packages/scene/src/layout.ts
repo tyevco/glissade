@@ -8,7 +8,7 @@
  * scene containing Layout nodes (the CLI does this automatically).
  */
 
-import { signal, type BindableSignal } from '@glissade/core';
+import { computed, signal, type BindableSignal, type ReadonlySignal } from '@glissade/core';
 import { type DisplayListBuilder } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { Group } from './nodes.js';
@@ -58,9 +58,23 @@ export class Layout extends Group {
   readonly autoWidth: boolean;
   readonly autoHeight: boolean;
 
-  // sanctioned memoization (§2.1): pure function of the fingerprinted inputs
-  #memoKey = '';
-  #memoResult: LayoutResult = { width: 0, height: 0, boxes: [] };
+  /**
+   * Sanctioned memoization (§2.1), core-`computed()`-backed: a pure function of
+   * the PARTICIPATING signals. The compute reads exactly the container props
+   * and child intrinsic-size signals it consumes, so the signal graph records
+   * those as deps and re-invokes Yoga only when one of THEM changes — a sibling
+   * mutating a non-participating signal does not invalidate the layout. Pulls
+   * the scene-injected measurer (the same one draw() uses via ctx.measurer);
+   * a caller-supplied non-default measurer bypasses this cache (see #compute).
+   */
+  readonly #memo: ReadonlySignal<{
+    result: LayoutResult;
+    size: { w: number; h: number };
+    flowable: { node: Node; spec: LayoutChildSpec; index: number }[];
+    absolute: Node[];
+  }> = computed(() =>
+    this.#computeUncached(this.measurerSource?.() ?? fallbackMeasurer()),
+  );
 
   constructor(props: LayoutProps = {}) {
     super(props);
@@ -96,7 +110,24 @@ export class Layout extends Group {
     return this.#compute(m).size;
   }
 
+  /**
+   * Route through the #memo (the dependency-tracked computed) when `measurer`
+   * is the default the memo itself pulls; otherwise compute fresh & UNCACHED —
+   * a caller-supplied non-default measurer must never read (or poison) a cache
+   * keyed on the scene-singleton measurer (the `computedSize(customMeasurer)`
+   * escape hatch).
+   */
   #compute(measurer: TextMeasurer): {
+    result: LayoutResult;
+    size: { w: number; h: number };
+    flowable: { node: Node; spec: LayoutChildSpec; index: number }[];
+    absolute: Node[];
+  } {
+    const isDefault = measurer === (this.measurerSource?.() ?? fallbackMeasurer());
+    return isDefault ? this.#memo() : this.#computeUncached(measurer);
+  }
+
+  #computeUncached(measurer: TextMeasurer): {
     result: LayoutResult;
     /** Spec-exact on fixed axes (Yoga rounds computed values — goldens are byte-exact); computed on 'auto'. */
     size: { w: number; h: number };
@@ -120,19 +151,15 @@ export class Layout extends Group {
       else absolute.push(child);
     });
 
-    const key = JSON.stringify([container, flowable.map((f) => f.spec)]);
-    if (key !== this.#memoKey) {
-      this.#memoResult = requireLayoutEngine().compute(
-        container,
-        flowable.map((f) => f.spec),
-      );
-      this.#memoKey = key;
-    }
+    const result = requireLayoutEngine().compute(
+      container,
+      flowable.map((f) => f.spec),
+    );
     const size = {
-      w: this.autoWidth ? this.#memoResult.width : (container.width as number),
-      h: this.autoHeight ? this.#memoResult.height : (container.height as number),
+      w: this.autoWidth ? result.width : (container.width as number),
+      h: this.autoHeight ? result.height : (container.height as number),
     };
-    return { result: this.#memoResult, size, flowable, absolute };
+    return { result, size, flowable, absolute };
   }
 
   protected override draw(out: DisplayListBuilder, ctx: EvalContext): void {
