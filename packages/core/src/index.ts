@@ -71,6 +71,7 @@ export {
   paintType,
   type Paint,
   type ColorStop,
+  type GradientInterpolation,
   vec2Equals,
   inferValueType,
   UnknownValueTypeError,

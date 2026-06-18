@@ -194,6 +194,15 @@ export interface ColorStop {
 }
 
 /**
+ * How a gradient blends BETWEEN its stops: `linear` (the canvas-native ramp,
+ * the default — byte-identical to no mode), `smooth` (a smoothstep S-curve, no
+ * Mach-banding at stops), or `gaussian` (a soft gaussian shoulder — melts like
+ * a wide blur with 2-3 stops). `smooth`/`gaussian` densify + oklab-interpolate
+ * the stops at raster, so a soft-light fill reads as smooth as a blur, no filter.
+ */
+export type GradientInterpolation = 'linear' | 'smooth' | 'gaussian';
+
+/**
  * A fill/stroke paint (§2.2 animatable document value): a solid color, or a
  * `linear`/`radial` gradient. Geometry (`from`/`to`, `center`/`radius`) is in
  * the shape's LOCAL space; omit it to default to the filled path's bounds.
@@ -201,8 +210,8 @@ export interface ColorStop {
  */
 export type Paint =
   | { kind: 'color'; color: string }
-  | { kind: 'linear'; stops: ColorStop[]; from?: [number, number]; to?: [number, number] }
-  | { kind: 'radial'; stops: ColorStop[]; center?: [number, number]; radius?: number };
+  | { kind: 'linear'; stops: ColorStop[]; from?: [number, number]; to?: [number, number]; interpolation?: GradientInterpolation }
+  | { kind: 'radial'; stops: ColorStop[]; center?: [number, number]; radius?: number; interpolation?: GradientInterpolation };
 
 const lerpN = (a: number, b: number, t: number): number => a + (b - a) * t;
 const lerpPt = (a: [number, number], b: [number, number], t: number): [number, number] => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t)];
@@ -211,9 +220,10 @@ const lerpPt = (a: [number, number], b: [number, number], t: number): [number, n
  * so a color↔gradient tween fades smoothly instead of snapping. */
 function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radial' }>): Paint {
   const stops = shape.stops.map((s) => ({ offset: s.offset, color }));
+  const interp = shape.interpolation ? { interpolation: shape.interpolation } : {};
   return shape.kind === 'radial'
-    ? { kind: 'radial', stops, ...(shape.center ? { center: shape.center } : {}), ...(shape.radius !== undefined ? { radius: shape.radius } : {}) }
-    : { kind: 'linear', stops, ...(shape.from ? { from: shape.from } : {}), ...(shape.to ? { to: shape.to } : {}) };
+    ? { kind: 'radial', stops, ...(shape.center ? { center: shape.center } : {}), ...(shape.radius !== undefined ? { radius: shape.radius } : {}), ...interp }
+    : { kind: 'linear', stops, ...(shape.from ? { from: shape.from } : {}), ...(shape.to ? { to: shape.to } : {}), ...interp };
 }
 
 let warnedPaintShape = false;
@@ -250,12 +260,14 @@ export const paintType: ValueType<Paint> = {
       return paintSnap(t, a, b);
     }
     const stops = A.stops.map((sa, i) => ({ offset: lerpN(sa.offset, B.stops[i]!.offset, t), color: lerpColor(sa.color, B.stops[i]!.color, t) }));
+    const interp = A.interpolation ? { interpolation: A.interpolation } : {}; // mode is discrete metadata — carry A's
     if (A.kind === 'radial' && B.kind === 'radial') {
       return {
         kind: 'radial',
         stops,
         ...(A.center && B.center ? { center: lerpPt(A.center, B.center, t) } : A.center ? { center: A.center } : {}),
         ...(A.radius !== undefined && B.radius !== undefined ? { radius: lerpN(A.radius, B.radius, t) } : A.radius !== undefined ? { radius: A.radius } : {}),
+        ...interp,
       };
     }
     if (A.kind === 'linear' && B.kind === 'linear') {
@@ -264,6 +276,7 @@ export const paintType: ValueType<Paint> = {
         stops,
         ...(A.from && B.from ? { from: lerpPt(A.from, B.from, t) } : A.from ? { from: A.from } : {}),
         ...(A.to && B.to ? { to: lerpPt(A.to, B.to, t) } : A.to ? { to: A.to } : {}),
+        ...interp,
       };
     }
     return paintSnap(t, a, b);
@@ -275,6 +288,7 @@ export const paintType: ValueType<Paint> = {
     if (a.kind === 'color') return b.kind === 'color' && a.color === b.color;
     if (b.kind === 'color') return false;
     if (!stopsEqual(a.stops, b.stops)) return false;
+    if (a.interpolation !== b.interpolation) return false;
     if (a.kind === 'radial' && b.kind === 'radial') {
       return JSON.stringify(a.center) === JSON.stringify(b.center) && a.radius === b.radius;
     }

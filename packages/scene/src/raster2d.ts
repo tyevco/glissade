@@ -20,6 +20,7 @@ import {
   type ShaderRef,
 } from './displayList.js';
 import { IDENTITY, multiply, type Mat2x3 } from './matrix.js';
+import { densifyStops } from './gradient.js';
 export { type TextMetricsLite } from './text.js';
 
 /** A backend gradient handle (DOM CanvasGradient and @napi-rs CanvasGradient both satisfy it). */
@@ -122,7 +123,10 @@ function resolveFill(ctx: GradientCtx, paint: Paint, bounds: FillBounds | null):
     const ty = paint.to ? paint.to[1] : bounds ? bounds.maxY : 0;
     g = ctx.createLinearGradient(fx, fy, tx, ty);
   }
-  for (const s of paint.stops) g.addColorStop(s.offset, s.color);
+  // smooth/gaussian: densify + oklab-ease the stops so the ramp melts like a
+  // wide blur (no Mach-banding); 'linear' (default) keeps the authored stops
+  const stops = paint.interpolation ? densifyStops(paint.stops, paint.interpolation) : paint.stops;
+  for (const s of stops) g.addColorStop(s.offset, s.color);
   return g;
 }
 

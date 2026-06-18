@@ -286,6 +286,9 @@ export function getTimelineCallbacks(doc: Timeline): ReadonlyMap<string, () => v
 export function getValueType<T = unknown>(id: ValueTypeId): ValueType<T>;
 
 // @public
+export type GradientInterpolation = 'linear' | 'smooth' | 'gaussian';
+
+// @public
 export type HandoffKind = 'cut' | 'decay' | 'spring' | 'blend-from-frozen';
 
 // @public
@@ -404,11 +407,13 @@ export type Paint = {
     stops: ColorStop[];
     from?: [number, number];
     to?: [number, number];
+    interpolation?: GradientInterpolation;
 } | {
     kind: 'radial';
     stops: ColorStop[];
     center?: [number, number];
     radius?: number;
+    interpolation?: GradientInterpolation;
 };
 
 // @public

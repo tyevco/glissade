@@ -33,6 +33,7 @@ import goldenSketchDrawon from '../../examples/src/scenes/golden-sketch-drawon.j
 import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import goldenCache from '../../examples/src/scenes/golden-cache.js';
 import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
+import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -89,6 +90,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // §2.2/§3 gradient Paint: static radial + linear fills (bounds-defaulted) and a
   // keyframe-animated radial sweeping/growing/recoloring via the paint value type
   { name: 'gradient', mod: goldenGradient },
+  // 0.10.1 gradient interpolation modes: linear | smooth | gaussian melt, side by side
+  { name: 'gradient-smooth', mod: goldenGradientSmooth },
 ];
 
 for (const { name, mod } of CORPUS) {
