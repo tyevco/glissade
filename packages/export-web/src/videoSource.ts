@@ -86,6 +86,7 @@ export class MediabunnyVideoFrameSource implements VideoFrameSource {
    * Test-only introspection (§5.4): the number of decoded frames currently
    * held, so the lookahead/eviction bound (MAX_CACHED_FRAMES) is assertable
    * without reaching into the private cache.
+   * @internal — not part of the public API surface (api-extractor strips it).
    */
   cachedFrameCount(): number {
     return this.cache.size;
