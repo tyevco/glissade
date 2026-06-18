@@ -58,7 +58,9 @@ render options:
   --frame <n>      render a single frame; --out foo.png writes that one file, --out <dir> writes a PNG into it
   --format png-seq force a PNG sequence even when --out looks like a video
   --workers <n>    shard the frame range across n separate render processes, then concat (§5.6; video out only).
-                   byte-identical to a single-worker render at the frame level
+                   byte-identical to a single-worker render at the frame level. Helps CPU-bound, per-frame-cheap
+                   scenes; a single render is already internally multi-threaded, so bandwidth-bound / blur-heavy
+                   scenes (the bus is already saturated) gain little — shards just contend for memory bandwidth
   --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
                    (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
   --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)

@@ -98,6 +98,15 @@ export interface NodeProps {
    * (the cache key folds in the inherited device transform, so a stale CTM can
    * never blit). OFF by default: a scene that never sets it emits ZERO extra
    * groups and is byte-identical to before. Best for expensive STATIC subtrees.
+   *
+   * CAVEAT (when it does NOT help): the key folds in the inherited device
+   * transform, so a subtree that itself DRIFTS — e.g. animated on sub-pixel
+   * float positions — misses the cache every frame; cache a static subtree
+   * under a *moving parent*, not a subtree that moves itself. And a `filter`
+   * is a LIVE composite parameter applied on the blit, never baked into the
+   * cached bitmap, so `cache:true` on a filter-declaring (e.g. blurred) group
+   * does not cache the filter cost. For per-frame-cheap drift, prefer
+   * eliminating the work (a cheaper Paint/effect) over caching it.
    */
   cache?: boolean;
 }
