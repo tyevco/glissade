@@ -43,6 +43,8 @@ export interface RenderOptions {
   sfx?: 'auto' | 'off';
   /** also write WebVTT chapters from cue markers ('vtt'); cues.json is always written when cues exist. */
   chapters?: 'vtt' | 'off';
+  /** cue kinds that become VTT chapters (default just 'chapter'); cues.json keeps all kinds. */
+  chapterKinds?: ReadonlySet<string>;
   /** --strict: font validation throws on an unregistered family / missing glyph (§3.6). Default dev-warn. */
   strictFonts?: boolean;
   onProgress?: (frame: number, total: number) => void;
@@ -231,7 +233,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   // composer cue signaling (§ad-break): cue markers → <stem>.cues.json (+ chapters)
   const emitCues = (target: string): void => {
-    const written = writeCueSidecars(target, compiled.markers, duration, opts.chapters === 'vtt');
+    const written = writeCueSidecars(target, compiled.markers, duration, opts.chapters === 'vtt', opts.chapterKinds);
     if (written.length) process.stderr.write(`cues: ${written.join(', ')}\n`);
   };
 

@@ -144,6 +144,7 @@ export function render(opts: RenderOptions): Promise<{
 // @public (undocumented)
 export interface RenderOptions {
     captions?: 'burn' | 'sidecar' | 'off';
+    chapterKinds?: ReadonlySet<string>;
     chapters?: 'vtt' | 'off';
     force?: boolean;
     format?: 'png-seq';
