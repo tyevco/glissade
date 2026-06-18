@@ -57,6 +57,11 @@ render options:
   --range <a..b>   integer FRAME indices to render, inclusive (default: whole timeline)
   --frame <n>      render a single frame; --out foo.png writes that one file, --out <dir> writes a PNG into it
   --format png-seq force a PNG sequence even when --out looks like a video
+  --workers <n>    shard the frame range across n separate render processes, then concat (§5.6; video out only).
+                   byte-identical to a single-worker render at the frame level
+  --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
+                   (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
+  --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
@@ -204,8 +209,13 @@ async function main(): Promise<void> {
   if (formatFlag !== undefined && formatFlag !== 'png-seq') {
     fail(`--format must be 'png-seq', got '${formatFlag}'`);
   }
-  if (flags.has('workers')) {
-    process.stderr.write('note: --workers is accepted but parallel sharding is not yet implemented; rendering single-threaded\n');
+  let workers: number | undefined;
+  const workersFlag = flags.get('workers');
+  if (workersFlag !== undefined) {
+    if (!/^\d+$/.test(workersFlag) || Number(workersFlag) < 1) {
+      fail(`--workers must be a positive integer, got '${workersFlag}'`);
+    }
+    workers = Number(workersFlag);
   }
   if (flags.has('watch')) {
     process.stderr.write('note: --watch is not yet implemented in this release; rendering once\n');
@@ -229,6 +239,9 @@ async function main(): Promise<void> {
       ...(flags.has('state') ? { state: flags.get('state')! } : {}),
       ...(flags.has('force') ? { force: true } : {}),
       ...(flags.has('strict') ? { strictFonts: true } : {}),
+      ...(workers !== undefined ? { workers } : {}),
+      ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
+      ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),

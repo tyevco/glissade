@@ -5,6 +5,7 @@
 ```ts
 
 import { AudioClip } from '@glissade/core';
+import { CompiledTimeline } from '@glissade/core';
 import { Image as Image_2 } from '@napi-rs/canvas';
 import { Key } from '@glissade/core';
 import { Scene } from '@glissade/scene';
@@ -132,6 +133,12 @@ export function pickEncoder(kind: 'video' | 'audio', container: 'mp4' | 'webm', 
 // @public
 export function planAudioMix(clips: AudioClip[], modulePath: string, duration: number): AudioMixPlan | null;
 
+// @public
+export function planFinalAudio(opts: RenderOptions, timelineClips: AudioClip[], duration: number, container: 'mp4' | 'webm'): Promise<{
+    audioInputs: string[];
+    audioArgs: string[];
+}>;
+
 // @public (undocumented)
 export function probeVideo(path: string): VideoInfo;
 
@@ -143,6 +150,7 @@ export function render(opts: RenderOptions): Promise<{
 
 // @public (undocumented)
 export interface RenderOptions {
+    allowGpuShards?: boolean;
     captions?: 'burn' | 'sidecar' | 'off';
     chapterKinds?: ReadonlySet<string>;
     chapters?: 'vtt' | 'off';
@@ -152,6 +160,7 @@ export interface RenderOptions {
     fps?: number;
     frame?: number;
     frameRange?: [number, number];
+    losslessIntermediate?: boolean;
     // (undocumented)
     modulePath: string;
     music?: 'auto' | 'off';
@@ -165,6 +174,45 @@ export interface RenderOptions {
     state?: string;
     strictFonts?: boolean;
     trace?: string;
+    videoOnly?: boolean;
+    workers?: number;
+}
+
+// @public
+export function renderSharded(a: RenderShardedArgs): Promise<{
+    frames: number;
+    out: string;
+}>;
+
+// @public (undocumented)
+export interface RenderShardedArgs {
+    // (undocumented)
+    compiled: CompiledTimeline;
+    // (undocumented)
+    container: 'mp4' | 'webm';
+    // (undocumented)
+    duration: number;
+    // (undocumented)
+    firstFrame: number;
+    // (undocumented)
+    fps: number;
+    // (undocumented)
+    lastFrame: number;
+    // (undocumented)
+    opts: RenderOptions;
+    // (undocumented)
+    scene: Scene;
+    // (undocumented)
+    timingPathFor: (modulePath: string) => string | null;
+    // (undocumented)
+    workers: number;
+    // (undocumented)
+    writeCaptionSidecars: (timingPath: string, target: string) => {
+        srt: string;
+        vtt: string;
+    };
+    // (undocumented)
+    writeCueSidecars: (target: string, markers: CompiledTimeline['markers'], duration: number, chapters: boolean, chapterKinds?: ReadonlySet<string>) => string[];
 }
 
 // @public
@@ -173,10 +221,27 @@ export function resolveAssetPath(url: string, modulePath: string): string;
 // @public
 export function resolveRenderDoc(mod: SceneModule, scene: Scene, flags: MachineRenderFlags): Timeline;
 
+// @public
+export function sceneHasGpuNodes(scene: Scene): boolean;
+
 // @public (undocumented)
 export class SceneModuleError extends Error {
     constructor(modulePath: string, detail: string);
 }
+
+// @public (undocumented)
+export class ShardError extends Error {
+    constructor(message: string);
+}
+
+// @public (undocumented)
+export interface ShardRange {
+    first: number;
+    last: number;
+}
+
+// @public
+export function splitFrameRange(first: number, last: number, workers: number): ShardRange[];
 
 // @public (undocumented)
 export interface VideoInfo {

@@ -11,7 +11,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
-import { buildFontRegistry } from '@glissade/core';
+import { buildFontRegistry, type AudioClip } from '@glissade/core';
 import { evaluate, validateSceneFonts, withDeterminismGuards, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '@glissade/backend-skia';
 
@@ -47,6 +47,30 @@ export interface RenderOptions {
   chapterKinds?: ReadonlySet<string>;
   /** --strict: font validation throws on an unregistered family / missing glyph (§3.6). Default dev-warn. */
   strictFonts?: boolean;
+  /**
+   * --workers N (§5.6): split the frame range into N contiguous sub-ranges, render
+   * each in a separate `gs` child process, and join the shard videos. Ignored for
+   * a single frame or N <= 1. Only meaningful for a video `out`.
+   */
+  workers?: number;
+  /**
+   * --lossless-intermediate (§5.6, §8.1): render shards as FFV1 (lossless) and do a
+   * single final encode after the concat — the guaranteed byte-correct join path.
+   * Forced on automatically when the picked encoder can't honor precise boundary
+   * keyframes (mpeg4 / openh264).
+   */
+  losslessIntermediate?: boolean;
+  /**
+   * --allow-gpu-shards (§5.6): sharded GPU/shader output isn't reproducible across
+   * processes/machines, so a scene containing a ShaderEffect refuses to shard unless
+   * this is set.
+   */
+  allowGpuShards?: boolean;
+  /**
+   * Internal (shard children): render video-only — skip the audio mix and the
+   * caption/cue sidecars, which the orchestrator emits once over the joined result.
+   */
+  videoOnly?: boolean;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -137,6 +161,28 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       `'${opts.out}' needs FFmpeg on PATH and none was found. ` +
         'Render a PNG sequence instead (--out <directory>) or install ffmpeg.',
     );
+  }
+
+  // §5.6 sharded export: split the frame range across N child `gs` processes
+  // and join the shard videos. Only a real video output with >1 frame shards;
+  // a single still / PNG sequence / N<=1 falls through to the linear path.
+  const workers = opts.videoOnly ? 1 : Math.max(1, Math.floor(opts.workers ?? 1));
+  if (workers > 1 && isVideo && total > 1) {
+    const { renderSharded } = await import('./shards.js');
+    return renderSharded({
+      opts,
+      scene,
+      compiled,
+      fps,
+      duration,
+      firstFrame,
+      lastFrame,
+      container: /\.webm$/i.test(opts.out) ? 'webm' : 'mp4',
+      workers,
+      timingPathFor,
+      writeCaptionSidecars,
+      writeCueSidecars,
+    });
   }
 
   const framesDir = isVideo
@@ -249,8 +295,11 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
-  emitSidecars(outAbs);
-  emitCues(outAbs);
+  // shard children skip sidecars; the orchestrator emits them once over the join
+  if (!opts.videoOnly) {
+    emitSidecars(outAbs);
+    emitCues(outAbs);
+  }
   const isWebm = /\.webm$/i.test(outAbs);
   const container = isWebm ? ('webm' as const) : ('mp4' as const);
 
@@ -272,81 +321,11 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
 
-  // audio auto-mix: sibling manifests join the timeline mix so scene +
-  // narration (+ music) manifests render to a finished mp4 with no hand-wired
-  // timeline.audio. Author-wired clips are detected and never doubled (+6dB).
-  const audioClips = [...compiled.audio];
-  {
-    const { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } = await import('./music.js');
-
-    // narration: the voice itself (the half music parity was missing)
-    if ((opts.narration ?? 'auto') === 'auto') {
-      const narrationPath = timingPathFor(opts.modulePath);
-      if (narrationPath) {
-        const voice = buildNarrationClips(narrationPath);
-        if (voice) {
-          const wired = voice.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
-          if (wired) {
-            process.stderr.write('note: narration already in the timeline audio — auto-mix skipped\n');
-          } else {
-            audioClips.push(...voice.clips);
-            process.stderr.write(`note: auto-mixing ${voice.note}\n`);
-          }
-        }
-      }
-    }
-
-    // music: the bed, auto-ducked under the narration windows
-    if ((opts.music ?? 'auto') === 'auto') {
-      const musicPath = musicPathFor(opts.modulePath);
-      if (musicPath) {
-        const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
-        if (bed) {
-          if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
-            process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
-          } else {
-            audioClips.push(bed.clip);
-            process.stderr.write(`note: auto-mixing ${bed.note}\n`);
-          }
-        }
-      }
-    }
-
-    // sfx: effect hits from a sibling *.sfx.timing.json (gs sfx prepare step)
-    if ((opts.sfx ?? 'auto') === 'auto') {
-      const { buildSfxClipsFromTiming, sfxTimingPathFor } = await import('./sfx.js');
-      const sfxPath = sfxTimingPathFor(opts.modulePath);
-      if (sfxPath) {
-        const fx = buildSfxClipsFromTiming(sfxPath);
-        if (fx) {
-          const wired = fx.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
-          if (wired) {
-            process.stderr.write('note: sfx already in the timeline audio — auto-mix skipped\n');
-          } else {
-            audioClips.push(...fx.clips);
-            process.stderr.write(`note: auto-mixing ${fx.note}\n`);
-          }
-        }
-      }
-    }
-  }
-
-  const { planAudioMix } = await import('./audioMix.js');
-  const mix = planAudioMix(audioClips, opts.modulePath, duration);
-  if (mix?.hasEasedGain) {
-    process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
-  }
-  const audioInputs = mix ? mix.inputs.flatMap((p) => ['-i', p]) : [];
-  const audioEnc = mix ? pickEncoder('audio', container) : null;
-  const audioArgs =
-    mix && audioEnc
-      ? [
-          '-filter_complex', mix.filterComplex,
-          '-map', '0:v', '-map', '[aout]',
-          '-c:a', audioEnc.name,
-          ...(container === 'mp4' ? ['-b:a', '192k'] : []),
-        ]
-      : [];
+  // §5.6 shard children render video-only; the orchestrator mixes audio once
+  // over the joined result, so author-wired + auto-mixed clips never double.
+  const { audioInputs, audioArgs } = opts.videoOnly
+    ? { audioInputs: [] as string[], audioArgs: [] as string[] }
+    : await planFinalAudio(opts, [...compiled.audio], duration, container);
 
   const args = [
     '-y',
@@ -365,4 +344,91 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     throw new Error(`ffmpeg failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
   }
   return { frames: total, out: outAbs };
+}
+
+/**
+ * Collect timeline + auto-mixed (narration/music/sfx) audio clips and plan the
+ * FFmpeg audio graph, returning the `-i`/`-filter_complex`/`-map` argument
+ * fragments. Shared by the linear `render()` path and the sharded orchestrator
+ * (which mixes audio once, over the concatenated video). Returns empty args when
+ * there is nothing to mix.
+ */
+export async function planFinalAudio(
+  opts: RenderOptions,
+  timelineClips: AudioClip[],
+  duration: number,
+  container: 'mp4' | 'webm',
+): Promise<{ audioInputs: string[]; audioArgs: string[] }> {
+  const { timingPathFor } = await import('./captions.js');
+  const audioClips = [...timelineClips];
+  const { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } = await import('./music.js');
+
+  // narration: the voice itself
+  if ((opts.narration ?? 'auto') === 'auto') {
+    const narrationPath = timingPathFor(opts.modulePath);
+    if (narrationPath) {
+      const voice = buildNarrationClips(narrationPath);
+      if (voice) {
+        const wired = voice.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
+        if (wired) {
+          process.stderr.write('note: narration already in the timeline audio — auto-mix skipped\n');
+        } else {
+          audioClips.push(...voice.clips);
+          process.stderr.write(`note: auto-mixing ${voice.note}\n`);
+        }
+      }
+    }
+  }
+
+  // music: the bed, auto-ducked under the narration windows
+  if ((opts.music ?? 'auto') === 'auto') {
+    const musicPath = musicPathFor(opts.modulePath);
+    if (musicPath) {
+      const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
+      if (bed) {
+        if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
+          process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
+        } else {
+          audioClips.push(bed.clip);
+          process.stderr.write(`note: auto-mixing ${bed.note}\n`);
+        }
+      }
+    }
+  }
+
+  // sfx: effect hits from a sibling *.sfx.timing.json (gs sfx prepare step)
+  if ((opts.sfx ?? 'auto') === 'auto') {
+    const { buildSfxClipsFromTiming, sfxTimingPathFor } = await import('./sfx.js');
+    const sfxPath = sfxTimingPathFor(opts.modulePath);
+    if (sfxPath) {
+      const fx = buildSfxClipsFromTiming(sfxPath);
+      if (fx) {
+        const wired = fx.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
+        if (wired) {
+          process.stderr.write('note: sfx already in the timeline audio — auto-mix skipped\n');
+        } else {
+          audioClips.push(...fx.clips);
+          process.stderr.write(`note: auto-mixing ${fx.note}\n`);
+        }
+      }
+    }
+  }
+
+  const { planAudioMix } = await import('./audioMix.js');
+  const { pickEncoder } = await import('./encoders.js');
+  const mix = planAudioMix(audioClips, opts.modulePath, duration);
+  if (mix?.hasEasedGain) {
+    process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
+  }
+  if (!mix) return { audioInputs: [], audioArgs: [] };
+  const audioEnc = pickEncoder('audio', container);
+  return {
+    audioInputs: mix.inputs.flatMap((p) => ['-i', p]),
+    audioArgs: [
+      '-filter_complex', mix.filterComplex,
+      '-map', '0:v', '-map', '[aout]',
+      '-c:a', audioEnc.name,
+      ...(container === 'mp4' ? ['-b:a', '192k'] : []),
+    ],
+  };
 }
