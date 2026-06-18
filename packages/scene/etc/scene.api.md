@@ -397,6 +397,8 @@ export class Group extends Node_2 {
     readonly children: Node_2[];
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
+    remove(child: Node_2): this;
+    protected trackStructure(): void;
 }
 
 // @public (undocumented)

@@ -200,4 +200,18 @@ describe.runIf(process.env.EXPORT === '1' && ffmpegAvailable())('sharded join (E
     expect(res.frames).toBe(32);
     expect(ffprobeFrames(out)).toBe(32);
   }, 180_000);
+
+  it('an OVER-RANGE render caps to the timeline identically with and without --workers (canary blocker)', async () => {
+    // golden-shapes is ~3s; --fps 24 --range 0..119 requests 120 frames but the
+    // -t <duration> cap trims the output to the timeline length. The sharded path
+    // must apply the SAME cap (it omitted it before — a frame-count divergence).
+    const single = join(outDir, 'over-single.mp4');
+    await render({ modulePath: MODULE, out: single, fps: 24, frameRange: [0, 119] });
+    const sharded = join(outDir, 'over-sharded.mp4');
+    await render({ modulePath: MODULE, out: sharded, fps: 24, frameRange: [0, 119], workers: 4 });
+
+    const sFrames = ffprobeFrames(single);
+    expect(sFrames).toBeLessThan(120); // the -t cap engaged (didn't emit all 120 requested)
+    expect(ffprobeFrames(sharded)).toBe(sFrames); // N-worker == 1-worker (the contract)
+  }, 180_000);
 });

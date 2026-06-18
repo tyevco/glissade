@@ -137,8 +137,14 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
     );
   }
 
-  const ranges = splitFrameRange(firstFrame, lastFrame, a.workers);
-  const total = lastFrame - firstFrame + 1;
+  // Cap the rendered range to the timeline extent — the linear path renders the
+  // full requested range then trims the encode with `-t <duration>`; a copy-mode
+  // `-t` on the concat join is NOT frame-accurate (cuts 1-2 frames early), so we
+  // instead cap the FRAMES so the shard output equals the linear output exactly.
+  // `ceil(duration*fps)` is the frame count `-t <duration>` yields at this fps.
+  const effectiveLast = Math.min(lastFrame, Math.ceil(duration * fps) - 1);
+  const ranges = splitFrameRange(firstFrame, effectiveLast, a.workers);
+  const total = effectiveLast - firstFrame + 1;
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
 

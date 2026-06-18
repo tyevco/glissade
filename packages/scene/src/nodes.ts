@@ -50,6 +50,10 @@ export function roundedRectSegs(x: number, y: number, w: number, h: number, r: n
 
 export class Group extends Node {
   readonly children: Node[];
+  /** Version bumped on structural child mutation, so a dependency-tracked memo
+   * (e.g. Layout's computed) re-runs when the child SET changes — not only when
+   * a participating prop signal does. */
+  readonly #structure = signal(0);
 
   constructor(props: NodeProps & { children?: Node[] } = {}) {
     super(props);
@@ -57,9 +61,27 @@ export class Group extends Node {
     for (const child of this.children) child.parent = this;
   }
 
+  /** Record the structural version as a dependency — call inside a computed
+   * that walks `children` so add()/remove() invalidate it. */
+  protected trackStructure(): void {
+    this.#structure();
+  }
+
   add(child: Node): this {
     child.parent = this;
     this.children.push(child);
+    this.#structure.set(this.#structure.peek() + 1);
+    return this;
+  }
+
+  /** Remove a child (the reactive counterpart to add()); no-op if absent. */
+  remove(child: Node): this {
+    const i = this.children.indexOf(child);
+    if (i >= 0) {
+      this.children.splice(i, 1);
+      if (child.parent === this) child.parent = null;
+      this.#structure.set(this.#structure.peek() + 1);
+    }
     return this;
   }
 

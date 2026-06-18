@@ -104,6 +104,11 @@ function runFlush(): void {
 function drain(): void {
   if (flushing) return;
   flushing = true;
+  // isolate subscriber failures: one throwing subscriber must NOT starve the
+  // others coalesced into this flush (the ticker widened the blast radius from
+  // one signal to every signal dirtied this tick). Collect and rethrow after
+  // the queue fully drains, so every subscriber still fires for this change.
+  const errors: unknown[] = [];
   try {
     let passes = 0;
     while (pending.size > 0) {
@@ -117,10 +122,20 @@ function drain(): void {
       }
       const batchCbs = [...pending];
       pending.clear();
-      for (const cb of batchCbs) cb();
+      for (const cb of batchCbs) {
+        try {
+          cb();
+        } catch (err) {
+          errors.push(err);
+        }
+      }
     }
   } finally {
     flushing = false;
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, 'multiple signal subscribers threw during notification flush');
   }
 }
 

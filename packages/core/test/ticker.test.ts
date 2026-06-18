@@ -89,6 +89,23 @@ describe('batch() coalesces notifications (DESIGN.md §6.1)', () => {
     ).toThrow('boom');
     expect(cb).toHaveBeenCalledTimes(1);
   });
+
+  it('isolates a throwing subscriber — others coalesced into the same flush still fire', () => {
+    const a = signal(0);
+    const b = signal(0);
+    const cbA = vi.fn(() => {
+      throw new Error('boom');
+    });
+    const cbB = vi.fn();
+    a.subscribe(cbA);
+    b.subscribe(cbB);
+    // a's subscriber throwing must NOT starve b's subscriber (both coalesced)
+    expect(() => batch(() => { a.set(1); b.set(1); })).toThrow('boom');
+    expect(cbB).toHaveBeenCalledTimes(1);
+    // and a later write to b still notifies normally
+    b.set(2);
+    expect(cbB).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('reads stay synchronous inside batch (determinism gate)', () => {

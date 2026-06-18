@@ -268,6 +268,58 @@ describe('layout memo is computed()-backed (pALZ): dependency-tracked invalidati
       spy.restore();
     }
   });
+
+  it('a child add/remove re-invokes Yoga — no stale auto-size on structural mutation (canary)', () => {
+    const panel = new Layout({
+      id: 'scol',
+      width: 'auto',
+      height: 'auto',
+      direction: 'column',
+      gap: 0,
+      padding: 0,
+      children: [new Rect({ id: 'r1', width: 40, height: 30, fill: '#f00' })],
+    });
+    createScene({ size: { w: 640, h: 360 }, children: [panel] });
+    const spy = spyOnCompute();
+    try {
+      const h1 = panel.computedSize().h; // one row
+      expect(spy.calls).toBe(1);
+      panel.add(new Rect({ id: 'r2', width: 40, height: 50, fill: '#0f0' }));
+      const h2 = panel.computedSize().h;
+      expect(spy.calls).toBe(2); // re-ran on add (was stale before the fix)
+      expect(h2).toBeGreaterThan(h1); // taller with the second row
+      panel.remove(panel.children[1]!);
+      const h3 = panel.computedSize().h;
+      expect(spy.calls).toBe(3); // re-ran on remove
+      expect(h3).toBe(h1); // back to one row
+    } finally {
+      spy.restore();
+    }
+  });
+
+  it('swapping the scene TextMeasurer re-invokes Yoga — no stale auto-size with old metrics (canary)', () => {
+    const panel = new Layout({
+      id: 'mswap',
+      width: 'auto',
+      height: 'auto',
+      direction: 'column',
+      padding: 0,
+      children: [new Text({ id: 'tx', text: 'hello', fontSize: 16 })],
+    });
+    const scene = createScene({ size: { w: 640, h: 360 }, children: [panel] });
+    const spy = spyOnCompute();
+    try {
+      const w1 = panel.computedSize().w; // primes with the fallback measurer
+      expect(spy.calls).toBe(1);
+      // swap in a measurer reporting a wide advance → auto width must grow
+      scene.setTextMeasurer({ measureText: () => ({ width: 500, ascent: 12, descent: 4 }) });
+      const w2 = panel.computedSize().w;
+      expect(spy.calls).toBe(2); // re-ran on measurer swap (was stale before the fix)
+      expect(w2).toBeGreaterThan(w1);
+    } finally {
+      spy.restore();
+    }
+  });
 });
 
 describe('auto-sized containers (Yoga content sizing)', () => {

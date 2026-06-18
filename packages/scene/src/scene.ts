@@ -9,6 +9,7 @@ import {
   compileTimeline,
   createPlayhead,
   evaluateAt,
+  signal,
   type BoundTimeline,
   type CompiledTimeline,
   type Playhead,
@@ -86,9 +87,11 @@ export function createScene(init: SceneInit): Scene {
   const nodes = new Map<string, Node>();
   const playhead = createPlayhead();
   // un-injected scenes fall back through the process default (factory-time
-  // measurement, §3.6) before the estimator
-  let measurer: TextMeasurer | null = null;
-  indexNodes(root, nodes, () => measurer ?? fallbackMeasurer());
+  // measurement, §3.6) before the estimator. A SIGNAL so a measurer swap
+  // (setTextMeasurer — e.g. after a webfont loads) invalidates any layout memo
+  // that read it (the memo's computed pulls measurerSource() → tracks this).
+  const measurer = signal<TextMeasurer | null>(null);
+  indexNodes(root, nodes, () => measurer() ?? fallbackMeasurer());
   return {
     root,
     nodes,
@@ -101,10 +104,10 @@ export function createScene(init: SceneInit): Scene {
       return node?.resolveTarget(target.slice(slash + 1));
     },
     setTextMeasurer: (m) => {
-      measurer = m;
+      measurer.set(m);
     },
     get textMeasurer() {
-      return measurer ?? fallbackMeasurer();
+      return measurer.peek() ?? fallbackMeasurer();
     },
   };
 }

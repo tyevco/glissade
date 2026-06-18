@@ -143,6 +143,9 @@ export class Layout extends Group {
       justify: this.justify,
       align: this.align,
     };
+    // a child add/remove changes the layout but bumps no prop signal — track
+    // the structural version so the memo re-runs on a child-set mutation too
+    this.trackStructure();
     const flowable: { node: Node; spec: LayoutChildSpec; index: number }[] = [];
     const absolute: Node[] = [];
     this.children.forEach((child, index) => {
