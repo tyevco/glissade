@@ -9,6 +9,7 @@ export function TimelinePanel({
   player,
   markers = [],
   onEditKey,
+  onEndDrag,
   onAddKey,
   selected,
   onSelectKey,
@@ -18,8 +19,10 @@ export function TimelinePanel({
   /** Timeline + project markers, flagged in the ruler. */
   markers?: readonly Pick<Marker, 't' | 'name'>[];
   /** Drag retiming; identity by the key's pre-drag t (closest-t — never a frozen index).
-   * first=true on the drag's first move: the undo snapshot boundary (one drag = one undo). */
+   * first=true on the drag's first move: opens the §6.3 scrub capture buffer. */
   onEditKey?: (target: string, fromT: number, newT: number, first: boolean) => void;
+  /** Pointer-up: commit the scrub capture as one undo entry (or discard a no-move gesture). */
+  onEndDrag?: () => void;
   /** Double-click a lane: add a key at that t, value sampled from the curve (§6.2). */
   onAddKey?: (target: string, t: number) => void;
   selected?: KeyRef | null;
@@ -111,6 +114,7 @@ export function TimelinePanel({
             className="lane"
             onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget)}
             onPointerUp={() => {
+              if (drag.current) onEndDrag?.();
               drag.current = null;
             }}
             onDoubleClick={(e) => onAddKey?.(track.target, laneT(e, e.currentTarget))}
@@ -151,6 +155,7 @@ export function TimelinePanel({
                     }}
                     onPointerMove={(e) => e.buttons === 1 && dragTo(e, e.currentTarget.parentElement!)}
                     onPointerUp={() => {
+                      if (drag.current) onEndDrag?.();
                       drag.current = null;
                     }}
                   >

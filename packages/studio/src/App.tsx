@@ -22,7 +22,7 @@ import {
   type Track,
 } from '@glissade/core';
 import { type TimelinePatch } from '@glissade/core/studio-host';
-import { createInProcessHost, type InProcessHost } from './inProcessHost.js';
+import { createInProcessHost, type InProcessHost, type ScrubSession } from './inProcessHost.js';
 import {
   addKeyAt,
   closestIndex,
@@ -78,6 +78,13 @@ export function App() {
   // change or on any committed edit. It layers on top of the persisted sidecar
   // for the bound timeline only.
   const [preview, setPreview] = useState<SidecarDoc | null>(null);
+  // Live scrub overlay (§6.3): during a drag gesture the captured patches bind
+  // to the viewport via mounted.swap (NOT a remount each tick), layered over the
+  // preview overlay, and fold into the committed sidecar as ONE undo entry on
+  // commit. The session lives in a ref (no re-render per tick); the doc here is
+  // the rAF-throttled overlay the swap effect binds. Null between gestures.
+  const scrubSession = useRef<ScrubSession | null>(null);
+  const [scrubOverlay, setScrubOverlay] = useState<SidecarDoc | null>(null);
   const [sidecarLoaded, setSidecarLoaded] = useState(false);
   // undo = inverse-patch lists over the document only (§6.3), NOT doc snapshots
   const undoStack = useRef<TimelinePatch[][]>([]);
@@ -160,6 +167,24 @@ export function App() {
     };
   }, [entry, merged, sidecarLoaded]);
 
+  // §6.3 capture preview: bind the live scrub overlay to the running viewport
+  // via mounted.swap — NOT a remount (the mount effect above remounts on every
+  // `merged` change; routing scrub ticks through swap keeps the 60fps drag path
+  // off that path). The overlay layers the captured patches over the committed
+  // sidecar AND the preview overlay, preserving the same compose order as
+  // `merged`. Clearing scrubOverlay (commit/discard) swaps back to `merged`.
+  useEffect(() => {
+    if (!session || scrubOverlay === null) return;
+    const candidate = mergeSidecar(entry.mod.timeline, scrubOverlay);
+    const withPreview = preview ? mergeSidecar(candidate, preview) : candidate;
+    try {
+      session.mounted.swap({ timeline: withPreview });
+    } catch {
+      // a mid-capture overlay that fails to compile is dropped for this tick;
+      // the committed doc is untouched and the next valid tick rebinds
+    }
+  }, [session, scrubOverlay, preview, entry]);
+
   // debounced persistence
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback(
@@ -178,12 +203,13 @@ export function App() {
    * snapshot and re-selects the edited key by its post-normalize t.
    */
   const writeKeys = useCallback(
-    (target: string, keys: Key[] | null, reselectT?: number, snapshot = true) => {
+    (target: string, keys: Key[] | null, reselectT?: number) => {
       const sourceTrack = compiled.tracks.get(target);
       if (!keys || !sourceTrack || !session) return;
       // every edit is a TimelinePatch transaction (§6.3). The edit ops in
       // edits.ts produce a normalized key array; commit it as a whole-track set,
       // carrying the code baseHash so drift surfaces if code changes beneath (§6.2).
+      // (Drag retiming streams through scrub() instead — one gesture = one undo.)
       const codeBaseline = entry.mod.timeline.tracks.find((t) => t.target === target)?.keys ?? null;
       const patch: TimelinePatch = {
         op: 'setTrackKeys',
@@ -195,9 +221,7 @@ export function App() {
       };
       const result = session.host.applyPatch([patch]);
       if (!result.ok) return;
-      // drags push their inverse once at the first move (one drag = one undo);
-      // streaming moves reuse it — the snapshot-restore inverse holds pre-drag state
-      if (snapshot) undoStack.current.push(result.inverse);
+      undoStack.current.push(result.inverse);
       setSidecar(result.doc);
       setPreview(null); // a committed edit clears any live preview (§6.2 rule 4)
       persist(result.doc);
@@ -210,14 +234,82 @@ export function App() {
 
   const trackOf = useCallback((target: string) => compiled.tracks.get(target), [compiled]);
 
-  /** Drag retiming (identity by closest-t — the §6.2 lesson from a vanished key). */
+  // §6.3 drag state: the live key array being retimed across ticks (the overlay
+  // position, NOT the frozen committed track), the target, and an rAF handle so
+  // capture ticks coalesce to one swap per frame (the 60fps drag path).
+  const scrubDrag = useRef<{ target: string; keys: Key[] } | null>(null);
+  const scrubRaf = useRef<number | null>(null);
+
+  /**
+   * Drag retiming via a scrub session (§6.3): the first tick opens the capture
+   * buffer and seeds it from the committed track; each tick retimes the LIVE
+   * overlay keys (identity by closest-t — the §6.2 lesson from a vanished key)
+   * and captures a whole-track set, rAF-throttled into the viewport overlay; the
+   * committed sidecar stays untouched until endKeyDrag commits it as one undo
+   * entry. No per-tick remount: the swap effect binds the overlay.
+   */
   const editKey = useCallback(
     (target: string, fromT: number, newT: number, first = true) => {
-      const tr = trackOf(target);
-      if (tr) writeKeys(target, retimeKeyAt(tr, fromT, newT), newT, first);
+      if (!session) return;
+      if (first || !scrubDrag.current || scrubDrag.current.target !== target) {
+        const tr = trackOf(target);
+        if (!tr) return;
+        scrubSession.current = session.host.scrub();
+        scrubDrag.current = { target, keys: tr.keys.map((k) => ({ ...k })) };
+      }
+      const drag = scrubDrag.current;
+      const sourceTrack = compiled.tracks.get(target);
+      if (!sourceTrack || !scrubSession.current) return;
+      const next = retimeKeyAt({ ...sourceTrack, keys: drag.keys }, fromT, newT);
+      drag.keys = next;
+      const codeBaseline = entry.mod.timeline.tracks.find((t) => t.target === target)?.keys ?? null;
+      const ok = scrubSession.current.capture([
+        {
+          op: 'setTrackKeys',
+          timelineId: 'main',
+          target,
+          type: sourceTrack.type,
+          keys: next,
+          baseHash: codeBaseline ? hashKeys(codeBaseline) : null,
+        },
+      ]);
+      if (!ok) return;
+      // coalesce ticks to one swap per frame; the overlay doc is the source's
+      // committed+captured view that the swap effect binds (no remount)
+      const overlay = scrubSession.current.overlayDoc();
+      if (scrubRaf.current !== null) cancelAnimationFrame(scrubRaf.current);
+      scrubRaf.current = requestAnimationFrame(() => {
+        scrubRaf.current = null;
+        setScrubOverlay(overlay);
+      });
     },
-    [trackOf, writeKeys],
+    [session, trackOf, compiled, entry],
   );
+
+  /**
+   * Drag end (§6.3): fold every captured tick into the committed sidecar as ONE
+   * transaction → ONE undo entry, byte-identical to the equivalent direct edit.
+   * `discard` (no captured patches / pointer-up without a move) leaves the doc
+   * and undo stack untouched.
+   */
+  const endKeyDrag = useCallback(() => {
+    const scrub = scrubSession.current;
+    scrubSession.current = null;
+    scrubDrag.current = null;
+    if (scrubRaf.current !== null) {
+      cancelAnimationFrame(scrubRaf.current);
+      scrubRaf.current = null;
+    }
+    setScrubOverlay(null); // swap back to the committed-doc `merged`
+    if (!scrub || !session) return;
+    const result = scrub.commit();
+    if (!result) return; // nothing captured — a no-op gesture
+    if (!result.ok) return;
+    undoStack.current.push(result.inverse);
+    setSidecar(result.doc);
+    setPreview(null); // a committed edit clears any live preview (§6.2 rule 4)
+    persist(result.doc);
+  }, [session, persist]);
 
   const addKey = useCallback(
     (target: string, t: number) => {
@@ -400,7 +492,13 @@ export function App() {
             selected={selectedKey}
             onRetime={(raw) => {
               const t = parseFloat(raw);
-              if (Number.isFinite(t)) editKey(selectedKey.target, selectedKey.t, t);
+              // a numeric retime is a discrete edit: open + capture + commit in
+              // one shot so it lands as a single undo entry (§6.3)
+              if (Number.isFinite(t)) {
+                editKey(selectedKey.target, selectedKey.t, t);
+                endKeyDrag();
+                setSelectedKey({ target: selectedKey.target, t: Math.max(0, t) });
+              }
             }}
             onValue={(raw) => {
               const value = parseValue(selectedTrack.type, raw);
@@ -418,6 +516,7 @@ export function App() {
             player={session.mounted.player}
             markers={markers}
             onEditKey={editKey}
+            onEndDrag={endKeyDrag}
             onAddKey={addKey}
             selected={selectedKey}
             onSelectKey={setSelectedKey}

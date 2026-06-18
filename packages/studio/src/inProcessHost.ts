@@ -32,12 +32,35 @@ export interface InProcessHostInit {
   sidecar?: SidecarDoc | null;
 }
 
+/**
+ * A scrub session (DESIGN.md §6.3): a drag-gesture capture buffer. `capture`
+ * accumulates patches onto an OVERLAY computed off the committed doc WITHOUT
+ * mutating it — `overlayDoc()` is what the viewport previews live. `commit`
+ * folds every captured patch into the committed doc as ONE transaction (one
+ * inverse for the undo stack), byte-identical to applying the same patches
+ * directly. `discard` drops the overlay with zero doc change.
+ */
+export interface ScrubSession {
+  /** Apply more patches to the capture overlay (one drag tick). Returns false if the captured set is invalid against the committed doc. */
+  capture(patches: TimelinePatch[]): boolean;
+  /** The committed-doc-plus-overlay view the viewport previews during capture (the committed doc verbatim before any capture). */
+  overlayDoc(): SidecarDoc | null;
+  /** Fold every captured patch into the committed doc as ONE transaction. Returns the patch result (one inverse) or null if nothing was captured / it no longer applies. */
+  commit(): PatchResult | null;
+  /** Drop the overlay — the committed doc and undo stack are untouched. */
+  discard(): void;
+  /** True until commit/discard is called. */
+  readonly active: boolean;
+}
+
 /** The host plus the few extras App needs to bridge it to React state. */
 export interface InProcessHost extends StudioHost {
   /** the current sidecar doc (clone-safe) — for persistence + re-merge. */
   getDoc(): SidecarDoc | null;
   /** replace the sidecar (e.g. after loading a scene or an undo not routed through applyPatch). */
   loadSidecar(doc: SidecarDoc | null): void;
+  /** Open a scrub capture buffer (§6.3) — the drag-gesture / one-undo path. */
+  scrub(): ScrubSession;
 }
 
 export function createInProcessHost(init: InProcessHostInit): InProcessHost {
@@ -124,6 +147,57 @@ export function createInProcessHost(init: InProcessHostInit): InProcessHost {
     loadSidecar(next: SidecarDoc | null): void {
       doc = next;
       emit('doc-patched');
+    },
+
+    scrub(): ScrubSession {
+      // the committed doc as of scrub-open; the overlay is recomputed off the
+      // LIVE committed doc on every capture so a concurrent edit (rare) is seen,
+      // and commit folds into whatever the committed doc is at commit time —
+      // byte-identical to applying the captured patches directly (the §6.3 gate).
+      const base = (): SidecarDoc => doc ?? { sidecarVersion: 2, timelines: { main: { tracks: {} } } };
+      const captured: TimelinePatch[] = [];
+      let overlay: SidecarDoc | null = doc; // committed doc verbatim until the first capture
+      let active = true;
+      return {
+        get active() {
+          return active;
+        },
+        capture(patches: TimelinePatch[]): boolean {
+          if (!active) return false;
+          const next = [...captured, ...patches];
+          // replay the WHOLE captured set against the committed doc — fine-grained
+          // patches address keys by stable id, so the cumulative replay is the same
+          // doc a sequence of committed edits would reach (no per-tick undo entry)
+          const r = applyPatches(base(), next, baseline);
+          if (!r.ok) return false;
+          captured.length = 0;
+          captured.push(...next);
+          overlay = r.doc;
+          return true;
+        },
+        overlayDoc(): SidecarDoc | null {
+          return overlay;
+        },
+        commit(): PatchResult | null {
+          if (!active) return null;
+          active = false;
+          if (captured.length === 0) return null;
+          // ONE transaction → ONE inverse. Folding the captured patches in one
+          // applyPatches call yields a doc byte-identical to the equivalent direct
+          // edit and exactly one snapshot-restore inverse per touched track.
+          const r = applyPatches(base(), captured, baseline);
+          if (r.ok) {
+            doc = r.doc;
+            emit('doc-patched');
+          }
+          return r;
+        },
+        discard(): void {
+          active = false;
+          captured.length = 0;
+          overlay = doc;
+        },
+      };
     },
   };
 }

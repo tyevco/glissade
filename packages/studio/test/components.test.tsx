@@ -59,6 +59,41 @@ describe('TimelinePanel rows + keys + markers', () => {
     expect(flag.textContent).toContain('⚑');
   });
 
+  it('key drag drives the §6.3 scrub lifecycle: onEditKey per tick (first on the first), one onEndDrag on pointer-up', () => {
+    const onEditKey = vi.fn();
+    const onEndDrag = vi.fn();
+    const single = compileTimeline(timeline({ tracks: [track('box/rotation', 'number', [key(0, 0), key(2, 1)])] }));
+    const { container } = render(
+      <TimelinePanel compiled={single} player={makeFakePlayer()} onEditKey={onEditKey} onEndDrag={onEndDrag} />,
+    );
+    const lane = container.querySelector('.row:last-child .lane')!;
+    vi.spyOn(lane, 'getBoundingClientRect').mockReturnValue({
+      left: 0, width: 200, top: 0, height: 10, right: 200, bottom: 10, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect);
+    const keyEl = lane.querySelector('.key')!; // the first key (t=0)
+
+    const down = createEvent.pointerDown(keyEl, { pointerId: 1 });
+    Object.defineProperty(down, 'clientX', { value: 0 });
+    fireEvent(keyEl, down);
+
+    // two drag ticks across the lane
+    for (const x of [100, 150]) {
+      const move = createEvent.pointerMove(lane, { pointerId: 1 });
+      // jsdom drops clientX/buttons from the init dict — patch them on (§test infra)
+      Object.defineProperty(move, 'clientX', { value: x });
+      Object.defineProperty(move, 'buttons', { value: 1 });
+      fireEvent(lane, move);
+    }
+    // first tick carries first=true (opens the capture buffer); the rest false
+    expect(onEditKey.mock.calls.length).toBe(2);
+    expect(onEditKey.mock.calls[0]![3]).toBe(true);
+    expect(onEditKey.mock.calls[1]![3]).toBe(false);
+    expect(onEndDrag).not.toHaveBeenCalled(); // not committed mid-drag
+
+    fireEvent(lane, createEvent.pointerUp(lane, { pointerId: 1 }));
+    expect(onEndDrag).toHaveBeenCalledTimes(1); // one commit for the whole gesture
+  });
+
   it('scrub: pointerdown on the ruler pauses and seeks the player to the mapped time', () => {
     const player = makeFakePlayer();
     const { container } = render(<TimelinePanel compiled={compiled()} player={player} />);
