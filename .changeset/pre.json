@@ -23,6 +23,7 @@
     "@glissade/vite-plugin": "0.8.1"
   },
   "changesets": [
+    "canary-hardening-0-9",
     "font-registry-d0nc",
     "nd76-editable-guards",
     "studio-edit-gating-and-write-back",
