@@ -1,5 +1,22 @@
 # @glissade/cli
 
+## 0.10.0-pre.1
+
+### Patch Changes
+
+- fbdcc44: `gs render --workers N` now caps the sharded frame range to the timeline extent (`ceil(duration*fps)`), matching the linear path's `-t <duration>` trim. Previously an explicit over-range (e.g. `--range 0..119` on a shorter timeline) or an `--fps` override emitted more frames from the sharded path than the single-worker path — a silent break of the documented N-worker == 1-worker contract. (A copy-mode `-t` on the concat join is not frame-accurate, so the cap is applied to the rendered frames instead.)
+- Updated dependencies [fbdcc44]
+- Updated dependencies [fbdcc44]
+  - @glissade/scene@0.10.0-pre.1
+  - @glissade/core@0.10.0-pre.1
+  - @glissade/backend-skia@0.10.0-pre.1
+  - @glissade/interact@0.10.0-pre.1
+  - @glissade/lottie@0.10.0-pre.1
+  - @glissade/narrate@0.10.0-pre.1
+  - @glissade/player@0.10.0-pre.1
+  - @glissade/svg@0.10.0-pre.1
+  - @glissade/sfx@0.10.0-pre.1
+
 ## 0.10.0-pre.0
 
 ### Minor Changes

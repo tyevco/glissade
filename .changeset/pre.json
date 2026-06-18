@@ -23,6 +23,9 @@
     "@glissade/vite-plugin": "0.9.1"
   },
   "changesets": [
+    "canary-layout-memo-staleness",
+    "canary-shard-overrange-cap",
+    "canary-ticker-isolation",
     "cmap-view-nit",
     "computed-layout-memo",
     "curly-coalescer",

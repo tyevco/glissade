@@ -1,5 +1,14 @@
 # @glissade/lottie
 
+## 0.10.0-pre.1
+
+### Patch Changes
+
+- Updated dependencies [fbdcc44]
+- Updated dependencies [fbdcc44]
+  - @glissade/scene@0.10.0-pre.1
+  - @glissade/core@0.10.0-pre.1
+
 ## 0.10.0-pre.0
 
 ### Patch Changes
