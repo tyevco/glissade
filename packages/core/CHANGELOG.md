@@ -1,5 +1,70 @@
 # @glissade/core
 
+## 0.9.0
+
+### Minor Changes
+
+- 04a1059: feat(fonts): FontRegistry + strict-mode font validation + cmap glyph coverage (§3.6)
+
+  Explicit fonts grow up. `AssetRef` gains optional `faces` (weight/style variants)
+  and `fallback` (the family chain) — purely additive: a bare `{ kind: 'font', url }`
+  stays the single 400/normal face with a `[family]` chain, so every existing
+  document renders byte-identically.
+
+  New in `@glissade/core` (DEV/export-path only, never in `evaluate()`, tree-shaken
+  from real embeds):
+
+  - `buildFontRegistry(assets)` → `FontRegistry` with `has`, `faces()`,
+    `resolveFace(family, weight, style)` (CSS nearest-weight), and
+    `fallbackChain(family)`.
+  - `parseCmap(bytes)` — a pure, zero-dep sfnt `cmap` reader (formats 4 + 12)
+    returning the covered code points; malformed input yields an empty set.
+  - `validateFonts(usages, registry, cmaps, mode)` + `FontValidationError` —
+    reports unregistered non-generic families and uncovered glyphs (the
+    "héllo 👋 renders emoji in Chrome, tofu in Skia" bug). Generic and
+    caller-supplied OS families are exempt, so a default-font Text never errors.
+
+  New in `@glissade/scene`: `collectTextUsages(scene)`, `validateSceneFonts(scene,
+doc, loadBytes, opts)` (node-walk + caller I/O → core validation), and
+  `TextProps.fontStyle: 'normal' | 'italic'` threaded into `FontSpec` (omitted when
+  normal, so goldens are unchanged).
+
+  Strict-vs-dev is a per-render/per-export OPTION (default dev-warn), never a
+  Timeline flag: `exportVideo({ strictFonts })`, `gs render --strict`, and a
+  `mount({ strictFonts })` option. All three loaders now register EVERY declared
+  face (not one-per-asset): export-web awaits each face before frame 0, the CLI
+  registers each path via `GlobalFonts`, the player loads non-awaited.
+
+- 7edd807: feat(core): studio edit-gating + write-back helpers (§6.2)
+
+  Adds the core surface the studio needs to gate GUI edits and offer the
+  hybrid write-back affordances (the `isEditableNodeId` predicate ships
+  separately):
+
+  - `editableDuration()` on `TimelineBuilder` + `isDurationEditable(doc)` — opt
+    the (otherwise code-owned) timeline duration into studio editing, mirroring
+    `.editable()` for tracks. Backed by an additive optional
+    `Timeline.editableDuration` field; existing documents are unaffected.
+  - `deleteSidecarTrack(doc, timelineId, target)` — remove one editor-owned
+    track from the sidecar (§6.2 rule 7 "extract edits to code"), returning a new
+    document and never mutating the input. Source is never touched.
+
+  All additive; no existing document changes shape or renders differently.
+
+- ea9657c: Studio foundation (DESIGN §6.3/§6.4), the core half of the StudioHost work: a new tree-shaken entry **`@glissade/core/studio-host`** exporting the `StudioHost` interface types (`MergedTimeline = Timeline & { orphans }`, `NodeDescriptor`, `SignalPath`, `StudioEvent`), the `isEditableNodeId` rule (only explicit, non-structural ids host editable tracks), and the **`TimelinePatch` engine**: `applyPatches(doc, patches, baseline?)` applies a fine-grained, by-stable-key-id edit transaction **atomically** (an invalid patch rejects the whole batch, doc untouched) and returns a snapshot-restore **inverse** for undo that round-trips byte-for-byte — even through `normalizeEditedKeys`' spring re-pin. Every patch variant is plain JSON (structured-clone-safe for a future postMessage host). Kept entirely out of the embed `.` bundle. (The studio's in-process host + App.tsx rewire onto this land next.)
+
+### Patch Changes
+
+- f3b471b: Hardening from the in-house 0.9 canary (all confined to the opt-in studio-host / strict-font surfaces; the determinism gate was clean):
+
+  - **Undo is now byte-exact even on un-normalized sidecars.** The snapshot-restore inverse is a `verbatim` setTrackKeys that replays the prior state as-is, instead of re-running `normalizeEditedKeys` (which re-pinned spring keys / re-nudged collisions and silently mutated the curve on externally-sourced or `setSidecarTrack`-written sidecars).
+  - **`parseCmap` can't hang on a corrupt font.** The format-12 group count is clamped to what the buffer holds — a truncated subtable that declared billions of groups (a ~30s stall on the `--strict` font path) now returns empty instantly.
+  - **The editable-host rule is enforced on the write surface.** `applyPatches` (setTrackKeys/addKey) and `setSidecarTrack` now reject structural `~Type.ordinal` / empty-nodeId targets, so a low-level consumer can't persist a sidecar track that then crashes `evaluate()`.
+  - **Reserved-id guard at construction.** A node id in the reserved `~` namespace throws `ReservedNodeIdError` at `createScene` (was accepted, then failed confusingly at the first tween).
+  - **Undo of a baseline-seeded first edit** restores `{timelines:{}}` exactly (prunes the timeline only when the transaction created it), instead of leaving an empty `{tracks:{}}` shell.
+
+- 7035c6b: Enforce the editable-host rule on track targets (§6.4/§6.5, the structural-id guards): a structural `~Type.ordinal` string target is now rejected at track creation (`UnresolvableTargetError` — structural ids are inspection-only, never track targets), and `.editable()` on a target lacking an explicit node id throws a clear `TimelineValidationError`. Both share the single `isEditableNodeId` predicate, now exported from core (alongside `targetNodeId`) and consumed by the builder, the scene, and the studio host. (The `~Type.ordinal` structural-id _generator_ was dropped per the 0.9 design lock; only the guards remain.)
+
 ## 0.9.0-pre.1
 
 ### Patch Changes

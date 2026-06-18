@@ -1,5 +1,57 @@
 # @glissade/scene
 
+## 0.9.0
+
+### Minor Changes
+
+- 04a1059: feat(fonts): FontRegistry + strict-mode font validation + cmap glyph coverage (§3.6)
+
+  Explicit fonts grow up. `AssetRef` gains optional `faces` (weight/style variants)
+  and `fallback` (the family chain) — purely additive: a bare `{ kind: 'font', url }`
+  stays the single 400/normal face with a `[family]` chain, so every existing
+  document renders byte-identically.
+
+  New in `@glissade/core` (DEV/export-path only, never in `evaluate()`, tree-shaken
+  from real embeds):
+
+  - `buildFontRegistry(assets)` → `FontRegistry` with `has`, `faces()`,
+    `resolveFace(family, weight, style)` (CSS nearest-weight), and
+    `fallbackChain(family)`.
+  - `parseCmap(bytes)` — a pure, zero-dep sfnt `cmap` reader (formats 4 + 12)
+    returning the covered code points; malformed input yields an empty set.
+  - `validateFonts(usages, registry, cmaps, mode)` + `FontValidationError` —
+    reports unregistered non-generic families and uncovered glyphs (the
+    "héllo 👋 renders emoji in Chrome, tofu in Skia" bug). Generic and
+    caller-supplied OS families are exempt, so a default-font Text never errors.
+
+  New in `@glissade/scene`: `collectTextUsages(scene)`, `validateSceneFonts(scene,
+doc, loadBytes, opts)` (node-walk + caller I/O → core validation), and
+  `TextProps.fontStyle: 'normal' | 'italic'` threaded into `FontSpec` (omitted when
+  normal, so goldens are unchanged).
+
+  Strict-vs-dev is a per-render/per-export OPTION (default dev-warn), never a
+  Timeline flag: `exportVideo({ strictFonts })`, `gs render --strict`, and a
+  `mount({ strictFonts })` option. All three loaders now register EVERY declared
+  face (not one-per-asset): export-web awaits each face before frame 0, the CLI
+  registers each path via `GlobalFonts`, the player loads non-awaited.
+
+### Patch Changes
+
+- f3b471b: Hardening from the in-house 0.9 canary (all confined to the opt-in studio-host / strict-font surfaces; the determinism gate was clean):
+
+  - **Undo is now byte-exact even on un-normalized sidecars.** The snapshot-restore inverse is a `verbatim` setTrackKeys that replays the prior state as-is, instead of re-running `normalizeEditedKeys` (which re-pinned spring keys / re-nudged collisions and silently mutated the curve on externally-sourced or `setSidecarTrack`-written sidecars).
+  - **`parseCmap` can't hang on a corrupt font.** The format-12 group count is clamped to what the buffer holds — a truncated subtable that declared billions of groups (a ~30s stall on the `--strict` font path) now returns empty instantly.
+  - **The editable-host rule is enforced on the write surface.** `applyPatches` (setTrackKeys/addKey) and `setSidecarTrack` now reject structural `~Type.ordinal` / empty-nodeId targets, so a low-level consumer can't persist a sidecar track that then crashes `evaluate()`.
+  - **Reserved-id guard at construction.** A node id in the reserved `~` namespace throws `ReservedNodeIdError` at `createScene` (was accepted, then failed confusingly at the first tween).
+  - **Undo of a baseline-seeded first edit** restores `{timelines:{}}` exactly (prunes the timeline only when the transaction created it), instead of leaving an empty `{tracks:{}}` shell.
+
+- Updated dependencies [f3b471b]
+- Updated dependencies [04a1059]
+- Updated dependencies [7035c6b]
+- Updated dependencies [7edd807]
+- Updated dependencies [ea9657c]
+  - @glissade/core@0.9.0
+
 ## 0.9.0-pre.1
 
 ### Patch Changes
