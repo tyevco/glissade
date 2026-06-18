@@ -54,8 +54,10 @@ export class ReservedNodeIdError extends Error {
 function indexNodes(root: Node, into: Map<string, Node>, measurerSource: () => TextMeasurer): void {
   root.measurerSource = measurerSource;
   if (root.id !== undefined) {
-    // reject the reserved structural namespace at construction so the failure
-    // surfaces at the node, not at the first tween/.editable() (§6.5)
+    // reject the reserved structural namespace (§6.5). NOTE (pL9b, by design):
+    // this fires at scene-assembly (indexNodes), not in the Node constructor —
+    // intentional, matching DuplicateNodeIdError, since id validity is only
+    // knowable once the node is placed in a scene graph.
     if (root.id.startsWith('~')) throw new ReservedNodeIdError(root.id);
     if (into.has(root.id)) throw new DuplicateNodeIdError(root.id);
     into.set(root.id, root);

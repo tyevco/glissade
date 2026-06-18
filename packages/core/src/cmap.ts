@@ -83,10 +83,14 @@ function parseFormat12(dv: DataView, base: number, into: Set<number>): void {
   }
 }
 
-export function parseCmap(bytes: ArrayBuffer): Set<number> {
+export function parseCmap(bytes: ArrayBuffer | ArrayBufferView): Set<number> {
   const out = new Set<number>();
   try {
-    const dv = new DataView(bytes);
+    // accept a Uint8Array/Buffer view too — Node's readFileSync returns a
+    // Buffer, and a bare `new DataView(view)` would throw (swallowed to empty)
+    const dv = ArrayBuffer.isView(bytes)
+      ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      : new DataView(bytes);
     if (dv.byteLength < 12) return out;
     let sfntOff = 0;
     // TTC header: 'ttcf' → use the first font's table directory

@@ -46,6 +46,13 @@ describe('parseCmap', () => {
     expect(parseCmap(junk.buffer).size).toBe(0);
   });
 
+  it('accepts a Uint8Array/Buffer view, not just an ArrayBuffer (§nit pL9b)', () => {
+    const view = readFileSync(DEJAVU); // a Node Buffer == Uint8Array view
+    const fromView = parseCmap(view);
+    expect(fromView.size).toBe(cov.size); // same coverage as the ArrayBuffer form
+    expect(fromView.has(0x41)).toBe(true); // 'A'
+  });
+
   it('a truncated format-12 subtable with a huge nGroups completes instantly (§finding-2, no hang)', () => {
     // a minimal sfnt whose best subtable is format 12 declaring 2^31 groups but
     // carrying ZERO group bytes — without the clamp this loops ~2.1B times (~26s)

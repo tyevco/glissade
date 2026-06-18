@@ -385,7 +385,7 @@ export function oklabToRgba(c: OkLab): Rgba;
 export type OrphanReason = 'node-missing' | 'prop-missing' | 'type-changed';
 
 // @public
-export function parseCmap(bytes: ArrayBuffer): Set<number>;
+export function parseCmap(bytes: ArrayBuffer | ArrayBufferView): Set<number>;
 
 // @public (undocumented)
 export function parseColor(input: string): Rgba;
