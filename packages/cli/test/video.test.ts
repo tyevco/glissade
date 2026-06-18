@@ -10,10 +10,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { evaluate } from '@glissade/scene';
 import { SkiaBackend } from '@glissade/backend-skia';
 import { ffmpegAvailable, render } from '../src/render.js';
 import { FfmpegVideoFrameSource, probeVideo } from '../src/videoSource.js';
+
+/** Decode a PNG file to RGBA via @napi-rs/canvas (no DOM globals in this env). */
+async function decodePngRgba(path: string, w: number, h: number): Promise<Uint8ClampedArray> {
+  const img = await loadImage(path);
+  const c = createCanvas(w, h);
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(0, 0, w, h).data;
+}
 
 describe.runIf(ffmpegAvailable())('CLI video pipeline (§5.4)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'glissade-video-test-'));
@@ -93,6 +104,29 @@ export default mod;
     expect(Math.abs(g! - 0x13)).toBeLessThan(12);
     expect(Math.abs(b! - 0x1a)).toBeLessThan(12);
 
+    // §M4 cross-path near-parity: the SAME embedded-video frame, produced once
+    // through the full render() PNG-seq export pipeline (encodePng → file) and
+    // once through a direct evaluate+Skia readPixels, must NOT diverge — the
+    // export path round-trip (encode → decode) is ±1 LSB / perceptual on the
+    // embedded video region, not byte-perturbed. frame at t=1.5 == index 45.
+    const exportedFrame = join(outDir, `frame-${String(45).padStart(5, '0')}.png`);
+    const exportedPx = await decodePngRgba(exportedFrame, 640, 360);
+    // compare a grid of probe points inside the embedded video rect
+    let maxDelta = 0;
+    for (const [x, y] of [
+      [200, 120],
+      [320, 180],
+      [400, 240],
+      [260, 150],
+    ] as const) {
+      const o = (y * 640 + x) * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        maxDelta = Math.max(maxDelta, Math.abs(exportedPx[o + ch]! - px[o + ch]!));
+      }
+    }
+    // PNG is lossless; the only delta is the encode/decode round-trip — ~0.
+    expect(maxDelta).toBeLessThanOrEqual(1);
+
     source.close();
   }, 120_000);
 
@@ -101,5 +135,52 @@ export default mod;
     const cold = new FfmpegVideoFrameSource(sourceMp4);
     expect(() => cold.getFrameSync(1)).toThrow(/not ready/);
     cold.close();
+  });
+});
+
+/**
+ * PNG-sequence fallback + alpha (F2IP, §5.2) — NOT gated on ffmpeg/WebCodecs:
+ * the CLI render path is pure Skia. A partially-covered scene (no full-canvas
+ * background) must emit frames whose uncovered pixels stay TRANSPARENT through
+ * the encode → decode round trip (alpha is preserved, not flattened to opaque).
+ */
+describe('CLI PNG-seq fallback + alpha (§5.2)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'glissade-pngseq-test-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('renders a PNG sequence with a non-opaque alpha channel (no ffmpeg)', async () => {
+    const sceneModule = join(dir, 'alpha-scene.ts');
+    writeFileSync(
+      sceneModule,
+      `
+import { timeline } from '@glissade/core';
+import { createScene, Rect, type SceneModule } from '@glissade/scene';
+
+const mod: SceneModule = {
+  // a small opaque rect on an otherwise EMPTY (transparent) canvas
+  createScene: () =>
+    createScene({
+      size: { w: 16, h: 16 },
+      children: [new Rect({ id: 'dot', width: 4, height: 4, position: [8, 8], fill: '#ff0000' })],
+    }),
+  timeline: timeline({ duration: ${1 / 30}, fps: 30 }),
+};
+export default mod;
+`,
+    );
+
+    const outDir = join(dir, 'frames');
+    const result = await render({ modulePath: sceneModule, out: outDir, fps: 30, format: 'png-seq' });
+    expect(result.frames).toBe(1);
+
+    const px = await decodePngRgba(join(outDir, 'frame-00000.png'), 16, 16);
+    const alphaAt = (x: number, y: number) => px[(y * 16 + x) * 4 + 3]!;
+    // a corner pixel (uncovered) is fully transparent; the center dot is opaque
+    expect(alphaAt(0, 0)).toBe(0);
+    expect(alphaAt(8, 8)).toBe(255);
+    // not silently flattened to opaque
+    let transparent = 0;
+    for (let i = 3; i < px.length; i += 4) if (px[i] === 0) transparent++;
+    expect(transparent).toBeGreaterThan(0);
   });
 });

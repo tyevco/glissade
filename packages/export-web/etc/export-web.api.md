@@ -66,6 +66,7 @@ export type ExportWorkerResponse = {
 
 // @public (undocumented)
 export class MediabunnyVideoFrameSource implements VideoFrameSource {
+    cachedFrameCount(): number;
     // (undocumented)
     close(): void;
     // (undocumented)
