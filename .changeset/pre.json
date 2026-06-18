@@ -23,6 +23,7 @@
     "@glissade/vite-plugin": "0.10.0"
   },
   "changesets": [
+    "gradient-interpolation",
     "gradient-paint"
   ]
 }
