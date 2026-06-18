@@ -1,5 +1,26 @@
 # @glissade/export-web
 
+## 0.10.0
+
+### Patch Changes
+
+- 1b72f92: Add `MediabunnyVideoFrameSource.cachedFrameCount()` — a tiny test-only
+  introspection accessor returning the number of decoded frames currently held,
+  so the §5.4 lookahead/eviction bound (`MAX_CACHED_FRAMES`) is assertable without
+  reaching into the private cache. Behavior is otherwise unchanged (F2IP export
+  determinism backfill).
+- Updated dependencies [fbdcc44]
+- Updated dependencies [fbdcc44]
+- Updated dependencies [b2f1fd7]
+- Updated dependencies [278ea05]
+- Updated dependencies [e4190b5]
+- Updated dependencies [680f8ae]
+- Updated dependencies [0cc640f]
+- Updated dependencies [0a1844c]
+  - @glissade/scene@0.10.0
+  - @glissade/core@0.10.0
+  - @glissade/backend-canvas2d@0.10.0
+
 ## 0.10.0-pre.1
 
 ### Patch Changes

@@ -1,5 +1,71 @@
 # @glissade/scene
 
+## 0.10.0
+
+### Minor Changes
+
+- 0cc640f: Add the **cross-frame subtree raster cache** (§3.5, card ScMm) — an opt-in bitmap
+  LRU that re-blits an unchanged subtree under a moving parent instead of
+  re-rasterizing it, shared by **both** backends (Canvas2D and the golden-tested
+  Skia/CLI path) through the one `Raster2D`.
+
+  - **Opt-in via `cache?: boolean` on `NodeProps`.** A `cache:true` node FORCES a
+    group (so an opacity-1 / source-over / no-filter static subtree becomes
+    cacheable) and stamps a `cacheKey` on its `pushGroup`. Strictly gated: a scene
+    that never sets `cache` emits **zero** new groups and is **byte-identical** to
+    before. No auto-heuristic.
+  - **`cacheKey = FNV-1a(group's command slice + the full content of every
+referenced resource)`**, computed in `Node.emit` from the already-emitted plain
+    DisplayList via a stable serializer (resource ids are remapped to local
+    ordinals; opaque buffers collapse to a length marker, mirroring the cache-cold
+    audit). The group's live opacity/blend/filter stay OUT of the key — they're
+    applied on the composite, not baked into the bitmap.
+  - **The LRU key is `cacheKey` AND the inherited DEVICE transform** (rounded to
+    1e-4 to shed float jitter). The layer is rasterized in device space, so a HIT
+    blits at identity — keying on the transform too is what makes a stale-CTM blit
+    impossible and the cache provably byte-identical.
+  - **Pure performance layer.** Cache-enabled output is byte-for-byte identical to
+    cache-disabled output (the non-negotiable AC, gate-tested both ways); the cache
+    is disabled with the `RASTER_CACHE=0` env var or a `Raster2D` constructor flag.
+    Hardcoded LRU cap of 16; evicted canvases return to the raster pool.
+
+  New public surface on `@glissade/scene`: `cache?` on `NodeProps`, `Node.cache`,
+  the optional `mark`/`cacheKey`/`patchCacheKey` seam on `DisplayListBuilder`, and a
+  `cacheEnabled` constructor param on `Raster2D`.
+
+### Patch Changes
+
+- fbdcc44: The `computed()`-backed Layout memo now re-runs on the two structural inputs it previously missed: a child add/remove (`Group` gains a tracked structural version, plus a reactive `Group.remove()`) and a scene `TextMeasurer` swap (the scene measurer is now a signal). Previously an auto-sized Layout could return a stale size after a child was added/removed or after a measurer was swapped (e.g. post-webfont-load) on an already-primed memo. Fixed-tree rendering and goldens are unchanged.
+- 278ea05: Back the `scene/layout` memo with a core `computed()` signal (pALZ, DESIGN §3).
+
+  The hand-rolled `#memoKey`/`JSON.stringify`-compare memo in `Layout` is replaced
+  by a dependency-tracked `computed()` keyed on the _participating_ signals: the
+  computed reads exactly the container props and child intrinsic-size signals it
+  consumes, so the signal graph records those as deps and re-invokes Yoga only
+  when one of THEM changes. Mutating a non-participating signal (e.g. the
+  container's or a child's `opacity`) no longer re-runs `compute()`; the old memo
+  recomputed its key but the stringify-compare hid the wasted invalidation —
+  now invalidation is precise.
+
+  Layout RESULTS are unchanged (goldens byte-identical) — the memo is a pure
+  performance layer. The `computedSize(customMeasurer)` escape hatch bypasses the
+  cache: a caller-supplied non-default measurer computes fresh & uncached so it
+  can never read (or poison) a memo keyed on the scene-singleton measurer.
+
+  No public API change.
+
+- e4190b5: Docs: `gs render --workers` now notes it helps CPU-bound, per-frame-cheap scenes — a single render is already internally multi-threaded, so bandwidth-bound / blur-heavy scenes gain little from sharding. `NodeProps.cache` now documents that the cache is for a static subtree under a _moving parent_ (a subtree that drifts on sub-pixel positions misses every frame), and that a `filter` is a live composite parameter never baked into the cached bitmap. (0.10 downstream validation.)
+- 0a1844c: Ratify the pre-measure text-layout design: promote the 0.5px measurement
+  quantum to a single named export `MEASURE_QUANTUM_PX` and route `quantize`
+  through it. Scene-owned code quantizes advances once to this grid and hands
+  Yoga frozen integers; a Yoga `setMeasureFunc` was considered and rejected
+  (it reintroduces wasm-owned measure-mode line-breaking for no determinism
+  gain). Pure refactor — byte-identical rounding, goldens unchanged.
+- Updated dependencies [fbdcc44]
+- Updated dependencies [b2f1fd7]
+- Updated dependencies [680f8ae]
+  - @glissade/core@0.10.0
+
 ## 0.10.0-pre.1
 
 ### Patch Changes

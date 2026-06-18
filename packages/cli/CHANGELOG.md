@@ -1,5 +1,64 @@
 # @glissade/cli
 
+## 0.10.0
+
+### Minor Changes
+
+- 050db0a: Add `gs render --workers N` — **sharded parallel export** (§5.6, §8.1). The frame
+  range is split into N contiguous sub-ranges, each rendered in a **separate `gs`
+  child process** (not worker_threads — `@napi-rs/canvas`/`GlobalFonts` hold unsafe
+  process-global state, and separate processes are cross-machine-ready). Because
+  `evaluate` is a pure function of time, each shard re-runs the scene module from
+  scratch — re-deriving any module-level `bake()` for its prefix — so an N-worker
+  render of a range is **byte-identical to a single-worker render of the same range**
+  at the frame level (verified by a determinism gate test).
+
+  Shards render **video-only**; the orchestrator mixes timeline + auto-mixed
+  (narration/music/sfx) audio **once** over the joined result, and emits caption/cue
+  sidecars once. Two join strategies (the §8.1 decision):
+
+  - **default** — per-shard encode to the final codec with a forced keyframe at each
+    shard boundary (`-force_key_frames`), joined by the FFmpeg concat demuxer
+    (verbatim `-c copy`).
+  - **`--lossless-intermediate`** — FFV1 shards + a single final encode (the
+    guaranteed byte-faithful path). Auto-enabled with a stderr note when the picked
+    encoder can't honor precise boundary keyframes (mpeg4 / openh264), since a
+    concat-copy of imprecise-GOP codecs would drop/dupe boundary frames.
+
+  GPU/shader scenes are outside the cross-process reproducibility guarantee (§3.7):
+  a scene containing a `ShaderEffect` **refuses to shard** unless `--allow-gpu-shards`
+  is passed.
+
+  New `RenderOptions`: `workers?`, `losslessIntermediate?`, `allowGpuShards?`. New
+  CLI flags: `--workers <n>`, `--lossless-intermediate`, `--allow-gpu-shards`. New
+  exports from `@glissade/cli`: `renderSharded`, `splitFrameRange`,
+  `sceneHasGpuNodes`, `planFinalAudio`, `ShardError`.
+
+  Note: serialized shipped-checkpoint warming for checkpointed `bake()` sources
+  (§2.8) remains a follow-up; each shard currently re-derives its prefix.
+
+### Patch Changes
+
+- fbdcc44: `gs render --workers N` now caps the sharded frame range to the timeline extent (`ceil(duration*fps)`), matching the linear path's `-t <duration>` trim. Previously an explicit over-range (e.g. `--range 0..119` on a shorter timeline) or an `--fps` override emitted more frames from the sharded path than the single-worker path — a silent break of the documented N-worker == 1-worker contract. (A copy-mode `-t` on the concat join is not frame-accurate, so the cap is applied to the rendered frames instead.)
+- e4190b5: Docs: `gs render --workers` now notes it helps CPU-bound, per-frame-cheap scenes — a single render is already internally multi-threaded, so bandwidth-bound / blur-heavy scenes gain little from sharding. `NodeProps.cache` now documents that the cache is for a static subtree under a _moving parent_ (a subtree that drifts on sub-pixel positions misses every frame), and that a `filter` is a live composite parameter never baked into the cached bitmap. (0.10 downstream validation.)
+- Updated dependencies [fbdcc44]
+- Updated dependencies [fbdcc44]
+- Updated dependencies [b2f1fd7]
+- Updated dependencies [278ea05]
+- Updated dependencies [e4190b5]
+- Updated dependencies [680f8ae]
+- Updated dependencies [0cc640f]
+- Updated dependencies [0a1844c]
+  - @glissade/scene@0.10.0
+  - @glissade/core@0.10.0
+  - @glissade/backend-skia@0.10.0
+  - @glissade/interact@0.10.0
+  - @glissade/lottie@0.10.0
+  - @glissade/narrate@0.10.0
+  - @glissade/player@0.10.0
+  - @glissade/svg@0.10.0
+  - @glissade/sfx@0.10.0
+
 ## 0.10.0-pre.1
 
 ### Patch Changes
