@@ -52,6 +52,12 @@ export const DEFAULT_CHAPTER_KINDS: ReadonlySet<string> = new Set(['chapter']);
  * the next chapter; the cue text is the human `title` (falling back to `name`),
  * never the machine `kind`. When the earliest chapter starts after 0, a `00:00`
  * "Intro" chapter is auto-anchored (valid WebVTT, and YouTube needs a 0:00 start).
+ *
+ * Author note — YouTube's chapter rules are author-side, not enforced here:
+ * it needs the FIRST chapter at exactly 0:00 (the auto-anchor handles this, but
+ * a tiny first chapter from a lead-in will read oddly — pin chapter 1 to t=0
+ * instead) and EVERY chapter to be >= 10s (fold a too-short beat into its
+ * neighbour). cues.json is unaffected; only the human-pasted VTT cares.
  */
 export function cuesToVtt(cues: Cue[], totalDuration: number, kinds: ReadonlySet<string> = DEFAULT_CHAPTER_KINDS): string {
   const chapters = cues.filter((c) => kinds.has(c.kind));

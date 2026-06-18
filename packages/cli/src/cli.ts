@@ -65,6 +65,7 @@ render options:
   --music <m>      auto (default): mix a sibling *.music.timing.json bed, ducked under narration | off
   --sfx <m>        auto (default): mix effect hits from a sibling *.sfx.timing.json | off
   --chapters <m>   vtt: also write WebVTT chapters from cue markers (cues.json is always written when cues exist)
+                   (YouTube needs the 1st chapter at 0:00 — auto-anchored — and each chapter >= 10s; author cue ts accordingly)
   --chapters-kind <k[,k]>  cue kinds that become VTT chapters (default: chapter); cues.json keeps all kinds
   --strict         fail on an unregistered font family or an uncovered glyph (§3.6; default: warn)
 
