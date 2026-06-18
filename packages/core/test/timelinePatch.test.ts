@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { emptySidecar, key, spring } from '../src/index.js';
+import { emptySidecar, key, spring, type SidecarDoc } from '../src/index.js';
 import { applyPatch, applyPatches, type BaselineLookup, type TimelinePatch } from '../src/timelinePatch.js';
 
 const T = 'main';
@@ -103,5 +103,60 @@ describe('applyPatches — fine-grained by-id forward, snapshot inverse', () => 
     expect(add.inverse).toEqual([{ op: 'removeLabel', timelineId: T, name: 'intro' }]);
     const undone = applyPatches(add.doc, add.inverse);
     expect(undone.ok && undone.doc.timelines[T]!.labels?.['intro']).toBeUndefined();
+  });
+});
+
+describe('canary hardening (0.9.0-pre.0 findings)', () => {
+  it('undo restores byte-exact even when the pre-edit track was UN-normalized (verbatim inverse, §finding-1)', () => {
+    const sp = spring({ stiffness: 170, damping: 26 });
+    // a deliberately un-normalized track: a spring key not at predecessor+duration,
+    // plus a t-collision — exactly the state normalizeEditedKeys would "fix"
+    const doc: SidecarDoc = {
+      sidecarVersion: 2,
+      timelines: {
+        main: {
+          tracks: {
+            'box/x': {
+              type: 'number',
+              baseHash: null,
+              keys: [
+                { t: 0, value: 0, id: 'k0' },
+                { t: 0.5, value: 1, ease: sp, id: 'k1' },
+                { t: 0.5, value: 2, id: 'k2' },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const before = doc.timelines['main']!.tracks['box/x']!.keys;
+    const r = applyPatch(doc, { op: 'setKeyValue', timelineId: 'main', target: 'box/x', id: 'k0', value: 5 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const undone = applyPatches(r.doc, r.inverse);
+    expect(undone.ok).toBe(true);
+    if (!undone.ok) return;
+    // byte-exact: the spring key is NOT re-pinned, the collision NOT re-nudged
+    expect(undone.doc.timelines['main']!.tracks['box/x']!.keys).toEqual(before);
+  });
+
+  it('the write surface rejects structural / un-id’d targets (setTrackKeys + addKey, §finding-3)', () => {
+    const d = emptySidecar();
+    const bad = (t: string): TimelinePatch => ({ op: 'setTrackKeys', timelineId: 'main', target: t, type: 'number', keys: [key(0, 0)], baseHash: null });
+    expect(applyPatch(d, bad('~Group.0/x')).ok).toBe(false);
+    expect(applyPatch(d, bad('/x')).ok).toBe(false);
+    expect(applyPatch(d, { op: 'addKey', timelineId: 'main', target: '~G.0/x', key: { t: 0, value: 0 } }).ok).toBe(false);
+    expect(applyPatch(d, bad('box/x')).ok).toBe(true); // a valid explicit-id target still works
+  });
+
+  it('undo of a baseline-seeded first edit restores the original {timelines:{}} (no empty shell, §finding-5)', () => {
+    const baseline: BaselineLookup = (_tl, target) =>
+      target === 'box/y' ? { type: 'number', keys: [key(0, 0), key(1, 1)] } : null;
+    const orig: SidecarDoc = { sidecarVersion: 2, timelines: {} };
+    const r = applyPatch(orig, { op: 'addKey', timelineId: 'main', target: 'box/y', key: { t: 0.5, value: 0.5 } }, baseline);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const undone = applyPatches(r.doc, r.inverse);
+    expect(undone.ok && undone.doc).toEqual(orig);
   });
 });

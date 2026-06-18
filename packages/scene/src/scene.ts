@@ -41,9 +41,22 @@ export class DuplicateNodeIdError extends Error {
   }
 }
 
+export class ReservedNodeIdError extends Error {
+  constructor(id: string) {
+    super(
+      `node id '${id}' uses the reserved '~' prefix — that namespace is for structural ` +
+        `fallback ids (§6.5), which are inspection-only and never track targets; choose another id`,
+    );
+    this.name = 'ReservedNodeIdError';
+  }
+}
+
 function indexNodes(root: Node, into: Map<string, Node>, measurerSource: () => TextMeasurer): void {
   root.measurerSource = measurerSource;
   if (root.id !== undefined) {
+    // reject the reserved structural namespace at construction so the failure
+    // surfaces at the node, not at the first tween/.editable() (§6.5)
+    if (root.id.startsWith('~')) throw new ReservedNodeIdError(root.id);
     if (into.has(root.id)) throw new DuplicateNodeIdError(root.id);
     into.set(root.id, root);
   }

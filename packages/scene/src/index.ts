@@ -137,6 +137,7 @@ export {
   bindScene,
   evaluate,
   DuplicateNodeIdError,
+  ReservedNodeIdError,
   type Scene,
   type SceneInit,
   type SceneModule,

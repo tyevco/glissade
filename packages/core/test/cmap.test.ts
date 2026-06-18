@@ -45,4 +45,27 @@ describe('parseCmap', () => {
     junk[5] = 0xff;
     expect(parseCmap(junk.buffer).size).toBe(0);
   });
+
+  it('a truncated format-12 subtable with a huge nGroups completes instantly (§finding-2, no hang)', () => {
+    // a minimal sfnt whose best subtable is format 12 declaring 2^31 groups but
+    // carrying ZERO group bytes — without the clamp this loops ~2.1B times (~26s)
+    const buf = new ArrayBuffer(56);
+    const dv = new DataView(buf);
+    dv.setUint32(0, 0x00010000); // sfntVersion
+    dv.setUint16(4, 1); // numTables
+    dv.setUint32(12, 0x636d6170); // table tag 'cmap'
+    dv.setUint32(20, 28); // → cmap table offset
+    dv.setUint32(24, 28); // length
+    dv.setUint16(28, 0); // cmap version
+    dv.setUint16(30, 1); // numSubtables
+    dv.setUint16(32, 3); // platform Windows
+    dv.setUint16(34, 10); // encoding UCS-4 (best score → format 12 path)
+    dv.setUint32(36, 12); // subtable offset relative to cmap table → 40
+    dv.setUint16(40, 12); // format 12
+    dv.setUint32(44, 1_000_000); // claimed length
+    dv.setUint32(52, 0x7fffffff); // nGroups = ~2.1 billion, but buffer ends here
+    const start = performance.now();
+    expect(parseCmap(buf).size).toBe(0);
+    expect(performance.now() - start).toBeLessThan(100); // clamped, not looping billions of times
+  });
 });

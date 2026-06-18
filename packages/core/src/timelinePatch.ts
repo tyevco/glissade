@@ -3,11 +3,13 @@
  * studio applies to the sidecar overlay. Forward patches are **fine-grained and
  * address keys by stable `k<N>` id** (so an edit survives a retime/reorder —
  * `tx.moveKey('title/opacity', 'k2', { t: 1.25 })`). The INVERSE of a
- * transaction is a per-touched-track snapshot restore (`setTrackKeys` of the
- * exact pre-state, or `removeTrack` if it didn't exist): correct by
- * construction, so it round-trips byte-for-byte even though `normalizeEditedKeys`
- * re-pins spring keys and nudges collisions (§2.7) — the trap a hand-computed
- * inverse falls into.
+ * transaction is a per-touched-track snapshot restore (a **verbatim**
+ * `setTrackKeys` of the exact pre-state, or `removeTrack` if it didn't exist).
+ * It round-trips byte-for-byte even when the pre-state was un-normalized: the
+ * inverse sets `verbatim: true` so it replays the snapshot AS-IS, bypassing the
+ * `normalizeEditedKeys` re-pin/collision-nudge (§2.7) that would otherwise
+ * re-derive — not restore — the prior keys. (The forward editor path still
+ * normalizes.)
  *
  * Every variant is plain JSON (no functions/classes) so the whole protocol is
  * structured-clone-safe (§6.4) for a future postMessage/WebSocket host.
@@ -22,6 +24,7 @@ import {
   type SidecarTimelineEntry,
   type SidecarTrackEntry,
 } from './sidecar.js';
+import { isEditableNodeId, targetNodeId } from './targetRef.js';
 import { type Key } from './track.js';
 import { type ValueTypeId } from './valueTypes.js';
 
@@ -34,8 +37,8 @@ export interface NewKey {
 }
 
 export type TimelinePatch =
-  | { op: 'setTrackKeys'; timelineId: string; target: string; type: ValueTypeId; keys: Key[]; baseHash?: string | null }
-  | { op: 'removeTrack'; timelineId: string; target: string }
+  | { op: 'setTrackKeys'; timelineId: string; target: string; type: ValueTypeId; keys: Key[]; baseHash?: string | null; verbatim?: boolean }
+  | { op: 'removeTrack'; timelineId: string; target: string; prune?: boolean }
   | { op: 'addKey'; timelineId: string; target: string; key: NewKey }
   | { op: 'removeKey'; timelineId: string; target: string; id: string }
   | { op: 'moveKey'; timelineId: string; target: string; id: string; t: number }
@@ -90,17 +93,32 @@ function putEntry(doc: SidecarDoc, timelineId: string, target: string, entry: Si
   return { ...doc, timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks: { ...tl.tracks, [target]: entry } } } };
 }
 
-function removeEntry(doc: SidecarDoc, timelineId: string, target: string): SidecarDoc {
+function removeEntry(doc: SidecarDoc, timelineId: string, target: string, prune = false): SidecarDoc {
   const tl = doc.timelines[timelineId];
   if (!tl?.tracks[target]) return doc;
   const tracks = { ...tl.tracks };
   delete tracks[target];
+  // prune the timeline only when `prune` is set — the inverse sets it for a
+  // timeline the transaction CREATED, so undo restores {timelines:{}} exactly
+  // instead of an empty {tracks:{}} shell (an empty timeline is merge-equivalent
+  // to absent, but a wrong-direction prune would corrupt a legit empty timeline)
+  const labels = tl.labels;
+  if (prune && Object.keys(tracks).length === 0 && (!labels || Object.keys(labels).length === 0)) {
+    const timelines = { ...doc.timelines };
+    delete timelines[timelineId];
+    return { ...doc, timelines };
+  }
   return { ...doc, timelines: { ...doc.timelines, [timelineId]: { ...tl, tracks } } };
 }
 
-/** Apply a key-list edit: normalize (§2.7 spring re-pin + collision nudge) and (re)assign stable ids. */
-function withKeys(entry: SidecarTrackEntry, keys: Key[]): SidecarTrackEntry {
-  return { ...entry, keys: assignKeyIds(normalizeEditedKeys(keys)) };
+/**
+ * Apply a key-list edit. `verbatim` restores keys EXACTLY as given (the inverse
+ * path — it is replaying a prior valid state, so re-normalizing would re-pin
+ * springs / re-nudge collisions and break byte-exact undo). The forward editor
+ * path normalizes (§2.7 spring re-pin + collision nudge) and (re)assigns ids.
+ */
+function withKeys(entry: SidecarTrackEntry, keys: Key[], verbatim = false): SidecarTrackEntry {
+  return { ...entry, keys: verbatim ? keys.map((k) => ({ ...k })) : assignKeyIds(normalizeEditedKeys(keys)) };
 }
 
 /**
@@ -114,8 +132,10 @@ export function applyPatches(doc: SidecarDoc, patches: readonly TimelinePatch[],
   let work = doc;
   const trackSnap = new Map<string, SidecarTrackEntry | null>(); // pre-transaction entry per touched track
   const labelSnap = new Map<string, number | undefined>(); // pre-transaction label value per touched name
+  const tlExisted = new Map<string, boolean>(); // did each touched timeline exist pre-transaction?
 
   const snapTrack = (timelineId: string, target: string): void => {
+    if (!tlExisted.has(timelineId)) tlExisted.set(timelineId, work.timelines[timelineId] !== undefined);
     const k = refKey(timelineId, target);
     if (!trackSnap.has(k)) trackSnap.set(k, work.timelines[timelineId]?.tracks[target] ?? null);
   };
@@ -127,11 +147,18 @@ export function applyPatches(doc: SidecarDoc, patches: readonly TimelinePatch[],
   for (const p of patches) {
     switch (p.op) {
       case 'setTrackKeys': {
+        // only an explicit-id node may host an editor track (§6.4/§6.5) — gate the
+        // write surface, not just the builder. `verbatim` (inverse restore) is
+        // exempt: it replays a prior state that already passed this gate.
+        if (!p.verbatim && !isEditableNodeId(targetNodeId(p.target))) {
+          return { ok: false, error: `setTrackKeys: '${p.target}' is not an editable host (structural/un-id'd nodes cannot host tracks, §6.5)` };
+        }
         snapTrack(p.timelineId, p.target);
         const prev = work.timelines[p.timelineId]?.tracks[p.target];
         const entry: SidecarTrackEntry = withKeys(
           { type: p.type, baseHash: p.baseHash !== undefined ? p.baseHash : (prev?.baseHash ?? null), keys: [] },
           p.keys.map((k) => ({ ...k })),
+          p.verbatim,
         );
         work = putEntry(work, p.timelineId, p.target, entry);
         break;
@@ -139,10 +166,13 @@ export function applyPatches(doc: SidecarDoc, patches: readonly TimelinePatch[],
       case 'removeTrack': {
         if (!work.timelines[p.timelineId]?.tracks[p.target]) return { ok: false, error: `removeTrack: no sidecar track '${p.target}'` };
         snapTrack(p.timelineId, p.target);
-        work = removeEntry(work, p.timelineId, p.target);
+        work = removeEntry(work, p.timelineId, p.target, p.prune);
         break;
       }
       case 'addKey': {
+        if (!isEditableNodeId(targetNodeId(p.target))) {
+          return { ok: false, error: `addKey: '${p.target}' is not an editable host (structural/un-id'd nodes cannot host tracks, §6.5)` };
+        }
         const entry = resolveEntry(work, p, baseline);
         if (!entry) return { ok: false, error: `addKey: unknown track '${p.target}' (no sidecar entry and no code baseline)` };
         snapTrack(p.timelineId, p.target);
@@ -204,8 +234,18 @@ export function applyPatches(doc: SidecarDoc, patches: readonly TimelinePatch[],
   const inverse: TimelinePatch[] = [];
   for (const [k, snap] of trackSnap) {
     const [timelineId, target] = parseRefKey(k);
-    if (snap === null) inverse.push({ op: 'removeTrack', timelineId, target });
-    else inverse.push({ op: 'setTrackKeys', timelineId, target, type: snap.type, keys: snap.keys.map((x) => ({ ...x })), baseHash: snap.baseHash });
+    // a track that didn't exist before → undo removes it; prune the timeline too
+    // iff the transaction also created that timeline (so undo restores it exactly)
+    if (snap === null) {
+      inverse.push(
+        tlExisted.get(timelineId) === false
+          ? { op: 'removeTrack', timelineId, target, prune: true }
+          : { op: 'removeTrack', timelineId, target },
+      );
+    }
+    // verbatim: restore the exact pre-state keys (incl. their ids), bypassing
+    // normalize — undo must replay the prior state, not re-derive it
+    else inverse.push({ op: 'setTrackKeys', timelineId, target, type: snap.type, keys: snap.keys.map((x) => ({ ...x })), baseHash: snap.baseHash, verbatim: true });
   }
   for (const [k, value] of labelSnap) {
     const [timelineId, name] = parseRefKey(k);

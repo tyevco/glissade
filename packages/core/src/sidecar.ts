@@ -12,8 +12,9 @@
 
 import { emitDevWarning } from './devWarning.js';
 import { spring as springFactory } from './spring.js';
+import { isEditableNodeId, targetNodeId } from './targetRef.js';
 import { type Timeline } from './timeline.js';
-import { type Key, type Track } from './track.js';
+import { type Key, type Track, TrackValidationError } from './track.js';
 import { type ValueTypeId } from './valueTypes.js';
 
 export type OrphanReason = 'node-missing' | 'prop-missing' | 'type-changed';
@@ -118,6 +119,15 @@ export function setSidecarTrack(
   keys: Key[],
   codeBaselineKeys: readonly Key[] | null,
 ): SidecarDoc {
+  // only an explicit-id node may host an editor track (§6.4/§6.5) — gate this
+  // write path so a structural/un-id'd target can't persist a track that then
+  // crashes evaluate() (mirrors the builder + patch-engine guards)
+  if (!isEditableNodeId(targetNodeId(target))) {
+    throw new TrackValidationError(
+      target,
+      "structural/un-id'd nodes cannot host editor tracks (§6.5) — only nodes with an explicit id",
+    );
+  }
   const tl = doc.timelines[timelineId] ?? { tracks: {} };
   const entry: SidecarTrackEntry = {
     type,

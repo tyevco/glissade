@@ -62,7 +62,12 @@ function parseFormat4(dv: DataView, base: number, into: Set<number>): void {
 }
 
 function parseFormat12(dv: DataView, base: number, into: Set<number>): void {
-  const nGroups = u32(dv, base + 12);
+  // clamp the declared group count to what the buffer can actually hold — a
+  // truncated/corrupt table otherwise loops billions of times (a multi-second
+  // hang on the strict-font path), violating the "never hangs" contract
+  const declared = u32(dv, base + 12);
+  const maxGroups = Math.max(0, Math.floor((dv.byteLength - (base + 16)) / 12));
+  const nGroups = Math.min(declared, maxGroups);
   let off = base + 16;
   for (let i = 0; i < nGroups; i++, off += 12) {
     const startChar = u32(dv, off);

@@ -232,3 +232,11 @@ describe('normalizeEditedKeys: collisions nudge, never delete', () => {
     expect(fixed.map((k) => k.value)).toEqual([-1, 1]);
   });
 });
+
+describe("setSidecarTrack editable-host guard (§finding-3)", () => {
+  it("rejects a structural '~' or empty-nodeId target; accepts an explicit id", () => {
+    expect(() => setSidecarTrack(emptySidecar(), 'main', '~Group.0/x', 'number', [key(0, 0)], null)).toThrow(/structural/);
+    expect(() => setSidecarTrack(emptySidecar(), 'main', '/x', 'number', [key(0, 0)], null)).toThrow();
+    expect(() => setSidecarTrack(emptySidecar(), 'main', 'box/x', 'number', [key(0, 0)], null)).not.toThrow();
+  });
+});

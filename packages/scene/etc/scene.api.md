@@ -811,6 +811,11 @@ export interface RenderBackend extends TextMeasurer {
 export function requireLayoutEngine(): LayoutEngine;
 
 // @public (undocumented)
+export class ReservedNodeIdError extends Error {
+    constructor(id: string);
+}
+
+// @public (undocumented)
 export function resolveAnchor(spec: AnchorSpec): Vec2;
 
 // @public (undocumented)

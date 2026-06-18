@@ -10,6 +10,7 @@ import {
   Group,
   multiply,
   Rect,
+  ReservedNodeIdError,
   Text,
   type DisplayList,
 } from '../src/index.js';
@@ -74,6 +75,12 @@ describe('scene construction', () => {
         children: [new Circle({ id: 'a' }), new Rect({ id: 'a' })],
       }),
     ).toThrow(DuplicateNodeIdError);
+  });
+
+  it("rejects an explicit id in the reserved '~' namespace at construction (§finding-4)", () => {
+    expect(() =>
+      createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: '~weird' })] }),
+    ).toThrow(ReservedNodeIdError);
   });
 });
 
