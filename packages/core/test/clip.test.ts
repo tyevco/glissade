@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { key, track, TrackValidationError, type Track, type Vec2 } from '../src/index.js';
+import { key, track, TrackValidationError, type Key, type Track, type Vec2 } from '../src/index.js';
 import { clip, clipList, ClipError } from '../src/clips.js';
 import { popIn, slideIn, pulse, driftLoop } from '../src/clips.js';
 
@@ -34,6 +34,60 @@ describe('clip — the determinism invariant', () => {
       key(1, 5, { ease: 'linear', derived: true }),
     ]);
     expect(tracks[0]).toEqual(hand);
+  });
+
+  it("carries a key's `from` ('live') flag through verbatim — byte-indistinguishable", () => {
+    // `from` is part of the authored Key shape (§4.7); the emitted track must keep it.
+    // key() doesn't author `from`, so construct the literal keys directly.
+    const k0: Key = { t: 0, value: 0, from: 'live' };
+    const k1: Key = { t: 1, value: 5, ease: 'linear' };
+    const c = clip({ channels: { x: { path: 'x', keys: [k0, k1] } } });
+    const { tracks } = c.apply('node', 0);
+    const hand = track('node/x', 'number', [
+      { t: 0, value: 0, from: 'live' },
+      { t: 1, value: 5, ease: 'linear' },
+    ]);
+    expect(tracks[0]).toEqual(hand);
+    expect(tracks[0]!.keys[0]!.from).toBe('live');
+  });
+
+  it('drops `derived` on a key whose value an override REPLACED (no longer derived)', () => {
+    // both keys flagged derived; an override replaces both values → neither is derived.
+    const c = clip({
+      channels: { o: { path: 'opacity', keys: [key(0, 0, { derived: true }), key(1, 1, { derived: true })] } },
+    });
+    const { tracks } = c.apply('n', 0, { overrides: { o: { from: 0.2, to: 0.9 } } });
+    const hand = track('n/opacity', 'number', [key(0, 0.2), key(1, 0.9)]);
+    expect(tracks[0]).toEqual(hand);
+    expect(tracks[0]!.keys[0]!.derived).toBeUndefined();
+    expect(tracks[0]!.keys[1]!.derived).toBeUndefined();
+  });
+
+  it('keeps `derived` on a key the override did NOT touch', () => {
+    // 3 keys all derived; only first (from) and last (to) overridden → middle key keeps it.
+    const c = clip({
+      channels: {
+        o: {
+          path: 'opacity',
+          keys: [key(0, 0, { derived: true }), key(0.5, 0.5, { derived: true }), key(1, 1, { derived: true })],
+        },
+      },
+    });
+    const { tracks } = c.apply('n', 0, { overrides: { o: { from: 0.2, to: 0.9 } } });
+    expect(tracks[0]!.keys[0]!.derived).toBeUndefined();
+    expect(tracks[0]!.keys[1]!.derived).toBe(true);
+    expect(tracks[0]!.keys[2]!.derived).toBeUndefined();
+  });
+
+  it('rejects an ambiguous single-key override (`from` on a 1-key channel), naming the channel', () => {
+    const c = clip({ channels: { o: { path: 'opacity', keys: [key(0, 0)] } } });
+    expect(() => c.apply('card', 0, { overrides: { o: { from: 0.5 } } })).toThrow(ClipError);
+    expect(() => c.apply('card', 0, { overrides: { o: { from: 0.5 } } })).toThrow(/single-key|ambiguous/);
+    expect(() => c.apply('card', 0, { overrides: { o: { from: 0.5 } } })).toThrow(/card\/opacity/);
+    // both from+to on one key is likewise rejected
+    expect(() => c.apply('card', 0, { overrides: { o: { from: 0.1, to: 0.9 } } })).toThrow(ClipError);
+    // a `to`-only override on a single-key channel is unambiguous and still allowed
+    expect(() => c.apply('card', 0, { overrides: { o: { to: 0.9 } } })).not.toThrow();
   });
 });
 

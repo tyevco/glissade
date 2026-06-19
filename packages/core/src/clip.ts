@@ -159,13 +159,30 @@ function compileChannel(
   }
   const type = ch.type ?? inferValueType(ch.keys[0]!.value);
   const lastIdx = ch.keys.length - 1;
+  // A single-key channel can't unambiguously receive a `from` override: `from` and
+  // `to` would both target the one key (or `from` alone is meaningless, since the
+  // only key already IS the to-value). Reject rather than silently drop a value.
+  if (override && lastIdx === 0 && override.from !== undefined) {
+    throw new ClipError(
+      override.to !== undefined
+        ? `clip override for '${target}' supplies both 'from' and 'to' on a single-key channel — ambiguous (both target the only key)`
+        : `clip override for '${target}' supplies 'from' on a single-key channel — ambiguous (the only key already is the 'to' value)`,
+    );
+  }
   const keys: Key[] = ch.keys.map((k, i) => {
     // rebuild each key cleanly so we never leak relative-time fields; spread the
     // value first, then patch via override / time transform
     let value = k.value;
+    let overridden = false;
     if (override) {
-      if (i === 0 && override.from !== undefined) value = assertOverrideType(target, type, override.from);
-      if (i === lastIdx && override.to !== undefined) value = assertOverrideType(target, type, override.to);
+      if (i === 0 && override.from !== undefined) {
+        value = assertOverrideType(target, type, override.from);
+        overridden = true;
+      }
+      if (i === lastIdx && override.to !== undefined) {
+        value = assertOverrideType(target, type, override.to);
+        overridden = true;
+      }
     }
     const out: Key = { t: startSec + k.t / speed, value };
     // ease: the override replaces the LAST segment's arriving ease; otherwise
@@ -174,7 +191,12 @@ function compileChannel(
     if (ease !== undefined) out.ease = ease;
     if (k.interp !== undefined) out.interp = k.interp;
     if (k.id !== undefined) out.id = k.id;
-    if (k.derived !== undefined) out.derived = k.derived;
+    // `derived` marks a builder-RESOLVED implicit value; once an override replaces
+    // that value it is no longer derived, so only carry the flag on un-overridden keys.
+    if (k.derived !== undefined && !overridden) out.derived = k.derived;
+    // `from` ('live', §4.7) is part of the authored key shape — carry it verbatim so
+    // emitted tracks stay byte-indistinguishable from hand-authored ones.
+    if (k.from !== undefined) out.from = k.from;
     return out;
   });
   // track() runs validateTrack: strictly-increasing t (speed/offset preserve order
