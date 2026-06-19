@@ -218,7 +218,10 @@ export interface VerifyResult {
  * the per-node sub-hashes localize WHERE a divergent frame differs. Stops at the
  * FIRST divergent frame (the bisect target).
  */
-function compareManifests(a: FramesManifest, b: FramesManifest): { ok: boolean; divergence?: Divergence; compared: number } {
+function compareManifests(
+  a: FramesManifest,
+  b: FramesManifest,
+): { ok: boolean; divergence?: Divergence; compared: number; reason?: string } {
   if (a.backend !== b.backend) {
     // Defensive: callers reject cross-backend before reaching here, but a
     // committed manifest could carry a foreign backend tag.
@@ -230,9 +233,15 @@ function compareManifests(a: FramesManifest, b: FramesManifest): { ok: boolean; 
   }
   const byFrameB = new Map(b.frames.map((e) => [e.frame, e]));
   let compared = 0;
+  let absent = 0;
   for (const ea of a.frames) {
     const eb = byFrameB.get(ea.frame);
-    if (!eb) continue; // only compare overlapping frames
+    if (!eb) {
+      // a baseline frame absent from the render set — NOT a silent skip: a fully
+      // or partially disjoint range must surface (see the compared===0 gate below).
+      absent++;
+      continue;
+    }
     compared++;
     if (ea.hash === eb.hash) continue;
     // authoritative mismatch — localize to the first divergent node sub-hash,
@@ -257,6 +266,26 @@ function compareManifests(a: FramesManifest, b: FramesManifest): { ok: boolean; 
       ok: false,
       compared,
       divergence: { frame: ea.frame, hash: { a: ea.hash, b: eb.hash }, ...(node !== undefined ? { node } : {}) },
+    };
+  }
+  // ZERO frames compared = the baseline and render frame sets are disjoint (e.g. a
+  // non-overlapping --range). A `{ok:true, compared:0}` here would be a FALSE GREEN:
+  // the gate meant to catch drift would silently mask it (nothing was compared). So
+  // a 0-overlap compare is a FAILURE, not a pass.
+  if (compared === 0) {
+    return {
+      ok: false,
+      compared,
+      reason: `0 frames compared (baseline/render range disjoint): the baseline has ${a.frames.length} frame(s), none present in the render set of ${b.frames.length}`,
+    };
+  }
+  // a PARTIAL overlap is a pass for what overlapped, but warn that some baseline
+  // frames went uncompared (a narrowed --range silently shrinking coverage).
+  if (absent > 0) {
+    return {
+      ok: true,
+      compared,
+      reason: `warning: ${absent} baseline frame(s) absent from the render set were not compared (compared ${compared})`,
     };
   }
   return { ok: true, compared };
@@ -432,15 +461,29 @@ export async function verifyDeterminismCommand(opts: VerifyOptions): Promise<Ver
 
 /** Shared tail: build the report + optional --bisect drill for a comparison result. */
 async function finalize(
-  cmp: { ok: boolean; divergence?: Divergence; compared: number },
+  cmp: { ok: boolean; divergence?: Divergence; compared: number; reason?: string },
   opts: VerifyOptions,
   label: string,
   bisectFor: ((d: Divergence) => BisectPlan | undefined) | undefined,
 ): Promise<VerifyResult> {
   if (cmp.ok) {
-    return { ok: true, frames: cmp.compared, report: `byte-identical: ${cmp.compared} frames match (${label})` };
+    const tail = cmp.reason !== undefined ? `\n  ${cmp.reason}` : '';
+    return {
+      ok: true,
+      frames: cmp.compared,
+      report: `byte-identical: ${cmp.compared} frames match (${label})${tail}`,
+    };
   }
-  const d = cmp.divergence!;
+  // A failure with no divergence is a 0-overlap (nothing compared) — surface the
+  // reason loudly rather than letting it read as a green pass.
+  if (cmp.divergence === undefined) {
+    return {
+      ok: false,
+      frames: cmp.compared,
+      report: `VERIFY FAILED (${label})\n  ${cmp.reason ?? '0 frames compared'}`,
+    };
+  }
+  const d = cmp.divergence;
   let report =
     `DIVERGENCE (${label})\n` +
     `  frame ${d.frame}: RGBA sha256 ${d.hash.a.slice(0, 16)}… != ${d.hash.b.slice(0, 16)}…\n` +

@@ -127,6 +127,9 @@ export async function cacheVerifyCommand(opts: CacheVerifyOptions): Promise<Cach
   const ctx: CacheKeyContext = opts.keyContextOverride ?? {
     version: glissadeVersion(),
     capsId: capsId(backend.caps),
+    // this verify path is the pure geometry probe (no asset loading), so the
+    // asset-content digest is empty — the real render path folds the asset bytes.
+    assetsDigest: '',
   };
   const keyer = opts.keyerOverride ?? frameCacheKey;
 

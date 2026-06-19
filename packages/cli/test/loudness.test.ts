@@ -18,7 +18,7 @@ import {
   LOUDNESS_SCHEMA_VERSION,
 } from '../src/loudness.js';
 import { applyMixGainDb, planAudioMix, AudioMixError } from '../src/audioMix.js';
-import { ffmpegAvailable, render, resolveLoudnessGainDb } from '../src/render.js';
+import { ffmpegAvailable, render, resolveLoudnessGainDb, collectMixAudioInputs } from '../src/render.js';
 
 // ---- the peak-clamped gain formula ----
 
@@ -141,6 +141,61 @@ describe('computeMixHash (binds measurement to mix CONTENT, not mtime)', () => {
     writeFileSync(join(tmp, 'other.sfx.timing.json'), '{"clips":[]}');
     expect(computeMixHash(fresh)).not.toBe(before);
   });
+
+  it('folds the BYTES of the resolved mix audio inputs (music stem), not just manifests', async () => {
+    // A music-bed manifest + its stem audio file. Editing the STEM bytes in place
+    // (same path, same manifest) must change the mixHash — the manifest-only hash
+    // missed this, silently applying a stale publish gain.
+    const stemMod = join(tmp, 'stemscene.ts');
+    const stemPath = join(tmp, 'bed.wav');
+    writeFileSync(
+      join(tmp, 'stemscene.music.timing.json'),
+      JSON.stringify({ musicVersion: 1, bpm: 120, beatsPerCycle: 4, durationSec: 4, stem: 'bed.wav' }),
+    );
+    writeFileSync(stemPath, Buffer.from('STEM-CONTENT-A'));
+
+    const extraA = await collectMixAudioInputs({ modulePath: stemMod });
+    expect(extraA).toContain(stemPath); // the stem is resolved as a real mix input
+    const hashA = computeMixHash(stemMod, extraA);
+
+    // edit the stem bytes in place (same path)
+    writeFileSync(stemPath, Buffer.from('STEM-CONTENT-B-different-length'));
+    const extraB = await collectMixAudioInputs({ modulePath: stemMod });
+    const hashB = computeMixHash(stemMod, extraB);
+
+    expect(hashB).not.toBe(hashA); // the edited stem invalidates the measurement
+  });
+
+  it('render-time gate HARD-THROWS when a music-stem byte edit invalidates the mixHash', async () => {
+    const stemMod = join(tmp, 'gatescene.ts');
+    const stemPath = join(tmp, 'gate-bed.wav');
+    writeFileSync(
+      join(tmp, 'gatescene.music.timing.json'),
+      JSON.stringify({ musicVersion: 1, bpm: 120, beatsPerCycle: 4, durationSec: 4, stem: 'gate-bed.wav' }),
+    );
+    writeFileSync(stemPath, Buffer.from('ORIGINAL-STEM'));
+
+    // commit a measurement bound to the ORIGINAL stem bytes
+    const extra = await collectMixAudioInputs({ modulePath: stemMod });
+    writeFileSync(
+      loudnessPathFor(stemMod),
+      JSON.stringify({
+        loudnessVersion: LOUDNESS_SCHEMA_VERSION,
+        profileId: 'youtube',
+        inputI: -24,
+        inputTp: -21,
+        inputLra: 0,
+        gain: 7,
+        mixHash: computeMixHash(stemMod, extra),
+      }),
+    );
+    // sanity: the gate passes against the unmodified stem
+    expect(await resolveLoudnessGainDb({ modulePath: stemMod })).toBe(7);
+
+    // now EDIT the stem bytes in place → the render-time gate must hard-throw
+    writeFileSync(stemPath, Buffer.from('EDITED-STEM-bytes'));
+    await expect(resolveLoudnessGainDb({ modulePath: stemMod })).rejects.toThrow(/stale|measure-loudness/);
+  });
 });
 
 // ---- resolveLoudnessGainDb: stale/missing/off semantics ----
@@ -172,7 +227,10 @@ describe('resolveLoudnessGainDb (render-time read + mixHash gate)', () => {
   });
 
   it('returns the committed gain when the mixHash matches', async () => {
-    commit(computeMixHash(mod));
+    // commit the hash exactly as render computes it (manifests + the resolved mix
+    // AUDIO inputs), so the render-time gate matches.
+    const extra = await collectMixAudioInputs({ modulePath: mod });
+    commit(computeMixHash(mod, extra));
     expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(10);
   });
 

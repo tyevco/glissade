@@ -226,6 +226,14 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // byte-identical legacy path that keeps the existing goldens stable. A
   // woff/woff2 face is decoded in-process (the §3.6 front door) before
   // register(Buffer, family), since @napi-rs/canvas cannot read woff2 directly.
+  // §3.5 cache: the DisplayList carries only an asset *id*, never the pixels/glyphs,
+  // so an in-place edit of an asset (same id/url) would otherwise collide the frame
+  // cache key and serve STALE pixels. We sha256 each referenced asset's BYTES as we
+  // load them and fold a combined digest into the cache key context below.
+  const { createHash } = await import('node:crypto');
+  const assetDigests = new Map<string, string>();
+  const digestBytes = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+
   const fontRegistry = buildFontRegistry(doc.assets);
   if (fontRegistry.faces().length > 0) {
     const { GlobalFonts } = await import('@napi-rs/canvas');
@@ -235,9 +243,11 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       if (/\.woff2?$/i.test(face.url)) {
         ingest ??= await import('@glissade/core/font-ingest');
         const src = await readFile(path);
+        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(src));
         const result = await ingest.ingestFont({ family: face.family, src });
         GlobalFonts.register(Buffer.from(result.bytes), face.family);
       } else {
+        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(await readFile(path)));
         GlobalFonts.registerFromPath(path, face.family);
       }
     }
@@ -264,13 +274,17 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       // faces already registered above
     } else if (ref.kind === 'image') {
       const { loadImage } = await import('@napi-rs/canvas');
-      backend.setImageAsset(assetId, await loadImage(resolveAsset(ref.url, opts.modulePath)));
+      const imgPath = resolveAsset(ref.url, opts.modulePath);
+      assetDigests.set(`image:${assetId}`, digestBytes(await readFile(imgPath)));
+      backend.setImageAsset(assetId, await loadImage(imgPath));
     } else if (ref.kind === 'video') {
       if (!ffmpegAvailable()) {
         throw new Error(`video asset '${assetId}' needs FFmpeg on PATH for frame extraction (§5.4)`);
       }
       const { FfmpegVideoFrameSource } = await import('./videoSource.js');
-      const source = new FfmpegVideoFrameSource(resolveAsset(ref.url, opts.modulePath));
+      const videoPath = resolveAsset(ref.url, opts.modulePath);
+      assetDigests.set(`video:${assetId}`, digestBytes(await readFile(videoPath)));
+      const source = new FfmpegVideoFrameSource(videoPath);
       await source.warm(0, source.duration); // v1: whole-source warm, trivially correct
       backend.setVideoAsset(assetId, source);
       videoSources.push(source);
@@ -284,14 +298,20 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   let frameCache: import('./frameCache.js').FrameCache | undefined;
   let keyCtx: import('./frameCache.js').CacheKeyContext | undefined;
   if (opts.cache && opts.cache.mode !== 'off') {
-    const { FrameCache, capsId } = await import('./frameCache.js');
+    const { FrameCache, capsId, combineAssetDigests } = await import('./frameCache.js');
     const { glissadeVersion } = await import('./version.js');
     frameCache = new FrameCache({
       dir: opts.cache.dir,
       mode: opts.cache.mode,
       ...(opts.cache.maxSize !== undefined ? { maxSize: opts.cache.maxSize } : {}),
     });
-    keyCtx = { version: glissadeVersion(), capsId: capsId(backend.caps) };
+    keyCtx = {
+      version: glissadeVersion(),
+      capsId: capsId(backend.caps),
+      // fold the BYTES of every referenced image/video/font so an in-place asset
+      // edit (same id/url) invalidates the key instead of serving stale pixels.
+      assetsDigest: combineAssetDigests(assetDigests),
+    };
   }
 
   for (let f = firstFrame; f <= lastFrame; f++) {
@@ -479,20 +499,70 @@ export async function collectAudioClips(
 }
 
 /**
+ * Resolve the ACTUAL audio files that feed the final mix (timeline clips +
+ * auto-mixed narration/music/sfx), as absolute paths. This is what the mixHash
+ * must hash the BYTES of: editing a timeline `.wav` or a music stem in place leaves
+ * the timing manifests unchanged, so without folding these bytes a stale publish
+ * gain would be applied silently. Reuses `collectAudioClips` (the same gather the
+ * mix itself uses), then resolves each clip asset URL. De-duplicated + sorted so
+ * measure-time and render-time agree regardless of clip order. `timelineClips` is
+ * the scene's compiled timeline audio; when omitted it is compiled from the module
+ * (so measure-time and the bare-gate path see the SAME timeline clips render does).
+ * A module that can't load (e.g. a unit-test stub path) falls back to no timeline
+ * clips — the narration/music/sfx siblings still resolve from `modulePath`.
+ */
+export async function collectMixAudioInputs(
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
+  timelineClips?: AudioClip[],
+): Promise<string[]> {
+  let tl = timelineClips;
+  if (tl === undefined) {
+    try {
+      const mod = await loadSceneModule(opts.modulePath);
+      const { compileTimeline } = await import('@glissade/core');
+      tl = [...compileTimeline(mod.timeline).audio];
+    } catch {
+      tl = [];
+    }
+  }
+  const clips = await collectAudioClips(opts, tl);
+  const { resolveAssetPath } = await import('./audioMix.js');
+  const paths = new Set<string>();
+  for (const c of clips) {
+    try {
+      paths.add(resolveAssetPath(c.asset.url, opts.modulePath));
+    } catch {
+      // a remote/unsupported url can't be byte-hashed locally — fold its url
+      // string so a change to the reference still invalidates the measurement.
+      paths.add(c.asset.url);
+    }
+  }
+  return [...paths].sort();
+}
+
+/**
  * Resolve the committed publish gain (dB) for a render: read `<scene>.loudness.json`
  * (when present and `loudness !== 'off'`), recompute the mixHash over the current
  * mix inputs, and HARD-THROW on a mismatch — a re-narrate/re-sfx must invalidate
  * the measurement loudly rather than silently mis-normalize. Returns null when no
  * measurement is committed or loudness is off (no gain applied).
+ *
+ * The mixHash folds the BYTES of the actual mix audio inputs (timeline clips +
+ * narration/music/sfx) — not just the timing manifests — so an in-place edit of a
+ * `.wav`/music stem invalidates the measurement here too (the §5.3 stale-gain
+ * gate). `timelineClips` defaults to the scene's compiled timeline audio when
+ * omitted, so a bare `{ modulePath }` call still gates correctly.
  */
 export async function resolveLoudnessGainDb(
-  opts: Pick<RenderOptions, 'modulePath' | 'loudness'>,
+  opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx'>,
+  timelineClips?: AudioClip[],
 ): Promise<number | null> {
   if ((opts.loudness ?? 'auto') === 'off') return null;
   const { readLoudness, computeMixHash, loudnessPathFor } = await import('./loudness.js');
   const measurement = readLoudness(opts.modulePath);
   if (!measurement) return null;
-  const actual = computeMixHash(opts.modulePath);
+  const extraInputs = await collectMixAudioInputs(opts, timelineClips);
+  const actual = computeMixHash(opts.modulePath, extraInputs);
   if (actual !== measurement.mixHash) {
     throw new Error(
       `loudness: ${loudnessPathFor(opts.modulePath)} is stale — the mix inputs changed since it was measured ` +
@@ -514,6 +584,9 @@ export async function resolveLoudnessGainDb(
  * the existing graph, NOT a second pass. The scalar gain is bit-deterministic
  * (verified) and golden-hashable; the only non-deterministic stages (mix-to-PCM,
  * measure-time ebur128) are quarantined to commit/measure-time per §5.3.
+ *
+ * (Note: `collectMixAudioInputs` resolves auto-mixed narration/music/sfx siblings
+ * from `modulePath`, so a `timelineClips: []` default still gates those.)
  */
 export async function planFinalAudio(
   opts: RenderOptions,
@@ -531,7 +604,7 @@ export async function planFinalAudio(
   }
   if (!mix) return { audioInputs: [], audioArgs: [] };
 
-  const gainDb = await resolveLoudnessGainDb(opts);
+  const gainDb = await resolveLoudnessGainDb(opts, timelineClips);
   const filterComplex = gainDb !== null ? applyMixGainDb(mix.filterComplex, gainDb) : mix.filterComplex;
   if (gainDb !== null) {
     process.stderr.write(`note: applying committed publish loudness gain ${gainDb.toFixed(2)} dB (single-pass scalar)\n`);

@@ -83,6 +83,38 @@ export interface Clip {
   apply(target: ClipTarget, startSec: number, opts?: ApplyOpts): ClipResult;
 }
 
+/**
+ * Guard a clip override VALUE against the channel's resolved type. `compileChannel`
+ * infers the channel type from the ORIGINAL first key, then substitutes the
+ * override `from`/`to`. `validateTrack` only checks key TIMES, never value shapes,
+ * so a mismatched override (e.g. a number on a `vec2` channel) would otherwise
+ * sample to NaN through evaluate() into both backends with no warning. This asserts
+ * the override value's inferred type matches the channel — the only place a clip
+ * can introduce a wrong-shaped value. `color`/`string` are treated as one family:
+ * `inferValueType` can't tell a plain string from a color string, so we never
+ * reject a string override on a string-shaped channel.
+ */
+function assertOverrideType<T>(target: string, resolvedType: ValueTypeId, value: T): T {
+  let got: ValueTypeId;
+  try {
+    got = inferValueType(value);
+  } catch {
+    throw new ClipError(
+      `clip override for '${target}' has an un-typeable value ${JSON.stringify(value)} ` +
+        `(channel type '${resolvedType}')`,
+    );
+  }
+  const stringFamily = (t: ValueTypeId): boolean => t === 'color' || t === 'string';
+  const compatible = got === resolvedType || (stringFamily(got) && stringFamily(resolvedType));
+  if (!compatible) {
+    throw new ClipError(
+      `clip override for '${target}' is a '${got}' value but the channel is '${resolvedType}' ` +
+        `(${JSON.stringify(value)}); a mismatched override samples to NaN`,
+    );
+  }
+  return value;
+}
+
 function channelDuration(ch: ClipChannel): number {
   // keys are validated strictly-increasing at apply, so the last key is the max t
   return ch.keys.length === 0 ? 0 : ch.keys[ch.keys.length - 1]!.t;
@@ -132,8 +164,8 @@ function compileChannel(
     // value first, then patch via override / time transform
     let value = k.value;
     if (override) {
-      if (i === 0 && override.from !== undefined) value = override.from;
-      if (i === lastIdx && override.to !== undefined) value = override.to;
+      if (i === 0 && override.from !== undefined) value = assertOverrideType(target, type, override.from);
+      if (i === lastIdx && override.to !== undefined) value = assertOverrideType(target, type, override.to);
     }
     const out: Key = { t: startSec + k.t / speed, value };
     // ease: the override replaces the LAST segment's arriving ease; otherwise

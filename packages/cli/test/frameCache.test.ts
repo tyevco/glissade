@@ -11,17 +11,19 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createCanvas } from '@napi-rs/canvas';
 import { evaluate, type DisplayList } from '@glissade/scene';
 import { render, loadSceneModule } from '../src/render.js';
 import {
   FrameCache,
   frameCacheKey,
   capsId,
+  combineAssetDigests,
   parseCacheMaxSize,
   DEFAULT_CACHE_MAX_SIZE,
   type CacheKeyContext,
@@ -49,18 +51,33 @@ describe('frameCacheKey completeness', () => {
     const mod = await loadSceneModule(SHAPES);
     const scene = mod.createScene();
     const dl: DisplayList = evaluate(scene, mod.timeline, 0.5);
-    const base: CacheKeyContext = { version: '1.0.0', capsId: 'caps:x' };
+    const base: CacheKeyContext = { version: '1.0.0', capsId: 'caps:x', assetsDigest: '' };
     const k = frameCacheKey(dl, base);
     expect(k).toMatch(/^[0-9a-f]{64}$/);
     // a different version → different key (bump-on-version invalidation)
     expect(frameCacheKey(dl, { ...base, version: '1.0.1' })).not.toBe(k);
     // a different capsId → different key
     expect(frameCacheKey(dl, { ...base, capsId: 'caps:y' })).not.toBe(k);
+    // a different asset-content digest → different key (an in-place asset edit)
+    expect(frameCacheKey(dl, { ...base, assetsDigest: 'deadbeef' })).not.toBe(k);
     // a different DisplayList (different frame) → different key
     const dl2 = evaluate(scene, mod.timeline, 0.6);
     expect(frameCacheKey(dl2, base)).not.toBe(k);
     // same inputs → stable
     expect(frameCacheKey(evaluate(scene, mod.timeline, 0.5), base)).toBe(k);
+  });
+
+  it('combineAssetDigests is sort-stable and folds asset BYTES into the key', () => {
+    // order-independence: the same id→byteDigest map yields the same digest
+    // regardless of insertion order (assets load in arbitrary order across runs)
+    const a = combineAssetDigests(new Map([['logo', 'aa'], ['clip', 'bb']]));
+    const b = combineAssetDigests(new Map([['clip', 'bb'], ['logo', 'aa']]));
+    expect(a).toBe(b);
+    // an empty map is the no-asset baseline (byte-identical to a pre-digest key)
+    expect(combineAssetDigests(new Map())).toBe('');
+    // changing an asset's byte digest changes the combined digest (an in-place edit)
+    const edited = combineAssetDigests(new Map([['logo', 'cc'], ['clip', 'bb']]));
+    expect(edited).not.toBe(a);
   });
 
   it('capsId is canonical (filter-order independent)', () => {
@@ -107,6 +124,83 @@ describe('HIT == MISS (byte-identity by construction)', () => {
     expect(result.comparedFrames).toEqual([0, 3, 6, 9]);
     expect(result.report).toMatch(/1-of-3 sample/);
     expect(result.report).toMatch(/\[0, 3, 6, 9\]/);
+  });
+});
+
+describe('asset-content digest — an in-place asset edit is NOT served stale', () => {
+  // Write a solid-color WxH PNG to `path`.
+  const writePng = (path: string, w: number, h: number, color: string): void => {
+    const c = createCanvas(w, h);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    writeFileSync(path, c.toBuffer('image/png'));
+  };
+
+  // A scene module embedding an image asset by id; the asset url resolves next to
+  // the module file.
+  const writeImageScene = (modulePath: string, imageRel: string): void => {
+    writeFileSync(
+      modulePath,
+      `
+import { timeline } from '@glissade/core';
+import { createScene, Rect, Image, type SceneModule } from '@glissade/scene';
+
+const mod: SceneModule = {
+  createScene: () =>
+    createScene({
+      size: { w: 64, h: 64 },
+      children: [
+        new Rect({ id: 'bg', width: 64, height: 64, position: [32, 32], fill: '#000000' }),
+        new Image({ id: 'logo', assetId: 'logo', width: 64, height: 64, position: [32, 32] }),
+      ],
+    }),
+  timeline: timeline(() => {}, {
+    fps: 30,
+    duration: 0.2,
+    assets: { logo: { kind: 'image', url: '${imageRel}' } },
+  }),
+};
+export default mod;
+`,
+    );
+  };
+
+  it('mutating logo.png bytes (same path) does NOT serve the pre-edit pixels from --cache', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'glissade-fc-asset-'));
+    try {
+      const imgPath = join(work, 'logo.png');
+      const modPath = join(work, 'scene.ts');
+      const cacheDir = join(work, 'gscache');
+      writeImageScene(modPath, 'logo.png');
+
+      // RED image: warm the cache (read-write) over a couple frames.
+      writePng(imgPath, 64, 64, '#ff0000');
+      const redOut = join(work, 'red');
+      await render({ modulePath: modPath, out: redOut, frameRange: [0, 1], cache: { dir: cacheDir, mode: 'read-write' } });
+      const redHashes = pngHashes(redOut);
+
+      // Now EDIT the asset bytes in place (same path/id/url) → BLUE.
+      writePng(imgPath, 64, 64, '#0000ff');
+
+      // ground truth: a cache-OFF render of the mutated (blue) scene.
+      const blueTruthOut = join(work, 'blue-truth');
+      await render({ modulePath: modPath, out: blueTruthOut, frameRange: [0, 1] });
+      const blueTruth = pngHashes(blueTruthOut);
+      // sanity: the edit actually changes the pixels
+      expect(blueTruth).not.toEqual(redHashes);
+
+      // the SECOND --cache render over the SAME cache dir must reflect the edit —
+      // i.e. the asset-content digest changed the key, so no stale RED frame is
+      // served. It must equal the blue ground truth, NOT the warmed red.
+      const blueCachedOut = join(work, 'blue-cached');
+      await render({ modulePath: modPath, out: blueCachedOut, frameRange: [0, 1], cache: { dir: cacheDir, mode: 'read-write' } });
+      const blueCached = pngHashes(blueCachedOut);
+      expect(blueCached).toEqual(blueTruth);
+      expect(blueCached).not.toEqual(redHashes);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   });
 });
 

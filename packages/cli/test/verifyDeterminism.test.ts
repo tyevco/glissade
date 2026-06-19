@@ -101,6 +101,48 @@ describe('--against a committed skia manifest', () => {
   });
 });
 
+describe('--against a disjoint range is NOT a false green', () => {
+  it('a baseline whose frames never overlap the render set fails (compared===0)', async () => {
+    // Emit a baseline over frames [0..5], then verify against it while rendering a
+    // DISJOINT range [100..105]. The old behavior skipped every non-overlapping
+    // baseline frame WITHOUT incrementing `compared`, yielding {ok:true, compared:0}
+    // — a green verdict that compared NOTHING. The gate must now FAIL.
+    const mod = await loadSceneModule(SHAPES);
+    const baseline = await buildManifest(mod, 0, 5, 60);
+    const path = join(outDir, 'disjoint.manifest');
+    writeFileSync(path, serializeManifest(baseline));
+
+    const result = await verifyDeterminismCommand({
+      modulePath: SHAPES,
+      against: path,
+      frameRange: [100, 105],
+      fps: 60,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.frames).toBe(0);
+    expect(result.report).toMatch(/0 frames compared|disjoint/i);
+    expect(result.report).not.toMatch(/byte-identical/);
+  });
+
+  it('a PARTIAL overlap passes but warns about the uncompared baseline frames', async () => {
+    const mod = await loadSceneModule(SHAPES);
+    const baseline = await buildManifest(mod, 0, 9, 60);
+    const path = join(outDir, 'partial.manifest');
+    writeFileSync(path, serializeManifest(baseline));
+
+    // render only [0..4]; baseline frames 5..9 are absent from the render set
+    const result = await verifyDeterminismCommand({
+      modulePath: SHAPES,
+      against: path,
+      frameRange: [0, 4],
+      fps: 60,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.frames).toBe(5);
+    expect(result.report).toMatch(/absent|not compared|warning/i);
+  });
+});
+
 describe('--emit writes a baseline manifest', () => {
   it('emits a manifest that re-parses', async () => {
     const path = join(outDir, 'emitted.manifest');

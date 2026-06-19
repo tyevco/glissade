@@ -45,6 +45,7 @@ export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration'
 
 // @public
 export interface CacheKeyContext {
+    assetsDigest: string;
     capsId: string;
     version: string;
 }
@@ -519,7 +520,7 @@ export interface RenderShardedArgs {
 export function resolveAssetPath(url: string, modulePath: string): string;
 
 // @public
-export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness'>): Promise<number | null>;
+export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx'>, timelineClips?: AudioClip[]): Promise<number | null>;
 
 // @public
 export function resolveProfile(id: string): PublishProfile;

@@ -73,6 +73,32 @@ describe('clip — overrides (value/ease only, topology preserved)', () => {
     const c = clip({ channels: { o: { path: 'opacity', keys: [key(0, 0), key(1, 1)] } } });
     expect(() => c.apply('n', 0, { overrides: { nope: { to: 1 } } })).toThrow(ClipError);
   });
+
+  it('rejects a mismatched-TYPE override value (no silent NaN into the backends)', () => {
+    // A vec2 channel (position) with a NUMBER override → would sample to [NaN,NaN]
+    // through evaluate() into both backends. The clip must throw, not pass NaN.
+    const c = clip({
+      channels: { pos: { path: 'position', keys: [key(0, [0, 0] as Vec2), key(0.3, [10, 0] as Vec2)] } },
+    });
+    expect(() => c.apply('card', 0, { overrides: { pos: { to: 0.5 } } })).toThrow(ClipError);
+    expect(() => c.apply('card', 0, { overrides: { pos: { to: 0.5 } } })).toThrow(/vec2|NaN/);
+    // a from-side mismatch is caught too
+    expect(() => c.apply('card', 0, { overrides: { pos: { from: 3 } } })).toThrow(ClipError);
+    // the inverse: a vec2 override on a NUMBER channel
+    const n = clip({ channels: { o: { path: 'opacity', keys: [key(0, 0), key(0.3, 1)] } } });
+    expect(() => n.apply('card', 0, { overrides: { o: { to: [1, 2] as unknown as number } } })).toThrow(ClipError);
+  });
+
+  it('a CORRECT-type override still works (vec2 → vec2, number → number)', () => {
+    const c = clip({
+      channels: { pos: { path: 'position', keys: [key(0, [0, 0] as Vec2), key(0.3, [10, 0] as Vec2)] } },
+    });
+    const { tracks } = c.apply('card', 0, { overrides: { pos: { from: [5, 5] as Vec2, to: [20, 0] as Vec2 } } });
+    expect(tracks[0]!.keys[0]!.value).toEqual([5, 5]);
+    expect(tracks[0]!.keys[1]!.value).toEqual([20, 0]);
+    const n = clip({ channels: { o: { path: 'opacity', keys: [key(0, 0), key(0.3, 1)] } } });
+    expect(() => n.apply('card', 0, { overrides: { o: { to: 0.5 } } })).not.toThrow();
+  });
 });
 
 describe('clip — target map (per-channel path override)', () => {

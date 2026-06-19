@@ -141,13 +141,16 @@ export function peakClampBinds(profile: PublishProfile, inputI: number, inputTp:
 // ---- the mix-content hash (binds measurement to mix inputs) ----
 
 /**
- * Hash the CONTENT of the mix's input manifests so a re-narrate / re-sfx / music
- * change invalidates a committed measurement. We hash the files' BYTES (not
- * mtime): the narration/music/sfx timing manifests and any wired timeline audio
- * sidecars. Missing siblings are recorded by name with a sentinel so adding one
- * later also changes the hash. The scene module path itself is excluded — the
- * mix is a function of the manifests, and timeline `audio` clips flow through the
- * narration/music/sfx manifests or the explicitly-passed extra inputs.
+ * Hash the CONTENT of the mix's inputs so a re-narrate / re-sfx / music change OR
+ * an in-place edit of an audio file invalidates a committed measurement. We hash
+ * the files' BYTES (not mtime): the narration/music/sfx timing manifests AND every
+ * path in `extraInputs` — the resolved mix AUDIO files (timeline clips + the music
+ * stem + narration cache audio), supplied by `collectMixAudioInputs` at both the
+ * measure and render call sites so the two agree. Hashing only the timing manifests
+ * would miss an edited `.wav`/stem (same manifest, changed bytes) and apply a stale
+ * publish gain silently — so `extraInputs` MUST be passed on the gate path. Missing
+ * files are recorded by name with a sentinel so adding one later also changes the
+ * hash. The scene module path itself is excluded.
  */
 export function computeMixHash(modulePath: string, extraInputs: readonly string[] = []): string {
   const base = modulePath.replace(/\.[jt]sx?$/, '');
@@ -301,7 +304,17 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
     const { inputI, inputTp, inputLra } = measureFile(wavPath);
     const gain = computeGainDb(profile, inputI, inputTp);
     const clampBound = peakClampBinds(profile, inputI, inputTp);
-    const mixHash = computeMixHash(opts.modulePath);
+    // bind the measurement to the BYTES of the actual mix audio inputs (timeline
+    // clips + narration/music/sfx), not just the timing manifests — so an in-place
+    // edit of a `.wav`/music stem invalidates this measurement at render time.
+    const { collectMixAudioInputs } = await import('./render.js');
+    const extraInputs = await collectMixAudioInputs({
+      modulePath: opts.modulePath,
+      narration: opts.narration ?? 'auto',
+      music: opts.music ?? 'auto',
+      sfx: opts.sfx ?? 'auto',
+    });
+    const mixHash = computeMixHash(opts.modulePath, extraInputs);
 
     const measurement: LoudnessMeasurement = {
       loudnessVersion: LOUDNESS_SCHEMA_VERSION,
