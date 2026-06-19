@@ -24,6 +24,7 @@
     "@glissade/vite-plugin": "0.11.0"
   },
   "changesets": [
+    "canary-0-12-fixes",
     "font-ingest",
     "gs-diff",
     "loudness",
