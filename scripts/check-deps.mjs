@@ -102,9 +102,16 @@ function stripComments(src) {
  * line-start whitespace) so a `from '@glissade/x/sub'` that merely appears
  * inside a user-facing string (e.g. scene's LayoutEngineMissingError message)
  * is NOT mistaken for an import. The `import()` branch is the dynamic form.
+ *
+ * The `from` branch's `[^;'"]*?` body deliberately does NOT exclude `\n`: a
+ * MULTI-LINE `import {\n  …\n} from '@glissade/x'` (the dominant style) spans
+ * newlines between `import` and `from`, so excluding `\n` made every multi-line
+ * import INVISIBLE to the direction/embed gate. The lazy quantifier + the
+ * statement-leading anchor keep it from over-matching across a `;`-or-quote
+ * boundary, so a stray `from '@glissade/...'` in a string still can't match.
  */
 const IMPORT_RE =
-  /^[ \t]*(?:import|export)\b[^;'"\n]*?\bfrom\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|(?:^[ \t]*import|[ \t]import)\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|import\(\s*['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]\s*\)/gm;
+  /^[ \t]*(?:import|export)\b[^;'"]*?\bfrom\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|(?:^[ \t]*import|[ \t]import)\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|import\(\s*['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]\s*\)/gm;
 
 /**
  * Scan `<root>/<pkg>/src` for §7.1 dependency-direction violations. Pure over

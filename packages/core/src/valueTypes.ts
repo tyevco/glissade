@@ -247,9 +247,29 @@ const lerpN = (a: number, b: number, t: number): number => a + (b - a) * t;
 const lerpPt = (a: [number, number], b: [number, number], t: number): [number, number] => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t)];
 
 /** Same hue at alpha 0 — a transparent stand-in so an appearing/disappearing
- * `bg` (mesh baseline) fades through alpha instead of popping at the boundary. */
+ * `bg` (mesh baseline) fades through alpha instead of popping at the boundary.
+ * `parseColor` THROWS on a non-hex/non-canonical CSS color (hsl/named/oklch);
+ * since this runs inside `lerp` during evaluate() it must NEVER throw — fall
+ * back to holding the PRESENT color so the bg snaps in/out instead of crashing
+ * the whole frame. */
 function transparentOf(color: string): string {
-  return formatColor({ ...parseColor(color), a: 0 });
+  try {
+    return formatColor({ ...parseColor(color), a: 0 });
+  } catch {
+    return color;
+  }
+}
+
+/** `lerpColor` that NEVER throws inside `lerp` (evaluate()): on an unparseable
+ * color (hsl/named/oklch — `parseColor` only knows hex/rgb) it SNAPS (holds `a`,
+ * then `b` at t≥1) instead of crashing the frame. Byte-identical to `lerpColor`
+ * for parseable colors, so it does not move any golden. */
+function safeLerpColor(a: string, b: string, t: number): string {
+  try {
+    return lerpColor(a, b, t);
+  } catch {
+    return t >= 1 ? b : a;
+  }
 }
 
 /** Lift a solid color to a uniform gradient matching `shape` (every stop = color),
@@ -320,7 +340,7 @@ export const paintType: ValueType<Paint> = {
       // of the present color, then always lerp when EITHER side has a bg.
       const bg =
         a.bg !== undefined || b.bg !== undefined
-          ? { bg: lerpColor(a.bg ?? transparentOf(b.bg!), b.bg ?? transparentOf(a.bg!), t) }
+          ? { bg: safeLerpColor(a.bg ?? transparentOf(b.bg!), b.bg ?? transparentOf(a.bg!), t) }
           : {};
       return {
         kind: 'mesh',

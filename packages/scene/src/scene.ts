@@ -98,14 +98,20 @@ export function createScene(init: SceneInit): Scene {
     size: init.size,
     playhead,
     resolveTarget: (target) => {
-      // Split on the LAST slash: a node id may itself contain slashes (the
-      // `${id}/${i}` ids `each()` mints), while no registered prop path ever
-      // does (they use dot paths, e.g. 'position.x'). So the suffix after the
-      // final slash is always the prop, and everything before it the node id.
-      const slash = target.lastIndexOf('/');
-      if (slash < 0) return undefined;
-      const node = nodes.get(target.slice(0, slash));
-      return node?.resolveTarget(target.slice(slash + 1));
+      // Disambiguate node id / prop path by the LONGEST REGISTERED NODE-ID
+      // PREFIX. BOTH a node id (`card/3`, minted by each()) and a prop path
+      // (`money/fill`, a TokenHighlight range prop) may carry slashes, so a
+      // fixed first/last split mis-resolves one or the other. Walk the slash
+      // boundaries from the longest candidate node id down to the shortest; the
+      // first prefix that is an actually-registered node owns the target, and
+      // the remainder is the prop path it resolves. `card/3/opacity` → node
+      // `card/3` + prop `opacity`; `hl/money/fill` → node `hl` + prop
+      // `money/fill`. A bare string with no slash has no prop and never binds.
+      for (let slash = target.lastIndexOf('/'); slash > 0; slash = target.lastIndexOf('/', slash - 1)) {
+        const node = nodes.get(target.slice(0, slash));
+        if (node) return node.resolveTarget(target.slice(slash + 1));
+      }
+      return undefined;
     },
     setTextMeasurer: (m) => {
       measurer.set(m);

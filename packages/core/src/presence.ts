@@ -108,13 +108,16 @@ function partitionOpacity(
  */
 export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResult {
   const { show, hide } = opts;
-  // Resolve the node id once (rejects '~' structural / anonymous ids), and build
-  // the canonical opacity target off it so the guard and the clips agree.
-  const baseTarget = resolveTweenTarget(typeof nodeId === 'string' ? `${nodeId}/opacity` : nodeId);
-  // baseTarget is '<nodeId>/<something>'; normalize to the opacity channel.
-  const slash = baseTarget.indexOf('/');
-  const nodeIdStr = slash < 0 ? baseTarget : baseTarget.slice(0, slash);
-  const opacityTarget = `${nodeIdStr}/opacity`;
+  // Resolve the node id once (rejects '~' structural / anonymous ids). The node
+  // id may itself carry slashes (an each() clone like 'card/3'); DO NOT re-split
+  // it — APPEND the opacity suffix and trust the caller. The scene's
+  // longest-registered-prefix resolver disambiguates node id vs prop path at
+  // bind time, so 'card/3' stays the clone (not the wrapping 'card' Group).
+  const opacityTarget = resolveTweenTarget(typeof nodeId === 'string' ? `${nodeId}/opacity` : nodeId);
+  // for a property-signal carrier the path is already '<nodeId>/opacity'; the
+  // nodeId portion (everything before the FINAL slash) re-suffixes the clips.
+  const lastSlash = opacityTarget.lastIndexOf('/');
+  const nodeIdStr = lastSlash < 0 ? opacityTarget : opacityTarget.slice(0, lastSlash);
 
   const enter = opts.enter ?? defaultEnter();
   const exit = opts.exit ?? defaultExit();
@@ -127,7 +130,11 @@ export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResul
   // --- exit: BACK-TIMED to land exactly on `hide` (mirror springTo underflow) ---
   const exitDur = effectiveDuration(exit, opts.exitOpts);
   const exitStart = hide - exitDur;
-  if (exitStart < show) {
+  // `<=`, not `<`: exitStart == show is a NO-PLATEAU window — the exit's value-1
+  // key would win the coincident-t dedup at show, destroying the enter fade AND
+  // breaking the pre-show cull (opacity would ramp 0→1 across [0,show)). Require
+  // a strictly-positive live plateau between the enter end and the exit start.
+  if (exitStart <= show) {
     throw new PresenceError(
       `presence('${nodeIdStr}') exit needs ${exitDur.toFixed(3)}s but only ${(hide - show).toFixed(3)}s ` +
         `between show (${show}) and hide (${hide}) — widen the window or shorten/speed up the exit`,
@@ -156,7 +163,17 @@ export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResul
   // no-opacity enter/exit (e.g. scale-only) still un-culls / re-culls the node.
   const overlay: Key[] = [];
   if (enterOpacity.length > 0) {
-    for (const k of enterOpacity) overlay.push(k);
+    // Pre-show cull hold: the segment from the pre-show guard key (0 @ t=0,hold)
+    // ARRIVING at the enter's first opacity key would LERP if that key's value is
+    // non-zero (sampleTrack reads the hold flag off the ARRIVAL key) — leaking
+    // opacity 0→v across [0,show). If the enter starts above 0, hold the cull by
+    // marking that first key 'hold' so [0,show) reads 0 and the ramp begins AT
+    // show. A first value of exactly 0 needs no flag (lerp 0→0 = 0), so the
+    // default-fade bytes are unchanged.
+    enterOpacity.forEach((k, i) => {
+      if (i === 0 && k.value !== 0 && k.interp !== 'hold') overlay.push({ ...k, interp: 'hold' });
+      else overlay.push(k);
+    });
   } else {
     overlay.push(key(show, 0), key(enterEnd, 1));
   }

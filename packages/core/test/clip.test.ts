@@ -228,12 +228,29 @@ describe('clip — validateTrack still guards', () => {
 });
 
 describe('clip stdlib', () => {
-  it('popIn binds opacity 0→1 and scale 0.8→1', () => {
+  it('popIn binds opacity 0→1 and a VEC2 scale [0.8,0.8]→[1,1]', () => {
     const { tracks, end } = popIn().apply('card', 0);
     const byTarget = Object.fromEntries(tracks.map((t) => [t.target, t]));
     expect(byTarget['card/opacity']!.keys.map((k) => k.value)).toEqual([0, 1]);
-    expect(byTarget['card/scale']!.keys.map((k) => k.value)).toEqual([0.8, 1]);
+    // the scene `scale` prop is a Vec2Signal: popIn must author vec2 keys so the
+    // channel infers 'vec2' and samples to a real [s,s] (not [undefined,undefined]).
+    expect(byTarget['card/scale']!.type).toBe('vec2');
+    expect(byTarget['card/scale']!.keys.map((k) => k.value)).toEqual([
+      [0.8, 0.8],
+      [1, 1],
+    ]);
     expect(end).toBeCloseTo(0.3, 10);
+  });
+
+  it('pulse authors a VEC2 scale (1 → peak → 1) so it samples on a vec2 prop', () => {
+    const { tracks } = pulse({ scale: 1.2, duration: 0.4 }).apply('card', 0);
+    const scale = tracks.find((t) => t.target === 'card/scale')!;
+    expect(scale.type).toBe('vec2');
+    expect(scale.keys.map((k) => k.value)).toEqual([
+      [1, 1],
+      [1.2, 1.2],
+      [1, 1],
+    ]);
   });
 
   it('slideIn offsets a position channel in from the named edge', () => {

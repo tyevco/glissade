@@ -69,6 +69,19 @@ describe('presence — exit back-timing lands on hide', () => {
     // hide - exitDur = 5 - 2 = 3 < show (4) → overlap
     expect(() => presence('card', { show: 4, hide: 5, exit: slowExit })).toThrow(PresenceError);
   });
+
+  // FIX 3 (0.13 canary): a NO-PLATEAU window (exitStart == show) must throw —
+  // a `<` test let it through, and the exit's value-1 key won the dedup at show,
+  // destroying the enter fade and the pre-show cull.
+  it('throws PresenceError on a degenerate window where exitStart == show', () => {
+    // default fades are 0.3s → exitStart = hide - 0.3 = 1.0 == show
+    expect(() => presence('card', { show: 1, hide: 1.3 })).toThrow(PresenceError);
+  });
+
+  it('still accepts a window with a strictly-positive plateau (exitStart > show)', () => {
+    // hide - 0.3 = 1.001 > show (1) → a sliver of plateau is enough
+    expect(() => presence('card', { show: 1, hide: 1.301 })).not.toThrow();
+  });
 });
 
 describe('presence — window guard sampling', () => {
@@ -79,6 +92,23 @@ describe('presence — window guard sampling', () => {
     expect(sampleTrack(tr, 1)).toBe(0); // at show: start of fade
     expect(sampleTrack(tr, 3)).toBe(1); // mid live-window: fully visible
     expect(sampleTrack(tr, 6)).toBe(0); // post-hide: culled
+  });
+
+  // FIX 4 (0.13 canary): a custom enter whose FIRST opacity key value ≠ 0 must
+  // NOT leak opacity across the pre-show cull. The pre-show segment must HOLD 0
+  // until the enter's first key; the ramp begins AT show.
+  it('holds 0 through the pre-show cull when the enter starts above 0', () => {
+    const halfEnter = clip({
+      channels: { opacity: { path: 'opacity', keys: [key(0, 0.5), key(0.4, 1)] } },
+    });
+    const { tracks } = presence('card', { show: 2, hide: 6, enter: halfEnter });
+    const tr = opacityTrack(tracks, 'card');
+    // mid-pre-show: would have LERPed 0→0.5 (=0.25 @ t=1) before the fix
+    expect(sampleTrack(tr, 1)).toBe(0); // culled, not 0.25
+    expect(sampleTrack(tr, 1.999)).toBe(0); // still culled just before show
+    expect(sampleTrack(tr, 2)).toBe(0.5); // ramp begins at show (the enter's first value)
+    expect(sampleTrack(tr, 2.4)).toBe(1); // enterEnd: fully risen
+    expect(sampleTrack(tr, 4)).toBe(1); // plateau
   });
 });
 

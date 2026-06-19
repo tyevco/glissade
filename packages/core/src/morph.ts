@@ -15,7 +15,7 @@
 
 import { key } from './track.js';
 import { clip, type ClipChannel, type ClipResult } from './clip.js';
-import { TARGET_PATH, targetNodeId, type TargetCarrier, type TweenTarget } from './targetRef.js';
+import { TARGET_PATH, type TargetCarrier, type TweenTarget } from './targetRef.js';
 import type { Vec2 } from './valueTypes.js';
 import type { EaseSpec } from './easing.js';
 
@@ -98,6 +98,11 @@ function assertFiniteBox(label: 'from' | 'to', b: Box): void {
  * `'<nodeId>/<prop>'` string the clip map form resolves (which re-runs the
  * structural/anonymous-id rejection via resolveTweenTarget). A string target is
  * a bare node id; a property-signal carrier exposes its node via TARGET_PATH.
+ *
+ * The node id may itself carry slashes (an each() clone like 'card/3'); DO NOT
+ * re-split it on the FIRST slash — APPEND the prop and trust the caller. The
+ * scene's longest-registered-prefix resolver disambiguates node id vs prop path
+ * at bind time, so 'card/3' targets the clone, not the wrapping 'card' Group.
  */
 function nodeTarget(target: TweenTarget, prop: string): string {
   const id = typeof target === 'string' ? target : (target as TargetCarrier)[TARGET_PATH];
@@ -105,8 +110,11 @@ function nodeTarget(target: TweenTarget, prop: string): string {
     // mirror clip/builder: let resolveTweenTarget throw the canonical message
     return `${String(id)}/${prop}`;
   }
-  // a carrier path is already 'nodeId/prop'; reduce to its node id, then re-suffix
-  return `${targetNodeId(id)}/${prop}`;
+  // a STRING target is a bare node id (slash-bearing or not) — append directly.
+  // a property-signal carrier path is already '<nodeId>/<prop>'; reduce to its
+  // node id (everything before the FINAL slash), then re-suffix.
+  const nodeId = typeof target === 'string' ? id : id.slice(0, Math.max(0, id.lastIndexOf('/')));
+  return `${nodeId}/${prop}`;
 }
 
 /**

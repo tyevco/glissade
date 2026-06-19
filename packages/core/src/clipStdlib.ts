@@ -20,14 +20,17 @@ export interface DurationOpts {
   ease?: EaseSpec;
 }
 
-/** Entrance: opacity 0→1 and scale 0.8→1 (a "pop" in). */
+/** Entrance: opacity 0→1 and scale [0.8,0.8]→[1,1] (a "pop" in). */
 export function popIn(opts?: DurationOpts): Clip {
   const d = opts?.duration ?? 0.3;
   const ease: EaseSpec = opts?.ease ?? 'easeOutCubic';
+  // The scene `scale` prop is a Vec2Signal — author VEC2 keys so the channel
+  // infers 'vec2' (a scalar would sample to [undefined,undefined] → NaN matrix
+  // → the node vanishes for the clip window).
   return clip({
     channels: {
       opacity: { path: 'opacity', keys: [key(0, 0), key(d, 1, ease)] },
-      scale: { path: 'scale', keys: [key(0, 0.8), key(d, 1, ease)] },
+      scale: { path: 'scale', keys: [key(0, [0.8, 0.8] as Vec2), key(d, [1, 1] as Vec2, ease)] },
     },
   });
 }
@@ -58,9 +61,14 @@ export function pulse(opts?: (DurationOpts & { scale?: number })): Clip {
   const d = opts?.duration ?? 0.4;
   const ease: EaseSpec = opts?.ease ?? 'easeInOutSine';
   const peak = opts?.scale ?? 1.1;
+  // VEC2 scale keys (see popIn): the node `scale` prop is a Vec2Signal; a scalar
+  // would sample to [undefined,undefined] → NaN matrix → the node vanishes.
   return clip({
     channels: {
-      scale: { path: 'scale', keys: [key(0, 1), key(d / 2, peak, ease), key(d, 1, ease)] },
+      scale: {
+        path: 'scale',
+        keys: [key(0, [1, 1] as Vec2), key(d / 2, [peak, peak] as Vec2, ease), key(d, [1, 1] as Vec2, ease)],
+      },
     },
   });
 }

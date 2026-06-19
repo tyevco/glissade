@@ -10,11 +10,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { clip, clipList, popIn, type ChannelOverride } from '@glissade/core/clips';
-import { key } from '@glissade/core';
+import { clip, clipList, popIn, pulse, presence, morph, type ChannelOverride } from '@glissade/core/clips';
+import { key, timeline } from '@glissade/core';
 import { Rect } from '../src/nodes.js';
 import { Node } from '../src/node.js';
-import { createScene, DuplicateNodeIdError, ReservedNodeIdError } from '../src/scene.js';
+import { createScene, DuplicateNodeIdError, ReservedNodeIdError, bindScene, evaluate } from '../src/scene.js';
 import { each, EachError } from '../src/each.js';
 import { withDeterminismGuards, DeterminismViolationError } from '../src/guards.js';
 
@@ -211,5 +211,98 @@ describe('each — edge cases', () => {
     const a = each(3, card, { id: 'card', layout: { kind: 'row' }, motion: { clip: c, jitter: jit } });
     const b = each(3, card, { id: 'card', layout: { kind: 'row' }, motion: { clip: c, jitter: jit } });
     expect(a.tracks).toEqual(b.tracks);
+  });
+});
+
+// FIX 1 (0.13 canary): popIn/pulse author a VEC2 scale; bound to a node's vec2
+// `scale` prop it must sample to a real [s,s], NOT [undefined,undefined] (which
+// makes a NaN matrix and silently vanishes the node + subtree).
+describe('popIn/pulse on a vec2 scale prop (no NaN matrix)', () => {
+  const buildGrid = (): ReturnType<typeof each> =>
+    each(4, card, {
+      id: 'card',
+      layout: { kind: 'row' },
+      motion: { clip: popIn({ duration: 0.4 }), startSec: 0, stagger: 0 },
+    });
+
+  it('popIn samples a real vec2 scale on the node (not [undefined,undefined])', () => {
+    const grid = buildGrid();
+    const scene = createScene({ size: { w: 200, h: 100 }, children: [grid.node] });
+    const doc = timeline({ duration: 1, tracks: buildGrid().tracks });
+    bindScene(scene, doc);
+    // mid-pop (t=0.2 of a 0.4 pop): scale must be a finite [s,s] in (0.8,1)
+    evaluate(scene, doc, 0.2);
+    const node = scene.nodes.get('card/0')!;
+    const [sx, sy] = node.scale();
+    expect(Number.isFinite(sx)).toBe(true);
+    expect(Number.isFinite(sy)).toBe(true);
+    expect(sx).toBeGreaterThan(0.8);
+    expect(sx).toBeLessThan(1);
+    expect(sx).toBe(sy);
+    // the local matrix is finite (no NaN from a scalar-on-vec2 read)
+    expect(node.localMatrix().every((v) => Number.isFinite(v))).toBe(true);
+  });
+
+  it('pulse samples a real vec2 scale (peak in-window)', () => {
+    const grid = each(2, card, {
+      id: 'card',
+      layout: { kind: 'row' },
+      motion: { clip: pulse({ scale: 1.2, duration: 0.4 }), startSec: 0 },
+    });
+    const scene = createScene({ size: { w: 200, h: 100 }, children: [grid.node] });
+    const doc = timeline({ duration: 1, tracks: grid.tracks });
+    bindScene(scene, doc);
+    evaluate(scene, doc, 0.2); // peak of the 0.4 pulse
+    const [sx, sy] = scene.nodes.get('card/0')!.scale();
+    expect(sx).toBeCloseTo(1.2, 6);
+    expect(sy).toBeCloseTo(1.2, 6);
+  });
+});
+
+// FIX 2 (0.13 canary): an each() clone fed to presence()/morph() targets the
+// CLONE ('card/3'), not the wrapping each() Group ('card'). The scene resolver
+// disambiguates by the LONGEST registered node-id prefix.
+describe('presence/morph target an each() clone, not the wrapping Group', () => {
+  const makeScene = (): ReturnType<typeof createScene> => {
+    const grid = each(4, card, { id: 'card', layout: { kind: 'row' } });
+    return createScene({ size: { w: 200, h: 100 }, children: [grid.node] });
+  };
+
+  it('presence("card/3") binds to the CLONE opacity (not the Group)', () => {
+    const { tracks, end } = presence('card/3', { show: 1, hide: 3 });
+    // the emitted opacity target is the clone, not the resplit Group
+    expect(tracks.find((t) => t.target === 'card/3/opacity')).toBeDefined();
+    expect(tracks.some((t) => t.target === 'card/opacity')).toBe(false);
+    expect(end).toBe(3);
+
+    // and it resolves through a real scene bind to the clone's opacity signal
+    const scene = makeScene();
+    const clone = scene.nodes.get('card/3')!;
+    const group = scene.nodes.get('card')!;
+    const doc = timeline({ duration: 4, tracks });
+    bindScene(scene, doc);
+    evaluate(scene, doc, 0.5); // pre-show: clone culled (opacity 0)
+    expect(clone.opacity()).toBe(0);
+    expect(group.opacity()).toBe(1); // the Group is untouched
+    evaluate(scene, doc, 2); // mid-window: clone fully visible
+    expect(clone.opacity()).toBe(1);
+  });
+
+  it('morph(morphNode:"card/3") binds position/scale to the CLONE', () => {
+    const { tracks } = morph(
+      { x: 0, y: 0, w: 40, h: 40 },
+      { x: 100, y: 0, w: 80, h: 80 },
+      { morphNode: 'card/3' },
+      { at: 0, duration: 1 },
+    );
+    expect(tracks.map((t) => t.target).sort()).toEqual(['card/3/position', 'card/3/scale']);
+
+    const scene = makeScene();
+    const doc = timeline({ duration: 2, tracks });
+    // binds without throwing UnboundTargetError → the clone props exist
+    expect(() => bindScene(scene, doc)).not.toThrow();
+    evaluate(scene, doc, 1);
+    const [px] = scene.nodes.get('card/3')!.position();
+    expect(px).toBeCloseTo(100, 6);
   });
 });

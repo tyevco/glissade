@@ -5,9 +5,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { key, timeline, track } from '@glissade/core';
 import { Text } from '../src/nodes.js';
 import { matchTokenRun, tokenHighlight, TokenMatchError } from '../src/tokenHighlight.js';
 import { estimatingMeasurer } from '../src/text.js';
+import { createScene, bindScene, evaluate } from '../src/scene.js';
 import type { DisplayListBuilder } from '../src/displayList.js';
 import type { EvalContext } from '../src/node.js';
 import type { Node } from '../src/node.js';
@@ -29,6 +31,35 @@ function emitOnce(node: Node): Recorded {
 }
 
 const fills = (rec: Recorded) => rec.cmds.filter((c) => c.op === 'fillPath');
+
+// FIX 2 (0.13 canary): TokenHighlight registers SLASH-BEARING prop paths
+// ('<rangeId>/fill'), so its track targets are 'hl/money/fill' (TWO slashes).
+// A last-slash resolver split that into node 'hl/money' (nonexistent) and threw
+// UnboundTargetError on the normal mount path. The scene's longest-registered-
+// prefix resolver must bind 'hl/money/fill' to node 'hl', prop 'money/fill'.
+describe('TokenHighlight slash-bearing range props bind through bindScene (no UnboundTargetError)', () => {
+  it('animates a TokenHighlight range fill/opacity bound by a timeline', () => {
+    const text = new Text({ id: 'para', text: 'Budget approved: $48,200 per year', fontSize: 10 });
+    const hl = tokenHighlight(text, {
+      id: 'hl',
+      ranges: [{ match: '$48,200', id: 'money', fill: '#ffe066', opacity: 1 }],
+    });
+    const scene = createScene({ size: { w: 400, h: 100 }, children: [text, hl] });
+    const doc = timeline({
+      duration: 1,
+      tracks: [
+        track('hl/money/fill', 'color', [key(0, '#ff0000'), key(1, '#00ff00')]),
+        track('hl/money/opacity', 'number', [key(0, 0.2), key(1, 1)]),
+      ],
+    });
+    // the regression: this must NOT throw UnboundTargetError
+    expect(() => bindScene(scene, doc)).not.toThrow();
+    // and the bound signals actually drive the range props
+    evaluate(scene, doc, 0);
+    expect(scene.resolveTarget('hl/money/opacity')).toBeDefined();
+    expect(scene.resolveTarget('hl/money/fill')).toBeDefined();
+  });
+});
 
 describe('matchTokenRun', () => {
   const boxes = (text: string) => new Text({ text, fontSize: 10 }).wordBoxes(estimatingMeasurer);

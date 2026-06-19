@@ -55,6 +55,27 @@ describe('check-deps §7.1 subpath matcher', () => {
     expect(v[0]).toMatchObject({ pkg: 'core', dep: 'scene', reason: 'direction' });
   });
 
+  it('PLANTED: a wrong-direction MULTI-LINE import is now caught (was invisible — the body excluded \\n)', () => {
+    // The dominant import style spans newlines between `import {` and `from`.
+    const root = fixture({
+      core: {
+        'a.ts': `import {\n  Player,\n  mount,\n} from '@glissade/player';\n`,
+      },
+    });
+    const v = findViolations(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatchObject({ pkg: 'core', dep: 'player', reason: 'direction' });
+  });
+
+  it('ALLOWS a legal MULTI-LINE subpath import (scene → core/clips) — no false positive', () => {
+    const root = fixture({
+      scene: {
+        'a.ts': `import {\n  clip,\n  popIn,\n} from '@glissade/core/clips';\n`,
+      },
+    });
+    expect(findViolations(root)).toEqual([]);
+  });
+
   it('also catches a wrong-direction dynamic import() of a subpath', () => {
     const root = fixture({
       core: { 'a.ts': `const m = await import('@glissade/scene/layout/deep');\n` },

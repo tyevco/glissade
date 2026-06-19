@@ -165,6 +165,26 @@ describe('paintType mesh variant (§3 Paint 0.12)', () => {
     expect(midA).toBeLessThan(1);
   });
 
+  // FIX 5 (0.13 canary): a one-sided mesh bg in a NON-HEX color (hsl/named —
+  // parseColor only knows hex/rgb) must NOT throw inside lerp during evaluate().
+  // transparentOf + the bg lerp fall back to a safe snap instead of crashing.
+  it('does NOT throw when a one-sided bg uses a non-hex color (hsl/named)', () => {
+    for (const bg of ['hsl(210, 50%, 40%)', 'rebeccapurple']) {
+      // bg PRESENT on a, absent on b (the symmetric one-sided case from 0.13)
+      const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', bg);
+      const b = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth'); // no bg
+      // the regression: lerp must NOT throw at any t (it runs inside evaluate())
+      expect(() => paintType.lerp(a, b, 0)).not.toThrow();
+      expect(() => paintType.lerp(a, b, 0.5)).not.toThrow();
+      expect(() => paintType.lerp(a, b, 1)).not.toThrow();
+      // and the symmetric case (bg on b, absent on a) is equally safe
+      expect(() => paintType.lerp(b, a, 0.5)).not.toThrow();
+      // safe fallback: the un-parseable color is held (snapped), still a string
+      const mid = paintType.lerp(a, b, 0.5);
+      expect(mid.kind === 'mesh' && typeof mid.bg === 'string').toBe(true);
+    }
+  });
+
   it('snaps mismatched point count — hold a, then b at t≥1', () => {
     const a = mesh([[0, 0, '#000'], [1, 1, '#fff']]);
     const b = mesh([[0, 0, '#000'], [0.5, 0.5, '#888'], [1, 1, '#fff']]);

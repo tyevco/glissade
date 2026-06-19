@@ -8,24 +8,17 @@
  *
  * This pins the whole `each` contract end to end: id generation → scene
  * indexing → clip fan-out → the from-center stagger curve, all reconstructed
- * identically every evaluation (and every export shard). The entrance is a
- * local `clip()` (opacity + a vec2 `scale` pop) rather than the stdlib `popIn`
- * because popIn authors a SCALAR `scale` channel, and the vec2 `scale` signal
- * does not broadcast a scalar (a pre-existing binding gap, unrelated to each).
+ * identically every evaluation (and every export shard). The entrance is the
+ * stdlib `popIn` — now that popIn authors a VEC2 `scale` channel (the 0.13
+ * canary fix), it binds correctly to the node's vec2 `scale` signal. The
+ * emitted tracks are byte-identical to the prior inline `popInVec` workaround
+ * (opacity 0→1 + scale [0.8,0.8]→[1,1] over 0.4s, easeOutCubic), so this golden
+ * stays byte-stable.
  */
 
-import { timeline, key } from '@glissade/core';
-import { clip, type Clip } from '@glissade/core/clips';
+import { timeline } from '@glissade/core';
+import { popIn } from '@glissade/core/clips';
 import { each, Rect, createScene, type SceneModule } from '@glissade/scene';
-
-// Entrance: opacity 0→1 and a vec2 scale 0.8→1 pop (a working `popIn` twin).
-const popInVec = (): Clip =>
-  clip({
-    channels: {
-      opacity: { path: 'opacity', keys: [key(0, 0), key(0.4, 1, 'easeOutCubic')] },
-      scale: { path: 'scale', keys: [key(0, [0.8, 0.8]), key(0.4, [1, 1], 'easeOutCubic')] },
-    },
-  });
 
 const W = 640;
 const H = 360;
@@ -57,7 +50,7 @@ const buildGrid = (): ReturnType<typeof each> =>
       id: 'card',
       layout: { kind: 'grid', cols: 3 },
       motion: {
-        clip: popInVec(),
+        clip: popIn({ duration: 0.4 }),
         startSec: 0.2,
         stagger: 0.18,
         distribute: 'from-center',
