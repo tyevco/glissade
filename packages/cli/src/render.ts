@@ -66,11 +66,6 @@ export interface RenderOptions {
    * this is set.
    */
   allowGpuShards?: boolean;
-  /**
-   * Internal (shard children): render video-only — skip the audio mix and the
-   * caption/cue sidecars, which the orchestrator emits once over the joined result.
-   */
-  videoOnly?: boolean;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -166,7 +161,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // §5.6 sharded export: split the frame range across N child `gs` processes
   // and join the shard videos. Only a real video output with >1 frame shards;
   // a single still / PNG sequence / N<=1 falls through to the linear path.
-  const workers = opts.videoOnly ? 1 : Math.max(1, Math.floor(opts.workers ?? 1));
+  const workers = Math.max(1, Math.floor(opts.workers ?? 1));
   if (workers > 1 && isVideo && total > 1) {
     const { renderSharded } = await import('./shards.js');
     return renderSharded({
@@ -295,11 +290,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   const outAbs = resolve(opts.out);
   mkdirSync(dirname(outAbs), { recursive: true });
-  // shard children skip sidecars; the orchestrator emits them once over the join
-  if (!opts.videoOnly) {
-    emitSidecars(outAbs);
-    emitCues(outAbs);
-  }
+  emitSidecars(outAbs);
+  emitCues(outAbs);
   const isWebm = /\.webm$/i.test(outAbs);
   const container = isWebm ? ('webm' as const) : ('mp4' as const);
 
@@ -321,11 +313,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
 
-  // §5.6 shard children render video-only; the orchestrator mixes audio once
-  // over the joined result, so author-wired + auto-mixed clips never double.
-  const { audioInputs, audioArgs } = opts.videoOnly
-    ? { audioInputs: [] as string[], audioArgs: [] as string[] }
-    : await planFinalAudio(opts, [...compiled.audio], duration, container);
+  const { audioInputs, audioArgs } = await planFinalAudio(opts, [...compiled.audio], duration, container);
 
   const args = [
     '-y',

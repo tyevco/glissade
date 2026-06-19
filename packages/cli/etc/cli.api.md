@@ -174,7 +174,6 @@ export interface RenderOptions {
     state?: string;
     strictFonts?: boolean;
     trace?: string;
-    videoOnly?: boolean;
     workers?: number;
 }
 
