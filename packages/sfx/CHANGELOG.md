@@ -1,5 +1,12 @@
 # @glissade/sfx
 
+## 0.12.1
+
+### Patch Changes
+
+- Updated dependencies [56fa1f3]
+  - @glissade/core@0.12.1
+
 ## 0.12.0
 
 ### Patch Changes
