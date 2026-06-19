@@ -90,8 +90,9 @@ const mod: SceneModule = {
     tracks: [
       // (4) morph the gradient A → B → A (ping-pong, clean loop)
       track('morph/fill', 'paint', [key(0, morphA), key(4, morphB, 'easeInOutCubic'), key(8, morphA, 'easeInOutCubic')]),
-      // (5) lift a solid colour into a radial gradient and back
-      track('lift/fill', 'paint', [key(0, liftColor), key(4, liftGrad, 'easeInOutCubic'), key(8, liftColor, 'easeInOutCubic')]),
+      // (5) lift a solid colour into a radial gradient and back (mixed color +
+      // radial keys → annotate Key<Paint> so the union doesn't narrow to one kind)
+      track('lift/fill', 'paint', [key<Paint>(0, liftColor), key<Paint>(4, liftGrad, 'easeInOutCubic'), key<Paint>(8, liftColor, 'easeInOutCubic')]),
       // (6) drift the aurora blobs (cheap per-frame translate — no re-raster of the gradient)
       track('blobA/position.x', 'number', [key(0, -80), key(4, 60, 'easeInOutSine'), key(8, -80, 'easeInOutSine')]),
       track('blobA/position.y', 'number', [key(0, -30), key(4, 40, 'easeInOutSine'), key(8, -30, 'easeInOutSine')]),
