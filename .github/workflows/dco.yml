@@ -1,0 +1,60 @@
+name: DCO
+
+on:
+  pull_request:
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          fail=0
+          range="${BASE_SHA}..${HEAD_SHA}"
+          echo "Checking DCO sign-off for commits in ${range} (no merges)"
+
+          # Walk every non-merge commit in the PR range. Each commit must carry a
+          # `Signed-off-by:` trailer. Bot authors are allowlisted.
+          for sha in $(git rev-list --no-merges "${range}"); do
+            author_email="$(git show -s --format='%ae' "${sha}")"
+            author_name="$(git show -s --format='%an' "${sha}")"
+            subject="$(git show -s --format='%s' "${sha}")"
+
+            # Allowlist bots: any author whose name or login ends in `[bot]`,
+            # plus the common GitHub automation identities.
+            case "${author_name}" in
+              *'[bot]') echo "skip ${sha:0:8} (bot author: ${author_name})"; continue ;;
+            esac
+            case "${author_email}" in
+              *'[bot]@users.noreply.github.com') echo "skip ${sha:0:8} (bot author: ${author_email})"; continue ;;
+              'dependabot[bot]@users.noreply.github.com') echo "skip ${sha:0:8} (dependabot)"; continue ;;
+              '*[bot]'|'github-actions[bot]'*) echo "skip ${sha:0:8} (bot)"; continue ;;
+            esac
+
+            # The trailer must match `Signed-off-by: Name <email>` on its own line.
+            if git show -s --format='%B' "${sha}" \
+                | grep -qiE '^Signed-off-by: .+ <.+@.+>$'; then
+              echo "ok   ${sha:0:8} ${subject}"
+            else
+              echo "FAIL ${sha:0:8} ${subject}"
+              echo "       missing a 'Signed-off-by:' trailer (sign with: git commit -s --amend)"
+              fail=1
+            fi
+          done
+
+          if [ "${fail}" -ne 0 ]; then
+            echo ""
+            echo "One or more commits are missing a DCO sign-off."
+            echo "See CONTRIBUTING.md — sign your commits with 'git commit -s'."
+            exit 1
+          fi
+
+          echo "All commits are signed off."

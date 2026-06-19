@@ -4,7 +4,7 @@ Thanks for considering it. A few ground rules keep the project healthy.
 
 ## Developer Certificate of Origin (DCO)
 
-We use the [DCO](https://developercertificate.org/) rather than a CLA: sign your commits with `git commit -s` (`Signed-off-by: Your Name <you@example.com>`). There is no copyright assignment and there will be no relicensing rug-pull — the project is Apache-2.0, permanently.
+We use the [DCO](https://developercertificate.org/) rather than a CLA: sign your commits with `git commit -s` (`Signed-off-by: Your Name <you@example.com>`). There is no copyright assignment and there will be no relicensing rug-pull — the project is Apache-2.0, permanently. CI enforces the sign-off on every commit in a pull request (`.github/workflows/dco.yml`).
 
 ## Clean-room policy (important)
 
