@@ -1,5 +1,15 @@
 # @glissade/sfx
 
+## 0.13.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies [1995ee8]
+- Updated dependencies [750367f]
+- Updated dependencies [3bc3270]
+- Updated dependencies [993d46a]
+  - @glissade/core@0.13.0-pre.0
+
 ## 0.12.1
 
 ### Patch Changes

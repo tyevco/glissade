@@ -1,5 +1,29 @@
 # @glissade/core
 
+## 0.13.0-pre.0
+
+### Minor Changes
+
+- 3bc3270: Add `morph()` (on the `@glissade/core/clips` sub-path) — a shared-element box-FLIP morph. Given two caller-supplied `Box` literals (a from and a to rect, Rect center convention) and a `{ morphNode, fromNode?, toNode? }` target map, it compiles a FLIP position+scale tween on one shared element plus an optional opacity cross-fade. Pure core (no scene/Yoga query): the FLIP delta is plain arithmetic over the two boxes, emitted through the validated `clip` path so the tracks are byte-indistinguishable from hand-authored ones. Degenerate boxes, non-positive duration, and out-of-range crossfade are rejected at build time.
+- 993d46a: Add `presence()` (0.13) — enter/exit presence scheduling on the `@glissade/core/clips` subpath. Build-time sugar over `clip`: schedules a node's enter on `show`, back-times its exit to land exactly on `hide`, and authors a real `<nodeId>/opacity` window-guard track that culls the node (opacity<=0) outside `[show, hide]`. The enter/exit clips' own opacity keys are reconciled into the guard with the builder's deterministic later-wins coincident-key dedup (no double-authored keys); a clip without an opacity channel synthesizes the 0→1 rise / 1→0 fall. Compiles entirely to keyed `Track[]` via `track()` — byte-indistinguishable from hand-authored, with no runtime visibility flag. Returns `{ tracks, end, shownAt, hiddenAt }` so siblings anchor to the real exit. Overlapping windows throw `PresenceError`.
+
+### Patch Changes
+
+- 1995ee8: clip: close three byte-indistinguishability nits so emitted `Track[]` stays deep-equal to hand-authored `track()` on currently-unread fields:
+
+  - carry a key's `from` (`'live'`, §4.7) flag through `compileChannel` instead of dropping it;
+  - drop `derived` on a key whose value an override REPLACED (an overridden value is no longer builder-derived; un-overridden keys keep the flag);
+  - reject an ambiguous single-key override (`from` on a 1-key channel, or `from`+`to` both targeting the one key) with a `ClipError` naming the channel, rather than silently dropping a value.
+
+  Goldens unaffected (these touch unread fields / a throw path).
+
+- 750367f: Fix two silently-wrong cases in the animated-mesh `paintType.lerp` (`mesh ↔ mesh`, opt-in path). Both were already deterministic; these make them visually correct.
+
+  - **Interpolation-mode mismatch now snaps instead of pairwise-lerping.** The mesh blend kernel forks on `interpolation` (`gaussian` vs `smooth`/`oklab`), so a `smooth → gaussian` tween used to rasterize the whole way with A's kernel and then flip discretely at the boundary. A matched-point-count mesh whose `interpolation` differs now routes through the snap path (hold A — value **and** kernel — until `t ≥ 1`, then B) and emits a one-time dev warning naming the mode mismatch, consistent with the mismatched-count and cross-kind branches.
+  - **`bg` (mesh baseline) now fades symmetrically.** An appearing `bg` (A has none, B does) used to be dropped for the whole tween and pop in at `t ≥ 1`; a disappearing `bg` froze at A's value then snapped. Both now lift the missing side to a transparent (alpha-0) stand-in of the present color and `lerpColor` whenever **either** side has a `bg`, so it ramps in/out continuously.
+
+  No public API change. All existing goldens are byte-identical (no golden crosses these cases).
+
 ## 0.12.1
 
 ### Patch Changes
