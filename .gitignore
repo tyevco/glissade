@@ -19,3 +19,6 @@ site/
 
 # background-agent worktrees
 .claude/worktrees/
+
+# rendered video output (gs render --out)
+/out/
