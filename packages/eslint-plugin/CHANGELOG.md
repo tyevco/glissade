@@ -1,5 +1,7 @@
 # @glissade/eslint-plugin
 
+## 0.12.0
+
 ## 0.12.0-pre.1
 
 ## 0.12.0-pre.0
