@@ -171,6 +171,14 @@ export type DrawCommand =
   | { op: 'fillPath'; path: ResourceId; paint: Paint }
   | { op: 'strokePath'; path: ResourceId; paint: Paint; stroke: StrokeStyle }
   | { op: 'fillText'; text: string; font: FontSpec; paint: Paint; x: number; y: number; align?: 'left' | 'center' | 'right' }
+  // RESERVED SEAM (§3 text shaping): a future `glyphRun` op — positioned glyph
+  // runs (glyph ids + advances/offsets) produced by a harfbuzzjs shaper, for
+  // complex-script / ligature-correct layout that `fillText` cannot express. The
+  // shaper itself is OUT of v1; the variant's exact shape is left UNSPECIFIED on
+  // purpose (adding it now would freeze an unvalidated 1.0-candidate API, force a
+  // scene.api.md regen for dead surface, and require a no-op case in every
+  // exhaustive backend / raster2d switch). Deferred to post-1.0 — this comment is
+  // the reservation the spec calls for; no type or runtime surface is added.
   | { op: 'drawImage'; image: ResourceId; src?: Rect; dst: Rect; smoothing?: boolean }
   | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[]; shader?: ShaderRef; cacheKey?: string }
   | { op: 'popGroup' };
