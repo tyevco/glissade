@@ -61,3 +61,22 @@ export {
   type NarrationLintOptions,
   type NarrationLintResult,
 } from './narrationLintCommand.js';
+export {
+  FrameCache,
+  frameCacheKey,
+  capsId,
+  parseCacheMaxSize,
+  probeEntryHeader,
+  clearFrameCache,
+  DEFAULT_CACHE_MAX_SIZE,
+  FrameCacheError,
+  type CacheMode,
+  type CacheKeyContext,
+  type FrameCacheOptions,
+} from './frameCache.js';
+export {
+  cacheVerifyCommand,
+  type CacheVerifyOptions,
+  type CacheVerifyResult,
+} from './cacheVerify.js';
+export { glissadeVersion } from './version.js';

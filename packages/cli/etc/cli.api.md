@@ -44,6 +44,51 @@ export function buildCaptionProbe(input: string, maxLines: number): Promise<Capt
 export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, wavOut: string): Promise<boolean>;
 
 // @public
+export interface CacheKeyContext {
+    capsId: string;
+    version: string;
+}
+
+// @public
+export type CacheMode = 'read-write' | 'read-only' | 'off';
+
+// @public
+export function cacheVerifyCommand(opts: CacheVerifyOptions): Promise<CacheVerifyResult>;
+
+// @public (undocumented)
+export interface CacheVerifyOptions {
+    fps?: number;
+    frameRange?: [number, number];
+    keyContextOverride?: CacheKeyContext;
+    keyerOverride?: (dl: DisplayList, ctx: CacheKeyContext) => string;
+    // (undocumented)
+    modulePath: string;
+    sample?: number;
+}
+
+// @public (undocumented)
+export interface CacheVerifyResult {
+    comparedFrames: number[];
+    mismatch?: {
+        frame: number;
+        cached: string;
+        cold: string;
+    };
+    // (undocumented)
+    ok: boolean;
+    // (undocumented)
+    report: string;
+    totalFrames: number;
+}
+
+// @public
+export function capsId(caps: {
+    filters: ReadonlySet<string>;
+    shaders: boolean;
+    maxTextureSize: number;
+}): string;
+
+// @public
 export interface CaptionProbe {
     readonly maxLines: number;
     measure(text: string): {
@@ -54,6 +99,9 @@ export interface CaptionProbe {
 }
 
 // @public
+export function clearFrameCache(dir: string): void;
+
+// @public
 export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
 
 // @public
@@ -61,6 +109,9 @@ export function computeGainDb(profile: PublishProfile, inputI: number, inputTp: 
 
 // @public
 export function computeMixHash(modulePath: string, extraInputs?: readonly string[]): string;
+
+// @public
+export const DEFAULT_CACHE_MAX_SIZE: number;
 
 // @public (undocumented)
 export const DEFAULT_PROFILE_ID = "youtube";
@@ -151,7 +202,44 @@ export function fixDiff(diags: readonly Diagnostic[], scriptPath: string, script
 export function formatTable(diags: readonly Diagnostic[]): string;
 
 // @public
+export class FrameCache {
+    constructor(opts: FrameCacheOptions);
+    // (undocumented)
+    readonly dir: string;
+    diskSize(): number;
+    entryCount(): number;
+    get(key: string): Uint8ClampedArray | undefined;
+    // Warning: (ae-forgotten-export) The symbol "CacheStats" needs to be exported by the entry point index.d.ts
+    getStats(): Readonly<CacheStats>;
+    // (undocumented)
+    readonly maxSize: number;
+    // (undocumented)
+    readonly mode: CacheMode;
+    put(key: string, width: number, height: number, rgba: Uint8ClampedArray): void;
+}
+
+// @public (undocumented)
+export class FrameCacheError extends Error {
+    constructor(message: string);
+}
+
+// @public
+export function frameCacheKey(dl: DisplayList, ctx: CacheKeyContext): string;
+
+// @public (undocumented)
+export interface FrameCacheOptions {
+    // (undocumented)
+    dir: string;
+    maxSize?: number;
+    // (undocumented)
+    mode: CacheMode;
+}
+
+// @public
 export function gainExpression(keys: Key[]): string;
+
+// @public
+export function glissadeVersion(): string;
 
 // @public
 export function hasErrors(diags: readonly Diagnostic[]): boolean;
@@ -298,6 +386,9 @@ export class NoEncoderError extends Error {
 }
 
 // @public
+export function parseCacheMaxSize(flag: string): number;
+
+// @public
 export function parseEncoderList(output: string): Set<string>;
 
 // @public
@@ -321,6 +412,12 @@ export function planFinalAudio(opts: RenderOptions, timelineClips: AudioClip[], 
     audioInputs: string[];
     audioArgs: string[];
 }>;
+
+// @public
+export function probeEntryHeader(file: string): {
+    width: number;
+    height: number;
+} | undefined;
 
 // @public (undocumented)
 export function probeVideo(path: string): VideoInfo;
@@ -349,6 +446,11 @@ export function render(opts: RenderOptions): Promise<{
 // @public (undocumented)
 export interface RenderOptions {
     allowGpuShards?: boolean;
+    cache?: {
+        dir: string;
+        mode: CacheMode;
+        maxSize?: number;
+    };
     captions?: 'burn' | 'sidecar' | 'off';
     chapterKinds?: ReadonlySet<string>;
     chapters?: 'vtt' | 'off';

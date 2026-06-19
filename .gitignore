@@ -22,3 +22,6 @@ site/
 
 # rendered video output (gs render --out)
 /out/
+
+# persistent whole-frame raster cache (gs render --cache; §3.5)
+.gscache/

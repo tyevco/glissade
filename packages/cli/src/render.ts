@@ -73,6 +73,15 @@ export interface RenderOptions {
    * this is set.
    */
   allowGpuShards?: boolean;
+  /**
+   * --cache (§3.5, 0.12): persistent whole-frame raster cache. `dir` is the
+   * `.gscache` directory (shared across runs AND shards); `mode` defaults to 'off'
+   * (the exact current equality baseline). `maxSize` caps the LRU (default 2 GB).
+   * A hit serves a stored RGBA byte-identical to a cold render — it wins REPEATED
+   * renders and the UNCHANGED-PREFIX of a single-segment edit. A full re-narrate
+   * shifts every frame's timing → every DisplayList changes → every frame MISSES.
+   */
+  cache?: { dir: string; mode: import('./frameCache.js').CacheMode; maxSize?: number };
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -267,14 +276,61 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       videoSources.push(source);
     }
   }
+  // §3.5 persistent whole-frame raster cache (opt-in; default 'off' = baseline).
+  // The key folds the DisplayList-snapshot bytes + the glissade version + the
+  // backend caps id (the INJECTED CacheKeyContext — components with no source in
+  // `scene`). A HIT loads the stored RGBA back into the SAME backend (putPixels)
+  // and runs the IDENTICAL encodePng, so it is byte-identical to a cold render.
+  let frameCache: import('./frameCache.js').FrameCache | undefined;
+  let keyCtx: import('./frameCache.js').CacheKeyContext | undefined;
+  if (opts.cache && opts.cache.mode !== 'off') {
+    const { FrameCache, capsId } = await import('./frameCache.js');
+    const { glissadeVersion } = await import('./version.js');
+    frameCache = new FrameCache({
+      dir: opts.cache.dir,
+      mode: opts.cache.mode,
+      ...(opts.cache.maxSize !== undefined ? { maxSize: opts.cache.maxSize } : {}),
+    });
+    keyCtx = { version: glissadeVersion(), capsId: capsId(backend.caps) };
+  }
+
   for (let f = firstFrame; f <= lastFrame; f++) {
     // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
-    backend.render(withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps)));
+    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+    let pngBytes: Buffer | undefined;
+    if (frameCache && keyCtx) {
+      const { frameCacheKey } = await import('./frameCache.js');
+      const key = frameCacheKey(dl, keyCtx);
+      const cached = frameCache.get(key);
+      if (cached) {
+        // HIT: blit the stored RGBA into the backend, then encode via the EXACT
+        // same path a miss takes → byte-identical to a cold render.
+        backend.putPixels(cached);
+        pngBytes = backend.encodePng();
+      } else {
+        backend.render(dl);
+        pngBytes = backend.encodePng();
+        // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
+        frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
+      }
+    } else {
+      backend.render(dl);
+      pngBytes = backend.encodePng();
+    }
     const file = singleFile ? resolve(opts.out) : join(framesDir, `frame-${String(f).padStart(5, '0')}.png`);
-    writeFileSync(file, backend.encodePng());
+    writeFileSync(file, pngBytes);
     opts.onProgress?.(f - firstFrame + 1, total);
   }
   backend.dispose();
+  if (frameCache) {
+    const s = frameCache.getStats();
+    process.stderr.write(
+      `cache (${opts.cache!.mode}): ${s.hits} hit${s.hits === 1 ? '' : 's'}, ${s.misses} miss${s.misses === 1 ? '' : 'es'}` +
+        (s.stored ? `, ${s.stored} stored` : '') +
+        (s.evicted ? `, ${s.evicted} evicted (LRU cap ${frameCache.maxSize} B)` : '') +
+        ` → ${opts.cache!.dir}\n`,
+    );
+  }
   for (const source of videoSources) source.close();
 
   // burn and sidecar modes both emit .srt/.vtt — the cues come from the same

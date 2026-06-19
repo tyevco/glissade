@@ -55,6 +55,7 @@ const USAGE = `usage:
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
   gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>]
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
+  gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -69,6 +70,14 @@ render options:
   --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
                    (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
   --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)
+  --cache [<dir>]  persistent whole-frame raster cache in <dir> (default .gscache; §3.5). OFF by default — opting in
+                   never changes output, only speed. A hit serves a stored frame byte-identical to a cold render.
+                   WINS: repeated renders + the UNCHANGED-PREFIX of a single-segment edit. Does NOT win a re-narrate —
+                   that shifts every frame's timing, so every DisplayList changes and every frame MISSES. Shards share
+                   one .gscache. Verify safety with 'gs cache verify'.
+  --cache-mode <m> read-write (default with --cache) | read-only (serve hits, never write) | off (bypass = baseline)
+  --cache-max-size <bytes|2GB>  LRU size cap; oldest entries evicted when exceeded (default 2GB). Whole-frame RGBA is
+                   ~MBs/frame (tens of GB/episode) — the cap keeps .gscache from eating the disk
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
@@ -126,7 +135,7 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -148,6 +157,45 @@ async function main(): Promise<void> {
         resolvePath: (url) => resolveAssetPath(url, sceneModule),
       });
       process.stdout.write(`${text}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // gs cache verify <scene-module> (§3.5) — THE persistent-cache verify gate.
+  // Self-contained block (mirrors `fonts`): its first positional is the
+  // subcommand, not the module path, so it parses before the generic requirement.
+  if (command === 'cache') {
+    const { positional: cp, flags: cf } = parseArgs(rest);
+    const sub = cp[0];
+    const sceneModule = cp[1];
+    if (sub !== 'verify') fail(`unknown 'cache' subcommand '${sub ?? ''}' (expected: verify)\n${USAGE}`);
+    if (!sceneModule) fail(`cache verify needs <scene-module>\n${USAGE}`);
+    let cvRange: [number, number] | undefined;
+    const cvRangeFlag = cf.get('range');
+    if (cvRangeFlag) {
+      try {
+        cvRange = parseFrameRange(cvRangeFlag);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+    const sampleFlag = cf.get('sample');
+    if (sampleFlag !== undefined && (!/^\d+$/.test(sampleFlag) || Number(sampleFlag) < 1)) {
+      fail(`--sample must be a positive integer (1-of-N frame sampling), got '${sampleFlag}'`);
+    }
+    const cvFpsFlag = cf.get('fps');
+    const { cacheVerifyCommand } = await import('./cacheVerify.js');
+    try {
+      const result = await cacheVerifyCommand({
+        modulePath: sceneModule,
+        ...(cvRange ? { frameRange: cvRange } : {}),
+        ...(sampleFlag !== undefined ? { sample: Number(sampleFlag) } : {}),
+        ...(cvFpsFlag ? { fps: parseInt(cvFpsFlag, 10) } : {}),
+      });
+      process.stdout.write(`${result.report}\n`);
+      if (!result.ok) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
@@ -400,6 +448,33 @@ async function main(): Promise<void> {
     }
     workers = Number(workersFlag);
   }
+
+  // --cache [<dir>] [--cache-mode <m>] [--cache-max-size <bytes|2GB>] (§3.5):
+  // persistent whole-frame raster cache. Default OFF (the exact current baseline);
+  // --cache opts in (read-write) with a default `.gscache` dir + 2 GB LRU cap.
+  let cache: { dir: string; mode: import('./frameCache.js').CacheMode; maxSize?: number } | undefined;
+  if (flags.has('cache')) {
+    const dir = flags.get('cache') || '.gscache';
+    const modeFlag = flags.get('cache-mode');
+    let mode: import('./frameCache.js').CacheMode = 'read-write';
+    if (modeFlag !== undefined) {
+      if (modeFlag !== 'read-write' && modeFlag !== 'read-only' && modeFlag !== 'off') {
+        fail(`--cache-mode must be read-write|read-only|off, got '${modeFlag}'`);
+      }
+      mode = modeFlag;
+    }
+    let maxSize: number | undefined;
+    const maxSizeFlag = flags.get('cache-max-size');
+    if (maxSizeFlag !== undefined && maxSizeFlag !== '') {
+      const { parseCacheMaxSize } = await import('./frameCache.js');
+      try {
+        maxSize = parseCacheMaxSize(maxSizeFlag);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+    cache = { dir, mode, ...(maxSize !== undefined ? { maxSize } : {}) };
+  }
   if (flags.has('watch')) {
     process.stderr.write('note: --watch is not yet implemented in this release; rendering once\n');
   }
@@ -425,6 +500,7 @@ async function main(): Promise<void> {
       ...(workers !== undefined ? { workers } : {}),
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
+      ...(cache !== undefined ? { cache } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),

@@ -28,6 +28,7 @@ export class SkiaBackend implements RenderBackend {
     encodePng(): Buffer;
     // (undocumented)
     measureText(text: string, font: FontSpec): TextMetricsLite;
+    putPixels(rgba: Uint8ClampedArray): void;
     readPixels(): Promise<Uint8ClampedArray>;
     // (undocumented)
     render(list: DisplayList): void;

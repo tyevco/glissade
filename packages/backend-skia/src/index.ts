@@ -91,6 +91,26 @@ export class SkiaBackend implements RenderBackend {
     return Promise.resolve(ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data);
   }
 
+  /**
+   * §3.5 disk-cache HIT path: blit stored straight-RGBA into the canvas so the
+   * IDENTICAL `encodePng()` / `readPixels()` downstream runs over it. A
+   * `render(dl)→encodePng()` and a `putPixels(readPixels(dl))→encodePng()` are
+   * byte-identical (the putImageData round-trip preserves bytes), which is what
+   * makes a frame-cache hit byte-equal to a cold render. The buffer length must
+   * be `width*height*4`.
+   */
+  putPixels(rgba: Uint8ClampedArray): void {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (rgba.length !== w * h * 4) {
+      throw new Error(`putPixels: expected ${w * h * 4} RGBA bytes for ${w}x${h}, got ${rgba.length}`);
+    }
+    const ctx = this.canvas.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    img.data.set(rgba);
+    ctx.putImageData(img, 0, 0);
+  }
+
   /** Deterministic PNG bytes for golden frames and `gs render` output. */
   encodePng(): Buffer {
     return this.canvas.toBuffer('image/png');
