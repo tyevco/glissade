@@ -4,7 +4,7 @@ import { type Player } from '@glissade/player';
 export function Transport({ player }: { player: Player }) {
   const time = usePlayhead(player);
   return (
-    <div className="transport">
+    <div className="transport" data-testid="transport">
       <button
         onClick={() => {
           if (player.playing) player.pause();

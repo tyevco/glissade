@@ -445,7 +445,7 @@ export function App() {
   const selectedTrack = selectedKey ? trackOf(selectedKey.target) : undefined;
 
   return (
-    <div className="studio">
+    <div className="studio" data-testid="studio-root">
       <div className="viewport">
         <select
           className="scene-picker"

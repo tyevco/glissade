@@ -24,16 +24,19 @@ function ValueField({
   onCommit,
   width = 110,
   title,
+  testId,
 }: {
   value: string;
   onCommit: (raw: string) => void;
   width?: number;
   title?: string;
+  testId?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
     <input
       className="keyeditor-field"
+      {...(testId ? { 'data-testid': testId } : {})}
       style={{ width }}
       title={title ?? ''}
       value={draft ?? value}
@@ -100,7 +103,7 @@ export function KeyEditor({
       </label>
       <label>
         value
-        <ValueField value={formatValue(k.value)} onCommit={onValue} title={`type: ${track.type}`} />
+        <ValueField value={formatValue(k.value)} onCommit={onValue} title={`type: ${track.type}`} testId="keyeditor-value" />
       </label>
       <label>
         ease

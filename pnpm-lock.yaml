@@ -161,6 +161,9 @@ importers:
       '@glissade/effects-webgpu':
         specifier: workspace:*
         version: link:../effects-webgpu
+      '@glissade/element':
+        specifier: workspace:*
+        version: link:../element
       '@glissade/export-web':
         specifier: workspace:*
         version: link:../export-web

@@ -12,6 +12,7 @@
     "@glissade/backend-canvas2d": "workspace:*",
     "@glissade/core": "workspace:*",
     "@glissade/effects-webgpu": "workspace:*",
+    "@glissade/element": "workspace:*",
     "@glissade/export-web": "workspace:*",
     "@glissade/interact": "workspace:*",
     "@glissade/narrate": "workspace:*",

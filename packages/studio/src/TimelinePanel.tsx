@@ -136,6 +136,9 @@ export function TimelinePanel({
                 return (
                   <span
                     key={si}
+                    data-testid="timeline-key"
+                    data-target={track.target}
+                    data-t={rep.t}
                     className={`key${rep.derived ? ' derived' : ''}${springRep ? ' spring' : ''}${
                       selectedInStack ? ' selected' : ''
                     }`}

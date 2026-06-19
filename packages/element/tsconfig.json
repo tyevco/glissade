@@ -3,5 +3,9 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // element-e2e.test.ts is a cross-package browser integration test (playwright +
+  // vite from the workspace root, shadow-DOM controls via the harness page);
+  // vitest transpiles and runs it, but it is outside this package's tsc scope.
+  "exclude": ["test/element-e2e.test.ts"]
 }

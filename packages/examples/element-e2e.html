@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>glissade — &lt;gs-player&gt; e2e harness</title>
+    <style>
+      body { margin: 0; }
+      gs-player { display: block; width: 480px; }
+    </style>
+  </head>
+  <body>
+    <!-- WITH controls: the FINAL controls DOM is built lazily on this attribute -->
+    <gs-player id="withControls" controls></gs-player>
+    <!-- WITHOUT controls: UWKP's lazy path builds zero controls DOM -->
+    <gs-player id="noControls"></gs-player>
+    <script type="module" src="/src/element-e2e.ts"></script>
+  </body>
+</html>

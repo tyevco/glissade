@@ -42,3 +42,6 @@ jobs:
       - run: PARITY=1 pnpm vitest run packages/backend-skia/test/parity.test.ts
       - run: EXPORT=1 pnpm vitest run packages/backend-skia/test/export-web.test.ts
       - run: INTERACT=1 pnpm vitest run packages/cli/test/interact-e2e.test.ts
+      - run: PLAYER=1 pnpm vitest run packages/player/test/player-e2e.test.ts
+      - run: ELEMENT=1 pnpm vitest run packages/element/test/element-e2e.test.ts
+      - run: STUDIO=1 pnpm vitest run packages/studio/test/studio-e2e.test.ts
