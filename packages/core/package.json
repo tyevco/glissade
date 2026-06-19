@@ -16,6 +16,10 @@
     "./studio-host": {
       "types": "./dist/studioHost.d.ts",
       "default": "./dist/studioHost.js"
+    },
+    "./clips": {
+      "types": "./dist/clips.d.ts",
+      "default": "./dist/clips.js"
     }
   },
   "files": [
