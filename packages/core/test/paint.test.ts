@@ -4,8 +4,8 @@
  * meet a gradient; mismatched shapes snap. Pure function of (a, b, t).
  */
 
-import { describe, expect, it } from 'vitest';
-import { getValueType, inferValueType, paintType, type Paint } from '../src/index.js';
+import { describe, expect, it, vi } from 'vitest';
+import { getValueType, inferValueType, paintType, parseColor, type Paint } from '../src/index.js';
 
 const radial = (radius: number, c0 = '#000000', c1 = '#ffffff'): Paint => ({
   kind: 'radial',
@@ -105,6 +105,64 @@ describe('paintType mesh variant (§3 Paint 0.12)', () => {
     // endpoints
     const at0 = paintType.lerp(a, b, 0);
     expect(at0.kind === 'mesh' && at0.points[0]!.pos).toEqual([0, 0]);
+  });
+
+  it('snaps a matched-count mesh whose interpolation MODE differs (smooth → gaussian): holds A + kernel until t≥1, warns once', async () => {
+    // fresh module instance so the once-per-process paint snap warning is unfired
+    vi.resetModules();
+    const fresh = await import('../src/index.js');
+    const warnings: string[] = [];
+    fresh.setDevWarning((m) => warnings.push(m));
+    try {
+      const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth');
+      const b = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'gaussian');
+      // held at A (value + its kernel) for the whole tween, then snaps to B at t≥1
+      expect(fresh.paintType.lerp(a, b, 0.5)).toBe(a);
+      expect(fresh.paintType.lerp(a, b, 0.99)).toBe(a);
+      expect(fresh.paintType.lerp(a, b, 1)).toBe(b);
+      const modeWarns = warnings.filter((w) => w.includes('mesh interpolation mode'));
+      expect(modeWarns.length).toBe(1);
+      expect(modeWarns[0]).toContain("'smooth'");
+      expect(modeWarns[0]).toContain("'gaussian'");
+    } finally {
+      fresh.setDevWarning(() => {});
+    }
+  });
+
+  it('fades an APPEARING bg (a-no-bg → b-bg) continuously: alpha ramps from 0, matches endpoints', () => {
+    const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth'); // no bg
+    const b = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#ff0000');
+    const at0 = paintType.lerp(a, b, 0);
+    const mid = paintType.lerp(a, b, 0.5);
+    const at1 = paintType.lerp(a, b, 1);
+    if (at0.kind !== 'mesh' || mid.kind !== 'mesh' || at1.kind !== 'mesh') throw new Error('expected mesh');
+    // endpoints: invisible at t=0 (alpha 0), full red at t=1
+    expect(at0.bg).toBeDefined();
+    expect(parseColor(at0.bg!).a).toBeCloseTo(0, 5);
+    expect(at1.bg).toBeDefined();
+    expect(parseColor(at1.bg!).a).toBeCloseTo(1, 5);
+    // continuous midpoint: alpha strictly between the endpoints (no pop at t≥1)
+    expect(mid.bg).toBeDefined();
+    const midA = parseColor(mid.bg!).a;
+    expect(midA).toBeGreaterThan(0);
+    expect(midA).toBeLessThan(1);
+  });
+
+  it('fades a DISAPPEARING bg (a-bg → b-no-bg) continuously: alpha ramps to 0, symmetric with appearing', () => {
+    const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#ff0000');
+    const b = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth'); // no bg
+    const at0 = paintType.lerp(a, b, 0);
+    const mid = paintType.lerp(a, b, 0.5);
+    const at1 = paintType.lerp(a, b, 1);
+    if (at0.kind !== 'mesh' || mid.kind !== 'mesh' || at1.kind !== 'mesh') throw new Error('expected mesh');
+    expect(at0.bg).toBeDefined();
+    expect(parseColor(at0.bg!).a).toBeCloseTo(1, 5); // full at start
+    expect(at1.bg).toBeDefined();
+    expect(parseColor(at1.bg!).a).toBeCloseTo(0, 5); // faded out at end
+    expect(mid.bg).toBeDefined();
+    const midA = parseColor(mid.bg!).a;
+    expect(midA).toBeGreaterThan(0);
+    expect(midA).toBeLessThan(1);
   });
 
   it('snaps mismatched point count — hold a, then b at t≥1', () => {

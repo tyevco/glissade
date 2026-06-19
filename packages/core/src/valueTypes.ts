@@ -4,7 +4,7 @@
  * (spring overshoot); non-extrapolating types clamp.
  */
 
-import { lerpColor, parseColor } from './color.js';
+import { formatColor, lerpColor, parseColor } from './color.js';
 import { emitDevWarning } from './devWarning.js';
 
 export type Vec2 = readonly [number, number];
@@ -246,6 +246,12 @@ export type Paint =
 const lerpN = (a: number, b: number, t: number): number => a + (b - a) * t;
 const lerpPt = (a: [number, number], b: [number, number], t: number): [number, number] => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t)];
 
+/** Same hue at alpha 0 — a transparent stand-in so an appearing/disappearing
+ * `bg` (mesh baseline) fades through alpha instead of popping at the boundary. */
+function transparentOf(color: string): string {
+  return formatColor({ ...parseColor(color), a: 0 });
+}
+
 /** Lift a solid color to a uniform gradient matching `shape` (every stop = color),
  * so a color↔gradient tween fades smoothly instead of snapping. */
 function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radial' }>): Extract<Paint, { kind: 'linear' | 'radial' }> {
@@ -257,13 +263,16 @@ function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radi
 }
 
 let warnedPaintShape = false;
-function paintSnap<T>(t: number, a: T, b: T): T {
+function paintSnap<T>(
+  t: number,
+  a: T,
+  b: T,
+  message = 'paint lerp across mismatched gradient shapes (different kind or stop count): snapping ' +
+    'instead of interpolating — match the kind + stop count on both keyframes (§2.2)',
+): T {
   if (!warnedPaintShape) {
     warnedPaintShape = true;
-    emitDevWarning(
-      'paint lerp across mismatched gradient shapes (different kind or stop count): snapping ' +
-        'instead of interpolating — match the kind + stop count on both keyframes (§2.2)',
-    );
+    emitDevWarning(message);
   }
   return t >= 1 ? b : a;
 }
@@ -282,20 +291,42 @@ export const paintType: ValueType<Paint> = {
   id: 'paint',
   lerp: (a, b, t) => {
     if (a.kind === 'color' && b.kind === 'color') return { kind: 'color', color: lerpColor(a.color, b.color, t) };
-    // mesh↔mesh with MATCHED point count: lerp each point's pos + oklab color,
-    // carry A's interpolation/bg (discrete metadata). Mismatched point count (or
-    // cross-kind: solid→uniform-mesh lift is deferred) snaps via paintSnap.
+    // mesh↔mesh with MATCHED point count: lerp each point's pos + oklab color.
+    // The interpolation MODE is a discrete kernel switch (meshGradient forks on
+    // it), so a mode mismatch snaps via paintSnap — the kernel flips exactly once
+    // at the boundary instead of rasterizing the whole tween with A's kernel then
+    // popping. `bg` (the mesh baseline) fades through a transparent stand-in when
+    // it appears/disappears, so it ramps symmetrically rather than popping at t≥1.
+    // Mismatched point count (or cross-kind: solid→uniform-mesh lift is deferred)
+    // also snaps via paintSnap.
     if (a.kind === 'mesh' && b.kind === 'mesh') {
       if (a.points.length !== b.points.length) return paintSnap(t, a, b);
+      if (a.interpolation !== b.interpolation) {
+        return paintSnap(
+          t,
+          a,
+          b,
+          'paint lerp across mismatched mesh interpolation modes ' +
+            `('${a.interpolation ?? 'smooth'}' → '${b.interpolation ?? 'smooth'}'): snapping instead of ` +
+            'interpolating — the blend kernel is discrete, so it switches once at the boundary; ' +
+            'match `interpolation` on both keyframes to morph the points (§3 Paint)',
+        );
+      }
       const points = a.points.map((pa, i) => {
         const pb = b.points[i]!;
         return { pos: lerpPt(pa.pos, pb.pos, t), color: lerpColor(pa.color, pb.color, t) };
       });
+      // bg fades symmetrically: lift the missing side to a transparent stand-in
+      // of the present color, then always lerp when EITHER side has a bg.
+      const bg =
+        a.bg !== undefined || b.bg !== undefined
+          ? { bg: lerpColor(a.bg ?? transparentOf(b.bg!), b.bg ?? transparentOf(a.bg!), t) }
+          : {};
       return {
         kind: 'mesh',
         points,
         ...(a.interpolation ? { interpolation: a.interpolation } : {}),
-        ...(a.bg !== undefined && b.bg !== undefined ? { bg: lerpColor(a.bg, b.bg, t) } : a.bg !== undefined ? { bg: a.bg } : {}),
+        ...bg,
       };
     }
     if (a.kind === 'mesh' || b.kind === 'mesh') return paintSnap(t, a, b);
