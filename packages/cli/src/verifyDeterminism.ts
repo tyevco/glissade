@@ -231,6 +231,22 @@ function compareManifests(
         'browser↔Skia is perceptual (SSIM) parity, never byte-identity (§5.5 item 6).',
     );
   }
+  // INCOMPARABLE GRID: an fps or size mismatch means the two manifests sample
+  // DIFFERENT wall-clock times per frame index (fps) or hash DIFFERENT-shaped RGBA
+  // buffers (size). Comparing frame N of one against frame N of the other would be a
+  // category error — a false divergence (same index, different time/grid) or a false
+  // match. Surface it loudly instead of silently byte-comparing the wrong frames.
+  if (a.fps !== b.fps || a.size.w !== b.size.w || a.size.h !== b.size.h) {
+    return {
+      ok: false,
+      compared: 0,
+      reason:
+        `incomparable: baseline fps/size differs ` +
+        `(a: ${a.fps}fps ${a.size.w}x${a.size.h} vs b: ${b.fps}fps ${b.size.w}x${b.size.h}). ` +
+        'Same frame index = different wall-clock time when fps differs; a different ' +
+        'size yields an incomparable RGBA hash. Re-render the baseline at the same fps/size.',
+    };
+  }
   const byFrameB = new Map(b.frames.map((e) => [e.frame, e]));
   let compared = 0;
   let absent = 0;
@@ -253,6 +269,11 @@ function compareManifests(
     let node: string | undefined;
     let groupFallback: string | undefined;
     for (const [id, ha] of Object.entries(ea.nodes)) {
+      // A baseline node id ABSENT from the current frame (renamed/removed node) is
+      // not a divergence to pin on it — the localizer would cry wolf on a node that
+      // no longer exists. Skip it; the authoritative frame-hash mismatch still
+      // stands, and a genuinely-divergent present node still gets blamed.
+      if (!(id in eb.nodes)) continue;
       if (eb.nodes[id] === ha) continue;
       if (groups.has(id)) {
         groupFallback ??= id;

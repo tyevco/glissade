@@ -143,6 +143,84 @@ describe('--against a disjoint range is NOT a false green', () => {
   });
 });
 
+describe('--against an incomparable grid is not a frame comparison (fps/size mismatch)', () => {
+  it('a baseline rendered at a DIFFERENT fps returns ok:false with the incomparable reason (no frame compare)', async () => {
+    const mod = await loadSceneModule(SHAPES);
+    // baseline at 30fps; the verify render below is at 60fps — same frame index now
+    // maps to a different wall-clock time, so a frame-by-frame byte-compare is a
+    // category error. It must surface as incomparable, NOT a divergence/match.
+    const baseline = await buildManifest(mod, 0, 5, 30);
+    const path = join(outDir, 'fps-mismatch.manifest');
+    writeFileSync(path, serializeManifest(baseline));
+
+    const result = await verifyDeterminismCommand({
+      modulePath: SHAPES,
+      against: path,
+      frameRange: [0, 5],
+      fps: 60,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.frames).toBe(0);
+    expect(result.divergence).toBeUndefined();
+    expect(result.report).toMatch(/incomparable/i);
+    expect(result.report).toMatch(/fps/i);
+    expect(result.report).not.toMatch(/byte-identical/);
+  });
+
+  it('a baseline rendered at a DIFFERENT size returns ok:false with the incomparable reason (no frame compare)', async () => {
+    const mod = await loadSceneModule(SHAPES);
+    const skia = await buildManifest(mod, 0, 5, 60);
+    // a committed baseline whose size differs — its RGBA hashes are over a
+    // different-shaped buffer and are simply incomparable to this render.
+    const foreignSize = { ...skia, size: { w: skia.size.w + 16, h: skia.size.h } };
+    const path = join(outDir, 'size-mismatch.manifest');
+    writeFileSync(path, JSON.stringify(foreignSize));
+
+    const result = await verifyDeterminismCommand({
+      modulePath: SHAPES,
+      against: path,
+      frameRange: [0, 5],
+      fps: 60,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.frames).toBe(0);
+    expect(result.divergence).toBeUndefined();
+    expect(result.report).toMatch(/incomparable/i);
+    expect(result.report).toMatch(/size|\dx\d/i);
+    expect(result.report).not.toMatch(/byte-identical/);
+  });
+});
+
+describe('--against does NOT misattribute divergence to a baseline-only node', () => {
+  it('a baseline node id absent from the current render is not blamed by the localizer', async () => {
+    const mod = await loadSceneModule(SHAPES);
+    const baseline = await buildManifest(mod, 0, 2, 60);
+    // Plant a phantom node id into a baseline frame whose hash we ALSO perturb, so
+    // the frame diverges. The phantom id is absent from the current render's nodes,
+    // so the localizer must SKIP it (don't cry wolf on a renamed/removed node) and
+    // fall through to "no per-node sub-hash differs" rather than naming the ghost.
+    const phantom = '__ghost_removed_node__';
+    const frame0 = baseline.frames[0]!;
+    frame0.nodes[phantom] = 'f'.repeat(64); // a sub-hash no current node can match
+    frame0.hash = '0'.repeat(64); // force the authoritative frame-hash to diverge
+    const path = join(outDir, 'phantom-node.manifest');
+    writeFileSync(path, serializeManifest(baseline));
+
+    const result = await verifyDeterminismCommand({
+      modulePath: SHAPES,
+      against: path,
+      frameRange: [0, 2],
+      fps: 60,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.divergence).toBeDefined();
+    expect(result.divergence!.frame).toBe(0);
+    // the ghost id must NOT be named as the divergent node
+    expect(result.divergence!.node).not.toBe(phantom);
+    expect(result.report).not.toContain(phantom);
+  });
+});
+
 describe('--emit writes a baseline manifest', () => {
   it('emits a manifest that re-parses', async () => {
     const path = join(outDir, 'emitted.manifest');
