@@ -117,4 +117,41 @@ const yogaOk = yogaInBase.length === 0;
 if (!yogaOk) failed = true;
 console.log(`${yogaOk ? 'ok  ' : 'FAIL'} base scene excludes yoga-layout${yogaOk ? '' : ` (leaked: ${yogaInBase.length} input(s))`}`);
 
+// §3.6 / §4.4 guard: the font INGEST deps (the woff2 decoder + the hb-subset
+// variable-axis instancer) are EXPORT/prepare-path only — they live on the
+// @glissade/core/font-ingest entry, reached exclusively via a dynamic import().
+// They must NEVER leak into any embed-path bundle (core/index, scene, canvas2d,
+// player, element). A static import would silently pull a wasm decoder into the
+// browser embed, so assert their absence on every run via the metafile — exactly
+// the yoga-exclusion shape above.
+const FONT_INGEST_DEPS = /subset-font|harfbuzz|wawoff2|fontverter|woff2sfnt|fontIngest|font-ingest/i;
+for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
+  let leaked = [];
+  try {
+    const res = await build({
+      entryPoints: [`${root}packages/${pkg}/dist/index.js`],
+      bundle: true,
+      minify: true,
+      format: 'esm',
+      platform: 'browser',
+      write: false,
+      external: ['@glissade/*'],
+      metafile: true,
+      logLevel: 'silent',
+    });
+    leaked = Object.keys(res.metafile.inputs).filter((i) => FONT_INGEST_DEPS.test(i));
+  } catch (err) {
+    // A STATIC import of subset-font drags its Node-only built-ins (fs/path) into
+    // a browser bundle and esbuild fails to resolve them — that build failure IS
+    // the leak signal. (The sanctioned path is a dynamic import() with a
+    // non-literal specifier, which esbuild never statically pulls in.)
+    leaked = [`bundle failed (font-ingest dep reached the embed graph): ${String(err.message ?? err).split('\n')[0]}`];
+  }
+  const ok = leaked.length === 0;
+  if (!ok) failed = true;
+  console.log(
+    `${ok ? 'ok  ' : 'FAIL'} ${pkg.padEnd(18)} excludes font-ingest deps${ok ? '' : ` (leaked: ${leaked.join(', ')})`}`,
+  );
+}
+
 process.exit(failed ? 1 : 0);

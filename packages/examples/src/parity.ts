@@ -12,6 +12,7 @@ import goldenBounce from './scenes/golden-bounce.js';
 import goldenFilters from './scenes/golden-filters.js';
 import goldenPaths from './scenes/golden-paths.js';
 import goldenMesh from './scenes/golden-mesh.js';
+import goldenFontInstanced from './scenes/golden-font-instanced.js';
 
 const corpus: Record<string, SceneModule> = {
   shapes: goldenShapes,
@@ -19,11 +20,23 @@ const corpus: Record<string, SceneModule> = {
   filters: goldenFilters,
   paths: goldenPaths,
   mesh: goldenMesh,
+  'font-instanced': goldenFontInstanced,
 };
 
 const scenes = new Map<string, ReturnType<SceneModule['createScene']>>();
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const backend = new Canvas2DBackend(canvas);
+
+// §3.6: register the INSTANCED static face in the browser too, so the SSIM
+// parity comparison rasterizes the SAME static sfnt on both sides — the
+// committed wght:600 instance (an ordinary static ttf), loaded as a FontFace
+// and awaited before the harness signals ready (else frame 0 races the load).
+const fontReady = (async () => {
+  const url = new URL('../assets/fonts/Inconsolata-wght600.ttf', import.meta.url).href;
+  const face = new FontFace('Inconsolata Semibold', `url(${url})`);
+  // FontFaceSet.add is missing from this TS DOM lib; the runtime API is fine
+  (document.fonts as unknown as { add(f: FontFace): void }).add(await face.load());
+})();
 
 declare global {
   interface Window {
@@ -43,4 +56,7 @@ window.__parityRender = (name, t) => {
   backend.render(evaluate(scene, mod.timeline, t));
   return canvas.toDataURL('image/png');
 };
-window.__parityReady = true;
+
+void fontReady.then(() => {
+  window.__parityReady = true;
+});

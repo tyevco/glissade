@@ -20,6 +20,10 @@
     "./clips": {
       "types": "./dist/clips.d.ts",
       "default": "./dist/clips.js"
+    },
+    "./font-ingest": {
+      "types": "./dist/font-ingest.d.ts",
+      "default": "./dist/font-ingest.js"
     }
   },
   "files": [
@@ -33,5 +37,8 @@
     "type": "git",
     "url": "git+https://github.com/tyevco/glissade.git",
     "directory": "packages/core"
+  },
+  "optionalDependencies": {
+    "subset-font": "^2.5.0"
   }
 }

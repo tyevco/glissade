@@ -53,6 +53,7 @@ const USAGE = `usage:
   gs sfx <scene-module|script.sfx.json> [--verbose]
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
   gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>]
+  gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -116,10 +117,34 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness') {
+  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
+
+  // gs fonts audit <scene-module> (§3.6) — self-contained font front-door report.
+  // Parsed before the generic <scene-module> requirement because its first
+  // positional is the subcommand, not the module path.
+  if (command === 'fonts') {
+    const { positional: fp } = parseArgs(rest);
+    const sub = fp[0];
+    const sceneModule = fp[1];
+    if (sub !== 'audit') fail(`unknown 'fonts' subcommand '${sub ?? ''}' (expected: audit)\n${USAGE}`);
+    if (!sceneModule) fail(`fonts audit needs <scene-module>\n${USAGE}`);
+    const { fontsAuditCommand } = await import('./fonts.js');
+    const { resolveAssetPath } = await import('./audioMix.js');
+    try {
+      const { text } = await fontsAuditCommand({
+        modulePath: sceneModule,
+        resolvePath: (url) => resolveAssetPath(url, sceneModule),
+      });
+      process.stdout.write(`${text}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
   if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json|asset.svg>' : '<scene-module>'}\n${USAGE}`);

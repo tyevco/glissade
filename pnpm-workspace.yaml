@@ -8,3 +8,9 @@ allowBuilds:
   onnxruntime-node: false
   protobufjs: false
   sharp: false
+  # subset-font (optional dep of @glissade/core/font-ingest — woff2 decode +
+  # variable-axis instancing) pulls harfbuzzjs + wawoff2. Both ship prebuilt
+  # wasm; their make/docker build scripts only run when building from source,
+  # not on a registry install, so we intentionally skip them.
+  harfbuzzjs: false
+  wawoff2: false

@@ -213,11 +213,24 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   // §3.6: register EVERY declared face under its family (the asset id IS the
   // family name), not one path per asset, so weight/style variants resolve.
+  // A plain ttf/otf path goes straight to Skia via registerFromPath — the
+  // byte-identical legacy path that keeps the existing goldens stable. A
+  // woff/woff2 face is decoded in-process (the §3.6 front door) before
+  // register(Buffer, family), since @napi-rs/canvas cannot read woff2 directly.
   const fontRegistry = buildFontRegistry(doc.assets);
   if (fontRegistry.faces().length > 0) {
     const { GlobalFonts } = await import('@napi-rs/canvas');
+    let ingest: typeof import('@glissade/core/font-ingest') | undefined;
     for (const face of fontRegistry.faces()) {
-      GlobalFonts.registerFromPath(resolveAsset(face.url, opts.modulePath), face.family);
+      const path = resolveAsset(face.url, opts.modulePath);
+      if (/\.woff2?$/i.test(face.url)) {
+        ingest ??= await import('@glissade/core/font-ingest');
+        const src = await readFile(path);
+        const result = await ingest.ingestFont({ family: face.family, src });
+        GlobalFonts.register(Buffer.from(result.bytes), face.family);
+      } else {
+        GlobalFonts.registerFromPath(path, face.family);
+      }
     }
   }
 

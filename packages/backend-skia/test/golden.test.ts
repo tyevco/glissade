@@ -35,6 +35,7 @@ import goldenCache from '../../examples/src/scenes/golden-cache.js';
 import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
+import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -43,6 +44,13 @@ await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluatio
 GlobalFonts.registerFromPath(
   fileURLToPath(new URL('../../examples/assets/fonts/DejaVuSans.ttf', import.meta.url)),
   'DejaVu Sans',
+);
+// 0.12 instanced variable face (§3.6): the committed STATIC sfnt was produced by
+// the font front door (ingestFont at a fixed wght:600 axis tuple). It's now an
+// ordinary static face, so Skia loads it byte-stably like any other.
+GlobalFonts.registerFromPath(
+  fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.ttf', import.meta.url)),
+  'Inconsolata Semibold',
 );
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
@@ -131,6 +139,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // keyframe-animated aurora drifting its points/colors via the paint value type.
   // ONE shared CPU kernel on both backends — byte-exact on Skia, SSIM on browser↔Skia.
   { name: 'mesh', mod: goldenMesh },
+  // 0.12 §3.6 instanced variable font: a wght:600-pinned static sfnt rendered
+  // byte-exactly on Skia — proves variable-font support is the static-parity case
+  { name: 'font-instanced', mod: goldenFontInstanced },
 ];
 
 for (const { name, mod } of CORPUS) {

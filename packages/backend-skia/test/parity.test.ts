@@ -25,7 +25,16 @@ const FPS = 60;
 // mesh Paint (§3, 0.12): the shared CPU kernel produces an IDENTICAL source
 // ImageData on both backends; only the final upscale-blit AA differs, so the
 // 0.97 floor holds (the determinism tentpole — one kernel, no SkSL fork).
-const SSIM_FLOORS: Record<string, number> = { shapes: 0.97, bounce: 0.97, filters: 0.97, paths: 0.97, mesh: 0.97 };
+// font-instanced (§3.6): the wght:600 INSTANCED static face is an ordinary
+// static sfnt — it clears the shared 0.97 perceptual floor like any other text.
+const SSIM_FLOORS: Record<string, number> = {
+  shapes: 0.97,
+  bounce: 0.97,
+  filters: 0.97,
+  paths: 0.97,
+  mesh: 0.97,
+  'font-instanced': 0.97,
+};
 
 describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
   let server: import('vite').ViteDevServer;
@@ -55,12 +64,23 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
 
     ({ SkiaBackend } = await import('@glissade/backend-skia'));
     ({ loadImage, createCanvas } = await import('@napi-rs/canvas'));
+    // §3.6: register the INSTANCED static face on the SKIA side too, so the
+    // font-instanced scene rasterizes the SAME static sfnt on both sides of the
+    // seam (the browser FontFace is registered in examples/src/parity.ts). Without
+    // this, Skia falls back to a system font and the SSIM collapses to ~0.92 —
+    // measuring a font MISMATCH, not the perceptual AA delta the floor is about.
+    const { GlobalFonts } = await import('@napi-rs/canvas');
+    GlobalFonts.registerFromPath(
+      fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.ttf', import.meta.url)),
+      'Inconsolata Semibold',
+    );
     corpus = {
       shapes: (await import('../../examples/src/scenes/golden-shapes.js')).default,
       bounce: (await import('../../examples/src/scenes/golden-bounce.js')).default,
       filters: (await import('../../examples/src/scenes/golden-filters.js')).default,
       paths: (await import('../../examples/src/scenes/golden-paths.js')).default,
       mesh: (await import('../../examples/src/scenes/golden-mesh.js')).default,
+      'font-instanced': (await import('../../examples/src/scenes/golden-font-instanced.js')).default,
     };
   }, 60_000);
 
