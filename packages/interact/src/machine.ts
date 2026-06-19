@@ -414,8 +414,11 @@ export function createMachine(doc: StateMachineDoc, opts: MachineOptions): Machi
     },
   };
 
-  // dev-mode escape hatch for studio preview (§A.2); never part of the public type
-  if (process.env['NODE_ENV'] !== 'production') {
+  // dev-mode escape hatch for studio preview (§A.2); never part of the public type.
+  // `typeof process !==` guards no-bundler browser/Deno runtimes (no ReferenceError);
+  // the AND form still DCEs under a `process.env.NODE_ENV` production define
+  // (`pure && false` folds to false), so __forceState is stripped from prod bundles.
+  if (typeof process !== 'undefined' && process.env['NODE_ENV'] !== 'production') {
     (machine as unknown as Record<string, unknown>)['__forceState'] = (id: StateId) => {
       const st = states.get(id);
       if (!st) throw new UnknownInputError(`unknown state '${id}'`);

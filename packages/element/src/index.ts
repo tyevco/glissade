@@ -44,7 +44,7 @@ export class GsPlayerElement extends HTMLElement {
   #scene: SceneModule | null = null;
   #unsubscribe: (() => void) | null = null;
   #scrubbing = false;
-  #playhead: { peek(): number } | null = null;
+  #playhead: { peek(): number; subscribe(listener: () => void): () => void } | null = null;
 
   #shadow: ShadowRoot;
   #canvas: HTMLCanvasElement;
@@ -84,13 +84,35 @@ export class GsPlayerElement extends HTMLElement {
 
   attributeChangedCallback(name: string): void {
     if (name === 'controls') {
+      // A live controls toggle is cosmetic chrome — build/destroy the controls
+      // DOM and wire/unwire their playhead subscription against the CURRENT
+      // mounted scene. Never remount (that would reset the playhead to 0 and
+      // stop playback). loop/autoplay still remount since they change mount().
       this.#syncControls();
-      // A live controls toggle needs the subscription rewired (it only runs
-      // when controls are present), so remount drives that off the current scene.
-      if (this.isConnected && this.#scene) this.#remount();
+      this.#syncControlsSubscription();
       return;
     }
     if (this.isConnected && this.#scene) this.#remount();
+  }
+
+  /** Wire the scrubber/time playhead subscription when controls exist, unwire
+   * when they don't — against the existing playhead, so toggling controls never
+   * disturbs playback position. */
+  #syncControlsSubscription(): void {
+    if (this.#controls && !this.#unsubscribe && this.#playhead) {
+      this.#unsubscribe = this.#playhead.subscribe(() => {
+        requestAnimationFrame(() => {
+          if (!this.#controls) return;
+          this.#syncReadout();
+          this.#syncButton();
+        });
+      });
+      this.#syncReadout();
+      this.#syncButton();
+    } else if (!this.#controls && this.#unsubscribe) {
+      this.#unsubscribe();
+      this.#unsubscribe = null;
+    }
   }
 
   /** Build the controls subtree + listeners on demand; tear them down when gone. */
@@ -179,19 +201,10 @@ export class GsPlayerElement extends HTMLElement {
       autoplay: this.hasAttribute('autoplay'),
     });
     this.#playhead = scene.playhead;
-    // The scrubber/time subscription only exists to drive the controls — skip
-    // it entirely when controls are absent so no per-frame work runs.
-    if (this.#controls) {
-      this.#unsubscribe = scene.playhead.subscribe(() => {
-        requestAnimationFrame(() => {
-          if (!this.#controls) return;
-          this.#syncReadout();
-          this.#syncButton();
-        });
-      });
-    }
-    this.#syncReadout();
-    this.#syncButton();
+    // The scrubber/time subscription only exists to drive the controls — wire it
+    // (and do the initial readout) only when controls are present, so no
+    // per-frame work runs without them.
+    this.#syncControlsSubscription();
   }
 
   #syncReadout(): void {

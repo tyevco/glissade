@@ -5,7 +5,7 @@
  * ahead, it never drifts.
  */
 
-import { type Marker, type Playhead } from '@glissade/core';
+import { signal, type Marker, type Playhead, type ReadonlySignal } from '@glissade/core';
 import { clockDriver, type Driver } from './driver.js';
 import type { ReducedMotionMode } from './reducedMotion.js';
 
@@ -80,6 +80,9 @@ export interface Player {
   readonly playhead: Playhead;
   readonly duration: number;
   readonly playing: boolean;
+  /** Reactive `playing` — observers re-render on a play/pause/settle transition
+   * (the playhead doesn't move on pause, so the `playing` getter alone goes stale). */
+  readonly playingSignal: ReadonlySignal<boolean>;
   rate: number;
   play(opts?: { range?: [number, number] }): PlayHandle;
   pause(): void;
@@ -118,6 +121,14 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
 
   let rate = opts.rate ?? 1;
   let playing = false;
+  // reactive mirror of `playing` so observers (React's usePlayerState, a custom
+  // play/pause UI) re-render on a play/pause/settle transition — the playhead
+  // signal doesn't move on pause, so a getter read alone goes stale (§4.3).
+  const playingSig = signal(false);
+  const setPlaying = (v: boolean): void => {
+    playing = v;
+    playingSig.set(v);
+  };
   let driverRunning = false;
   let ownTargets = new Set(init.targets ?? []);
   const machines: AttachedMachine[] = [];
@@ -143,7 +154,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
   }
 
   function settle(completed: boolean): void {
-    playing = false;
+    setPlaying(false);
     elapsedOrigin = null;
     const resolve = resolveFinished;
     resolveFinished = null;
@@ -218,6 +229,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
     get playing() {
       return playing;
     },
+    playingSignal: playingSig,
     get rate() {
       return rate;
     },
@@ -236,7 +248,7 @@ export function createPlayer(init: PlayerInit, opts: PlayerOptions = {}): Player
       playhead.set(base);
       elapsedOrigin = null;
       loopsDone = 0;
-      playing = true;
+      setPlaying(true);
       ensureDriver();
       const finished = new Promise<boolean>((resolve) => {
         resolveFinished = resolve;

@@ -38,6 +38,21 @@ describe('playback math (§4.2: time-based, not frame-counted)', () => {
     expect(playhead.peek()).toBeCloseTo(1.0, 9);
   });
 
+  it('playingSignal reactively mirrors play/pause (canary fix: pause does not move the playhead)', () => {
+    const { player, tick } = makePlayer();
+    const seen: boolean[] = [];
+    const unsub = player.playingSignal.subscribe(() => seen.push(player.playingSignal.peek()));
+    player.play();
+    tick(0);
+    expect(player.playingSignal.peek()).toBe(true);
+    player.pause(); // playhead is unchanged here — a playhead-only observer would miss this transition
+    expect(player.playingSignal.peek()).toBe(false);
+    expect(player.playing).toBe(false);
+    unsub();
+    expect(seen).toContain(true); // play fired the signal
+    expect(seen).toContain(false); // pause fired the signal (the bug was this never invalidating)
+  });
+
   it('dropped frames skip ahead without drift', () => {
     const { player, playhead, tick } = makePlayer();
     player.play();

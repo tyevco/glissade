@@ -5,7 +5,7 @@
  * not pixels.
  */
 
-import { createPlayhead, type Playhead } from '@glissade/core';
+import { createPlayhead, signal, type Playhead } from '@glissade/core';
 import { type Player } from '@glissade/player';
 
 /** A DOMMatrix-ish identity transform the raster can read back and re-apply. */
@@ -110,6 +110,7 @@ export function makeFakePlayer(duration = 5): FakePlayer {
     playhead,
     duration,
     playing: false,
+    playingSignal: signal(false),
     rate: 1,
     seekCalls,
     pauseLog,

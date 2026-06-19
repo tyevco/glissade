@@ -23,10 +23,13 @@ export function usePlayhead(player: Player): number {
   return useSignalValue(player.playhead);
 }
 
-/** Playing state, derived from playhead motion + player state polling on invalidation. */
+/** Playing state, live: `time` tracks the playhead, `playing` tracks the
+ * reactive `playingSignal` (so the value updates on a pause, which doesn't move
+ * the playhead). */
 export function usePlayerState(player: Player): { playing: boolean; time: number; duration: number } {
   const time = usePlayhead(player);
-  return { playing: player.playing, time, duration: player.duration };
+  const playing = useSignalValue(player.playingSignal);
+  return { playing, time, duration: player.duration };
 }
 
 /**

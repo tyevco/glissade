@@ -33,10 +33,11 @@ jobs:
             case "${author_name}" in
               *'[bot]') echo "skip ${sha:0:8} (bot author: ${author_name})"; continue ;;
             esac
+            # `*'[bot]'` keeps `*` an unquoted glob and `[bot]` a literal suffix —
+            # matches both dependabot[bot]@… and github-actions[bot]@… noreply
+            # addresses (no fragile per-identity cases, no dead fully-quoted glob).
             case "${author_email}" in
               *'[bot]@users.noreply.github.com') echo "skip ${sha:0:8} (bot author: ${author_email})"; continue ;;
-              'dependabot[bot]@users.noreply.github.com') echo "skip ${sha:0:8} (dependabot)"; continue ;;
-              '*[bot]'|'github-actions[bot]'*) echo "skip ${sha:0:8} (bot)"; continue ;;
             esac
 
             # The trailer must match `Signed-off-by: Name <email>` on its own line.

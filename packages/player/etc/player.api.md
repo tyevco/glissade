@@ -7,6 +7,7 @@
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { Marker } from '@glissade/core';
 import { Playhead } from '@glissade/core';
+import { ReadonlySignal } from '@glissade/core';
 import { Scene } from '@glissade/scene';
 import { Timeline } from '@glissade/core';
 
@@ -90,6 +91,7 @@ export interface Player {
     readonly playhead: Playhead;
     // (undocumented)
     readonly playing: boolean;
+    readonly playingSignal: ReadonlySignal<boolean>;
     // (undocumented)
     rate: number;
     seek(t: number): void;
