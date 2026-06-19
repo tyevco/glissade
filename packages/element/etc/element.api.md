@@ -14,7 +14,7 @@ export function defineGsPlayer(tagName?: string): void;
 export class GsPlayerElement extends HTMLElement {
     constructor();
     // (undocumented)
-    attributeChangedCallback(): void;
+    attributeChangedCallback(name: string): void;
     // (undocumented)
     connectedCallback(): void;
     // (undocumented)
