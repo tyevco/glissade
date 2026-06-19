@@ -40,3 +40,4 @@ Golden frames byte-compare on a pinned toolchain; re-bless intentional changes w
 - Core stays free of DOM and Node APIs (`lib: ["ES2022"]` enforces this).
 - No generator functions in public APIs; promises are completion signals only.
 - State must be a function of time. If your feature needs cross-frame state, it belongs in `bake()` or behind a warming seam — never inside `evaluate()`.
+- Breaking changes follow the `0.x` lockstep policy and get a [BREAKING.md](BREAKING.md) entry.

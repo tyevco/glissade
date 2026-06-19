@@ -3,6 +3,9 @@
   "version": "0.10.1",
   "description": "glissade Canvas 2D render backend: DisplayList -> CanvasRenderingContext2D/OffscreenCanvas.",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {

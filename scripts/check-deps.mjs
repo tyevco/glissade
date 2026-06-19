@@ -30,6 +30,11 @@ const ALLOWED = {
   interact: ['core', 'scene', 'player'],
   lottie: ['core', 'scene'],
   svg: ['core', 'scene'],
+  // §7.2: the unscoped `glissade` umbrella (dir `umbrella`, package name `glissade`)
+  // — the one-import embed surface. It re-exports ONLY core+scene+player; nothing
+  // heavier (backend-skia/cli/studio/export-web) may appear or the embed
+  // import-direction promise breaks.
+  umbrella: ['core', 'scene', 'player'],
   'eslint-plugin': [], // standalone dev tool: imports no @glissade packages
 
   cli: ['core', 'scene', 'backend-skia', 'interact', 'player', 'lottie', 'svg', 'narrate', 'sfx'], // interact/player: machine replay + the gs dev harness; lottie/svg: gs import

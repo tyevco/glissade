@@ -3,6 +3,9 @@
   "version": "0.10.1",
   "description": "glissade scene graph: nodes, transforms, DisplayList emission. Renderer-agnostic; zero DOM/Node dependencies.",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {

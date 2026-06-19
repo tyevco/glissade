@@ -68,7 +68,7 @@ pnpm --filter @glissade/examples dev   # the showcase is the landing page; minim
 
 ## Status
 
-Pre-release (`0.x`, unpublished): APIs may move, the Timeline document schema is versioned and stable-intentioned. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
+Pre-release (`0.x`, unpublished): APIs may move, the Timeline document schema is versioned and stable-intentioned. Packages version in lockstep; in `0.x` a minor bump may break — see [BREAKING.md](BREAKING.md) for the policy and change log. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
 
 ## License
 

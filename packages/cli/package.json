@@ -3,6 +3,9 @@
   "version": "0.10.1",
   "description": "glissade CLI: headless rendering via backend-skia (+ FFmpeg mux).",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "type": "module",
   "bin": {
     "gs": "./dist/cli.js"

@@ -3,6 +3,9 @@
   "version": "0.10.1",
   "description": "glissade SVG import: parse an SVG into a deterministic scene module — <path d> and the basic shapes become Path/Rect/Circle nodes with fills, strokes, and transforms.",
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
   "type": "module",
   "sideEffects": false,
   "publishConfig": {

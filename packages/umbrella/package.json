@@ -1,7 +1,7 @@
 {
-  "name": "@glissade/core",
+  "name": "glissade",
   "version": "0.10.1",
-  "description": "glissade core: signals, tracks, timeline document, evaluation, easing, springs, seeded RNG. Zero DOM/Node dependencies.",
+  "description": "glissade — one-import realtime embed surface: re-exports @glissade/core, @glissade/scene, and @glissade/player.",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=20.19"
@@ -12,12 +12,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./studio-host": {
-      "types": "./dist/studioHost.d.ts",
-      "default": "./dist/studioHost.js"
     }
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -25,9 +22,14 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*",
+    "@glissade/player": "workspace:*"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tyevco/glissade.git",
-    "directory": "packages/core"
+    "directory": "packages/umbrella"
   }
 }
