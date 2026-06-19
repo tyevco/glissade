@@ -24,6 +24,8 @@
     "@glissade/vite-plugin": "0.12.1"
   },
   "changesets": [
+    "canary-013-core-fixes",
+    "canary-013-scene-resolver",
     "clip-byte-indistinguishability-nits",
     "cuddly-gates-harden",
     "curvy-loudness-floor",
