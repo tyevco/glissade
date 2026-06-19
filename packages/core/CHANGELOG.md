@@ -1,5 +1,7 @@
 # @glissade/core
 
+## 0.11.0-pre.1
+
 ## 0.11.0-pre.0
 
 ### Patch Changes

@@ -25,7 +25,10 @@
   },
   "changesets": [
     "delete-dead-videoonly",
+    "fix-element-controls-toggle",
+    "fix-interact-no-bundler",
     "lazy-player-controls",
+    "player-playing-signal",
     "publishing-readiness-glissade-umbrella",
     "react-scene-player",
     "reserve-glyphrun-seam",

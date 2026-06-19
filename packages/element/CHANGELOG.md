@@ -1,5 +1,16 @@
 # @glissade/element
 
+## 0.11.0-pre.1
+
+### Patch Changes
+
+- 6d3e061: Fix `<gs-player>`: toggling the `controls` attribute at runtime no longer resets the playhead to 0 or stops playback. The controls subtree + its scrubber/time subscription are now wired/unwired against the _current_ mounted scene instead of triggering a full remount. (0.11 canary fix.)
+- Updated dependencies [6d3e061]
+  - @glissade/player@0.11.0-pre.1
+  - @glissade/backend-canvas2d@0.11.0-pre.1
+  - @glissade/core@0.11.0-pre.1
+  - @glissade/scene@0.11.0-pre.1
+
 ## 0.11.0-pre.0
 
 ### Patch Changes
