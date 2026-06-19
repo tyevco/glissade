@@ -84,6 +84,18 @@ export {
 export { Highlight, highlight, type HighlightProps } from './highlight.js';
 export { TextCursor, textCursor, type TextCursorProps } from './textCursor.js';
 export { typewriter, type TypeEdit, type EditMark, type StepMark, type TypewriterResult } from './typewriter.js';
+export {
+  each,
+  EachError,
+  type Place,
+  type EachLayout,
+  type EachDistribute,
+  type EachMotion,
+  type EachBox,
+  type EachOpts,
+  type EachContext,
+  type EachResult,
+} from './each.js';
 export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from './drawOn.js';
 export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
 export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';

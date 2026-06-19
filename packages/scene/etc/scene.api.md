@@ -6,6 +6,8 @@
 
 import { BindableSignal } from '@glissade/core';
 import { BoundTimeline } from '@glissade/core';
+import { ChannelOverride } from '@glissade/core/clips';
+import { Clip } from '@glissade/core/clips';
 import { CompiledTimeline } from '@glissade/core';
 import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
@@ -337,6 +339,93 @@ export interface DrawOnOptions {
 // @public (undocumented)
 export class DuplicateNodeIdError extends Error {
     constructor(id: string);
+}
+
+// @public
+export function each(n: number, factory: (i: number, ctx: EachContext) => Node_2, opts: EachOpts): EachResult;
+
+// @public
+export interface EachBox {
+    // (undocumented)
+    h: number;
+    origin?: Place;
+    // (undocumented)
+    w: number;
+}
+
+// @public
+export interface EachContext {
+    i: number;
+    id: string;
+    n: number;
+    place: Place;
+    rng: Rng;
+    seed: number;
+}
+
+// @public
+export type EachDistribute = 'delay' | 'from-center' | 'from-edges';
+
+// @public (undocumented)
+export class EachError extends Error {
+    constructor(message: string);
+}
+
+// @public
+export type EachLayout = {
+    kind: 'row';
+    gap?: number;
+    align?: number;
+} | {
+    kind: 'column';
+    gap?: number;
+    align?: number;
+} | {
+    kind: 'grid';
+    cols: number;
+    rows?: number;
+    gapX?: number;
+    gapY?: number;
+    order?: 'row' | 'column';
+} | {
+    kind: 'ring';
+    radius?: number;
+    center?: Place;
+    startAngle?: number;
+    sweep?: number;
+} | ((i: number, n: number) => Place);
+
+// @public
+export interface EachMotion {
+    clip: Clip;
+    distribute?: EachDistribute;
+    jitter?: (i: number, rng: Rng, n: number) => Record<string, ChannelOverride>;
+    speed?: number;
+    stagger?: number | ((i: number) => number);
+    startSec?: number;
+}
+
+// @public (undocumented)
+export interface EachOpts {
+    box?: EachBox;
+    id: string;
+    // (undocumented)
+    layout: EachLayout;
+    // (undocumented)
+    motion?: EachMotion;
+    seed?: number;
+}
+
+// @public (undocumented)
+export interface EachResult {
+    children: Node_2[];
+    end: number;
+    node: Group;
+    places: {
+        frac: Place;
+        px?: Place;
+    }[];
+    tracks: Track[];
 }
 
 // @public
@@ -839,6 +928,9 @@ export interface PathSampler {
 
 // @public
 export type PathSeg = ['M', number, number] | ['L', number, number] | ['C', number, number, number, number, number, number] | ['Q', number, number, number, number] | ['E', number, number, number, number, number, number, number] | ['Z'];
+
+// @public
+export type Place = readonly [number, number];
 
 // @public
 export function pointAtLength(path: PathValue, s: number): Vec2;

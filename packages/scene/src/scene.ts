@@ -98,7 +98,11 @@ export function createScene(init: SceneInit): Scene {
     size: init.size,
     playhead,
     resolveTarget: (target) => {
-      const slash = target.indexOf('/');
+      // Split on the LAST slash: a node id may itself contain slashes (the
+      // `${id}/${i}` ids `each()` mints), while no registered prop path ever
+      // does (they use dot paths, e.g. 'position.x'). So the suffix after the
+      // final slash is always the prop, and everything before it the node id.
+      const slash = target.lastIndexOf('/');
       if (slash < 0) return undefined;
       const node = nodes.get(target.slice(0, slash));
       return node?.resolveTarget(target.slice(slash + 1));

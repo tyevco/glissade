@@ -26,6 +26,7 @@ export default defineConfig({
   plugins: [react(), serveExamplesAssets, glissade({ root: fileURLToPath(new URL('../..', import.meta.url)) })],
   resolve: {
     alias: {
+      '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
       '@glissade/core/studio-host': src('core').replace('index.ts', 'studioHost.ts'),
       '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
       '@glissade/core': src('core'),
