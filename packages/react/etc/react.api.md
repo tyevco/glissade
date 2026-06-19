@@ -4,9 +4,31 @@
 
 ```ts
 
+import { CSSProperties } from 'react';
+import { LoopMode } from '@glissade/player';
 import { Player } from '@glissade/player';
 import { ReadonlySignal } from '@glissade/core';
+import { Scene } from '@glissade/scene';
 import { Signal } from '@glissade/core';
+import { Timeline } from '@glissade/core';
+
+// @public (undocumented)
+export function ScenePlayer(input: ScenePlayerProps): React.ReactElement;
+
+// @public (undocumented)
+export interface ScenePlayerProps {
+    autoplay?: boolean;
+    // (undocumented)
+    className?: string;
+    controls?: boolean;
+    loop?: LoopMode;
+    onFinished?: (completed: boolean) => void;
+    onReady?: (player: Player) => void;
+    scene: Scene;
+    // (undocumented)
+    style?: CSSProperties;
+    timeline: Timeline;
+}
 
 // @public
 export function useInput<T extends boolean | number>(machine: {
@@ -27,6 +49,9 @@ export function usePlayerState(player: Player): {
 
 // @public
 export function usePlayhead(player: Player): number;
+
+// @public
+export const useSignal: typeof useSignalValue;
 
 // @public
 export function useSignalValue<T>(sig: ReadonlySignal<T>): T;

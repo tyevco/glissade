@@ -15,6 +15,9 @@ export function useSignalValue<T>(sig: ReadonlySignal<T>): T {
   return useSyncExternalStore(subscribe, get, get);
 }
 
+/** DESIGN §4 sketch name — alias of {@link useSignalValue} (`useSignal(node.width)`). */
+export const useSignal = useSignalValue;
+
 /** The player's current time, live. */
 export function usePlayhead(player: Player): number {
   return useSignalValue(player.playhead);
@@ -45,3 +48,6 @@ export function useInput<T extends boolean | number>(
   const set = useCallback((v: T) => sig.set(v), [sig]);
   return [value, set];
 }
+
+/** The declarative <ScenePlayer> over mount() (DESIGN §4.3, the <gs-player> twin). */
+export { ScenePlayer, type ScenePlayerProps } from './ScenePlayer.js';
