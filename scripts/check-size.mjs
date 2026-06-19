@@ -10,8 +10,55 @@
 import { build } from 'esbuild';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+
+/**
+ * Scan an embed package's built `dist` for a STATIC `@glissade/core/font-ingest`
+ * specifier. esbuild externalizes `@glissade/*`, so a static subpath import of
+ * the ingest entry never shows up as a bundled metafile input — the metafile
+ * guard below is blind to it. The sanctioned reach is a DYNAMIC `import()` only
+ * (lazy, never in the synchronous embed graph), so we FAIL on any static
+ * `import … from '@glissade/core/font-ingest'` / bare `import '…'` while
+ * ignoring `import('…')` call expressions.
+ *
+ * Returns the list of `{ file, line }` static-import sites (empty = clean).
+ */
+export function findStaticFontIngestImports(distDir) {
+  const spec = '@glissade/core/font-ingest';
+  const hits = [];
+  let files;
+  try {
+    files = [...distFiles(distDir)];
+  } catch {
+    return hits; // no dist (unbuilt) — nothing to scan
+  }
+  for (const file of files) {
+    const src = readFileSync(file, 'utf8');
+    if (!src.includes(spec)) continue;
+    for (const m of src.matchAll(
+      // static ESM import of the ingest subpath: `… from '…'` (named/namespace,
+      // also `export … from`) or a bare side-effect `import '…'`. A dynamic
+      // `import('…')` is a call expression — `import` glued to `(`, never to
+      // whitespace+quote — so neither branch matches it (the sanctioned path).
+      /(?:from\s*|\bimport\s+)['"]@glissade\/core\/font-ingest['"]/g,
+    )) {
+      const line = src.slice(0, m.index).split('\n').length;
+      hits.push({ file, line });
+    }
+  }
+  return hits;
+}
+
+function* distFiles(dir) {
+  for (const entry of readdirSync(dir)) {
+    const p = join(dir, entry);
+    if (statSync(p).isDirectory()) yield* distFiles(p);
+    else if (/\.(js|mjs)$/.test(entry)) yield p;
+  }
+}
 
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
@@ -40,6 +87,10 @@ const SUBSET_EXPORTS = {
   interact: ['createMachine', 'createListeners', 'hitTest', 'pointerDriver', 'splitVec2', 'springFilter'],
 };
 
+// Run the budget/leak gate as a CLI when invoked directly — guarded so a test
+// can `import` this module for its exported helpers without triggering the full
+// esbuild sweep (which requires a built dist tree).
+if (import.meta.url === `file://${process.argv[1]}`) {
 let failed = false;
 let baseTotal = 0;
 
@@ -152,6 +203,22 @@ for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
   console.log(
     `${ok ? 'ok  ' : 'FAIL'} ${pkg.padEnd(18)} excludes font-ingest deps${ok ? '' : ` (leaked: ${leaked.join(', ')})`}`,
   );
+
+  // Companion STATIC-source scan: the metafile check above catches font-ingest
+  // deps that got BUNDLED, but esbuild externalizes `@glissade/*`, so a static
+  // `import … from '@glissade/core/font-ingest'` in this embed package's own
+  // dist never appears as a bundled input — invisible to the metafile. Grep the
+  // built dist directly and FAIL on any static specifier (dynamic import() is
+  // the only sanctioned reach).
+  const staticHits = findStaticFontIngestImports(`${root}packages/${pkg}/dist`);
+  const staticOk = staticHits.length === 0;
+  if (!staticOk) failed = true;
+  console.log(
+    `${staticOk ? 'ok  ' : 'FAIL'} ${pkg.padEnd(18)} no static font-ingest import${
+      staticOk ? '' : ` (leaked: ${staticHits.map((h) => `${h.file.slice(root.length)}:${h.line}`).join(', ')})`
+    }`,
+  );
 }
 
 process.exit(failed ? 1 : 0);
+}

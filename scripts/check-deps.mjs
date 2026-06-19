@@ -50,34 +50,108 @@ function* sourceFiles(dir) {
   }
 }
 
-let failed = false;
-for (const pkg of readdirSync(root)) {
-  const allowed = ALLOWED[pkg];
-  if (allowed === null || allowed === undefined) {
-    if (allowed === undefined && pkg in ALLOWED === false && statSync(join(root, pkg)).isDirectory()) {
-      console.error(`FAIL ${pkg}: not in the §7.1 dependency map — add it to scripts/check-deps.mjs`);
-      failed = true;
+/**
+ * Strip line/block COMMENTS only (string literals are kept intact — real import
+ * specifiers live in strings). Erases comment bodies to newlines/spaces so a
+ * `@glissade/<pkg>/<sub>` mention inside a doc comment can't false-positive.
+ */
+function stripComments(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    const c2 = src[i + 1];
+    if (c === '/' && c2 === '/') {
+      while (i < n && src[i] !== '\n') i++;
+    } else if (c === '/' && c2 === '*') {
+      i += 2;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      i += 2;
+    } else if (c === '"' || c === "'" || c === '`') {
+      out += c;
+      i++;
+      while (i < n && src[i] !== c) {
+        if (src[i] === '\\') {
+          out += src[i] + (src[i + 1] ?? '');
+          i += 2;
+          continue;
+        }
+        out += src[i];
+        i++;
+      }
+      out += src[i] ?? '';
+      i++;
+    } else {
+      out += c;
+      i++;
     }
-    continue;
   }
-  const srcDir = join(root, pkg, 'src');
-  let files;
-  try {
-    files = [...sourceFiles(srcDir)];
-  } catch {
-    continue;
-  }
-  for (const file of files) {
-    const src = readFileSync(file, 'utf8');
-    for (const m of src.matchAll(/from\s+['"]@glissade\/([\w-]+)['"]|import\(['"]@glissade\/([\w-]+)['"]\)/g)) {
-      const dep = m[1] ?? m[2];
-      if (!allowed.includes(dep)) {
-        console.error(`FAIL ${pkg} → @glissade/${dep} (${file.slice(root.length)}) violates §7.1`);
-        failed = true;
+  return out;
+}
+
+/**
+ * Matches `@glissade/<pkg>` specifiers in REAL module constructs, capturing the
+ * BASE package name while tolerating an optional `/subpath` (e.g.
+ * `@glissade/core/clips`, `@glissade/core/font-ingest`). The direction check
+ * resolves against the base name, so a wrong-direction SUBPATH import is caught
+ * exactly like a bare one — the older `['"]`-anchored regex was blind to
+ * subpath imports.
+ *
+ * The `from` branch is anchored to a STATEMENT-LEADING `import`/`export` (after
+ * line-start whitespace) so a `from '@glissade/x/sub'` that merely appears
+ * inside a user-facing string (e.g. scene's LayoutEngineMissingError message)
+ * is NOT mistaken for an import. The `import()` branch is the dynamic form.
+ */
+const IMPORT_RE =
+  /^[ \t]*(?:import|export)\b[^;'"\n]*?\bfrom\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|(?:^[ \t]*import|[ \t]import)\s+['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]|import\(\s*['"]@glissade\/([\w-]+)(?:\/[\w./-]+)?['"]\s*\)/gm;
+
+/**
+ * Scan `<root>/<pkg>/src` for §7.1 dependency-direction violations. Pure over
+ * the filesystem at `root` (a `packages`-shaped dir), so a fixture tree can be
+ * passed in by the regression test. Returns the list of violations (empty =
+ * clean) plus any package missing from the §7.1 map.
+ */
+export function findViolations(root) {
+  const violations = [];
+  for (const pkg of readdirSync(root)) {
+    const allowed = ALLOWED[pkg];
+    if (allowed === null || allowed === undefined) {
+      if (allowed === undefined && pkg in ALLOWED === false && statSync(join(root, pkg)).isDirectory()) {
+        violations.push({ pkg, dep: null, file: null, reason: 'unmapped' });
+      }
+      continue;
+    }
+    const srcDir = join(root, pkg, 'src');
+    let files;
+    try {
+      files = [...sourceFiles(srcDir)];
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      const src = stripComments(readFileSync(file, 'utf8'));
+      for (const m of src.matchAll(IMPORT_RE)) {
+        const dep = m[1] ?? m[2] ?? m[3];
+        if (!allowed.includes(dep)) {
+          violations.push({ pkg, dep, file: file.slice(root.length), reason: 'direction' });
+        }
       }
     }
   }
+  return violations;
 }
 
-if (!failed) console.log('ok   dependency direction (§7.1) holds across all packages');
-process.exit(failed ? 1 : 0);
+// Run as a CLI when invoked directly (not when imported by a test).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const violations = findViolations(root);
+  for (const v of violations) {
+    if (v.reason === 'unmapped') {
+      console.error(`FAIL ${v.pkg}: not in the §7.1 dependency map — add it to scripts/check-deps.mjs`);
+    } else {
+      console.error(`FAIL ${v.pkg} → @glissade/${v.dep} (${v.file}) violates §7.1`);
+    }
+  }
+  if (violations.length === 0) console.log('ok   dependency direction (§7.1) holds across all packages');
+  process.exit(violations.length > 0 ? 1 : 0);
+}

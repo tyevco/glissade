@@ -34,6 +34,12 @@ export default defineConfig({
     // byte-identically; studio component tests opt into jsdom per-file with a
     // `// @vitest-environment jsdom` docblock (only `.tsx` files do this).
     environment: 'node',
-    include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx'],
+    include: [
+      'packages/*/test/**/*.test.ts',
+      'packages/*/test/**/*.test.tsx',
+      // root CI-gate scripts (check-deps / check-size) — their planted-violation
+      // regression guards live here, alongside the .mjs they harden.
+      'scripts/test/**/*.test.mjs',
+    ],
   },
 });

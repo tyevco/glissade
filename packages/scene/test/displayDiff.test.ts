@@ -38,6 +38,40 @@ describe('collapseReplacer (the shared byte-preserving serializer)', () => {
     expect(collapseReplacer('k', -0)).toBe(-0);
     expect(Object.is(collapseReplacer('k', -0), -0)).toBe(true);
   });
+
+  it('maps NaN / Infinity / -Infinity to DISTINCT sentinels (JSON would collide them all to null)', () => {
+    // JSON.stringify natively serializes all three non-finite numbers to `null`,
+    // colliding the cacheKey of lists that differ only in WHICH one reaches a
+    // draw field. The replacer keeps them apart.
+    expect(collapseReplacer('k', NaN)).toBe('NaN');
+    expect(collapseReplacer('k', Infinity)).toBe('Infinity');
+    expect(collapseReplacer('k', -Infinity)).toBe('-Infinity');
+    const tokens = new Set([
+      JSON.stringify(NaN, collapseReplacer),
+      JSON.stringify(Infinity, collapseReplacer),
+      JSON.stringify(-Infinity, collapseReplacer),
+    ]);
+    expect(tokens.size).toBe(3); // all three serialize differently now
+  });
+
+  it('PLANTED REGRESSION: two DisplayLists differing only NaN vs Infinity at a draw field diff (no cacheKey collision)', () => {
+    // Before the fix both fields serialized to `null` → diffDisplayLists reported
+    // them EQUAL (a stale-raster false-OK). They must now be distinguished.
+    const a = dl([{ op: 'fillText', text: 'hi', font: { family: 'X', size: 12 }, paint: { kind: 'color', color: '#000' }, x: NaN, y: 2 }]);
+    const b = dl([{ op: 'fillText', text: 'hi', font: { family: 'X', size: 12 }, paint: { kind: 'color', color: '#000' }, x: Infinity, y: 2 }]);
+    const d = diffDisplayLists(a, b);
+    expect(d.equal).toBe(false);
+    expect(d.deltas).toHaveLength(1);
+    expect(d.deltas[0]!.fields).toEqual([{ path: 'x', from: NaN, to: Infinity }]);
+  });
+
+  it('leaves FINITE-number serialization byte-identical (the non-finite branch never touches them)', () => {
+    // The shared replacer backs the §3.5 cacheKey; a finite value must serialize
+    // exactly as before. Spot-check the value forms the cacheKey actually carries.
+    for (const v of [0, -0, 1, -1, 12.5, 1e-9, 1e21, Number.MAX_SAFE_INTEGER]) {
+      expect(JSON.stringify(v, collapseReplacer)).toBe(JSON.stringify(v));
+    }
+  });
 });
 
 describe('PINNED cacheKey regression guard (BLOCKING — extraction must not move bytes)', () => {
