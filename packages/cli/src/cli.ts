@@ -6,6 +6,7 @@
 
 import { render, parseFrameRange } from './render.js';
 import { parseCaptionsMode, type CaptionsMode } from './captions.js';
+import { parseArgs } from './args.js';
 
 function fail(msg: string): never {
   console.error(`gs: ${msg}`);
@@ -18,29 +19,6 @@ function parseCaptionsModeOrFail(raw: string | undefined): CaptionsMode {
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
   }
-}
-
-function parseArgs(argv: string[]) {
-  const positional: string[] = [];
-  const flags = new Map<string, string>();
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a.startsWith('--')) {
-      const eq = a.indexOf('=');
-      if (eq >= 0) flags.set(a.slice(2, eq), a.slice(eq + 1));
-      else {
-        // boolean flags (--record, --force) must not eat the next flag
-        const next = argv[i + 1];
-        if (next !== undefined && !next.startsWith('--')) {
-          flags.set(a.slice(2), next);
-          i++;
-        } else flags.set(a.slice(2), '');
-      }
-    } else {
-      positional.push(a);
-    }
-  }
-  return { positional, flags };
 }
 
 const USAGE = `usage:
@@ -70,7 +48,7 @@ render options:
   --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
                    (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
   --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)
-  --cache [<dir>]  persistent whole-frame raster cache in <dir> (default .gscache; §3.5). OFF by default — opting in
+  --cache[=<dir>]  persistent whole-frame raster cache in <dir> (default .gscache; §3.5). OFF by default — opting in
                    never changes output, only speed. A hit serves a stored frame byte-identical to a cold render.
                    WINS: repeated renders + the UNCHANGED-PREFIX of a single-segment edit. Does NOT win a re-narrate —
                    that shifts every frame's timing, so every DisplayList changes and every frame MISSES. Shards share

@@ -427,8 +427,19 @@ export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: K
       return Promise.resolve(`kokoro-js ${version} ${basename(modelId)} dtype=${dtype}`);
     },
     synthesize: async (req) => {
-      const tts = await getModel();
       const voice = req.voice ?? opts.voice ?? KOKORO_DEFAULT_VOICE;
+      // kokoro Chinese (z*) floor: kokoro-js 1.2.1 routes Chinese through espeak-ng
+      // `cmn`, NOT the misaki[zh] g2p these voices were trained on → mismatched
+      // phonemes → garbled audio. Hard-error (before loading the model) rather
+      // than ship garble.
+      if (voice.startsWith('zf_') || voice.startsWith('zm_')) {
+        throw new NarrationError(
+          'kokoro Chinese voices (z*) need misaki[zh] g2p (pinyin+jieba), which is not wired — ' +
+            'kokoro-js routes zh through espeak-ng cmn (mismatched phonemes → garbled). ' +
+            'Use --provider piper for Chinese. (tracked: card 24vKUw2HVC6D)',
+        );
+      }
+      const tts = await getModel();
       const genOpts: { voice: string; speed?: number } =
         req.rate !== undefined && req.rate > 0 ? { voice, speed: req.rate } : { voice };
       let audio: KokoroAudio;

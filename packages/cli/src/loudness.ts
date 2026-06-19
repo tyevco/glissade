@@ -322,7 +322,7 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
       inputI: round2(inputI),
       inputTp: round2(inputTp),
       inputLra: round2(inputLra),
-      gain: round2(gain),
+      gain: floorGain2(gain),
       mixHash,
     };
 
@@ -343,3 +343,10 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+// Floor (not round) the committed gain to 2 decimals: rounding-to-nearest can land
+// the published gain ABOVE the computed peak clamp (e.g. -1.005 → -1.00), pushing
+// inputTp + gain over the -1 dBTP ceiling by ~0.005. Floor is always ≤ the computed
+// gain, so the true-peak guarantee holds. (Gain is negative-or-zero when the clamp
+// binds; floor is the conservative direction either way.)
+export const floorGain2 = (v: number): number => Math.floor(v * 100) / 100;

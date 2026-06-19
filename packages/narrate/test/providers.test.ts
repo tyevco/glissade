@@ -121,6 +121,32 @@ describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
     expect(a.equals(b)).toBe(true); // same samples → byte-identical
     expect(wavDuration(a)).toBeCloseTo(2400 / 24000, 9);
   });
+
+  it('Chinese voices (z*) HARD-ERROR before loading the model (espeak cmn ≠ misaki[zh] → garbled)', async () => {
+    // The guard fires before getModel(), so it throws even without the 92MB model
+    // downloaded — naming misaki[zh] and the piper escape hatch.
+    const p = kokoroProvider();
+    await expect(p.synthesize({ text: '你好', voice: 'zf_xiaoxiao' })).rejects.toThrow(NarrationError);
+    await expect(p.synthesize({ text: '你好', voice: 'zf_xiaoxiao' })).rejects.toThrow(
+      /misaki\[zh].*piper/s,
+    );
+    // a zm_ (male) voice trips the same floor
+    await expect(p.synthesize({ text: '你好', voice: 'zm_yunxi' })).rejects.toThrow(/misaki\[zh]/);
+  });
+
+  it('an English voice (af_heart) is NOT caught by the z* guard', async () => {
+    // The guard must not fire for non-Chinese voices: synthesize either succeeds
+    // (model present) or fails for an unrelated reason (model/peer absent), but
+    // NEVER with the misaki[zh] message.
+    const p = kokoroProvider();
+    let guardFired = false;
+    try {
+      await p.synthesize({ text: 'Hello world.', voice: 'af_heart' });
+    } catch (e) {
+      if (/misaki\[zh]/.test((e as Error).message)) guardFired = true;
+    }
+    expect(guardFired).toBe(false);
+  }, 180_000);
 });
 
 // gated: downloads the kokoro model (~q8 92MB) and runs onnxruntime — opt in

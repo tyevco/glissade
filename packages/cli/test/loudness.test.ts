@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   computeGainDb,
+  floorGain2,
   peakClampBinds,
   resolveProfile,
   PUBLISH_PROFILES,
@@ -59,6 +60,27 @@ describe('computeGainDb (peak-clamped publish gain)', () => {
         }
       }
     }
+  });
+
+  it('the COMMITTED (2-decimal) gain still honors the ceiling — floor, not round-to-nearest', () => {
+    // A quiet-but-peaky source where the peak clamp binds and the exact gain has a
+    // 3rd decimal of 0.005: inputI = -15 (quiet, LUFS gain would raise +1), inputTp
+    // = 0.005 (peaky) → peak clamp = -1 - 0.005 = -1.005, min(+1, -1.005) = -1.005
+    // is the committed gain pre-round. round-to-nearest → -1.00 (ABOVE ceiling,
+    // inputTp+gain = +0.005 over -1 dBTP); floorGain2 → -1.01 (safely under).
+    const youtube = PUBLISH_PROFILES.youtube!;
+    const inputI = -15;
+    const inputTp = 0.005;
+    expect(peakClampBinds(youtube, inputI, inputTp)).toBe(true);
+    const exactGain = computeGainDb(youtube, inputI, inputTp);
+    expect(exactGain).toBeCloseTo(-1.005, 6);
+    // round-to-nearest would overshoot the ceiling by ~0.005:
+    const roundGain = Math.round(exactGain * 100) / 100; // -1.00
+    expect(inputTp + roundGain).toBeGreaterThan(youtube.truePeakDb); // BUG: +0.005 over
+    // floor keeps the committed gain ≤ the computed gain, so the ceiling holds:
+    const committedGain = floorGain2(exactGain); // -1.01
+    expect(committedGain).toBeLessThanOrEqual(exactGain);
+    expect(inputTp + committedGain).toBeLessThanOrEqual(youtube.truePeakDb + 1e-9);
   });
 });
 
