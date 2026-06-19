@@ -68,6 +68,24 @@ export interface AudioMixPlan {
   hasEasedGain: boolean;
 }
 
+/**
+ * Append a PURE scalar publish-loudness gain to a mix's `-filter_complex`: the
+ * graph's final `[aout]` label is renamed and a `volume=<gain>dB` node feeds the
+ * new `[aout]`. This is a single multiply on the FINAL mix node — NOT a second
+ * ffmpeg pass — and is bit-deterministic (verified) + golden-hashable. A gain of
+ * exactly 0 dB is a no-op (returned unchanged) so an at-target source preserves
+ * the prior, un-gained bytes.
+ */
+export function applyMixGainDb(filterComplex: string, gainDb: number): string {
+  if (gainDb === 0) return filterComplex;
+  const marker = '[aout]';
+  const at = filterComplex.lastIndexOf(marker);
+  if (at < 0) throw new AudioMixError('mix filter graph has no [aout] to apply the loudness gain to');
+  // rename the existing terminal label, then add the gain node → [aout]
+  const head = filterComplex.slice(0, at) + '[apreg]' + filterComplex.slice(at + marker.length);
+  return `${head};[apreg]volume=${gainDb}dB[aout]`;
+}
+
 /** Build the FFmpeg mix plan for clips that intersect [0, duration]. */
 export function planAudioMix(clips: AudioClip[], modulePath: string, duration: number): AudioMixPlan | null {
   const active = clips.filter((c) => c.at < duration);

@@ -15,6 +15,9 @@ import { Timeline } from '@glissade/core';
 import { VideoFrameSource } from '@glissade/scene';
 
 // @public
+export function applyMixGainDb(filterComplex: string, gainDb: number): string;
+
+// @public
 export function atempoChain(rate: number): string[];
 
 // @public (undocumented)
@@ -32,6 +35,21 @@ export interface AudioMixPlan {
 
 // @public (undocumented)
 export function availableEncoders(): Set<string>;
+
+// @public
+export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, wavOut: string): Promise<boolean>;
+
+// @public
+export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
+
+// @public
+export function computeGainDb(profile: PublishProfile, inputI: number, inputTp: number): number;
+
+// @public
+export function computeMixHash(modulePath: string, extraInputs?: readonly string[]): string;
+
+// @public (undocumented)
+export const DEFAULT_PROFILE_ID = "youtube";
 
 // @public (undocumented)
 export function dev(opts: DevOptions): Promise<DevServer>;
@@ -127,6 +145,29 @@ export interface ImportOptions {
 export function loadSceneModule(modulePath: string): Promise<SceneModule>;
 
 // @public (undocumented)
+export const LOUDNESS_SCHEMA_VERSION: 1;
+
+// @public
+export class LoudnessError extends Error {
+    constructor(detail: string);
+}
+
+// @public
+export interface LoudnessMeasurement {
+    gain: number;
+    inputI: number;
+    inputLra: number;
+    inputTp: number;
+    // (undocumented)
+    loudnessVersion: typeof LOUDNESS_SCHEMA_VERSION;
+    mixHash: string;
+    profileId: string;
+}
+
+// @public
+export function loudnessPathFor(modulePath: string): string;
+
+// @public (undocumented)
 export class MachineExportError extends Error {
     constructor(message: string);
 }
@@ -142,12 +183,55 @@ export interface MachineRenderFlags {
 }
 
 // @public
+export function measureFile(audioPath: string): {
+    inputI: number;
+    inputTp: number;
+    inputLra: number;
+};
+
+// @public
+export function measureLoudnessCommand(opts: MeasureLoudnessOptions): Promise<MeasureLoudnessResult>;
+
+// @public (undocumented)
+export interface MeasureLoudnessOptions {
+    // (undocumented)
+    modulePath: string;
+    // (undocumented)
+    music?: 'auto' | 'off';
+    narration?: 'auto' | 'off';
+    profile?: string;
+    // (undocumented)
+    sfx?: 'auto' | 'off';
+}
+
+// @public (undocumented)
+export interface MeasureLoudnessResult {
+    clampBound: boolean;
+    // (undocumented)
+    loudnessPath: string;
+    // (undocumented)
+    measurement: LoudnessMeasurement;
+    profile: PublishProfile;
+    warning: string | null;
+}
+
+// @public
 export class NoEncoderError extends Error {
     constructor(container: string, wanted: string[]);
 }
 
 // @public
 export function parseEncoderList(output: string): Set<string>;
+
+// @public
+export function parseLoudnormJson(stderr: string): {
+    inputI: number;
+    inputTp: number;
+    inputLra: number;
+};
+
+// @public
+export function peakClampBinds(profile: PublishProfile, inputI: number, inputTp: number): boolean;
 
 // @public (undocumented)
 export function pickEncoder(kind: 'video' | 'audio', container: 'mp4' | 'webm', encoders?: Set<string>): EncoderChoice;
@@ -163,6 +247,21 @@ export function planFinalAudio(opts: RenderOptions, timelineClips: AudioClip[], 
 
 // @public (undocumented)
 export function probeVideo(path: string): VideoInfo;
+
+// @public (undocumented)
+export const PUBLISH_PROFILES: Readonly<Record<string, PublishProfile>>;
+
+// @public
+export interface PublishProfile {
+    // (undocumented)
+    readonly id: string;
+    readonly platformNormalized: boolean;
+    readonly targetLufs: number;
+    readonly truePeakDb: number;
+}
+
+// @public
+export function readLoudness(modulePath: string): LoudnessMeasurement | null;
 
 // @public (undocumented)
 export function render(opts: RenderOptions): Promise<{
@@ -183,6 +282,7 @@ export interface RenderOptions {
     frame?: number;
     frameRange?: [number, number];
     losslessIntermediate?: boolean;
+    loudness?: 'auto' | 'off';
     // (undocumented)
     modulePath: string;
     music?: 'auto' | 'off';
@@ -238,6 +338,12 @@ export interface RenderShardedArgs {
 
 // @public
 export function resolveAssetPath(url: string, modulePath: string): string;
+
+// @public
+export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness'>): Promise<number | null>;
+
+// @public
+export function resolveProfile(id: string): PublishProfile;
 
 // @public
 export function resolveRenderDoc(mod: SceneModule, scene: Scene, flags: MachineRenderFlags): Timeline;

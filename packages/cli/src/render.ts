@@ -41,6 +41,13 @@ export interface RenderOptions {
   narration?: 'auto' | 'off';
   /** auto (default): mix effect hits from a sibling *.sfx.timing.json. */
   sfx?: 'auto' | 'off';
+  /**
+   * auto (default): apply a committed `<scene>.loudness.json` publish gain (a
+   * pure scalar `volume=<gain>dB` on the final mix node) when one exists, and
+   * HARD-THROW if its mixHash no longer matches the mix inputs (a re-narrate must
+   * invalidate loudly). 'off' ignores any committed measurement.
+   */
+  loudness?: 'auto' | 'off';
   /** also write WebVTT chapters from cue markers ('vtt'); cues.json is always written when cues exist. */
   chapters?: 'vtt' | 'off';
   /** cue kinds that become VTT chapters (default just 'chapter'); cues.json keeps all kinds. */
@@ -335,18 +342,15 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 }
 
 /**
- * Collect timeline + auto-mixed (narration/music/sfx) audio clips and plan the
- * FFmpeg audio graph, returning the `-i`/`-filter_complex`/`-map` argument
- * fragments. Shared by the linear `render()` path and the sharded orchestrator
- * (which mixes audio once, over the concatenated video). Returns empty args when
- * there is nothing to mix.
+ * Collect the timeline + auto-mixed (narration/music/sfx) audio clips for a
+ * scene — the shared front half of the mix used by both `planFinalAudio` (the
+ * render/shard path) and `buildMixWav` (the measure-loudness path), so the mix
+ * CONTENT measured at commit-time is byte-for-byte the mix rendered later.
  */
-export async function planFinalAudio(
-  opts: RenderOptions,
+export async function collectAudioClips(
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
   timelineClips: AudioClip[],
-  duration: number,
-  container: 'mp4' | 'webm',
-): Promise<{ audioInputs: string[]; audioArgs: string[] }> {
+): Promise<AudioClip[]> {
   const { timingPathFor } = await import('./captions.js');
   const audioClips = [...timelineClips];
   const { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } = await import('./music.js');
@@ -402,21 +406,124 @@ export async function planFinalAudio(
     }
   }
 
-  const { planAudioMix } = await import('./audioMix.js');
+  return audioClips;
+}
+
+/**
+ * Resolve the committed publish gain (dB) for a render: read `<scene>.loudness.json`
+ * (when present and `loudness !== 'off'`), recompute the mixHash over the current
+ * mix inputs, and HARD-THROW on a mismatch — a re-narrate/re-sfx must invalidate
+ * the measurement loudly rather than silently mis-normalize. Returns null when no
+ * measurement is committed or loudness is off (no gain applied).
+ */
+export async function resolveLoudnessGainDb(
+  opts: Pick<RenderOptions, 'modulePath' | 'loudness'>,
+): Promise<number | null> {
+  if ((opts.loudness ?? 'auto') === 'off') return null;
+  const { readLoudness, computeMixHash, loudnessPathFor } = await import('./loudness.js');
+  const measurement = readLoudness(opts.modulePath);
+  if (!measurement) return null;
+  const actual = computeMixHash(opts.modulePath);
+  if (actual !== measurement.mixHash) {
+    throw new Error(
+      `loudness: ${loudnessPathFor(opts.modulePath)} is stale — the mix inputs changed since it was measured ` +
+        `(committed mixHash ${measurement.mixHash.slice(0, 23)}…, current ${actual.slice(0, 23)}…). ` +
+        `Re-run \`gs measure-loudness ${opts.modulePath}\` (or pass --loudness off to render without normalization).`,
+    );
+  }
+  return measurement.gain;
+}
+
+/**
+ * Collect audio clips + auto-mixed siblings and plan the FFmpeg audio graph,
+ * returning the `-i`/`-filter_complex`/`-map` argument fragments. Shared by the
+ * linear `render()` path and the sharded orchestrator (which mixes audio once,
+ * over the concatenated video). Returns empty args when there is nothing to mix.
+ *
+ * When a committed `<scene>.loudness.json` applies, its publish gain is appended
+ * as a PURE `volume=<gain>dB` scalar on the FINAL mix node — a single scalar in
+ * the existing graph, NOT a second pass. The scalar gain is bit-deterministic
+ * (verified) and golden-hashable; the only non-deterministic stages (mix-to-PCM,
+ * measure-time ebur128) are quarantined to commit/measure-time per §5.3.
+ */
+export async function planFinalAudio(
+  opts: RenderOptions,
+  timelineClips: AudioClip[],
+  duration: number,
+  container: 'mp4' | 'webm',
+): Promise<{ audioInputs: string[]; audioArgs: string[] }> {
+  const audioClips = await collectAudioClips(opts, timelineClips);
+
+  const { planAudioMix, applyMixGainDb } = await import('./audioMix.js');
   const { pickEncoder } = await import('./encoders.js');
   const mix = planAudioMix(audioClips, opts.modulePath, duration);
   if (mix?.hasEasedGain) {
     process.stderr.write('note: eased gain keys are approximated linearly in the FFmpeg mix\n');
   }
   if (!mix) return { audioInputs: [], audioArgs: [] };
+
+  const gainDb = await resolveLoudnessGainDb(opts);
+  const filterComplex = gainDb !== null ? applyMixGainDb(mix.filterComplex, gainDb) : mix.filterComplex;
+  if (gainDb !== null) {
+    process.stderr.write(`note: applying committed publish loudness gain ${gainDb.toFixed(2)} dB (single-pass scalar)\n`);
+  }
+
   const audioEnc = pickEncoder('audio', container);
   return {
     audioInputs: mix.inputs.flatMap((p) => ['-i', p]),
     audioArgs: [
-      '-filter_complex', mix.filterComplex,
+      '-filter_complex', filterComplex,
       '-map', '0:v', '-map', '[aout]',
       '-c:a', audioEnc.name,
       ...(container === 'mp4' ? ['-b:a', '192k'] : []),
     ],
   };
+}
+
+/**
+ * Build the FINAL mixed audio to a WAV file — the measure-loudness input. Uses
+ * the SAME `collectAudioClips` + `planAudioMix` as the render path (no loudness
+ * gain — measurement is of the un-gained mix), so the measured content is exactly
+ * what render will later mix. Returns false when the scene has no audio.
+ */
+export async function buildMixWav(
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
+  wavOut: string,
+): Promise<boolean> {
+  if (!ffmpegAvailable()) {
+    throw new Error('gs measure-loudness needs FFmpeg on PATH and none was found.');
+  }
+  const mod = await loadSceneModule(opts.modulePath);
+  const scene = mod.createScene();
+  const { compileTimeline } = await import('@glissade/core');
+  const compiled = compileTimeline(mod.timeline);
+  const duration = compiled.duration;
+
+  const audioClips = await collectAudioClips(opts, [...compiled.audio]);
+  const { planAudioMix } = await import('./audioMix.js');
+  const mix = planAudioMix(audioClips, opts.modulePath, duration);
+  if (!mix) return false;
+
+  // `planAudioMix` indexes audio inputs as [1:a], [2:a], … because the render
+  // path puts the PNG video at input 0. There's no video here, so a throwaway
+  // `anullsrc` at input 0 keeps the audio indices aligned (we only map [aout],
+  // so the dummy is discarded). The mix renders to 16-bit PCM (the same
+  // float→Int16 quantize §5.3 / renderSfxr golden-hash) at 48 kHz.
+  const args = [
+    '-y', '-hide_banner', '-nostats',
+    '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+    ...mix.inputs.flatMap((p) => ['-i', p]),
+    '-filter_complex', mix.filterComplex,
+    '-map', '[aout]',
+    '-c:a', 'pcm_s16le', '-ar', '48000',
+    '-t', String(duration),
+    wavOut,
+  ];
+  const result = spawnSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  if (result.status !== 0) {
+    throw new Error(`ffmpeg mix-to-WAV failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
+  }
+  // touch `scene` so the load-and-validate is part of the measure path
+  void scene.size;
+  return true;
 }
