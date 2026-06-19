@@ -45,8 +45,14 @@ export type AxisTuple = Record<string, number>;
 export interface RegisterFontInit {
   /** The CSS family name to register under (the §3.6 asset-id convention). */
   family: string;
-  /** Raw font bytes (a path is read to bytes by the caller before this point). */
-  src: FontSource;
+  /**
+   * The font source: raw bytes (`Uint8Array | ArrayBuffer`) OR — node-side only —
+   * a string filesystem path, which this subpath fs-reads to bytes for you. The
+   * string form is a `registerFont`/`ingestFont` convenience; it lives on the
+   * export/prepare-only `@glissade/core/font-ingest` subpath (`node:fs` is fine
+   * here, it never reaches the embed bundle).
+   */
+  src: FontSource | string;
   weight?: number | undefined;
   style?: 'normal' | 'italic' | undefined;
   /**
@@ -94,6 +100,36 @@ const MAGIC = {
 
 function asUint8(src: FontSource): Uint8Array {
   return src instanceof Uint8Array ? src : new Uint8Array(src);
+}
+
+/**
+ * Resolve a `registerFont`/`ingestFont` `src` to raw bytes. A string is treated
+ * as a node-side filesystem PATH and read here via a dynamic `node:fs/promises`
+ * import — this subpath is export/prepare-only, so `node:fs` never reaches the
+ * embed bundle (the §4.4 leak-guard whitelists this). A `Uint8Array|ArrayBuffer`
+ * passes straight through unchanged. An unreadable path throws a clear
+ * FontIngestError naming the path (never the downstream "too short" sniff error).
+ */
+async function resolveSource(src: FontSource | string): Promise<Uint8Array> {
+  if (typeof src !== 'string') return asUint8(src);
+  let readFile: (p: string) => Promise<Uint8Array>;
+  try {
+    ({ readFile } = (await import('node:fs/promises')) as {
+      readFile: (p: string) => Promise<Uint8Array>;
+    });
+  } catch (err) {
+    throw new FontIngestError(
+      `registerFont received a string path ('${src}') but the filesystem is not available ` +
+        `here (node-only) — pass Uint8Array bytes instead. (${String((err as Error)?.message ?? err)})`,
+    );
+  }
+  try {
+    return await readFile(src);
+  } catch (err) {
+    throw new FontIngestError(
+      `could not read font file '${src}': ${String((err as Error)?.message ?? err)}`,
+    );
+  }
 }
 
 /** Sniff the leading 4 bytes; throws on input that is not a recognized font. */
@@ -191,8 +227,10 @@ function retainAllText(coverage: ReadonlySet<number>): string {
  * path), keeping the common case off the wasm boundary.
  */
 export async function ingestFont(init: RegisterFontInit): Promise<FontFaceResult> {
-  const sourceFormat = sniffFontFormat(init.src);
-  const input = asUint8(init.src);
+  // a string `src` is a node-side path — fs-read it to bytes (clear error if
+  // unreadable) before any sniff; bytes pass straight through unchanged.
+  const input = await resolveSource(init.src);
+  const sourceFormat = sniffFontFormat(input);
   const weight = init.weight ?? 400;
   const style = init.style ?? 'normal';
   const fallback = init.fallback ? [...init.fallback] : [];

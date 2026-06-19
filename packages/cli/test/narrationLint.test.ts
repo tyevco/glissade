@@ -103,6 +103,8 @@ describe('lintNarration (pure rules)', () => {
       provider: 'fake',
       providerVersion: 'fake-1',
       totalDuration: 4,
+      // captionMode:'burn' escalates caption-fit to Tier-1 (the geometry assertion below)
+      captionMode: 'burn',
       segments: [
         { id: 'tall', text: 'This caption wraps to too many lines', start: 0, duration: 4, file: 'a.wav' },
         { id: 'ok', text: 'Short', start: 4, duration: 2, file: 'b.wav' },
@@ -117,6 +119,7 @@ describe('lintNarration (pure rules)', () => {
     const diags = lintNarration(timing, { caption: probe, warnings: false });
     const fit = find(diags, 'caption-fit', 'tall');
     expect(fit).toBeDefined();
+    expect(fit!.tier).toBe(1);
     expect(fit!.message).toMatch(/over maxLines/);
     expect(find(diags, 'caption-fit', 'ok')).toBeUndefined();
   });
@@ -127,12 +130,70 @@ describe('lintNarration (pure rules)', () => {
       provider: 'fake',
       providerVersion: 'fake-1',
       totalDuration: 4,
+      captionMode: 'burn',
       segments: [{ id: 'low', text: 'fits lines but too low', start: 0, duration: 4, file: 'a.wav' }],
     };
     const probe: CaptionProbe = { sceneH: 360, maxLines: 2, measure: () => ({ lines: 2, bottomY: 380 }) };
     const fit = find(lintNarration(timing, { caption: probe, warnings: false }), 'caption-fit', 'low');
     expect(fit).toBeDefined();
     expect(fit!.message).toMatch(/overflows the frame/);
+  });
+
+  it('caption-fit is Tier-2 WARN by default (sidecar): overflow does not gate CI, carries a nudge', () => {
+    const timing: NarrationTiming = {
+      timingVersion: 1,
+      provider: 'fake',
+      providerVersion: 'fake-1',
+      totalDuration: 4,
+      // NO captionMode / captionMaxLines declared → sidecar semantics → warn-only
+      segments: [{ id: 'tall', text: 'This caption wraps to too many lines', start: 0, duration: 4, file: 'a.wav' }],
+    };
+    const probe: CaptionProbe = { sceneH: 360, maxLines: 2, measure: () => ({ lines: 4, bottomY: 340 }) };
+    const diags = lintNarration(timing, { caption: probe });
+    const fit = find(diags, 'caption-fit', 'tall');
+    expect(fit).toBeDefined();
+    expect(fit!.tier).toBe(2);
+    expect(fit!.severity).toBe('warn');
+    // the nudge tells the author exactly how to promote it to a hard gate
+    expect(fit!.message).toMatch(/warn-only until you declare maxLines or captionMode:"burn"/);
+    // a sidecar project with no declaration exits 0 out of the box
+    expect(hasErrors(diags)).toBe(false);
+  });
+
+  it('caption-fit escalates to Tier-1 ERROR when the script declares captionMode:"burn"', () => {
+    const timing: NarrationTiming = {
+      timingVersion: 1,
+      provider: 'fake',
+      providerVersion: 'fake-1',
+      totalDuration: 4,
+      captionMode: 'burn',
+      segments: [{ id: 'tall', text: 'This caption wraps to too many lines', start: 0, duration: 4, file: 'a.wav' }],
+    };
+    const probe: CaptionProbe = { sceneH: 360, maxLines: 2, measure: () => ({ lines: 4, bottomY: 340 }) };
+    const diags = lintNarration(timing, { caption: probe });
+    const fit = find(diags, 'caption-fit', 'tall');
+    expect(fit).toBeDefined();
+    expect(fit!.tier).toBe(1);
+    expect(fit!.severity).toBe('error');
+    // no nudge on the hard-gate variant
+    expect(fit!.message).not.toMatch(/warn-only until/);
+    expect(hasErrors(diags)).toBe(true);
+  });
+
+  it('caption-fit escalates to Tier-1 when the script declares a captionMaxLines budget', () => {
+    const timing: NarrationTiming = {
+      timingVersion: 1,
+      provider: 'fake',
+      providerVersion: 'fake-1',
+      totalDuration: 4,
+      captionMaxLines: 2,
+      segments: [{ id: 'tall', text: 'This caption wraps to too many lines', start: 0, duration: 4, file: 'a.wav' }],
+    };
+    const probe: CaptionProbe = { sceneH: 360, maxLines: 2, measure: () => ({ lines: 4, bottomY: 340 }) };
+    const diags = lintNarration(timing, { caption: probe });
+    const fit = find(diags, 'caption-fit', 'tall');
+    expect(fit!.tier).toBe(1);
+    expect(hasErrors(diags)).toBe(true);
   });
 
   it('a clean timing yields no Tier-1 diagnostics', () => {
@@ -216,6 +277,8 @@ export default {
       provider: 'fake',
       providerVersion: 'fake-1',
       totalDuration: 7,
+      // burn captions → caption-fit is a Tier-1 hard gate (the assertion below)
+      captionMode: 'burn',
       segments: [
         // over-CPS: 56 chars in 1.5s ≈ 37 cps
         { id: 'dense', text: 'A wall of words crammed into a beat far too small now', start: 0, duration: 1.5, file: 'a.wav' },

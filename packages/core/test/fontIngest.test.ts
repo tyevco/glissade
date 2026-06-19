@@ -117,6 +117,33 @@ describe('registerFont + FontStore', () => {
     // faceRef() bridges back into a serializable Timeline AssetRef face.
     expect(face.faceRef('fonts/x.ttf')).toEqual({ url: 'fonts/x.ttf', weight: 600 });
   });
+
+  it('accepts a string filesystem path for src (node-side fs read)', async () => {
+    const path = fileURLToPath(new URL('Inconsolata-wght600.ttf', FONT_DIR));
+    const face = await registerFont({ family: 'Inconsolata Path', src: path });
+    // the path was read to bytes and ingested: coverage is non-empty + it covers text.
+    expect(face.coverage.size).toBeGreaterThan(200);
+    expect(face.covers('wght 600 instanced 0123')).toBe(true);
+    // bytes-equivalent to passing the file's bytes directly.
+    expect(Buffer.from(face.bytes).equals(await readFont('Inconsolata-wght600.ttf'))).toBe(true);
+  });
+
+  it('throws a clear path-named error for a non-existent string src', async () => {
+    const missing = fileURLToPath(new URL('does-not-exist.ttf', FONT_DIR));
+    await expect(registerFont({ family: 'Missing', src: missing })).rejects.toThrow(FontIngestError);
+    // the error names the path, NOT the downstream "too short to be a font" sniff.
+    await expect(registerFont({ family: 'Missing', src: missing })).rejects.toThrow(
+      /could not read font file/,
+    );
+    await expect(registerFont({ family: 'Missing', src: missing })).rejects.toThrow(/does-not-exist\.ttf/);
+  });
+
+  it('the raw Uint8Array/bytes path still works unchanged', async () => {
+    const bytes = await readFont('Inconsolata-wght600.ttf');
+    const face = await registerFont({ family: 'Inconsolata Bytes', src: bytes });
+    expect(Buffer.from(face.bytes).equals(bytes)).toBe(true);
+    expect(face.coverage.size).toBeGreaterThan(200);
+  });
 });
 
 describe('font() builder', () => {

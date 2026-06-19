@@ -271,6 +271,7 @@ export function lintNarration(timing: NarrationTiming, opts?: LintOptions): Diag
 // @public (undocumented)
 export interface LintOptions {
     caption?: CaptionProbe;
+    captionMode?: 'burn' | 'sidecar';
     maxCps?: number;
     warnings?: boolean;
 }

@@ -869,6 +869,8 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
     ...(pauses.length > 0 ? { pauses } : {}),
     ...(raw.captionSplit ? { captionSplit: raw.captionSplit } : {}),
     ...(raw.budgets && Object.keys(raw.budgets).length > 0 ? { budgets: raw.budgets } : {}),
+    ...(raw.captionMode !== undefined ? { captionMode: raw.captionMode } : {}),
+    ...(raw.captionMaxLines !== undefined ? { captionMaxLines: raw.captionMaxLines } : {}),
   };
   const timingPath = `${base}.narration.timing.json`;
   writeFileSync(timingPath, JSON.stringify(timing, null, 2) + '\n');

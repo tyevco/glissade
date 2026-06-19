@@ -166,6 +166,8 @@ export interface NarrationPause {
 export interface NarrationScript {
     align?: string;
     budgets?: Record<string, number>;
+    captionMaxLines?: number;
+    captionMode?: 'burn' | 'sidecar';
     captionSplit?: {
         maxChars: number;
     };
@@ -198,6 +200,8 @@ export interface NarrationSegment {
 // @public (undocumented)
 export interface NarrationTiming {
     budgets?: Record<string, number>;
+    captionMaxLines?: number;
+    captionMode?: 'burn' | 'sidecar';
     captionSplit?: {
         maxChars: number;
     };

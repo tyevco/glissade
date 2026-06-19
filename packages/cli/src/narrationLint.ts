@@ -72,6 +72,13 @@ export interface LintOptions {
   caption?: CaptionProbe;
   /** include Tier-2 (warn-only) diagnostics; default true */
   warnings?: boolean;
+  /**
+   * Caller-supplied caption mode (e.g. the render config is burning captions).
+   * MAY escalate caption-fit to Tier-1 — but the committed script's own
+   * `captionMode` (on the timing manifest) is the authoritative signal and
+   * takes precedence. Omit to defer entirely to the manifest.
+   */
+  captionMode?: 'burn' | 'sidecar';
 }
 
 /** Every cue the burned track + sidecars actually show, with its window. */
@@ -162,8 +169,29 @@ export function lintNarration(timing: NarrationTiming, opts: LintOptions = {}): 
     checkBudget(p.id, p.duration, budgets[p.id]);
   }
 
-  // ---- Tier-1: caption text-fit (REAL measured geometry) ----
-  if (opts.caption) {
+  // ---- caption text-fit (REAL measured geometry) ----
+  // Tier-2 (WARN-only) BY DEFAULT — a sidecar project (player-wrapped captions,
+  // no fixed box) must not have its CI gated on this. It ESCALATES to Tier-1
+  // (CI-failing error) ONLY when the script declared caption-fit intent: either
+  // `captionMode:'burn'` (an overflow is unrecoverable once baked into the frame)
+  // OR a `captionMaxLines` budget (an explicit per-script fit ceiling). The
+  // signal lives in the committed manifest (carried from the script), not a CLI
+  // flag — it travels with the content. A lint caller MAY also force the escalation
+  // (a render in burn mode) via opts.captionMode, but the script is authoritative.
+  const burnDeclared = (timing.captionMode ?? opts.captionMode) === 'burn';
+  const linesDeclared = timing.captionMaxLines !== undefined;
+  const captionEscalated = burnDeclared || linesDeclared;
+  const captionTier: 1 | 2 = captionEscalated ? 1 : 2;
+  // a non-escalated caption-fit is a Tier-2 warning — honor `warnings:false`,
+  // which suppresses every warn-only diagnostic. An escalated (Tier-1) caption-fit
+  // is a hard error and always runs.
+  const runCaptionFit = captionEscalated || warnings;
+  // a one-line nudge on the warn variant: a burned-caption author who declared
+  // nothing still SEES the overflow and is told exactly how to make it a hard gate.
+  const nudge =
+    ' — caption-fit is warn-only until you declare maxLines or captionMode:"burn" in the script';
+  const withNudge = (msg: string): string => (captionEscalated ? msg : msg + nudge);
+  if (opts.caption && runCaptionFit) {
     const probe = opts.caption;
     for (const c of cues) {
       const id = cueId(c, perSeg.get(c.segId) ?? 1);
@@ -171,20 +199,22 @@ export function lintNarration(timing: NarrationTiming, opts: LintOptions = {}): 
       if (lines > probe.maxLines) {
         out.push({
           rule: 'caption-fit',
-          tier: 1,
-          severity: 'error',
+          tier: captionTier,
+          severity: captionEscalated ? 'error' : 'warn',
           id,
-          message: `caption wraps to ${lines} lines, over maxLines ${probe.maxLines}`,
+          message: withNudge(`caption wraps to ${lines} lines, over maxLines ${probe.maxLines}`),
           detail: { lines, maxLines: probe.maxLines, text: c.text },
         });
       } else if (bottomY > probe.sceneH + 1e-6) {
         // even within maxLines a bottom-anchored block can run off the frame
         out.push({
           rule: 'caption-fit',
-          tier: 1,
-          severity: 'error',
+          tier: captionTier,
+          severity: captionEscalated ? 'error' : 'warn',
           id,
-          message: `caption overflows the frame: its lowest line ends at y=${bottomY.toFixed(0)} of ${probe.sceneH}`,
+          message: withNudge(
+            `caption overflows the frame: its lowest line ends at y=${bottomY.toFixed(0)} of ${probe.sceneH}`,
+          ),
           detail: { bottomY: round(bottomY), sceneH: probe.sceneH, lines, text: c.text },
         });
       }

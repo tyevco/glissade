@@ -99,6 +99,23 @@ export interface NarrationScript {
    * the committed JSON. A segment's own `maxSec` wins over an entry here.
    */
   budgets?: Record<string, number>;
+  /**
+   * How captions are delivered. `'burn'` = baked into the video frame (a fixed
+   * box that CANNOT scroll) — declaring it ESCALATES `gs narration-lint`'s
+   * caption-fit rule to Tier-1 (a hard, CI-failing error), because an overflow
+   * is unrecoverable at play time. `'sidecar'` = player-wrapped .srt/.vtt with
+   * no fixed box; caption-fit stays Tier-2 (warn-only). Omitted → sidecar
+   * semantics (warn-only) so a project that never declared intent exits 0.
+   * The signal lives HERE, in the committed script (it travels with the content),
+   * not behind a CLI flag (which drifts in CI config). Persisted into the manifest.
+   */
+  captionMode?: 'burn' | 'sidecar';
+  /**
+   * A per-script caption-fit budget: the max wrapped lines a caption may use.
+   * Declaring it is an explicit caption-fit INTENT, so — like `captionMode:'burn'`
+   * — it ESCALATES caption-fit to Tier-1 (CI-failing). Persisted into the manifest.
+   */
+  captionMaxLines?: number;
   /** spoken segments and explicit pause beats, in playback order */
   segments: NarrationElement[];
 }
@@ -149,6 +166,18 @@ export interface NarrationTiming {
    * segment's own `maxSec` (on the TimedSegment) wins over an entry here.
    */
   budgets?: Record<string, number>;
+  /**
+   * Caption delivery mode carried from the script. `'burn'` escalates
+   * `gs narration-lint`'s caption-fit rule to Tier-1 (CI-failing); `'sidecar'`
+   * / omitted keeps it Tier-2 (warn-only). Persisted so the lint reads intent
+   * from the committed manifest, no CLI flag.
+   */
+  captionMode?: 'burn' | 'sidecar';
+  /**
+   * Per-script caption-fit budget (max wrapped lines) carried from the script.
+   * Its presence ESCALATES caption-fit to Tier-1, like `captionMode:'burn'`.
+   */
+  captionMaxLines?: number;
 }
 
 export class NarrationError extends Error {
