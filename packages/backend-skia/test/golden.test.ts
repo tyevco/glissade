@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GlobalFonts } from '@napi-rs/canvas';
-import { evaluate, type SceneModule } from '@glissade/scene';
+import { evaluate, diffDisplayLists, formatDisplayDiff, type DisplayList, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '../src/index.js';
 import goldenShapes from '../../examples/src/scenes/golden-shapes.js';
 import goldenBounce from '../../examples/src/scenes/golden-bounce.js';
@@ -46,6 +46,40 @@ GlobalFonts.registerFromPath(
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 const UPDATE = process.env['GOLDEN_UPDATE'] === '1';
+
+/**
+ * Byte-compare a rendered frame against its committed golden PNG and, on a
+ * mismatch, ATTACH a DisplayList-level explanation to the thrown error (§3.3
+ * gs-diff substrate). The golden is a PNG, so the actionable IR delta is the
+ * purity/determinism contract: a fresh-scene re-evaluation of the same frame
+ * must produce a byte-identical DisplayList. If that self-diff is non-empty,
+ * the frame diverged because the scene isn't a pure function of time, and the
+ * command tree names exactly which op/field moved — far better than "PNG
+ * differs". (An identical IR but differing PNG points at the rasterizer /
+ * toolchain instead, which the message says.)
+ */
+function assertFrameMatches(args: {
+  name: string;
+  frame: number;
+  actual: Buffer;
+  goldenPath: string;
+  coldDisplayList: () => DisplayList;
+  warmDisplayList: () => DisplayList;
+}): void {
+  const { name, frame, actual, goldenPath } = args;
+  const golden = readFileSync(goldenPath);
+  if (actual.equals(golden)) return;
+
+  const diff = diffDisplayLists(args.warmDisplayList(), args.coldDisplayList());
+  const irExplanation = diff.equal
+    ? 'DisplayList IR is identical across a fresh re-evaluation — the divergence is in the rasterizer/toolchain, not the scene.'
+    : `DisplayList IR diverged on a fresh re-evaluation (scene is not a pure function of time):\n${formatDisplayDiff(diff)}`;
+  throw new Error(
+    `golden ${name} frame ${frame} diverged from ${goldenPath}; ` +
+      'if intentional, re-run with GOLDEN_UPDATE=1.\n' +
+      irExplanation,
+  );
+}
 
 const FRAMES = [0, 30, 60, 90, 120, 150, 179];
 const FPS = 60;
@@ -114,12 +148,19 @@ for (const { name, mod } of CORPUS) {
             return;
           }
         }
-        const golden = readFileSync(goldenPath);
-        expect(
-          actual.equals(golden),
-          `frame ${frame} diverged from golden (${goldenPath}); ` +
-            'if intentional, re-run with GOLDEN_UPDATE=1',
-        ).toBe(true);
+        assertFrameMatches({
+          name,
+          frame,
+          actual,
+          goldenPath,
+          warmDisplayList: () => evaluate(scene, mod.timeline, frame / FPS),
+          coldDisplayList: () => {
+            const cold = mod.createScene();
+            const coldBackend = new SkiaBackend(cold.size.w, cold.size.h);
+            cold.setTextMeasurer(coldBackend);
+            return evaluate(cold, mod.timeline, frame / FPS);
+          },
+        });
       });
     }
 

@@ -6,6 +6,7 @@
 
 import { AudioClip } from '@glissade/core';
 import { CompiledTimeline } from '@glissade/core';
+import { DisplayList } from '@glissade/scene';
 import { Image as Image_2 } from '@napi-rs/canvas';
 import { Key } from '@glissade/core';
 import { Scene } from '@glissade/scene';
@@ -53,12 +54,33 @@ export interface DevServer {
     port: number;
 }
 
+// @public (undocumented)
+export function diffCommand(opts: DiffOptions): Promise<DiffResult>;
+
+// @public (undocumented)
+export interface DiffOptions {
+    against: string;
+    at: number;
+    // (undocumented)
+    modulePath: string;
+}
+
+// @public (undocumented)
+export interface DiffResult {
+    actual: DisplayList;
+    equal: boolean;
+    report: string;
+}
+
 // @public
 export interface EncoderChoice {
     // (undocumented)
     name: string;
     note?: string;
 }
+
+// @public
+export function evaluateAt(modulePath: string, t: number): Promise<DisplayList>;
 
 // @public (undocumented)
 export function ffmpegAvailable(): boolean;
@@ -238,6 +260,9 @@ export interface ShardRange {
     first: number;
     last: number;
 }
+
+// @public
+export function snapshotAt(modulePath: string, t: number): Promise<string>;
 
 // @public
 export function splitFrameRange(first: number, last: number, workers: number): ShardRange[];

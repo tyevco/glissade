@@ -12,18 +12,15 @@
 
 import type { Timeline } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
+import { collapseReplacer } from './displayDiff.js';
 import type { EvalContext } from './node.js';
 import { Group } from './nodes.js';
 import { evaluate, type Scene } from './scene.js';
 
 /** Stable string of a DisplayList for comparison (opaque resources collapse to a marker). */
 function hashDisplayList(dl: DisplayList): string {
-  return JSON.stringify(dl, (_key, value) => {
-    if (value instanceof ArrayBuffer) return `ab:${value.byteLength}`;
-    if (ArrayBuffer.isView(value)) return `view:${(value as ArrayBufferView).byteLength}`;
-    if (typeof value === 'function') return undefined;
-    return value;
-  });
+  // Shared byte-preserving collapse-replacer (displayDiff.ts).
+  return JSON.stringify(dl, collapseReplacer);
 }
 
 export interface CacheColdResult {

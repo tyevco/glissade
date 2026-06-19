@@ -5,6 +5,7 @@
  */
 
 import { type Mat2x3 } from './matrix.js';
+import { collapseReplacer } from './displayDiff.js';
 
 export type ResourceId = number;
 
@@ -284,12 +285,9 @@ export function createDisplayListBuilder(size: { w: number; h: number }): Displa
         if (cmd.op === 'drawImage') return { ...cmd, image: remap(cmd.image) };
         return { ...cmd, path: remap((cmd as { path: number }).path) };
       });
-      const payload = JSON.stringify({ c: sliceCmds, r: usedResources }, (_k, value) => {
-        if (value instanceof ArrayBuffer) return `ab:${value.byteLength}`;
-        if (ArrayBuffer.isView(value)) return `view:${(value as ArrayBufferView).byteLength}`;
-        if (typeof value === 'function') return undefined;
-        return value;
-      });
+      // Shared byte-preserving collapse-replacer (displayDiff.ts) — MUST keep
+      // the exact output the §3.5 raster cacheKey was built on.
+      const payload = JSON.stringify({ c: sliceCmds, r: usedResources }, collapseReplacer);
       return fnv1a(payload);
     },
     patchCacheKey: (i, key) => {

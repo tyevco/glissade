@@ -84,6 +84,22 @@ export { typewriter, type TypeEdit, type EditMark, type StepMark, type Typewrite
 export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from './drawOn.js';
 export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
 export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
+
+// DEV / CLI diagnostic — DisplayList diff + serializable IR snapshots (§3.3).
+// Side-effect-free, never reached by evaluate(); tree-shakes out of the embed.
+export {
+  diffDisplayLists,
+  formatDisplayDiff,
+  serializeDisplayList,
+  parseDisplaySnapshot,
+  collapseReplacer,
+  DL_SNAPSHOT_VERSION,
+  DlSnapshotError,
+  type DisplayDiff,
+  type CommandDelta,
+  type FieldChange,
+  type DlSnapshot,
+} from './displayDiff.js';
 export {
   ALL_FILTER_KINDS,
   type RenderBackend,

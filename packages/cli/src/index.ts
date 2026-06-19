@@ -14,3 +14,4 @@ export { pickEncoder, availableEncoders, parseEncoderList, NoEncoderError, type 
 export { resolveRenderDoc, MachineExportError, type MachineRenderFlags } from './machines.js';
 export { dev, type DevOptions, type DevServer } from './dev.js';
 export { importCommand, type ImportOptions, type ImportCommandResult } from './import.js';
+export { diffCommand, snapshotAt, evaluateAt, type DiffOptions, type DiffResult } from './diff.js';

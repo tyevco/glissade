@@ -45,6 +45,7 @@ function parseArgs(argv: string[]) {
 
 const USAGE = `usage:
   gs render <scene-module> [options]
+  gs diff <scene-module> --at <t> --against <baseline.dl.json|.png>
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
@@ -76,6 +77,12 @@ render options:
   --chapters-kind <k[,k]>  cue kinds that become VTT chapters (default: chapter); cues.json keeps all kinds
   --strict         fail on an unregistered font family or an uncovered glyph (§3.6; default: warn)
 
+diff options (DisplayList diff vs a committed baseline — exits non-zero on any divergence):
+  --at <t>         time in SECONDS to evaluate the scene at (required)
+  --against <p>    baseline to compare to: <name>.dl.json (command-level structural diff)
+                   or <name>.png (raw encodePng byte-compare only — no pixel-diff)
+  --snapshot <p>   instead of diffing, write the scene's .dl.json snapshot at --at to <p>
+
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
   --port <n>       listen port (default: any free port)
@@ -93,7 +100,7 @@ narrate options (the explicit TTS prepare step; render itself stays offline):
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx' && command !== 'prepare') {
+  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx' && command !== 'prepare') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -157,6 +164,36 @@ async function main(): Promise<void> {
           );
         }
       }
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (command === 'diff') {
+    const atRaw = flags.get('at');
+    if (atRaw === undefined || atRaw === '') fail(`diff needs --at <seconds>\n${USAGE}`);
+    const at = Number(atRaw);
+    if (!Number.isFinite(at)) fail(`--at must be a number of seconds, got '${atRaw}'`);
+    const snapshotOut = flags.get('snapshot');
+    if (snapshotOut !== undefined && snapshotOut !== '') {
+      const { snapshotAt } = await import('./diff.js');
+      try {
+        const { writeFileSync } = await import('node:fs');
+        writeFileSync(snapshotOut, await snapshotAt(modulePath, at));
+        process.stderr.write(`gs diff: wrote snapshot @ ${at}s → ${snapshotOut}\n`);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    const against = flags.get('against');
+    if (against === undefined || against === '') fail(`diff needs --against <baseline.dl.json|.png>\n${USAGE}`);
+    const { diffCommand } = await import('./diff.js');
+    try {
+      const result = await diffCommand({ modulePath, at, against });
+      process.stdout.write(`${result.report}\n`);
+      if (!result.equal) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

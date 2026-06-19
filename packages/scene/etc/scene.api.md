@@ -106,7 +106,19 @@ export class ColdAssetError extends Error {
 }
 
 // @public
+export function collapseReplacer(_key: string, value: unknown): unknown;
+
+// @public
 export function collectTextUsages(scene: Scene): FontUsage[];
+
+// @public
+export interface CommandDelta {
+    fields: FieldChange[];
+    index: number;
+    kind: 'change' | 'add' | 'remove';
+    opA?: DrawCommand['op'];
+    opB?: DrawCommand['op'];
+}
 
 // @public (undocumented)
 export function createDisplayListBuilder(size: {
@@ -195,6 +207,19 @@ export class DeterminismViolationError extends Error {
     constructor(api: string);
 }
 
+// @public
+export function diffDisplayLists(a: DisplayList, b: DisplayList): DisplayDiff;
+
+// @public (undocumented)
+export interface DisplayDiff {
+    deltas: CommandDelta[];
+    equal: boolean;
+    size?: {
+        from: DisplayList['size'];
+        to: DisplayList['size'];
+    };
+}
+
 // @public (undocumented)
 export interface DisplayList {
     // (undocumented)
@@ -217,6 +242,25 @@ export interface DisplayListBuilder {
     push(cmd: DrawCommand): void;
     // (undocumented)
     resource(res: Resource): ResourceId;
+}
+
+// @public
+export const DL_SNAPSHOT_VERSION: 1;
+
+// @public (undocumented)
+export interface DlSnapshot {
+    // (undocumented)
+    commands: DrawCommand[];
+    dlSnapshotVersion: typeof DL_SNAPSHOT_VERSION;
+    // (undocumented)
+    resources: Resource[];
+    // (undocumented)
+    size: DisplayList['size'];
+}
+
+// @public (undocumented)
+export class DlSnapshotError extends Error {
+    constructor(message: string);
 }
 
 // @public (undocumented)
@@ -309,6 +353,15 @@ export interface EvalContext {
 // @public
 export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList;
 
+// @public (undocumented)
+export interface FieldChange {
+    // (undocumented)
+    from: unknown;
+    path: string;
+    // (undocumented)
+    to: unknown;
+}
+
 // @public
 export type FilterKind = FilterSpec['kind'];
 
@@ -386,6 +439,9 @@ export interface FontSpec {
 
 // @public (undocumented)
 export function fontString(font: FontSpec): string;
+
+// @public
+export function formatDisplayDiff(diff: DisplayDiff): string;
 
 // @public
 export function fromTRS(position: Vec2, rotationDeg: number, scale: Vec2): Mat2x3;
@@ -681,6 +737,9 @@ export type NodeTypeName = (typeof NODE_TAXONOMY)[number];
 export { Paint }
 
 // @public
+export function parseDisplaySnapshot(json: string): DisplayList;
+
+// @public
 export class Path extends Shape {
     constructor(props?: PathProps);
     bounds(): {
@@ -940,6 +999,9 @@ export function segmentGraphemes(text: string): string[];
 
 // @public
 export function segmentWords(text: string): string[];
+
+// @public
+export function serializeDisplayList(dl: DisplayList): string;
 
 // @public
 export function setDefaultMeasurer(m: TextMeasurer | null): void;
