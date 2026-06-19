@@ -1,5 +1,93 @@
 # @glissade/core
 
+## 0.12.0-pre.0
+
+### Minor Changes
+
+- 2850386: feat(fonts): font ingestion front door — registerFont/font()/static instancing (§3.6)
+
+  The 0.12 font front door: `registerFont`, the fluent `font()` builder,
+  `ingestFont`, `sniffFontFormat`, `buildFontPlan`, and a `FontStore`, all on the
+  new `@glissade/core/font-ingest` sub-path entry. It turns a variable font into
+  an ordinary static face once, at ingest/prepare time — never inside
+  `evaluate()` — so variable-font support collapses to the already-solved
+  static-parity case.
+
+  - `@glissade/core/font-ingest`: magic-byte **sniffing** (ttf / otf / ttc →
+    straight to Skia; woff / woff2 → decoded in-process to a plain sfnt),
+    **STATIC variable-axis instancing** (a fixed axis tuple, e.g. `{ wght: 600 }`,
+    → ONE content-hashed static sfnt; an axis RANGE / live per-frame instancing is
+    intentionally deferred), eager `parseCmap` so `registerFont(...)` returns
+    coverage + a build-time `covers(text)` / `missing(text)` predicate, and the
+    pure `font('Inter').src(...).variable().axis('wght', 600).build()` builder.
+    Determinism: the same source + axis tuple yields byte-identical sfnt bytes and
+    hash run-to-run, so no new field flows through `FontSpec`/`DisplayList`.
+  - `@glissade/cli`: `gs fonts audit <scene>` — the font front-door report
+    (per family: declared faces, sniffed format, cmap coverage, and missing-glyph
+    RUNS for the text the scene actually renders — the "héllo 👋 renders emoji in
+    Chrome, tofu in Skia" bug). The render path registers an instanced face like
+    any other static ttf (`GlobalFonts.registerFromPath` for plain ttf/otf,
+    preserving existing goldens byte-for-byte; `register(Buffer)` only for a
+    decoded woff2).
+
+  The single heavy dependency, `subset-font` (harfbuzz `hb-subset` + a wasm woff2
+  decoder), is an `optionalDependencies` entry reached ONLY via a dynamic
+  `import()`, so it tree-shakes completely out of every embed bundle — a §4.4
+  leak-guard in `scripts/check-size.mjs` fails the build if `subset-font` /
+  harfbuzz / wawoff2 / fontIngest reach the embed graph (core/index, scene,
+  canvas2d, player, element).
+
+  Gates met: a new `font-instanced` Skia golden (the wght:600 instance of
+  Inconsolata-Variable) is per-path byte-exact and joins the browser↔Skia SSIM
+  parity suite at the shared 0.97 floor; all pre-existing goldens stay
+  byte-identical (additive); the leak-guard passes (the deps tree-shake out).
+
+- 388a8f0: feat(paint): mesh-gradient Paint — one native, animatable aurora fill (§3 Paint)
+
+  A native `mesh` Paint: N color points blended across a node's [0,1]² fill
+  rectangle as ONE animatable fill, registered in the Paint union beside
+  `linear`/`radial`. The native replacement for the "N blurred blobs" aurora
+  backdrop (the consumer's #1 render-cost pain). `points[i].pos`/`color` are
+  animatable, so `track('node/fill.points.0.color', 'paint', …)` drives aurora
+  drift on a single node.
+
+  The determinism tentpole of the milestone — dual-backend parity is the
+  deliverable. A decisive finding (@napi-rs/canvas exposes no SkSL
+  `RuntimeEffect`/`makeShader`) means there is NO SkSL-vs-fallback fork: there is
+  exactly ONE shared CPU kernel both backends run.
+
+  - `@glissade/core`: a `mesh` Paint variant (`MeshPaint`/`MeshPoint`/
+    `MeshInterpolation`) in the animatable Paint union. `paintType` lerps
+    matched-count meshes pairwise (point `pos` + OKLab `color`; `interpolation`/
+    `bg` carried as discrete metadata) and snaps on a mismatched point count or
+    cross-kind — the path/paint precedent. Cross-kind lift (solid→uniform-mesh)
+    is deferred.
+  - `@glissade/scene`: `meshGradient.ts` — the shared deterministic kernel: one
+    Shepard inverse-distance blend with a colorspace knob (`smooth`/`oklab` = IDW
+    in OKLab, `gaussian` = a pinned-sigma weight), pinned named constants
+    (`MESH_SIGMA`, `MESH_SHEPARD_POWER`, `MESH_DOWNSCALE`), OKLab math reused
+    bit-identically from core, and `Uint8ClampedArray` integer quantization so the
+    source buffer is reproducible run-to-run and identical across backends. The
+    `Raster2D` fill branch blits it via `clip(path) + drawImage(meshTile → bounds)`
+    with `imageSmoothingEnabled` pinned (a cross-backend parity spike rejected
+    `createPattern` for edge-AA/alpha contamination + an uncontrolled resample
+    filter). NO triangulator (Gouraud/Delaunay/Coons deferred).
+
+  Determinism gates met: Skia golden per-path byte-exact (a new `golden-mesh`
+  aurora scene; all existing goldens byte-identical — additive Paint kind);
+  browser↔Skia SSIM ≥ 0.97 (mesh added to the PARITY suite — the shared kernel
+  emits an identical source ImageData on both, only the final blit AA differs);
+  RASTER_CACHE on == off byte-for-byte (mesh adds no per-frame state — it rides
+  the §3.5 group cache); only deterministic math (exp/hypot/cbrt), no
+  Date/Math.random. A stroke/text mesh paint degrades to a deterministic
+  representative solid with a one-time dev warning.
+
+- 47a3ca0: Add **motion clips** — build-time authoring sugar, on the tree-shakeable `@glissade/core/clips` sub-path. A `clip()` captures a relative-time key schedule over named prop _channels_; `clip.apply(target, startSec, opts?)` compiles it to ordinary keyed `Track[]` at apply-time (exactly like `springTo`/`stagger`) — **byte-indistinguishable** from hand-authored `track()`, never a runtime concept, never in the serialized Timeline document. Every channel compiles through `track(target, type, keys)`, so `validateTrack` runs and the `evaluate()` purity contract is untouched.
+
+  `target` is a node-id string (each channel → `'<nodeId>/<channel.path>'`) **or** a `{ channel: TweenTarget }` map for per-channel path override. `opts.overrides` substitutes a channel's value/ease topology-preservingly (no add/remove keys); `opts.speed` divides every relative `t`. `clipList(clip, targets, startSec, { stagger })` fans a clip across a list, reusing the `stagger` shape. A small stdlib of `clip(...)` literals ships from the same sub-path: `popIn`, `slideIn`, `pulse`, `driftLoop` (the last two are seamless loop clips).
+
+  New exports from `@glissade/core/clips`: `clip`, `clipList`, `ClipError`, `popIn`, `slideIn`, `pulse`, `driftLoop`, and the `Clip` / `ClipSpec` / `ClipChannel` / `ChannelOverride` / `ApplyOpts` / `ClipResult` / `ClipTarget` / `ClipListOpts` / `DurationOpts` / `SlideEdge` types.
+
 ## 0.11.0
 
 ### Patch Changes

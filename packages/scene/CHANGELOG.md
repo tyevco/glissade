@@ -1,5 +1,111 @@
 # @glissade/scene
 
+## 0.12.0-pre.0
+
+### Minor Changes
+
+- 796b568: feat(diff): `gs diff` — DisplayList diff + serializable IR snapshots (gs-diff)
+
+  The determinism-diagnostic substrate (§3.3). Operating on the already-pure
+  DisplayList IR (no raster, no audio), it turns an opaque golden-hash mismatch
+  into a command-level explanation.
+
+  - `@glissade/scene`: `diffDisplayLists(a, b): DisplayDiff` — index-aligned,
+    positional per-command deltas (changed fields named; `add`/`remove` for
+    trailing commands). `serializeDisplayList`/`parseDisplaySnapshot` produce a
+    committable `.dl.json` baseline, registered as the third versioned
+    interchange schema (`dlSnapshotVersion`, §7.4). The byte-preserving
+    collapse-replacer that backs the §3.5 raster cacheKey is extracted to a
+    single shared function (a pinned-cacheKey regression guard proves the
+    extraction did not move a byte). All diff/snapshot surface tree-shakes out of
+    the embed bundle.
+  - `@glissade/cli`: a `gs diff <scene> --at <t> --against <baseline.dl.json|.png>`
+    subcommand — prints a command tree and exits non-zero on divergence
+    (`--against .png` is a raw `encodePng` byte-compare only). `--snapshot <out>`
+    writes a `.dl.json` baseline.
+
+  The golden harness's `assertFrameMatches` now attaches a DisplayList diff (from
+  a fresh-scene cold re-evaluation) to the thrown error, so a purity break names
+  the exact op/field that moved.
+
+  KNOWN v1 cliff: the positional alignment cascades on a leading insert/remove;
+  LCS/Myers alignment is deferred.
+
+- 388a8f0: feat(paint): mesh-gradient Paint — one native, animatable aurora fill (§3 Paint)
+
+  A native `mesh` Paint: N color points blended across a node's [0,1]² fill
+  rectangle as ONE animatable fill, registered in the Paint union beside
+  `linear`/`radial`. The native replacement for the "N blurred blobs" aurora
+  backdrop (the consumer's #1 render-cost pain). `points[i].pos`/`color` are
+  animatable, so `track('node/fill.points.0.color', 'paint', …)` drives aurora
+  drift on a single node.
+
+  The determinism tentpole of the milestone — dual-backend parity is the
+  deliverable. A decisive finding (@napi-rs/canvas exposes no SkSL
+  `RuntimeEffect`/`makeShader`) means there is NO SkSL-vs-fallback fork: there is
+  exactly ONE shared CPU kernel both backends run.
+
+  - `@glissade/core`: a `mesh` Paint variant (`MeshPaint`/`MeshPoint`/
+    `MeshInterpolation`) in the animatable Paint union. `paintType` lerps
+    matched-count meshes pairwise (point `pos` + OKLab `color`; `interpolation`/
+    `bg` carried as discrete metadata) and snaps on a mismatched point count or
+    cross-kind — the path/paint precedent. Cross-kind lift (solid→uniform-mesh)
+    is deferred.
+  - `@glissade/scene`: `meshGradient.ts` — the shared deterministic kernel: one
+    Shepard inverse-distance blend with a colorspace knob (`smooth`/`oklab` = IDW
+    in OKLab, `gaussian` = a pinned-sigma weight), pinned named constants
+    (`MESH_SIGMA`, `MESH_SHEPARD_POWER`, `MESH_DOWNSCALE`), OKLab math reused
+    bit-identically from core, and `Uint8ClampedArray` integer quantization so the
+    source buffer is reproducible run-to-run and identical across backends. The
+    `Raster2D` fill branch blits it via `clip(path) + drawImage(meshTile → bounds)`
+    with `imageSmoothingEnabled` pinned (a cross-backend parity spike rejected
+    `createPattern` for edge-AA/alpha contamination + an uncontrolled resample
+    filter). NO triangulator (Gouraud/Delaunay/Coons deferred).
+
+  Determinism gates met: Skia golden per-path byte-exact (a new `golden-mesh`
+  aurora scene; all existing goldens byte-identical — additive Paint kind);
+  browser↔Skia SSIM ≥ 0.97 (mesh added to the PARITY suite — the shared kernel
+  emits an identical source ImageData on both, only the final blit AA differs);
+  RASTER_CACHE on == off byte-for-byte (mesh adds no per-frame state — it rides
+  the §3.5 group cache); only deterministic math (exp/hypot/cbrt), no
+  Date/Math.random. A stroke/text mesh paint degrades to a deterministic
+  representative solid with a one-time dev warning.
+
+- 2a520c5: feat(verify): `gs verify-determinism` — the cross-shard/backend divergence locator (§5.5/§5.6)
+
+  A new CLI subcommand that VERIFIES the frame-level determinism tenet a
+  sharded / cross-machine render leans on — without perturbing it. It emits a
+  `frames.manifest` (per-frame `sha256` of the raw RGBA from `backend.readPixels()`
+  — NOT `encodePng`, sidestepping PNG-encoder nondeterminism; `node:crypto`
+  sha256, no new hash dep — plus per-node DisplayList sub-hashes reusing the
+  shipped `serializeDisplayList`), and bisects the first divergence to a
+  `(frame, node, op)`.
+
+  - `gs verify-determinism <scene> [--shards N] [--against <manifest>] [--range a..b] [--bisect] [--emit <p>]`.
+  - `--shards N` diffs a linear render vs an N-shard render of the same range
+    (each shard re-runs the module from scratch, exactly as `gs render --workers`
+    does); `--against` diffs a committed / other-machine manifest; `--bisect`
+    drills the divergent node via `diffDisplayLists` + `formatDisplayDiff`.
+  - Evaluates under the SAME `withDeterminismGuards('throw')` as `gs render`, so a
+    clock/random/timer call in scene code throws DURING verification.
+  - HONEST SCOPE (§5.5 item 6): byte-equality is Skia↔Skia (cross-machine/shard)
+    ONLY. The manifest stamps its `backend`, and an `--against` cross-backend
+    byte-compare is REJECTED with a clear error — browser↔Skia is perceptual
+    (SSIM) parity, never byte-identity. The full-frame RGBA hash is the byte
+    authority; the per-node sub-hashes only LOCALIZE where a frame diverged.
+
+  `@glissade/scene`: `CacheColdResult` gains an additive `delta?: CommandDelta`
+  (the WHOLE `CommandDelta` of the first divergent leaf node's isolated emit, not
+  a flattened op/index — a multi-field change isn't lost). The existing
+  `{ ok, node? }` callers are unaffected.
+
+### Patch Changes
+
+- Updated dependencies [2850386]
+- Updated dependencies [388a8f0]
+- Updated dependencies [47a3ca0]
+  - @glissade/core@0.12.0-pre.0
+
 ## 0.11.0
 
 ### Patch Changes

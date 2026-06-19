@@ -1,5 +1,201 @@
 # @glissade/cli
 
+## 0.12.0-pre.0
+
+### Minor Changes
+
+- 2850386: feat(fonts): font ingestion front door — registerFont/font()/static instancing (§3.6)
+
+  The 0.12 font front door: `registerFont`, the fluent `font()` builder,
+  `ingestFont`, `sniffFontFormat`, `buildFontPlan`, and a `FontStore`, all on the
+  new `@glissade/core/font-ingest` sub-path entry. It turns a variable font into
+  an ordinary static face once, at ingest/prepare time — never inside
+  `evaluate()` — so variable-font support collapses to the already-solved
+  static-parity case.
+
+  - `@glissade/core/font-ingest`: magic-byte **sniffing** (ttf / otf / ttc →
+    straight to Skia; woff / woff2 → decoded in-process to a plain sfnt),
+    **STATIC variable-axis instancing** (a fixed axis tuple, e.g. `{ wght: 600 }`,
+    → ONE content-hashed static sfnt; an axis RANGE / live per-frame instancing is
+    intentionally deferred), eager `parseCmap` so `registerFont(...)` returns
+    coverage + a build-time `covers(text)` / `missing(text)` predicate, and the
+    pure `font('Inter').src(...).variable().axis('wght', 600).build()` builder.
+    Determinism: the same source + axis tuple yields byte-identical sfnt bytes and
+    hash run-to-run, so no new field flows through `FontSpec`/`DisplayList`.
+  - `@glissade/cli`: `gs fonts audit <scene>` — the font front-door report
+    (per family: declared faces, sniffed format, cmap coverage, and missing-glyph
+    RUNS for the text the scene actually renders — the "héllo 👋 renders emoji in
+    Chrome, tofu in Skia" bug). The render path registers an instanced face like
+    any other static ttf (`GlobalFonts.registerFromPath` for plain ttf/otf,
+    preserving existing goldens byte-for-byte; `register(Buffer)` only for a
+    decoded woff2).
+
+  The single heavy dependency, `subset-font` (harfbuzz `hb-subset` + a wasm woff2
+  decoder), is an `optionalDependencies` entry reached ONLY via a dynamic
+  `import()`, so it tree-shakes completely out of every embed bundle — a §4.4
+  leak-guard in `scripts/check-size.mjs` fails the build if `subset-font` /
+  harfbuzz / wawoff2 / fontIngest reach the embed graph (core/index, scene,
+  canvas2d, player, element).
+
+  Gates met: a new `font-instanced` Skia golden (the wght:600 instance of
+  Inconsolata-Variable) is per-path byte-exact and joins the browser↔Skia SSIM
+  parity suite at the shared 0.97 floor; all pre-existing goldens stay
+  byte-identical (additive); the leak-guard passes (the deps tree-shake out).
+
+- 796b568: feat(diff): `gs diff` — DisplayList diff + serializable IR snapshots (gs-diff)
+
+  The determinism-diagnostic substrate (§3.3). Operating on the already-pure
+  DisplayList IR (no raster, no audio), it turns an opaque golden-hash mismatch
+  into a command-level explanation.
+
+  - `@glissade/scene`: `diffDisplayLists(a, b): DisplayDiff` — index-aligned,
+    positional per-command deltas (changed fields named; `add`/`remove` for
+    trailing commands). `serializeDisplayList`/`parseDisplaySnapshot` produce a
+    committable `.dl.json` baseline, registered as the third versioned
+    interchange schema (`dlSnapshotVersion`, §7.4). The byte-preserving
+    collapse-replacer that backs the §3.5 raster cacheKey is extracted to a
+    single shared function (a pinned-cacheKey regression guard proves the
+    extraction did not move a byte). All diff/snapshot surface tree-shakes out of
+    the embed bundle.
+  - `@glissade/cli`: a `gs diff <scene> --at <t> --against <baseline.dl.json|.png>`
+    subcommand — prints a command tree and exits non-zero on divergence
+    (`--against .png` is a raw `encodePng` byte-compare only). `--snapshot <out>`
+    writes a `.dl.json` baseline.
+
+  The golden harness's `assertFrameMatches` now attaches a DisplayList diff (from
+  a fresh-scene cold re-evaluation) to the thrown error, so a purity break names
+  the exact op/field that moved.
+
+  KNOWN v1 cliff: the positional alignment cascades on a leading insert/remove;
+  LCS/Myers alignment is deferred.
+
+- c46321d: feat(loudness): `gs measure-loudness` — loudness-normalized publish profiles via a deterministic peak-clamped scalar gain (loudness)
+
+  Publish-loudness normalization that keeps the render hot path single-pass and
+  byte-deterministic. The insight: YouTube/Shorts re-normalize loudness
+  platform-side, so the publish target is _≤ target-LUFS AND ≤ -1 dBTP_, not exact
+  — which means no two-pass limiter is needed.
+
+  - **`gs measure-loudness <scene> [--profile <id>]`** builds the final mix to a
+    WAV (the same `collectAudioClips` + `planAudioMix` render uses) and runs
+    ffmpeg's `loudnorm` measurement pass over it at MEASURE-time, then commits a
+    `<scene>.loudness.json { loudnessVersion, profileId, inputI, inputTp, inputLra,
+gain, mixHash }`. The gain is peak-clamped:
+    `gain = min(targetLufs - inputI, truePeakDb - inputTp)` — the clamp uses the
+    MEASURED true-peak, so the published output is guaranteed ≤ -1 dBTP with no
+    render-time oversampling.
+  - **At render**: `<scene>.loudness.json` is read and `gain` is applied as a PURE
+    `volume=<gain>dB` scalar on the FINAL mix node — a single scalar in the
+    existing filter graph, NOT a second ffmpeg pass. The scalar gain is bit-exact
+    (verified) and golden-hashable; the only non-deterministic stages (mix-to-PCM,
+    measure-time ebur128) stay quarantined to commit/measure-time per §5.3.
+  - **PublishProfiles**: `youtube`/`shorts` (-14 LUFS), `podcast` (-16),
+    `broadcast`/`ebu` (-23) — all at a -1 dBTP ceiling. YouTube/Shorts ship fully;
+    the brickwall true-peak limiter is deferred — an un-normalized profile whose
+    peaky source can't reach its target without clipping gets an advisory warning.
+  - **mixHash** binds the committed measurement to the mix CONTENT (a hash of the
+    narration/music/sfx timing-manifest bytes, not mtime). Render recomputes it and
+    HARD-THROWS naming the command on a mismatch, so a re-narrate invalidates the
+    measurement loudly instead of silently mis-normalizing. `--loudness off` skips
+    it entirely.
+
+- 4ad8291: feat(narrate): `gs narration-lint` — catch slow-re-narrate failures at BUILD (narrlint)
+
+  Lint the COMMITTED narration timing manifest + the REAL measured caption
+  geometry, so a re-narrate that overran its beat, a caption too dense to read, or
+  a caption that overflows its box fails CI now instead of surfacing render-hours
+  later. Pure over the committed JSON + the injected measurer — no clock, RNG, or
+  I/O beyond reading the committed files.
+
+  - `@glissade/narrate`: a schema bump for anchor budgets — a script-level
+    `budgets?: Record<string, number>` (per-id ceilings, segments + pauses share
+    the id namespace) and a per-segment `maxSec?` (which wins). Both are committed
+    with the script ("animation is data") and persisted into the timing manifest
+    (`NarrationTiming.budgets`, `TimedSegment.maxSec`) so the lint reads them from
+    the committed JSON. Default-off: omit them and the manifest is byte-identical.
+  - `@glissade/cli`: `lintNarration(timing, opts): Diagnostic[]` + a
+    `gs narration-lint <scene-module|*.narration.timing.json>` subcommand.
+    - Tier-1 (HARD, can fail CI / exit non-zero): `reading-speed`
+      (chars-per-second over each committed cue vs `--max-cps`, default 17),
+      `anchor-budget` (a beat over its `maxSec`/`budgets` ceiling), `caption-fit`
+      (a cue that overflows its box / exceeds `maxLines`, using the REAL measured
+      geometry — the lint DEFAULTS to the Skia measurer with the render's own
+      fonts and drives the actual caption node, so a passing lint can't
+      burn-overflow).
+    - Tier-2 (WARN-only, never fails CI): `beat-drift`, `silence` sanity.
+    - Output: a human table, `--json`, and `--fix` (a git-apply-able budget-bump
+      diff for the SCRIPT — it NEVER writes a committed artifact).
+
+- e41e9f0: feat(render): persistent whole-frame raster cache (`.gscache`) — content-addressed disk cache (§3.5)
+
+  `gs render --cache [<dir>] [--cache-max-size <bytes|2GB>]` (and `render({ cache: { dir, mode } })`)
+  adds a persistent whole-frame raster cache so a one-line edit doesn't re-rasterize every blur-heavy
+  frame across runs/shards. OFF by default (`mode:'off'`), preserving the exact current equality
+  baseline — opting in only changes speed, never output.
+
+  - **Whole-frame granularity** (per-group disk tiling deferred to 0.13): the key is over the ENTIRE
+    frame's DisplayList, so a hit is byte-safe by construction.
+  - **Complete key:** `sha256(serializeDisplayList(frame) ++ glissadeVersion ++ capsId)` — folds the
+    DisplayList-snapshot bytes (geometry/paint/transform), the glissade version (bump-on-version
+    invalidation), and the BackendCaps id. version/capsId are INJECTED via `CacheKeyContext`.
+  - **HIT == MISS:** a hit loads stored RGBA into the backend (`SkiaBackend.putPixels`) and encodes
+    through the IDENTICAL `encodePng` path, so it is byte-identical to a cold render.
+  - **Storage:** raw-RGBA + zlib, one atomically-written file per frame. Shards share one `.gscache`.
+  - **Size-capped LRU from day one** (default 2 GB, mtime/access-time ordered).
+  - **`gs cache verify <scene>`:** renders cache-hits vs cache-off and asserts the `encodePng` bytes
+    are equal frame-for-frame (a sampled fraction is logged). A NEGATIVE test proves an incomplete key
+    makes the gate fail.
+
+  Honesty: the cache wins repeated renders + the unchanged-prefix of a single-segment edit. A full
+  re-narrate shifts every frame's timing → every DisplayList changes → every frame misses.
+
+- 2a520c5: feat(verify): `gs verify-determinism` — the cross-shard/backend divergence locator (§5.5/§5.6)
+
+  A new CLI subcommand that VERIFIES the frame-level determinism tenet a
+  sharded / cross-machine render leans on — without perturbing it. It emits a
+  `frames.manifest` (per-frame `sha256` of the raw RGBA from `backend.readPixels()`
+  — NOT `encodePng`, sidestepping PNG-encoder nondeterminism; `node:crypto`
+  sha256, no new hash dep — plus per-node DisplayList sub-hashes reusing the
+  shipped `serializeDisplayList`), and bisects the first divergence to a
+  `(frame, node, op)`.
+
+  - `gs verify-determinism <scene> [--shards N] [--against <manifest>] [--range a..b] [--bisect] [--emit <p>]`.
+  - `--shards N` diffs a linear render vs an N-shard render of the same range
+    (each shard re-runs the module from scratch, exactly as `gs render --workers`
+    does); `--against` diffs a committed / other-machine manifest; `--bisect`
+    drills the divergent node via `diffDisplayLists` + `formatDisplayDiff`.
+  - Evaluates under the SAME `withDeterminismGuards('throw')` as `gs render`, so a
+    clock/random/timer call in scene code throws DURING verification.
+  - HONEST SCOPE (§5.5 item 6): byte-equality is Skia↔Skia (cross-machine/shard)
+    ONLY. The manifest stamps its `backend`, and an `--against` cross-backend
+    byte-compare is REJECTED with a clear error — browser↔Skia is perceptual
+    (SSIM) parity, never byte-identity. The full-frame RGBA hash is the byte
+    authority; the per-node sub-hashes only LOCALIZE where a frame diverged.
+
+  `@glissade/scene`: `CacheColdResult` gains an additive `delta?: CommandDelta`
+  (the WHOLE `CommandDelta` of the first divergent leaf node's isolated emit, not
+  a flattened op/index — a multi-field change isn't lost). The existing
+  `{ ok, node? }` callers are unaffected.
+
+### Patch Changes
+
+- Updated dependencies [2850386]
+- Updated dependencies [796b568]
+- Updated dependencies [388a8f0]
+- Updated dependencies [47a3ca0]
+- Updated dependencies [4ad8291]
+- Updated dependencies [e41e9f0]
+- Updated dependencies [2a520c5]
+  - @glissade/core@0.12.0-pre.0
+  - @glissade/scene@0.12.0-pre.0
+  - @glissade/narrate@0.12.0-pre.0
+  - @glissade/backend-skia@0.12.0-pre.0
+  - @glissade/interact@0.12.0-pre.0
+  - @glissade/lottie@0.12.0-pre.0
+  - @glissade/player@0.12.0-pre.0
+  - @glissade/sfx@0.12.0-pre.0
+  - @glissade/svg@0.12.0-pre.0
+
 ## 0.11.0
 
 ### Patch Changes
