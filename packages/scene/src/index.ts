@@ -12,6 +12,9 @@ export {
   type ResourceId,
   type PathSeg,
   type Paint,
+  type MeshPaint,
+  type MeshPoint,
+  type MeshInterpolation,
   type StrokeStyle,
   type FontSpec,
   type FilterSpec,
@@ -138,10 +141,19 @@ export {
   fontString,
   type CanvasLike,
   type Ctx2DLike,
+  type ImageDataLike,
   type PathLike,
   type Raster2DHost,
   type ShaderCaps,
 } from './raster2d.js';
+
+export {
+  rasterizeMesh,
+  meshRasterSize,
+  MESH_DOWNSCALE,
+  MESH_SHEPARD_POWER,
+  MESH_SIGMA,
+} from './meshGradient.js';
 
 export {
   breakLines,

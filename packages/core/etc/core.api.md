@@ -362,6 +362,28 @@ export function mergeSidecar(code: Timeline, sidecar: SidecarDoc | SidecarDocV1 
 export function mergeSidecarDetailed(code: Timeline, sidecar: SidecarDoc | SidecarDocV1 | null | undefined): MergeResult;
 
 // @public
+export type MeshInterpolation = 'smooth' | 'gaussian' | 'oklab';
+
+// @public
+export interface MeshPaint {
+    bg?: string;
+    // (undocumented)
+    interpolation?: MeshInterpolation;
+    // (undocumented)
+    kind: 'mesh';
+    // (undocumented)
+    points: MeshPoint[];
+}
+
+// @public
+export interface MeshPoint {
+    // (undocumented)
+    color: string;
+    // (undocumented)
+    pos: [number, number];
+}
+
+// @public
 export function migrateSidecar(doc: SidecarDoc | SidecarDocV1 | null | undefined): SidecarDoc | null;
 
 // @public (undocumented)
@@ -414,7 +436,7 @@ export type Paint = {
     center?: [number, number];
     radius?: number;
     interpolation?: GradientInterpolation;
-};
+} | MeshPaint;
 
 // @public
 export const paintType: ValueType<Paint>;

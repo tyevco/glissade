@@ -6,7 +6,7 @@
  * the golden + SSIM suites verify the refactor preserved every byte.
  */
 
-import { emitDevWarning } from '@glissade/core';
+import { emitDevWarning, type MeshPaint } from '@glissade/core';
 import { ColdAssetError } from './assets.js';
 import type { VideoFrameSource } from './assets.js';
 import {
@@ -21,6 +21,21 @@ import {
 } from './displayList.js';
 import { IDENTITY, multiply, type Mat2x3 } from './matrix.js';
 import { densifyStops } from './gradient.js';
+import { meshRasterSize, rasterizeMesh } from './meshGradient.js';
+
+/** Stroke/text mesh paint has no clippable fill region — pick a deterministic
+ * representative solid (bg, else the first point) so it renders without a crash. */
+let warnedMeshStroke = false;
+function meshRepresentativeColor(paint: MeshPaint): string {
+  if (!warnedMeshStroke) {
+    warnedMeshStroke = true;
+    emitDevWarning(
+      'mesh Paint on a stroke/text resolves to a representative solid color (mesh fill is ' +
+        'supported only on filled paths, §3 Paint) — use a fillPath for the mesh gradient',
+    );
+  }
+  return paint.bg ?? paint.points[0]?.color ?? '#00000000';
+}
 export { type TextMetricsLite } from './text.js';
 
 /** A backend gradient handle (DOM CanvasGradient and @napi-rs CanvasGradient both satisfy it). */
@@ -80,6 +95,18 @@ export interface Ctx2DLike<TPath, TDrawable> {
   globalCompositeOperation: string;
   filter: string;
   imageSmoothingEnabled: boolean;
+  /** §3 mesh Paint: write a straight-RGBA buffer into an offscreen tile, then
+   * blit it (clip + drawImage). Both DOM and @napi-rs/canvas expose these. */
+  createImageData(w: number, h: number): ImageDataLike;
+  putImageData(data: ImageDataLike, x: number, y: number): void;
+}
+
+/** The structural ImageData surface the mesh blit drives — DOM ImageData and
+ * @napi-rs/canvas ImageData both satisfy it (writable `.data`). */
+export interface ImageDataLike {
+  readonly data: Uint8ClampedArray;
+  readonly width: number;
+  readonly height: number;
 }
 
 export interface CanvasLike {
@@ -109,6 +136,11 @@ interface GradientCtx {
 }
 function resolveFill(ctx: GradientCtx, paint: Paint, bounds: FillBounds | null): string | CanvasGradientLike {
   if (paint.kind === 'color') return paint.color;
+  // mesh has no fillStyle representation — the fillPath path blits it (clip +
+  // drawImage). A mesh reaching here is a STROKE/TEXT mesh paint (no clippable
+  // fill region): degrade to a deterministic representative solid (bg, else the
+  // first point's color) with a one-time dev warning, never a crash.
+  if (paint.kind === 'mesh') return meshRepresentativeColor(paint);
   let g: CanvasGradientLike;
   if (paint.kind === 'radial') {
     const cx = paint.center ? paint.center[0] : bounds ? (bounds.minX + bounds.maxX) / 2 : 0;
@@ -432,6 +464,43 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
   }
 
   /**
+   * §3 mesh Paint blit (the spike-chosen mechanism: clip + drawImage, NOT
+   * createPattern — the pattern path leaks edge-AA/alpha contamination and an
+   * uncontrolled resample filter across backends, breaking SSIM; clip+drawImage
+   * is fully controlled and clips to the actual path, not just its bounds box).
+   *
+   * The mesh is rasterized by the SHARED kernel into a fixed downscaled buffer
+   * (identical bytes on both backends), written into an offscreen tile, then
+   * upscaled into the path-local bounds with `imageSmoothingEnabled` PINNED true.
+   * The clip is the real fill path, so a circle/star fills correctly. Only this
+   * final blit's AA differs per backend — the source ImageData is byte-identical,
+   * which is what makes the golden byte-exact and browser↔Skia SSIM ≥ 0.97.
+   */
+  private fillMesh(
+    ctx: Ctx2DLike<TPath, TDrawable>,
+    path: TPath,
+    paint: MeshPaint,
+    bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  ): void {
+    const bw = bounds.maxX - bounds.minX;
+    const bh = bounds.maxY - bounds.minY;
+    if (bw <= 0 || bh <= 0) return;
+    const { w, h } = meshRasterSize(bw, bh);
+    const buf = rasterizeMesh(paint, w, h);
+    const tile = this.acquire(w, h);
+    const tileCtx = this.host.context(tile);
+    const img = tileCtx.createImageData(w, h);
+    img.data.set(buf);
+    tileCtx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.clip(path, 'nonzero');
+    ctx.imageSmoothingEnabled = true; // PINNED: the only upscale-filter knob
+    ctx.drawImage(tile as unknown as TDrawable, 0, 0, w, h, bounds.minX, bounds.minY, bw, bh);
+    ctx.restore();
+    this.release(tile);
+  }
+
+  /**
    * §3.4/§3.5 composite of a finished group layer onto its parent — the EXACT
    * same save/resetTransform/clip/globalAlpha/filter/blend/drawImage sequence
    * for both the freshly-rasterized miss path and a cache-blit hit, so a HIT is
@@ -553,8 +622,14 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
         case 'fillPath': {
           const ctx = ctxOf();
           const b = this.pathBounds(list.resources, cmd.path);
-          ctx.fillStyle = resolveFill(ctx, cmd.paint, b);
-          ctx.fill(this.path(list.resources, cmd.path));
+          if (cmd.paint.kind === 'mesh' && b) {
+            // §3 mesh: clip to the path, blit the shared-kernel ImageData upscaled
+            // to the local bounds. ONE deterministic source buffer on both backends.
+            this.fillMesh(ctx, this.path(list.resources, cmd.path), cmd.paint, b);
+          } else {
+            ctx.fillStyle = resolveFill(ctx, cmd.paint, b);
+            ctx.fill(this.path(list.resources, cmd.path));
+          }
           if (b) accumulateRect(top(), mat, b.minX, b.minY, b.maxX, b.maxY);
           break;
         }

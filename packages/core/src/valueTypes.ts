@@ -202,23 +202,53 @@ export interface ColorStop {
  */
 export type GradientInterpolation = 'linear' | 'smooth' | 'gaussian';
 
+/** One mesh-gradient color point: `pos` in normalized [0,1]² fill space, `color`
+ * a CSS string. Both are ANIMATABLE (e.g. `track('node/fill.points.0.color', …)`
+ * drives aurora drift on one node). */
+export interface MeshPoint {
+  pos: [number, number];
+  color: string;
+}
+
 /**
- * A fill/stroke paint (§2.2 animatable document value): a solid color, or a
- * `linear`/`radial` gradient. Geometry (`from`/`to`, `center`/`radius`) is in
- * the shape's LOCAL space; omit it to default to the filled path's bounds.
- * Plain JSON — serializes with no hooks; animatable via `paintType`.
+ * How a `mesh` Paint blends its scattered color points: `smooth` (Shepard
+ * inverse-distance weighting in OKLab — sharper points), `gaussian` (a pinned-
+ * sigma gaussian melt — a softer, blurrier aurora), or `oklab` (an alias for
+ * `smooth`; the blend space is always OKLab). NO triangulator — one shared
+ * deterministic kernel both backends run (§3 Paint).
+ */
+export type MeshInterpolation = 'smooth' | 'gaussian' | 'oklab';
+
+/** A native mesh-gradient fill: N color points blended across the [0,1]² fill
+ * rectangle as ONE animatable fill (replaces the "N blurred blobs" aurora). */
+export interface MeshPaint {
+  kind: 'mesh';
+  points: MeshPoint[];
+  interpolation?: MeshInterpolation;
+  /** Optional baseline color (a zero-weight floor) so a sparse mesh doesn't smear
+   * one point across the whole rect; omit for a pure points-only blend. */
+  bg?: string;
+}
+
+/**
+ * A fill/stroke paint (§2.2 animatable document value): a solid color, a
+ * `linear`/`radial` gradient, or a `mesh` gradient. Geometry (`from`/`to`,
+ * `center`/`radius`, mesh `pos`) is in the shape's LOCAL space; omit gradient
+ * geometry to default to the filled path's bounds. Plain JSON — serializes with
+ * no hooks; animatable via `paintType`.
  */
 export type Paint =
   | { kind: 'color'; color: string }
   | { kind: 'linear'; stops: ColorStop[]; from?: [number, number]; to?: [number, number]; interpolation?: GradientInterpolation }
-  | { kind: 'radial'; stops: ColorStop[]; center?: [number, number]; radius?: number; interpolation?: GradientInterpolation };
+  | { kind: 'radial'; stops: ColorStop[]; center?: [number, number]; radius?: number; interpolation?: GradientInterpolation }
+  | MeshPaint;
 
 const lerpN = (a: number, b: number, t: number): number => a + (b - a) * t;
 const lerpPt = (a: [number, number], b: [number, number], t: number): [number, number] => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t)];
 
 /** Lift a solid color to a uniform gradient matching `shape` (every stop = color),
  * so a color↔gradient tween fades smoothly instead of snapping. */
-function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radial' }>): Paint {
+function liftColor(color: string, shape: Extract<Paint, { kind: 'linear' | 'radial' }>): Extract<Paint, { kind: 'linear' | 'radial' }> {
   const stops = shape.stops.map((s) => ({ offset: s.offset, color }));
   const interp = shape.interpolation ? { interpolation: shape.interpolation } : {};
   return shape.kind === 'radial'
@@ -252,8 +282,26 @@ export const paintType: ValueType<Paint> = {
   id: 'paint',
   lerp: (a, b, t) => {
     if (a.kind === 'color' && b.kind === 'color') return { kind: 'color', color: lerpColor(a.color, b.color, t) };
-    let A: Paint = a;
-    let B: Paint = b;
+    // mesh↔mesh with MATCHED point count: lerp each point's pos + oklab color,
+    // carry A's interpolation/bg (discrete metadata). Mismatched point count (or
+    // cross-kind: solid→uniform-mesh lift is deferred) snaps via paintSnap.
+    if (a.kind === 'mesh' && b.kind === 'mesh') {
+      if (a.points.length !== b.points.length) return paintSnap(t, a, b);
+      const points = a.points.map((pa, i) => {
+        const pb = b.points[i]!;
+        return { pos: lerpPt(pa.pos, pb.pos, t), color: lerpColor(pa.color, pb.color, t) };
+      });
+      return {
+        kind: 'mesh',
+        points,
+        ...(a.interpolation ? { interpolation: a.interpolation } : {}),
+        ...(a.bg !== undefined && b.bg !== undefined ? { bg: lerpColor(a.bg, b.bg, t) } : a.bg !== undefined ? { bg: a.bg } : {}),
+      };
+    }
+    if (a.kind === 'mesh' || b.kind === 'mesh') return paintSnap(t, a, b);
+    // a, b are now color | linear | radial (mesh handled/snapped above)
+    let A: Exclude<Paint, MeshPaint> = a;
+    let B: Exclude<Paint, MeshPaint> = b;
     if (A.kind === 'color' && B.kind !== 'color') A = liftColor(A.color, B);
     else if (B.kind === 'color' && A.kind !== 'color') B = liftColor(B.color, A);
     if (A.kind === 'color' || B.kind === 'color' || A.kind !== B.kind || A.stops.length !== B.stops.length) {
@@ -286,7 +334,16 @@ export const paintType: ValueType<Paint> = {
     if (a === b) return true;
     if (a.kind !== b.kind) return false;
     if (a.kind === 'color') return b.kind === 'color' && a.color === b.color;
-    if (b.kind === 'color') return false;
+    if (a.kind === 'mesh') {
+      if (b.kind !== 'mesh') return false;
+      if (a.interpolation !== b.interpolation || a.bg !== b.bg) return false;
+      if (a.points.length !== b.points.length) return false;
+      return a.points.every((p, i) => {
+        const q = b.points[i]!;
+        return p.color === q.color && p.pos[0] === q.pos[0] && p.pos[1] === q.pos[1];
+      });
+    }
+    if (b.kind === 'color' || b.kind === 'mesh') return false;
     if (!stopsEqual(a.stops, b.stops)) return false;
     if (a.interpolation !== b.interpolation) return false;
     if (a.kind === 'radial' && b.kind === 'radial') {
@@ -314,7 +371,7 @@ const isContour = (c: unknown): c is PathContour =>
 
 const isPaint = (v: unknown): v is Paint =>
   typeof v === 'object' && v !== null &&
-  ((v as Paint).kind === 'color' || (v as Paint).kind === 'linear' || (v as Paint).kind === 'radial');
+  ((v as Paint).kind === 'color' || (v as Paint).kind === 'linear' || (v as Paint).kind === 'radial' || (v as Paint).kind === 'mesh');
 
 /** Infer a registered type id from a sample value (builder + bake authoring surfaces). */
 export function inferValueType(value: unknown): ValueTypeId {

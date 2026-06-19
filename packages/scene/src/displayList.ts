@@ -39,8 +39,8 @@ export type BlendMode =
 // Paint is a core animatable document value (§2.2) — a solid color or a
 // linear/radial gradient, keyframeable via `paintType`. Backends switch on
 // `kind`. Re-exported here as the IR fill/stroke paint the DrawCommands carry.
-import type { Paint, ColorStop } from '@glissade/core';
-export type { Paint, ColorStop };
+import type { Paint, ColorStop, MeshPaint, MeshPoint, MeshInterpolation } from '@glissade/core';
+export type { Paint, ColorStop, MeshPaint, MeshPoint, MeshInterpolation };
 
 export interface StrokeStyle {
   width: number;

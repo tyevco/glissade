@@ -2,7 +2,9 @@
  * Bundle-size budgets (DESIGN.md §4.4), enforced in CI: each embed-path
  * package is bundled standalone (esbuild, minified) and its gzipped size
  * checked against the spec budget. Base embed path (core + scene + canvas2d
- * + player) must stay ≤ 35 kB; element adds ≤ 5 kB.
+ * + player) must stay ≤ 36 kB (raised 35→36 in 0.12 for the §3 mesh Paint
+ * kernel — a real, non-tree-shakeable render path, the milestone's determinism
+ * tentpole; see the scene budget note); element adds ≤ 5 kB.
  */
 
 import { build } from 'esbuild';
@@ -15,7 +17,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const BUDGETS = {
   core: 15, // raised 8→10→11→12→14→15 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings; 0.9 §3.6 FontRegistry + hand-rolled cmap reader (formats 4/12) + font validation — DEV/export-path only, never in evaluate(), tree-shaken out of real embeds; 0.10.1 §2.2 paint value type: gradient (linear/radial) Paint + keyframe interpolation (lerp/lift/snap) — a first-class animatable value like path/color, registered so it can't tree-shake, ~0.5 kB; base embed path stays ~33/35)
   'core/clips': 6, // §2 motion clips: build-time authoring sugar (clip/clipList + the popIn/slideIn/pulse/driftLoop literals) on a tree-shakeable sub-path, never in the base index. Standalone bundle inlines the same-package track/valueTypes/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size ~5.2 kB is mostly that shared compile path, not the clip literals; base core stays 14.5/15 with clips fully tree-shaken out
-  scene: 17, // raised 12→13→14→15→16→17 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp, the real soft-light render path), ~0.25 kB — base embed path stays ~34/35)
+  scene: 18, // raised 12→13→14→15→16→17→18 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp); 0.12 §3 mesh Paint kernel — the shared deterministic Shepard/gaussian IDW rasterizer (meshGradient.ts) + the clip+drawImage blit branch in Raster2D, ~0.8 kB. This is the REAL render path (one CPU kernel both backends run, no SkSL fork), not tree-shakeable; it is the determinism tentpole of the milestone)
   'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
   'backend-canvas2d': 8,
   player: 4,
@@ -92,9 +94,9 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   }
 }
 
-const baseOk = baseTotal <= 35;
+const baseOk = baseTotal <= 36;
 if (!baseOk) failed = true;
-console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 35 kB)`);
+console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 36 kB)`);
 
 // §3.2 guard: the BASE scene bundle must NOT pull in Yoga — flexbox layout is a
 // separately-budgeted entry (@glissade/scene/layout). A static import would

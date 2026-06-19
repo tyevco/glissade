@@ -22,7 +22,10 @@ const FPS = 60;
 // Gaussian kernels) but measured ≥ 0.9992 across all frames — Chromium and
 // @napi-rs/canvas both implement canvas filters on Skia-family rasterizers.
 // The shared 0.97 floor holds with wide margin; no per-filter exclusions.
-const SSIM_FLOORS: Record<string, number> = { shapes: 0.97, bounce: 0.97, filters: 0.97, paths: 0.97 };
+// mesh Paint (§3, 0.12): the shared CPU kernel produces an IDENTICAL source
+// ImageData on both backends; only the final upscale-blit AA differs, so the
+// 0.97 floor holds (the determinism tentpole — one kernel, no SkSL fork).
+const SSIM_FLOORS: Record<string, number> = { shapes: 0.97, bounce: 0.97, filters: 0.97, paths: 0.97, mesh: 0.97 };
 
 describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
   let server: import('vite').ViteDevServer;
@@ -57,6 +60,7 @@ describe.runIf(ENABLED)('browser↔Skia SSIM parity', () => {
       bounce: (await import('../../examples/src/scenes/golden-bounce.js')).default,
       filters: (await import('../../examples/src/scenes/golden-filters.js')).default,
       paths: (await import('../../examples/src/scenes/golden-paths.js')).default,
+      mesh: (await import('../../examples/src/scenes/golden-mesh.js')).default,
     };
   }, 60_000);
 

@@ -11,6 +11,9 @@ import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
 import { FontMode } from '@glissade/core';
 import { FontUsage } from '@glissade/core';
+import { MeshInterpolation } from '@glissade/core';
+import { MeshPaint } from '@glissade/core';
+import { MeshPoint } from '@glissade/core';
 import { Paint } from '@glissade/core';
 import { PathValue } from '@glissade/core';
 import { Playhead } from '@glissade/core';
@@ -137,6 +140,7 @@ export interface Ctx2DLike<TPath, TDrawable> {
     clearRect(x: number, y: number, w: number, h: number): void;
     // (undocumented)
     clip(path: TPath, rule: 'nonzero' | 'evenodd'): void;
+    createImageData(w: number, h: number): ImageDataLike;
     // (undocumented)
     createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradientLike;
     // Warning: (ae-forgotten-export) The symbol "CanvasGradientLike" needs to be exported by the entry point index.d.ts
@@ -177,6 +181,8 @@ export interface Ctx2DLike<TPath, TDrawable> {
     measureText(text: string): {
         width: number;
     };
+    // (undocumented)
+    putImageData(data: ImageDataLike, x: number, y: number): void;
     // (undocumented)
     resetTransform(): void;
     // (undocumented)
@@ -529,6 +535,16 @@ export type HitArea = {
 export const IDENTITY: Mat2x3;
 
 // @public
+export interface ImageDataLike {
+    // (undocumented)
+    readonly data: Uint8ClampedArray;
+    // (undocumented)
+    readonly height: number;
+    // (undocumented)
+    readonly width: number;
+}
+
+// @public
 export type ImageHandle = unknown;
 
 // @public (undocumented)
@@ -640,6 +656,27 @@ export function matEquals(a: Mat2x3, b: Mat2x3): boolean;
 
 // @public
 export const MEASURE_QUANTUM_PX = 0.5;
+
+// @public
+export const MESH_DOWNSCALE = 4;
+
+// @public
+export const MESH_SHEPARD_POWER = 2;
+
+// @public
+export const MESH_SIGMA = 0.32;
+
+export { MeshInterpolation }
+
+export { MeshPaint }
+
+export { MeshPoint }
+
+// @public
+export function meshRasterSize(bw: number, bh: number): {
+    w: number;
+    h: number;
+};
 
 // @public
 export function motionPath(path: PathValue, opts?: {
@@ -840,6 +877,9 @@ export interface Raster2DHost<TCanvas extends CanvasLike, TPath extends PathLike
     // (undocumented)
     newPath(): TPath;
 }
+
+// @public
+export function rasterizeMesh(mesh: MeshPaint, w: number, h: number): Uint8ClampedArray;
 
 // @public (undocumented)
 export class Rect extends Shape {

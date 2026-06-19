@@ -34,6 +34,7 @@ import goldenPathDrawon from '../../examples/src/scenes/golden-path-drawon.js';
 import goldenCache from '../../examples/src/scenes/golden-cache.js';
 import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
+import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -126,6 +127,10 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'gradient', mod: goldenGradient },
   // 0.10.1 gradient interpolation modes: linear | smooth | gaussian melt, side by side
   { name: 'gradient-smooth', mod: goldenGradientSmooth },
+  // 0.12 §3 mesh Paint: static smooth (Shepard IDW) + gaussian melt mesh fills and a
+  // keyframe-animated aurora drifting its points/colors via the paint value type.
+  // ONE shared CPU kernel on both backends — byte-exact on Skia, SSIM on browser↔Skia.
+  { name: 'mesh', mod: goldenMesh },
 ];
 
 for (const { name, mod } of CORPUS) {

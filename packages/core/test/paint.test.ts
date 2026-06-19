@@ -79,3 +79,54 @@ describe('paintType (§2.2 gradient value type)', () => {
     expect(paintType.equals(radial(50), { kind: 'color', color: '#fff' })).toBe(false);
   });
 });
+
+const mesh = (pts: [number, number, string][], interpolation: 'smooth' | 'gaussian' | 'oklab' = 'smooth', bg?: string): Paint => ({
+  kind: 'mesh',
+  points: pts.map(([u, v, color]) => ({ pos: [u, v], color })),
+  ...(interpolation ? { interpolation } : {}),
+  ...(bg !== undefined ? { bg } : {}),
+});
+
+describe('paintType mesh variant (§3 Paint 0.12)', () => {
+  it('infers a mesh Paint OBJECT as paint', () => {
+    expect(inferValueType({ kind: 'mesh', points: [{ pos: [0, 0], color: '#fff' }] })).toBe('paint');
+  });
+
+  it('lerps two matched-count meshes: pos + oklab color pairwise, carries interpolation/bg', () => {
+    const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#101010');
+    const b = mesh([[0.5, 0.5, '#000000'], [0.5, 0.5, '#ffffff']], 'smooth', '#303030');
+    const mid = paintType.lerp(a, b, 0.5);
+    expect(mid.kind).toBe('mesh');
+    if (mid.kind !== 'mesh') return;
+    expect(mid.points[0]!.pos).toEqual([0.25, 0.25]); // [0,0] → [0.5,0.5]
+    expect(mid.points[1]!.pos).toEqual([0.75, 0.75]); // [1,1] → [0.5,0.5]
+    expect(mid.interpolation).toBe('smooth'); // discrete metadata carried from A
+    expect(mid.bg).toBeDefined();
+    // endpoints
+    const at0 = paintType.lerp(a, b, 0);
+    expect(at0.kind === 'mesh' && at0.points[0]!.pos).toEqual([0, 0]);
+  });
+
+  it('snaps mismatched point count — hold a, then b at t≥1', () => {
+    const a = mesh([[0, 0, '#000'], [1, 1, '#fff']]);
+    const b = mesh([[0, 0, '#000'], [0.5, 0.5, '#888'], [1, 1, '#fff']]);
+    expect(paintType.lerp(a, b, 0.4)).toBe(a);
+    expect(paintType.lerp(a, b, 1)).toBe(b);
+  });
+
+  it('snaps mesh↔gradient (cross-kind lift deferred) and mesh↔color', () => {
+    const m = mesh([[0, 0, '#000'], [1, 1, '#fff']]);
+    expect(paintType.lerp(m, radial(50), 0.4)).toBe(m);
+    expect(paintType.lerp(m, radial(50), 1)).toEqual(radial(50));
+    expect(paintType.lerp(m, { kind: 'color', color: '#fff' }, 0.4)).toBe(m);
+  });
+
+  it('equals: structural for matched meshes, false on differing points/interp/bg/kind', () => {
+    const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#101010');
+    expect(paintType.equals(a, mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#101010'))).toBe(true);
+    expect(paintType.equals(a, mesh([[0, 0, '#000000'], [1, 1, '#fffffe']], 'smooth', '#101010'))).toBe(false);
+    expect(paintType.equals(a, mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'gaussian', '#101010'))).toBe(false);
+    expect(paintType.equals(a, mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#202020'))).toBe(false);
+    expect(paintType.equals(a, radial(50))).toBe(false);
+  });
+});
