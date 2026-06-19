@@ -188,6 +188,9 @@ export interface Ctx2DLike<TPath, TDrawable> {
 }
 
 // @public
+export abstract class Custom extends Node_2 {}
+
+// @public
 export class DeterminismViolationError extends Error {
     constructor(api: string);
 }
@@ -473,7 +476,7 @@ export const IDENTITY: Mat2x3;
 export type ImageHandle = unknown;
 
 // @public (undocumented)
-export class ImageNode extends Node_2 {
+class ImageNode extends Node_2 {
     constructor(props: ImageProps);
     // (undocumented)
     readonly assetId: string;
@@ -489,6 +492,8 @@ export class ImageNode extends Node_2 {
     // (undocumented)
     readonly width: BindableSignal<number>;
 }
+export { ImageNode as Image }
+export { ImageNode }
 
 // @public (undocumented)
 export interface ImageProps extends NodeProps {
@@ -646,6 +651,9 @@ abstract class Node_2 {
 }
 export { Node_2 as Node }
 
+// @public
+export const NODE_TAXONOMY: readonly ["Group", "Rect", "Circle", "Path", "Text", "Image", "Video", "Layout", "Custom"];
+
 // @public (undocumented)
 export interface NodeProps {
     anchor?: AnchorSpec;
@@ -666,6 +674,9 @@ export interface NodeProps {
     // (undocumented)
     zIndex?: PropInit<number>;
 }
+
+// @public
+export type NodeTypeName = (typeof NODE_TAXONOMY)[number];
 
 export { Paint }
 

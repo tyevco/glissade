@@ -26,6 +26,15 @@ import {
   type TextMeasurer,
 } from './text.js';
 
+/**
+ * The NAMED extension point of the closed §3.1 taxonomy: the documented base
+ * an author subclasses to emit IR commands (never canvas calls). It adds
+ * nothing to `Node` — it exists so "custom-via-subclassing" is a real,
+ * exported surface (the ninth taxonomy member) rather than an unnamed
+ * convention. Subclasses implement the abstract `draw()` from `Node`.
+ */
+export abstract class Custom extends Node {}
+
 /** Rounded-rect path segments — Rect's outline, shared with Highlight. */
 export function roundedRectSegs(x: number, y: number, w: number, h: number, r: number): PathSeg[] {
   if (r <= 0) {

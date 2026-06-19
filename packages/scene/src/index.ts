@@ -42,7 +42,10 @@ export {
   Path,
   Text,
   ImageNode,
+  // §3.1 public name (DESIGN names it `Image`); `ImageNode` stays exported for back-compat.
+  ImageNode as Image,
   Video,
+  Custom,
   roundedRectSegs,
   pathFromSegs,
   revealSchedule,
@@ -55,6 +58,9 @@ export {
   type ImageProps,
   type VideoProps,
 } from './nodes.js';
+
+// §3.1: the closed, enumerated node taxonomy (the lock + its name type).
+export { NODE_TAXONOMY, type NodeTypeName } from './taxonomy.js';
 
 export {
   roughen,
