@@ -1,5 +1,17 @@
 # @glissade/interact
 
+## 0.11.0-pre.0
+
+### Patch Changes
+
+- f716bfc: build: strip the dev-only `__forceState` studio-preview escape hatch from the production bundle via build-time DCE (§A.2). The gate now reads a single `process.env.NODE_ENV !== 'production'` term so a bundler `define` can eliminate the branch; the published `dist` stays condition-bearing so consumers' bundlers strip it. `current` stays a `ReadonlySignal` and `input()`/`fire()` still throw `UnknownInputError` for unknown inputs.
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/core@0.11.0-pre.0
+  - @glissade/scene@0.11.0-pre.0
+  - @glissade/player@0.11.0-pre.0
+
 ## 0.10.1
 
 ### Patch Changes

@@ -1,5 +1,20 @@
 # @glissade/react
 
+## 0.11.0-pre.0
+
+### Minor Changes
+
+- ad13932: Add `<ScenePlayer>` — the declarative React component over `mount()` (DESIGN §4.3), the React twin of `<gs-player>`. Props are mount-native (`scene` + `timeline`) plus `loop`, `controls`, `autoplay`, `onFinished`, `onReady`, `className`, `style`. Optional controls bar (play/pause, scrubber, time readout) wired to the Player; live state via the existing `usePlayhead`/`usePlayerState` hooks. `onFinished` fires off each play's per-play `.finished` promise (re-armed on every play, autoplay and the controls Play button), never a polled signal. All `mount()` work runs in a `useEffect` keyed on `[scene, timeline]` (SSR renders the inert canvas only). Also exports `useSignal` as an alias of `useSignalValue` (the DESIGN §4 sketch name).
+
+### Patch Changes
+
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/core@0.11.0-pre.0
+  - @glissade/scene@0.11.0-pre.0
+  - @glissade/player@0.11.0-pre.0
+
 ## 0.10.1
 
 ### Patch Changes

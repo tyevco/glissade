@@ -1,5 +1,24 @@
 # @glissade/cli
 
+## 0.11.0-pre.0
+
+### Patch Changes
+
+- 9150f03: Remove the dead `RenderOptions.videoOnly` shard option. It was never set to `true` (no `--video-only` flag exists) and its gated branches never ran — shard children render video-only via `--format png-seq` + `--narration/music/sfx off`. Pure cleanup; identical runtime behavior.
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+- Updated dependencies [f716bfc]
+  - @glissade/core@0.11.0-pre.0
+  - @glissade/scene@0.11.0-pre.0
+  - @glissade/player@0.11.0-pre.0
+  - @glissade/interact@0.11.0-pre.0
+  - @glissade/backend-skia@0.11.0-pre.0
+  - @glissade/lottie@0.11.0-pre.0
+  - @glissade/narrate@0.11.0-pre.0
+  - @glissade/sfx@0.11.0-pre.0
+  - @glissade/svg@0.11.0-pre.0
+
 ## 0.10.1
 
 ### Patch Changes
