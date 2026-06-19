@@ -828,7 +828,16 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
       }
     }
 
-    const timed: TimedSegment = { id: seg.id, text: seg.text, start: cursor, duration, file: entry.file };
+    const timed: TimedSegment = {
+      id: seg.id,
+      text: seg.text,
+      start: cursor,
+      duration,
+      file: entry.file,
+      // carry an anchor budget through to the committed manifest so the lint
+      // (which reads the manifest) sees it (§narration-lint); per-segment wins
+      ...(seg.maxSec !== undefined ? { maxSec: seg.maxSec } : {}),
+    };
     if (words) {
       timed.words = words.map(
         (w): TimedWord => ({ word: w.word, start: cursor + w.start, end: cursor + w.end }),
@@ -859,6 +868,7 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
     segments,
     ...(pauses.length > 0 ? { pauses } : {}),
     ...(raw.captionSplit ? { captionSplit: raw.captionSplit } : {}),
+    ...(raw.budgets && Object.keys(raw.budgets).length > 0 ? { budgets: raw.budgets } : {}),
   };
   const timingPath = `${base}.narration.timing.json`;
   writeFileSync(timingPath, JSON.stringify(timing, null, 2) + '\n');

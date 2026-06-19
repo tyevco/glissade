@@ -28,6 +28,13 @@ export interface NarrationSegment {
   rate?: number;
   /** silence after THIS segment (s); overrides the script default */
   gapAfter?: number;
+  /**
+   * Anchor budget (s): the longest this segment's spoken beat may run before
+   * `gs narration-lint` flags it (a re-narrate that overran its allotted beat).
+   * Committed with the script — versioned data, gated by CI. A script-level
+   * `budgets` entry keyed by this id is equivalent; a per-segment `maxSec` wins.
+   */
+  maxSec?: number;
 }
 
 /** What the music bed does across a pause window. */
@@ -85,6 +92,13 @@ export interface NarrationScript {
    * Omit for no split (the default).
    */
   captionSplit?: { maxChars: number };
+  /**
+   * Anchor budgets (s): per-id ceilings on a segment's (or pause's) beat length,
+   * checked by `gs narration-lint` (Tier-1, can fail CI). Committed with the
+   * script and persisted into the timing manifest so the lint reads them from
+   * the committed JSON. A segment's own `maxSec` wins over an entry here.
+   */
+  budgets?: Record<string, number>;
   /** spoken segments and explicit pause beats, in playback order */
   segments: NarrationElement[];
 }
@@ -107,6 +121,8 @@ export interface TimedSegment {
   file: string;
   /** present only when the provider supplies word timestamps */
   words?: TimedWord[];
+  /** anchor budget (s) carried from the script's per-segment `maxSec`; lint reads it here */
+  maxSec?: number;
 }
 
 /** A resolved pause window in the committed manifest. */
@@ -127,6 +143,12 @@ export interface NarrationTiming {
   pauses?: TimedPause[];
   /** caption split budget, committed so burned + sidecar split identically */
   captionSplit?: { maxChars: number };
+  /**
+   * Anchor budgets (s) carried from the script — per id, segments + pauses.
+   * `gs narration-lint` reads them from the committed manifest (Tier-1). A
+   * segment's own `maxSec` (on the TimedSegment) wins over an entry here.
+   */
+  budgets?: Record<string, number>;
 }
 
 export class NarrationError extends Error {

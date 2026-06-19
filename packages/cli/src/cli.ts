@@ -49,6 +49,7 @@ const USAGE = `usage:
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
+  gs narration-lint <scene-module|script.narration.timing.json> [--json] [--fix] [--max-cps <n>]
   gs sfx <scene-module|script.sfx.json> [--verbose]
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
   gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>]
@@ -104,11 +105,18 @@ narrate options (the explicit TTS prepare step; render itself stays offline):
                    (kokoro = Apache-2.0 offline neural voice; add 'kokoro-js' to your project; pnpm: allow its native build scripts)
   --align <id>     heuristic (default) | vosk | none — word timings for providers that emit none
   --force          ignore the cache and re-synthesize every segment
+
+narration-lint options (lint the committed *.narration.timing.json + the real caption geometry; exits non-zero on a Tier-1 issue):
+  --max-cps <n>    reading-speed ceiling in chars-per-second (default: 17)
+  --max-lines <n>  caption maxLines for the fit rule (default: 2, captionNode's own default)
+  --json           machine-readable diagnostics ({ hasErrors, diagnostics })
+  --no-warnings    omit Tier-2 (warn-only) diagnostics
+  --fix            print a git-apply-able budget-bump diff for the SCRIPT (never writes a committed artifact)
 `;
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness') {
+  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -131,6 +139,35 @@ async function main(): Promise<void> {
         result.aligned.length > 0 ? `aligned ${result.aligned.length} via ${result.aligner}` : null,
       ].filter(Boolean);
       process.stderr.write(`gs narrate: ${parts.join('; ') || 'nothing to do'} → ${result.timingPath}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // narration-lint: lint the committed timing manifest + the real caption
+  // geometry; exit non-zero on a Tier-1 issue. Self-contained (clean hand-merge).
+  if (command === 'narration-lint') {
+    const { narrationLintCommand } = await import('./narrationLintCommand.js');
+    const maxCpsFlag = flags.get('max-cps');
+    if (maxCpsFlag !== undefined && (maxCpsFlag === '' || !Number.isFinite(Number(maxCpsFlag)))) {
+      fail(`--max-cps must be a number, got '${maxCpsFlag}'`);
+    }
+    const maxLinesFlag = flags.get('max-lines');
+    if (maxLinesFlag !== undefined && !/^\d+$/.test(maxLinesFlag)) {
+      fail(`--max-lines must be a non-negative integer, got '${maxLinesFlag}'`);
+    }
+    try {
+      const result = await narrationLintCommand({
+        input: modulePath,
+        ...(maxCpsFlag !== undefined ? { maxCps: Number(maxCpsFlag) } : {}),
+        ...(maxLinesFlag !== undefined ? { maxLines: Number(maxLinesFlag) } : {}),
+        ...(flags.has('json') ? { json: true } : {}),
+        ...(flags.has('fix') ? { fix: true } : {}),
+        ...(flags.has('no-warnings') ? { noWarnings: true } : {}),
+      });
+      process.stdout.write(result.output);
+      if (result.hasErrors) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

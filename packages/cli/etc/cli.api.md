@@ -9,6 +9,7 @@ import { CompiledTimeline } from '@glissade/core';
 import { DisplayList } from '@glissade/scene';
 import { Image as Image_2 } from '@napi-rs/canvas';
 import { Key } from '@glissade/core';
+import { NarrationTiming } from '@glissade/narrate';
 import { Scene } from '@glissade/scene';
 import { SceneModule } from '@glissade/scene';
 import { Timeline } from '@glissade/core';
@@ -37,7 +38,20 @@ export interface AudioMixPlan {
 export function availableEncoders(): Set<string>;
 
 // @public
+export function buildCaptionProbe(input: string, maxLines: number): Promise<CaptionProbe | null>;
+
+// @public
 export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, wavOut: string): Promise<boolean>;
+
+// @public
+export interface CaptionProbe {
+    readonly maxLines: number;
+    measure(text: string): {
+        lines: number;
+        bottomY: number;
+    };
+    readonly sceneH: number;
+}
 
 // @public
 export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
@@ -70,6 +84,16 @@ export interface DevServer {
     close(): Promise<void>;
     // (undocumented)
     port: number;
+}
+
+// @public (undocumented)
+export interface Diagnostic {
+    detail?: Record<string, number | string>;
+    id: string;
+    message: string;
+    rule: LintRule;
+    severity: 'error' | 'warn';
+    tier: 1 | 2;
 }
 
 // @public (undocumented)
@@ -119,7 +143,18 @@ export class FfmpegVideoFrameSource implements VideoFrameSource {
 }
 
 // @public
+export function fixDiff(diags: readonly Diagnostic[], scriptPath: string, script: {
+    budgets?: Record<string, number>;
+}): string;
+
+// @public
+export function formatTable(diags: readonly Diagnostic[]): string;
+
+// @public
 export function gainExpression(keys: Key[]): string;
+
+// @public
+export function hasErrors(diags: readonly Diagnostic[]): boolean;
 
 // @public (undocumented)
 export function importCommand(opts: ImportOptions): Promise<ImportCommandResult>;
@@ -140,6 +175,22 @@ export interface ImportOptions {
     input: string;
     out: string;
 }
+
+// @public
+export function lintNarration(timing: NarrationTiming, opts?: LintOptions): Diagnostic[];
+
+// @public (undocumented)
+export interface LintOptions {
+    caption?: CaptionProbe;
+    maxCps?: number;
+    warnings?: boolean;
+}
+
+// @public (undocumented)
+export type LintRule = 'reading-speed' | 'anchor-budget' | 'caption-fit' | 'beat-drift' | 'silence';
+
+// @public
+export function lintTimingPathFor(input: string): Promise<string>;
 
 // @public
 export function loadSceneModule(modulePath: string): Promise<SceneModule>;
@@ -213,6 +264,32 @@ export interface MeasureLoudnessResult {
     measurement: LoudnessMeasurement;
     profile: PublishProfile;
     warning: string | null;
+}
+
+// @public
+export function narrationLintCommand(opts: NarrationLintOptions): Promise<NarrationLintResult>;
+
+// @public (undocumented)
+export interface NarrationLintOptions {
+    // (undocumented)
+    fix?: boolean;
+    input: string;
+    // (undocumented)
+    json?: boolean;
+    // (undocumented)
+    maxCps?: number;
+    maxLines?: number;
+    noWarnings?: boolean;
+}
+
+// @public (undocumented)
+export interface NarrationLintResult {
+    // (undocumented)
+    diagnostics: Diagnostic[];
+    hasErrors: boolean;
+    output: string;
+    // (undocumented)
+    timingPath: string;
 }
 
 // @public

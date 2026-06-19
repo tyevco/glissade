@@ -165,6 +165,7 @@ export interface NarrationPause {
 // @public (undocumented)
 export interface NarrationScript {
     align?: string;
+    budgets?: Record<string, number>;
     captionSplit?: {
         maxChars: number;
     };
@@ -186,6 +187,7 @@ export interface NarrationSegment {
     gapAfter?: number;
     // (undocumented)
     id: string;
+    maxSec?: number;
     rate?: number;
     // (undocumented)
     text: string;
@@ -195,6 +197,7 @@ export interface NarrationSegment {
 
 // @public (undocumented)
 export interface NarrationTiming {
+    budgets?: Record<string, number>;
     captionSplit?: {
         maxChars: number;
     };
@@ -233,6 +236,7 @@ export interface TimedSegment {
     file: string;
     // (undocumented)
     id: string;
+    maxSec?: number;
     // (undocumented)
     start: number;
     // (undocumented)

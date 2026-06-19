@@ -44,3 +44,20 @@ export { resolveRenderDoc, MachineExportError, type MachineRenderFlags } from '.
 export { dev, type DevOptions, type DevServer } from './dev.js';
 export { importCommand, type ImportOptions, type ImportCommandResult } from './import.js';
 export { diffCommand, snapshotAt, evaluateAt, type DiffOptions, type DiffResult } from './diff.js';
+export {
+  lintNarration,
+  hasErrors,
+  formatTable,
+  fixDiff,
+  type Diagnostic,
+  type LintRule,
+  type LintOptions,
+  type CaptionProbe,
+} from './narrationLint.js';
+export {
+  narrationLintCommand,
+  buildCaptionProbe,
+  lintTimingPathFor,
+  type NarrationLintOptions,
+  type NarrationLintResult,
+} from './narrationLintCommand.js';
