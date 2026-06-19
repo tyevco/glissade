@@ -60,7 +60,7 @@ vi.mock('mediabunny', () => ({
   },
 }));
 
-import { MediabunnyVideoFrameSource } from '../src/videoSource.js';
+import { MediabunnyVideoFrameSource, __cachedFrameCount } from '../src/videoSource.js';
 
 const tag = (c: unknown): number => (c as { tag: number }).tag;
 
@@ -76,7 +76,7 @@ describe('MediabunnyVideoFrameSource lookahead + scrub (§5.4)', () => {
       await src.warm(t, t);
       expect(tag(src.getFrameSync(t))).toBe(f); // exact source-grid frame
       // bounded memory: never exceeds the eviction ceiling
-      expect(src.cachedFrameCount()).toBeLessThanOrEqual(64);
+      expect(__cachedFrameCount(src)).toBeLessThanOrEqual(64);
     }
     src.close();
   });
@@ -90,7 +90,7 @@ describe('MediabunnyVideoFrameSource lookahead + scrub (§5.4)', () => {
     // toT = 0 + DEFAULT_LOOKAHEAD_FRAMES / fps = 10/30 s
     expect(w.to).toBeCloseTo(10 / SRC_FPS, 6);
     // the lookahead frames are present in the cache
-    expect(src.cachedFrameCount()).toBeGreaterThanOrEqual(10);
+    expect(__cachedFrameCount(src)).toBeGreaterThanOrEqual(10);
     src.close();
   });
 
@@ -111,7 +111,7 @@ describe('MediabunnyVideoFrameSource lookahead + scrub (§5.4)', () => {
     // the backward warm issued a fresh decode window starting at/around backT
     const last = rec.windows[rec.windows.length - 1]!;
     expect(last.from).toBeLessThanOrEqual(backT);
-    expect(src.cachedFrameCount()).toBeLessThanOrEqual(64);
+    expect(__cachedFrameCount(src)).toBeLessThanOrEqual(64);
     src.close();
   });
 });

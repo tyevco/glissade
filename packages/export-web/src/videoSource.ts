@@ -11,6 +11,22 @@ import { ColdAssetError, type VideoFrameSource } from '@glissade/scene';
 const DEFAULT_LOOKAHEAD_FRAMES = 10; // Replit's published production figure
 const MAX_CACHED_FRAMES = 64;
 
+/**
+ * Test-only introspection (§5.4): a module-private registry mapping each source
+ * to a reader of its decoded-frame cache size, so the lookahead/eviction bound
+ * (MAX_CACHED_FRAMES) is assertable WITHOUT a public class method on the source.
+ * Not re-exported from index.ts — import `__cachedFrameCount` directly from
+ * this module in tests.
+ */
+const cacheSizeReaders = new WeakMap<MediabunnyVideoFrameSource, () => number>();
+
+/** @internal test helper — decoded-frame count held by `source` (off the public surface). */
+export function __cachedFrameCount(source: MediabunnyVideoFrameSource): number {
+  const reader = cacheSizeReaders.get(source);
+  if (!reader) throw new Error('source not registered for cache-size introspection');
+  return reader();
+}
+
 export class MediabunnyVideoFrameSource implements VideoFrameSource {
   readonly fps: number;
   readonly duration: number;
@@ -23,6 +39,7 @@ export class MediabunnyVideoFrameSource implements VideoFrameSource {
     this.fps = fps;
     this.duration = duration;
     this.label = label;
+    cacheSizeReaders.set(this, () => this.cache.size);
   }
 
   static async open(src: string | Blob, label = typeof src === 'string' ? src : 'blob'): Promise<MediabunnyVideoFrameSource> {
@@ -80,16 +97,6 @@ export class MediabunnyVideoFrameSource implements VideoFrameSource {
     const hit = this.cache.get(idx);
     if (!hit) throw new ColdAssetError(this.label, `frame ${idx} not decoded`, mediaT);
     return hit;
-  }
-
-  /**
-   * Test-only introspection (§5.4): the number of decoded frames currently
-   * held, so the lookahead/eviction bound (MAX_CACHED_FRAMES) is assertable
-   * without reaching into the private cache.
-   * @internal — not part of the public API surface (api-extractor strips it).
-   */
-  cachedFrameCount(): number {
-    return this.cache.size;
   }
 
   close(): void {
