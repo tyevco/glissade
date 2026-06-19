@@ -415,7 +415,7 @@ export function createMachine(doc: StateMachineDoc, opts: MachineOptions): Machi
   };
 
   // dev-mode escape hatch for studio preview (§A.2); never part of the public type
-  if (typeof process === 'undefined' || process.env['NODE_ENV'] !== 'production') {
+  if (process.env['NODE_ENV'] !== 'production') {
     (machine as unknown as Record<string, unknown>)['__forceState'] = (id: StateId) => {
       const st = states.get(id);
       if (!st) throw new UnknownInputError(`unknown state '${id}'`);

@@ -65,13 +65,30 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
     write: false,
     // measure each package alone: workspace deps are externals
     external: ['@glissade/*'],
+    // Inject NODE_ENV the way every production bundler does, so the studio-preview
+    // `__forceState` escape hatch (gated on `process.env.NODE_ENV !== 'production'`
+    // in @glissade/interact) is dead-code-eliminated from the measured bundle.
+    define: { 'process.env.NODE_ENV': '"production"' },
     logLevel: 'silent',
   });
-  const gz = gzipSync(result.outputFiles[0].contents).length / 1024;
+  const out = result.outputFiles[0].contents;
+  const gz = gzipSync(out).length / 1024;
   const ok = gz <= budgetKb;
   if (BASE.has(pkg)) baseTotal += gz;
   if (!ok) failed = true;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${pkg.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB)`);
+
+  // §A.2: the studio-preview `__forceState` escape hatch must NOT survive into a
+  // production bundle — a build-time NODE_ENV define (above) is expected to DCE the
+  // dev branch. Assert it's gone from the minified interact output (Vemj).
+  if (pkg === 'interact') {
+    const minified = new TextDecoder().decode(out);
+    const stripped = !minified.includes('__forceState');
+    if (!stripped) failed = true;
+    console.log(
+      `${stripped ? 'ok  ' : 'FAIL'} interact strips __forceState${stripped ? '' : ' (leaked into production bundle)'}`,
+    );
+  }
 }
 
 const baseOk = baseTotal <= 35;
