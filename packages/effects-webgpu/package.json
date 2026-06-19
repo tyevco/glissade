@@ -1,6 +1,6 @@
 {
   "name": "@glissade/effects-webgpu",
-  "version": "0.10.1-pre.1",
+  "version": "0.10.1",
   "description": "glissade WebGPU shader effects (§3.7): the browser-only runner for ShaderEffect nodes. Never imported by the headless pipeline; outside the determinism guarantee.",
   "license": "Apache-2.0",
   "type": "module",
