@@ -1,5 +1,22 @@
 # @glissade/react
 
+## 0.11.0
+
+### Minor Changes
+
+- ad13932: Add `<ScenePlayer>` — the declarative React component over `mount()` (DESIGN §4.3), the React twin of `<gs-player>`. Props are mount-native (`scene` + `timeline`) plus `loop`, `controls`, `autoplay`, `onFinished`, `onReady`, `className`, `style`. Optional controls bar (play/pause, scrubber, time readout) wired to the Player; live state via the existing `usePlayhead`/`usePlayerState` hooks. `onFinished` fires off each play's per-play `.finished` promise (re-armed on every play, autoplay and the controls Play button), never a polled signal. All `mount()` work runs in a `useEffect` keyed on `[scene, timeline]` (SSR renders the inert canvas only). Also exports `useSignal` as an alias of `useSignalValue` (the DESIGN §4 sketch name).
+
+### Patch Changes
+
+- 6d3e061: `Player` gains a reactive `playingSignal: ReadonlySignal<boolean>` that invalidates on every play/pause/settle transition. React's `usePlayerState` now tracks it, so a custom play/pause UI (e.g. `<ScenePlayer controls>`) updates its button/label on pause — previously it read a non-reactive getter and only re-rendered on playhead motion, so the label went stale after pausing. (0.11 canary fix.)
+- Updated dependencies [6d3e061]
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/player@0.11.0
+  - @glissade/core@0.11.0
+  - @glissade/scene@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Patch Changes

@@ -1,5 +1,21 @@
 # @glissade/player
 
+## 0.11.0
+
+### Minor Changes
+
+- 6d3e061: `Player` gains a reactive `playingSignal: ReadonlySignal<boolean>` that invalidates on every play/pause/settle transition. React's `usePlayerState` now tracks it, so a custom play/pause UI (e.g. `<ScenePlayer controls>`) updates its button/label on pause — previously it read a non-reactive getter and only re-rendered on playhead motion, so the label went stale after pausing. (0.11 canary fix.)
+
+### Patch Changes
+
+- c7c6660: Publishing & release readiness: add per-package `engines.node >=20.19` to every publishable package, and introduce the unscoped `glissade` umbrella package — a one-import realtime embed surface that re-exports `@glissade/core`, `@glissade/scene`, and `@glissade/player` (and only those, per the §7.1 import direction). Also documents the `0.x` lockstep breaking-change policy in a root `BREAKING.md`.
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/core@0.11.0
+  - @glissade/scene@0.11.0
+  - @glissade/backend-canvas2d@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Minor Changes

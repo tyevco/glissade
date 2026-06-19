@@ -1,5 +1,26 @@
 # @glissade/element
 
+## 0.11.0
+
+### Patch Changes
+
+- 6d3e061: Fix `<gs-player>`: toggling the `controls` attribute at runtime no longer resets the playhead to 0 or stops playback. The controls subtree + its scrubber/time subscription are now wired/unwired against the _current_ mounted scene instead of triggering a full remount. (0.11 canary fix.)
+- 83575a3: `<gs-player>` now lazy-constructs its controls. With no `controls` attribute the
+  element builds zero controls DOM and attaches zero control listeners, and the
+  playhead subscription that drives the scrubber/time readout never runs. Adding
+  the `controls` attribute builds the play/pause button, scrubber, and time
+  readout live (with listeners); removing it tears them down. Theming and the CSS
+  `part=` selectors (`controls`/`button`/`scrubber`/`time`) are preserved exactly
+  when controls are present. Play/pause/seek behavior is unchanged.
+- Updated dependencies [6d3e061]
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/player@0.11.0
+  - @glissade/core@0.11.0
+  - @glissade/scene@0.11.0
+  - @glissade/backend-canvas2d@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Patch Changes

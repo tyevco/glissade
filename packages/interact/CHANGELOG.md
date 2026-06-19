@@ -1,5 +1,19 @@
 # @glissade/interact
 
+## 0.11.0
+
+### Patch Changes
+
+- 6d3e061: Fix `createMachine()` throwing `ReferenceError: process is not defined` in no-bundler browser / Deno runtimes. The `__forceState` dev-gate now uses `typeof process !== 'undefined' && process.env['NODE_ENV'] !== 'production'` — crash-safe when `process` is absent, and still dead-code-eliminated under a `process.env.NODE_ENV` production define (`pure && false` folds to `false`), so the production bundle stays free of `__forceState`. (0.11 canary blocker.)
+- f716bfc: build: strip the dev-only `__forceState` studio-preview escape hatch from the production bundle via build-time DCE (§A.2). The gate now reads a single `process.env.NODE_ENV !== 'production'` term so a bundler `define` can eliminate the branch; the published `dist` stays condition-bearing so consumers' bundlers strip it. `current` stays a `ReadonlySignal` and `input()`/`fire()` still throw `UnknownInputError` for unknown inputs.
+- Updated dependencies [6d3e061]
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/player@0.11.0
+  - @glissade/core@0.11.0
+  - @glissade/scene@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Patch Changes

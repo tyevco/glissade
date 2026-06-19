@@ -1,5 +1,20 @@
 # @glissade/export-web
 
+## 0.11.0
+
+### Patch Changes
+
+- fe6307d: Remove the test-only `cachedFrameCount()` accessor from the
+  `MediabunnyVideoFrameSource` public API. The decoded-frame count is now exposed
+  to tests through a module-private `__cachedFrameCount` helper (not re-exported),
+  so the lookahead/eviction bound stays assertable without a public class method.
+- Updated dependencies [c7c6660]
+- Updated dependencies [230b7ad]
+- Updated dependencies [f742c55]
+  - @glissade/core@0.11.0
+  - @glissade/scene@0.11.0
+  - @glissade/backend-canvas2d@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Patch Changes

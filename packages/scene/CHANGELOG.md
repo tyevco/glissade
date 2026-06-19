@@ -1,5 +1,22 @@
 # @glissade/scene
 
+## 0.11.0
+
+### Patch Changes
+
+- c7c6660: Publishing & release readiness: add per-package `engines.node >=20.19` to every publishable package, and introduce the unscoped `glissade` umbrella package — a one-import realtime embed surface that re-exports `@glissade/core`, `@glissade/scene`, and `@glissade/player` (and only those, per the §7.1 import direction). Also documents the `0.x` lockstep breaking-change policy in a root `BREAKING.md`.
+- 230b7ad: docs: reserve a comment-only `glyphRun` op seam in the `DrawCommand` union (§3 text shaping) for a future harfbuzzjs shaper, deferred to post-1.0. No type or runtime surface is added.
+- f742c55: Lock the closed §3.1 node taxonomy and add the named `Custom` extension point.
+
+  - Add `export abstract class Custom extends Node {}` — the documented base authors subclass to emit IR commands (the ninth taxonomy member).
+  - Add the frozen `NODE_TAXONOMY` tuple (`['Group','Rect','Circle','Path','Text','Image','Video','Layout','Custom']`) and the `NodeTypeName` type — an enumerable lock on the "small, closed set" guarantee.
+  - Export `Image` as an alias of `ImageNode` so the public name matches DESIGN §3.1 (`ImageNode` remains exported for back-compat).
+
+  Additive only — no node behavior changes; goldens are byte-identical.
+
+- Updated dependencies [c7c6660]
+  - @glissade/core@0.11.0
+
 ## 0.11.0-pre.1
 
 ### Patch Changes
