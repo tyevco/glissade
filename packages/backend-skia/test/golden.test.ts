@@ -37,6 +37,7 @@ import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smoo
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
 import goldenMorph from '../../examples/src/scenes/golden-morph.js';
+import goldenPresence from '../../examples/src/scenes/golden-presence.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -147,6 +148,11 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // morphFx Rect carries the position+scale FLIP while chip/document cross-fade.
   // Compiles to ordinary vec2/number tracks (byte-exact by construction).
   { name: 'morph', mod: goldenMorph },
+  // 0.13 presence(): the "send-line agency moment" — a card + scale-only label
+  // enter on a beat, live, then exit to land on HIDE; a sibling tag anchors to
+  // the card's real exit. Compiles to a keyed opacity window-guard (culls outside
+  // [show,hide]) + pass-through channels — byte-stable like any hand-authored doc.
+  { name: 'presence', mod: goldenPresence },
 ];
 
 for (const { name, mod } of CORPUS) {

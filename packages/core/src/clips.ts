@@ -36,3 +36,13 @@ export {
   type MorphOpts,
   type MorphResult,
 } from './morph.js';
+
+// 0.13 presence — enter/exit scheduling sugar over `clip` (compiles to a keyed
+// opacity window-guard track + pass-through channel tracks). Subpath-only, off
+// the base embed budget.
+export {
+  presence,
+  PresenceError,
+  type PresenceOpts,
+  type PresenceResult,
+} from './presence.js';
