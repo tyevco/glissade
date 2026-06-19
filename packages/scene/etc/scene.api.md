@@ -67,6 +67,7 @@ export function breakLines(text: string, font: FontSpec, maxWidth: number | unde
 
 // @public (undocumented)
 export interface CacheColdResult {
+    delta?: CommandDelta;
     node?: string;
     // (undocumented)
     ok: boolean;

@@ -12,7 +12,7 @@
 
 import type { Timeline } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
-import { collapseReplacer } from './displayDiff.js';
+import { collapseReplacer, diffDisplayLists, type CommandDelta } from './displayDiff.js';
 import type { EvalContext } from './node.js';
 import { Group } from './nodes.js';
 import { evaluate, type Scene } from './scene.js';
@@ -27,6 +27,14 @@ export interface CacheColdResult {
   ok: boolean;
   /** id of the first node whose isolated emit() diverged (set only when !ok). */
   node?: string;
+  /**
+   * The FIRST command-level delta of the divergent node's isolated emit (set only
+   * when a specific leaf diverged — never for a Group fallback or a missing node).
+   * The WHOLE `CommandDelta` is embedded — index, kind, opA/opB, and every
+   * field change — so a multi-field divergence isn't flattened away. `gs
+   * verify-determinism --bisect` consumes this to name the (frame, node, op).
+   */
+  delta?: CommandDelta;
 }
 
 /**
@@ -56,12 +64,20 @@ export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: numbe
     nodeA.emit(ea, ctxA);
     const eb = createDisplayListBuilder(cold.size);
     nodeB.emit(eb, ctxB);
-    if (hashDisplayList(ea.finish()) === hashDisplayList(eb.finish())) continue;
+    const dlA = ea.finish();
+    const dlB = eb.finish();
+    if (hashDisplayList(dlA) === hashDisplayList(dlB)) continue;
     if (nodeA instanceof Group) {
       groupFallback ??= id;
       continue;
     }
-    return { ok: false, node: id }; // a leaf diverged — the specific culprit
+    // a leaf diverged — the specific culprit. Embed the FIRST command-level
+    // delta of its isolated emit so `--bisect` can name the exact (op, field).
+    // The per-node emit isolates the node from any parent CTM, so this delta
+    // LOCALIZES the divergence (it's a locator, not the byte authority).
+    const diff = diffDisplayLists(dlA, dlB);
+    const first = diff.deltas[0];
+    return { ok: false, node: id, ...(first !== undefined ? { delta: first } : {}) };
   }
   return { ok: false, ...(groupFallback !== undefined ? { node: groupFallback } : {}) };
 }

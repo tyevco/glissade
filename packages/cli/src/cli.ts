@@ -46,6 +46,7 @@ function parseArgs(argv: string[]) {
 const USAGE = `usage:
   gs render <scene-module> [options]
   gs diff <scene-module> --at <t> --against <baseline.dl.json|.png>
+  gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
@@ -88,6 +89,14 @@ diff options (DisplayList diff vs a committed baseline — exits non-zero on any
                    or <name>.png (raw encodePng byte-compare only — no pixel-diff)
   --snapshot <p>   instead of diffing, write the scene's .dl.json snapshot at --at to <p>
 
+verify-determinism options (the cross-shard/backend byte-divergence LOCATOR — exits non-zero on any divergence):
+  --shards <n>     diff a linear render vs an n-shard render of the same range (byte-identical is the contract)
+  --against <p>    diff against a committed / other-machine frames.manifest (REJECTS a cross-backend byte-compare)
+  --range <a..b>   integer FRAME indices to verify, inclusive (default: whole timeline)
+  --bisect         drill the first divergence to the exact (frame, node, op) via the command-level diff
+  --emit <p>       instead of comparing, write the linear frames.manifest baseline to <p>
+                   (byte-equality is Skia↔Skia / cross-machine only — browser↔Skia is perceptual SSIM, not bytes)
+
 dev options:
   --record         add a Record button; writes .trace.json sidecars next to the module
   --port <n>       listen port (default: any free port)
@@ -117,7 +126,7 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -289,6 +298,46 @@ async function main(): Promise<void> {
       const result = await diffCommand({ modulePath, at, against });
       process.stdout.write(`${result.report}\n`);
       if (!result.equal) process.exit(1);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // verify-determinism: the cross-shard/backend byte-divergence locator (§5.5/§5.6).
+  // Self-contained block (mirrors diff/measure-loudness; hand-merges cleanly).
+  if (command === 'verify-determinism') {
+    let frameRange: [number, number] | undefined;
+    const rangeFlag = flags.get('range');
+    if (rangeFlag) {
+      try {
+        frameRange = parseFrameRange(rangeFlag);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+    const shardsFlag = flags.get('shards');
+    let shards: number | undefined;
+    if (shardsFlag !== undefined) {
+      if (!/^\d+$/.test(shardsFlag) || Number(shardsFlag) < 1) {
+        fail(`--shards must be a positive integer, got '${shardsFlag}'`);
+      }
+      shards = Number(shardsFlag);
+    }
+    const fpsFlag = flags.get('fps');
+    const { verifyDeterminismCommand } = await import('./verifyDeterminism.js');
+    try {
+      const result = await verifyDeterminismCommand({
+        modulePath,
+        ...(shards !== undefined ? { shards } : {}),
+        ...(flags.has('against') ? { against: flags.get('against')! } : {}),
+        ...(frameRange ? { frameRange } : {}),
+        ...(flags.has('bisect') ? { bisect: true } : {}),
+        ...(flags.has('emit') ? { emit: flags.get('emit')! } : {}),
+        ...(fpsFlag ? { fps: parseInt(fpsFlag, 10) } : {}),
+      });
+      process.stdout.write(`${result.report}\n`);
+      if (!result.ok) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

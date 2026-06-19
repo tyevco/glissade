@@ -28,5 +28,18 @@ describe('auditCacheCold', () => {
     const result = auditCacheCold(make, doc, 0);
     expect(result.ok).toBe(false);
     expect(result.node).toBe('bad'); // names the offending node, not the pure one
+    // the WHOLE CommandDelta is embedded (additive) — the divergent op + fields,
+    // not a flattened {op,index,a,b}. The width feeds the rect's geometry.
+    expect(result.delta).toBeDefined();
+    expect(result.delta!.fields.length).toBeGreaterThan(0);
+    expect(Array.isArray(result.delta!.fields)).toBe(true);
+  });
+
+  it('a pure scene carries no delta (additive: the existing {ok,node?} shape is preserved)', () => {
+    const make = () =>
+      createScene({ size: { w: 20, h: 20 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] });
+    const result = auditCacheCold(make, doc, 0);
+    expect(result).toEqual({ ok: true });
+    expect(result.delta).toBeUndefined();
   });
 });
