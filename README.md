@@ -25,10 +25,10 @@ gs render my-scene.ts --out out.mp4   # headless Skia + FFmpeg — no browser, f
 One contract underneath everything: `evaluate(scene, timeline, t)` is a **pure function of time**. The builder above compiles to a serializable keyframe document — nothing executes at play time — so the same scene scrubs at 60fps in a `<canvas>`, renders byte-identical PNGs in CI, exports via WebCodecs in the browser, and opens in the studio.
 
 <p align="center">
-  <img src="docs/assets/gradient-showcase.webp" alt="glissade gradient Paint — animated linear and radial gradient fills, linear/smooth/gaussian interpolation, a keyframe gradient morph, a solid-color-to-gradient lift, and a drifting soft-light aurora" width="760">
+  <img src="docs/assets/glissade-reel.webp" alt="glissade showcase reel — shapes and springs, bezier paths and motion paths, typography and captions, hand-drawn sketch and whiteboard, flexbox layout, filters, the cross-frame subtree cache, SVG import, UI loaders and micro-interactions, and animatable gradient Paint" width="820">
 </p>
 
-<p align="center"><sub>Animatable gradient <code>Paint</code> — every panel is a gradient <em>fill</em> (no blur filter): radial &amp; linear, <code>smooth</code>/<code>gaussian</code> melt, a keyframe gradient morph, a color→gradient lift, and a drifting soft-light aurora. Rendered headless with <code>gs render</code>, byte-identical every run · <a href="packages/examples/src/scenes/showcase-gradients.ts">scene source</a></sub></p>
+<p align="center"><sub>A tour of the framework — shapes &amp; springs, bezier &amp; motion paths, typography &amp; captions, hand-drawn sketch, flex layout, filters, the cross-frame subtree cache, SVG import, UI micro-interactions, and animatable gradient <code>Paint</code>. Every clip rendered headless with <code>gs render</code>, byte-identical every run · <a href="packages/examples/src/scenes">scene sources</a></sub></p>
 
 ## Why it exists
 
