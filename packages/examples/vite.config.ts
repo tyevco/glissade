@@ -19,6 +19,7 @@ export default defineConfig({
   worker: { format: 'es' },
   resolve: {
     alias: {
+      '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
       '@glissade/core': src('core'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene': src('scene'),

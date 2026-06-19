@@ -26,3 +26,13 @@ export {
   type DurationOpts,
   type SlideEdge,
 } from './clipStdlib.js';
+
+// 0.13 shared-element box-FLIP morph (build-time sugar over `clip`).
+export {
+  morph,
+  MorphError,
+  type Box,
+  type MorphTargets,
+  type MorphOpts,
+  type MorphResult,
+} from './morph.js';

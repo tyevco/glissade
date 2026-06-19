@@ -36,6 +36,7 @@ import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
+import goldenMorph from '../../examples/src/scenes/golden-morph.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -142,6 +143,10 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // 0.12 §3.6 instanced variable font: a wght:600-pinned static sfnt rendered
   // byte-exactly on Skia — proves variable-font support is the static-parity case
   { name: 'font-instanced', mod: goldenFontInstanced },
+  // 0.13 shared-element box-FLIP morph(): a chip grows into a document — a shared
+  // morphFx Rect carries the position+scale FLIP while chip/document cross-fade.
+  // Compiles to ordinary vec2/number tracks (byte-exact by construction).
+  { name: 'morph', mod: goldenMorph },
 ];
 
 for (const { name, mod } of CORPUS) {
