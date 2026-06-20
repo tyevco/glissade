@@ -1,5 +1,52 @@
 # @glissade/cli
 
+## 0.14.0
+
+### Minor Changes
+
+- 1795d1c: Add the **0.14 localization core** — build-time + render-time i18n sugar that resolves a scene's strings against a per-locale message table, with NOTHING on the `evaluate()` path (the goldens stay byte-identical; the no-`--locale` render path is byte-identical to today).
+
+  New tree-shakeable sub-path `@glissade/core/i18n` (off the base index, like `@glissade/core/clips`), with three pure pieces:
+
+  - **`requireParity(...manifests: { locale, ids }[]): void`** — a pure cross-locale id-set diff (the cross-language analogue of `narration().require`); throws a `ParityError` naming every missing/extra id per locale.
+  - **`localize(doc, table, { locale }): TimelineDoc`** — a pure doc→doc resolver that substitutes string-track key values whose target node-id is a key in the table (captions / narration-derived text live in the doc as string tracks). Returns a NEW doc; non-matching tracks pass through byte-identical.
+  - **`t(id): string`** — build-time sugar resolving `id` against an ambient message table (`setMessageTable`/`getMessageTable`), for static Text-node text not animated by a track. Hard-fails on an unknown id (mirrors `require()`); with no table installed returns `id` verbatim (the base path).
+
+  `@glissade/cli`: `gs render --locale <code>` selects `messages.<code>.json` (relative to the scene module) and prefers the locale-tagged narration sibling `<base>.<code>.narration.timing.json` (the suffix is a single clearly-commented constant in `cli/src/locale.ts`), injecting the table into the ambient context `loadSceneModule` uses and running `localize` over the doc. No `--locale` resolves the BASE files → byte-identical to today.
+
+  `@glissade/narrate`: `narration().idManifest(locale)` returns `{ locale, ids }` (every addressable beat id) to feed `requireParity`.
+
+### Patch Changes
+
+- f13486d: 0.14 canary fixes (3, 4, 6) — localization + font-validation render-path correctness. No `evaluate()` change; the base (no-`--locale`, no-`--strict`) render path is byte-identical to today, all 262 goldens unchanged.
+
+  - **FIX 3 (BLOCKER) — `--locale` CJK glyph gap passes `--strict` then renders tofu.** `validateSceneFonts` validated the authored BASE `node.text()` (read BEFORE `localize()` binds the localized string tracks), so a Latin-only declared font + a localized CJK track PASSED `--strict` then rendered `.notdef` tofu. Render now also validates the POST-localize document's string-track values: new `collectLocalizedTextUsages(scene, doc)` (`@glissade/scene`) walks `doc.tracks` of type `'string'`, resolves the target Text node's `fontFamily`, and the values flow into `validateSceneFonts` via the new `ValidateSceneFontsOptions.extraUsages`. Base (no-locale) render is unaffected.
+
+  - **FIX 4 (HIGH) — `--locale xx` with a missing messages file silently renders base.** An absent `messages.<locale>.json` made `loadMessageTable` return undefined → `localize` skipped → a declared `--locale` with unresolvable assets wrote a BASE-language artifact at exit 0, no warning. Render now resolves BOTH `messages.<locale>.json` AND the `<base>.<locale>.narration.timing.json` sibling up front and throws a new `UnknownLocaleError` (naming both attempted paths) when NEITHER resolves. A narration-only locale (sibling present, no messages file) still works.
+
+  - **FIX 6 (HIGH) — `osFamilies` made `--strict` font validation host-dependent.** The font-exempt set was seeded from the full OS `GlobalFonts.families` catalog (3 families on clean Linux, hundreds on macOS), so an unregistered `'Helvetica Neue'` passed `--strict` on macOS but threw on Linux CI — the verdict depended on the host. The exempt set now seeds ONLY from the families glissade actually registered out of `doc.assets` (new pure `buildFontExemptSet`). True-OS-font exemption is gated behind a new `--allow-system-fonts` flag (off by default) AND ignored under `--strict`, so `--strict` is host-independent. A glissade-registered (doc.assets) family still doesn't false-warn.
+
+- 3281514: 0.14 DX bundle — three render-surface paper-cuts:
+
+  - **Clearer undeclared-asset error.** `gs render` now pre-validates every Image/Video `assetId` against `timeline.assets` before evaluation, throwing an `UnknownAssetError` that names the real mistake — an Image/Video needs an `assetId` + a `timeline.assets` entry `{ kind, url }`, not a `src` URL (§2.5: remote URLs are not fetched at render) — instead of the downstream `asset 'undefined' not ready` ColdAssetError. (Image/Video carry a new `static assetKind` marker so the walk stays robust; the validation lives in the CLI, off the embed path.)
+  - **No false font-validation warning for GlobalFonts/system families.** `gs render` builds an `osFamilies` set from `GlobalFonts.families` and exempts those families from the §3.6 unregistered-family check, so a family registered via `GlobalFonts.registerFromPath` (or OS-installed) no longer warns as "unregistered". A genuinely-unregistered family still warns.
+  - **`each()` jitter decorrelation.** The per-index motion-jitter RNG is now salted (`mix(mix(baseSeed, i), JITTER_SALT)`) so it decorrelates from `ctx.rng` (both previously derived from the same `mix(baseSeed, i)` stream). Determinism-neutral; no corpus golden uses each-jitter, so all golden frames stay byte-identical.
+
+- Updated dependencies [f13486d]
+- Updated dependencies [3281514]
+- Updated dependencies [1795d1c]
+- Updated dependencies [7ea5371]
+- Updated dependencies [7456761]
+  - @glissade/core@0.14.0
+  - @glissade/scene@0.14.0
+  - @glissade/narrate@0.14.0
+  - @glissade/backend-skia@0.14.0
+  - @glissade/interact@0.14.0
+  - @glissade/lottie@0.14.0
+  - @glissade/player@0.14.0
+  - @glissade/sfx@0.14.0
+  - @glissade/svg@0.14.0
+
 ## 0.14.0-pre.1
 
 ### Patch Changes

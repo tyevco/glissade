@@ -1,5 +1,43 @@
 # @glissade/core
 
+## 0.14.0
+
+### Minor Changes
+
+- 1795d1c: Add the **0.14 localization core** — build-time + render-time i18n sugar that resolves a scene's strings against a per-locale message table, with NOTHING on the `evaluate()` path (the goldens stay byte-identical; the no-`--locale` render path is byte-identical to today).
+
+  New tree-shakeable sub-path `@glissade/core/i18n` (off the base index, like `@glissade/core/clips`), with three pure pieces:
+
+  - **`requireParity(...manifests: { locale, ids }[]): void`** — a pure cross-locale id-set diff (the cross-language analogue of `narration().require`); throws a `ParityError` naming every missing/extra id per locale.
+  - **`localize(doc, table, { locale }): TimelineDoc`** — a pure doc→doc resolver that substitutes string-track key values whose target node-id is a key in the table (captions / narration-derived text live in the doc as string tracks). Returns a NEW doc; non-matching tracks pass through byte-identical.
+  - **`t(id): string`** — build-time sugar resolving `id` against an ambient message table (`setMessageTable`/`getMessageTable`), for static Text-node text not animated by a track. Hard-fails on an unknown id (mirrors `require()`); with no table installed returns `id` verbatim (the base path).
+
+  `@glissade/cli`: `gs render --locale <code>` selects `messages.<code>.json` (relative to the scene module) and prefers the locale-tagged narration sibling `<base>.<code>.narration.timing.json` (the suffix is a single clearly-commented constant in `cli/src/locale.ts`), injecting the table into the ambient context `loadSceneModule` uses and running `localize` over the doc. No `--locale` resolves the BASE files → byte-identical to today.
+
+  `@glissade/narrate`: `narration().idManifest(locale)` returns `{ locale, ids }` (every addressable beat id) to feed `requireParity`.
+
+- 7456761: Add the 0.14 scalar→vec2 **bind-time type guard** (§2.2) — the runtime correctness floor for the silent-NaN class. A scalar `number` track bound to a `vec2` prop (e.g. authoring `scale: 0.8` instead of `[0.8, 0.8]`) used to silently sample to `[undefined, undefined]` → a NaN matrix → the node and its whole subtree vanishing, with no error. Any track-type ↔ target-shape mismatch (a `number` track on a `paint`/`path` prop, a `color` on a `number`, …) was the same silent failure.
+
+  Now `bindTimeline` (`@glissade/core`) checks each compiled track's `type` against the target's declared accepted type and hard-throws a typed `BindTypeMismatchError` — naming the target, the got (track) type, the expected (prop) type, and a fix hint (`scale.x`/`scale.y` for the vec2 case). This matches the existing "unbound tracks are build errors" precedent (`UnboundTargetError`): a mismatched bind is a build error, not a silent no-op.
+
+  Mechanism (additive, golden-safe — a _correct_ bind is unchanged, so all 252 goldens stay byte-identical):
+
+  - `BindTarget` (core) gains `readonly expects: ValueTypeId | readonly ValueTypeId[]` (an array for a polymorphic prop — a Shape `fill` accepts both `color` and `paint`). New exports: `BindTypeMismatchError`, the `Vec2Component` type.
+  - `vec2Signal` tags its compound (`'vec2'`) and its `.x`/`.y` sub-signals (`'number'`).
+  - `registerTarget` (`@glissade/scene`) takes the prop's accepted type and stamps it; every node prop is tagged (`position`/`scale` vec2; their `.x`/`.y` + `opacity`/`rotation`/`zIndex`/`width`/`height`/`cornerRadius`/`radius`/`strokeWidth`/`reveal`/`fontSize`/Layout/shader uniforms number; `fill` color|paint, `stroke`/Text-`fill`/Highlight color, `d` path, `text` string).
+
+  The 0.13 clip stdlib `popIn`/`pulse` already author vec2 `scale` keys, so they pass the new guard unchanged. The scalar→pair _broadcast_ (lifting `0.8` → `[0.8, 0.8]`) is deliberately deferred to 0.15 — it would mask the wrong-prop mistakes this guard is meant to catch.
+
+### Patch Changes
+
+- f13486d: 0.14 canary fixes (1, 2, 5) — bind-time guard correctness + the orphaned-message-key check. Three mount-time / build-time fixes; no `evaluate()` change, so all 262 goldens stay byte-identical.
+
+  - **FIX 1 (BLOCKER) — vec2-arc false-throws on every vec2 prop.** The public `vec2-arc` value type samples to a valid `Vec2`, but every vec2 `registerTarget` site tagged the scalar `'vec2'`, so binding a `vec2-arc` track to `position`/`scale`/Highlight `offset` hard-threw `BindTypeMismatchError` at mount. Those targets are now tagged polymorphically `['vec2', 'vec2-arc']` (`@glissade/scene`: `node.ts` position/scale, `tokenHighlight.ts` offset). A `vec2-arc` track binds and samples to a finite `Vec2`.
+
+  - **FIX 2 (BLOCKER) — `registerTarget`'s required 3rd arg broke the public Custom-node seam + 0.13 back-compat.** `registerTarget(path, sig, expects)` made `expects` required, so external `Custom`/`Node` subclasses (and prebuilt 0.13 custom nodes calling the 2-arg form) hit `binding.ts` with `expects === undefined` → every track on a custom prop hard-threw. `expects` is now OPTIONAL (no default — left `undefined`), and `bindTimeline`'s guard skips an UNtagged target (`expects === undefined || …includes(got) …`). An untagged custom-node prop binds ANY track (0.13 had no guard); built-in tagged targets keep their guard. `BindTarget.expects` / `BindablePropTarget.expects` widen to `… | undefined`.
+
+  - **FIX 5 (HIGH) — stale/typo'd `messages.<locale>.json` key silently dropped.** `localize()` consumed table entries by membership only, so a key matching no node-id (and no `t()` id) silently localized nothing — that node shipped base text, no error. `localize` now collects the node-ids it consumes, folds in the `t()`-consumed ids (`getConsumedMessageIds()`, reset by `setMessageTable`, passed via the new `LocalizeOptions.consumedIds`), and throws a `LocalizationError` naming every orphaned key. A fully-matched table is silent.
+
 ## 0.14.0-pre.1
 
 ### Patch Changes

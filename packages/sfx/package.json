@@ -1,6 +1,6 @@
 {
   "name": "@glissade/sfx",
-  "version": "0.14.0-pre.1",
+  "version": "0.14.0",
   "description": "glissade sound effects: a clean-room procedural (sfxr-style) synth, license-checked sample packs, and deterministic index-seeded variation — committed WAVs feed the same offline FFmpeg mix as narration and music.",
   "license": "Apache-2.0",
   "engines": {
