@@ -119,6 +119,31 @@ describe('woff2 decode — coverage matches the validated fixture', () => {
   });
 });
 
+describe('woff2 decode — the public registerFont({ src }) byte contract (ai-training)', () => {
+  // The path form (above) hands fontverter a node Buffer (readFile), which masked
+  // the bug: `registerFont({ src })` normalizes src to a PLAIN Uint8Array (asUint8),
+  // and fontverter@2.x sniffs the magic via Buffer.toString — which a plain
+  // Uint8Array doesn't honor → 'Unrecognized font signature' on EVERY real consumer
+  // (a Fontsource Inter woff2 AND our own fixture). These feed the broken shapes.
+  it('decodes a plain Uint8Array src (not a Buffer) to the full coverage', async () => {
+    const fixture = await loadFixture();
+    const bytes = new Uint8Array(await readFont(WOFF2)); // a PLAIN Uint8Array, not a Buffer
+    expect(bytes.constructor).toBe(Uint8Array);
+    const res = await ingestFont({ family: 'Inconsolata WOFF2 (u8)', src: bytes });
+    expect(res.sourceFormat).toBe('woff2');
+    expect(res.coverage.size).toBe(fixture.covered); // was 0 (throw) before the Buffer.from fix
+    expect([...res.bytes.slice(0, 4)]).toEqual([0x00, 0x01, 0x00, 0x00]); // decoded sfnt
+  });
+
+  it('decodes an ArrayBuffer src to the full coverage', async () => {
+    const fixture = await loadFixture();
+    const buf = await readFont(WOFF2);
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength); // a real ArrayBuffer
+    const res = await registerFont({ family: 'Inconsolata WOFF2 (ab)', src: ab });
+    expect(res.coverage.size).toBe(fixture.covered);
+  });
+});
+
 describe('woff2 decode — byte-stable sfnt (determinism contract)', () => {
   it('decoding the same woff2 twice yields byte-identical sfnt bytes (sha256)', async () => {
     const a = await ingestFont({ family: 'F', src: fontPath(WOFF2) });

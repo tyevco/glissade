@@ -283,7 +283,14 @@ export async function ingestFont(init: RegisterFontInit): Promise<FontFaceResult
     //    fixes). Decode first, then read coverage from the decoded sfnt.
     if (needsDecode) {
       const convert = await loadFontverter();
-      decoded = await convert(input, 'truetype');
+      // fontverter@2.x sniffs the magic via Buffer.prototype.toString('ascii',0,4),
+      // which a plain Uint8Array does NOT honor (its toString ignores the args and
+      // returns the comma-joined bytes → never matches 'wOF2'). The public
+      // registerFont({ src }) path hands us a plain Uint8Array (asUint8), so we MUST
+      // normalize to a node Buffer here (node-only subpath) or every real consumer
+      // throws 'Unrecognized font signature'. A path-read happened to give a Buffer,
+      // which is why the in-repo test passed but the API path broke (ai-training).
+      decoded = await convert(Buffer.from(input), 'truetype');
     }
     if (needsInstance) {
       const subsetFont = await loadSubsetFont();
