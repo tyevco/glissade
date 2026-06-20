@@ -1,5 +1,27 @@
 # @glissade/core
 
+## 0.15.0-pre.0
+
+### Minor Changes
+
+- c87e88b: 0.15 guard-repr-compat: generalize the bind guard from strict id-equality to single-hop representation-compatibility, and retire the vec2-arc array-tag hack.
+
+  `ValueType` gains an optional `repr?: ValueTypeId` — the built-in type a custom type is representationally compatible with (a `cents` type sets `repr: 'number'`, `vec2-arc` sets `repr: 'vec2'`). The bind-time guard (`binding.ts`) now resolves both the track's value-type and the target's `expects` to their repr (single-hop; an id with no `repr` resolves to itself) and accepts when the reprs match. This reopens the documented extension door: a custom `number`-repr track binds to a `number` prop without throwing.
+
+  The 0.14 `['vec2','vec2-arc']` array-tags on `Node.position`/`Node.scale` and `tokenHighlight` `offset` are reverted to plain `'vec2'` — repr-compat handles vec2-arc now. `Shape.fill`'s `['color','paint']` stays: that is genuine polymorphism (distinct reprs). Bind-time only — all goldens stay byte-identical.
+
+- 53030d0: 0.15 i18n-hardening 5-pack — residual localization robustness gaps, all OFF the `evaluate()` path (252 goldens byte-identical; the no-locale base path unchanged). Each fix has a violating-input regression test.
+
+  FIX 1 (multi-cue collapse → hard-throw): `localize()` broadcasts `table[id]` to every key of a matched string track. For a multi-cue caption (a string track with >1 DISTINCT keyed value) that froze one caption over the whole video. `localize` now HARD-THROWS a `LocalizationError` naming the id and directing to per-locale narration regen; a single-value / single-key string track still localizes by broadcast.
+
+  FIX 2 (flat-table key collision → throw-on-ambiguity): a key matching BOTH a node-id-with-a-string-track AND a free-standing `t()` id (`opts.consumedIds`) silently rewrote the node's track. `localize` now throws a clear `LocalizationError` on any such collision. PURE ADDITIVE GUARD — the flat `messages.<locale>.json` shape (`MessageTable = Record<string, string>`) is UNCHANGED; no sectioned `{tracks,messages}` format introduced.
+
+  FIX 3 (ambient `t()` race across concurrent renders): the process-global ambient table/consumed-id set was shared across concurrent programmatic `render()`/`loadSceneModule` flows for different locales → wrong-language static `Text`. Added `runWithMessageTable(table, fn)` — an `AsyncLocalStorage`-scoped ambient table that isolates each async flow (lazily loaded `node:async_hooks`, off the embed; `core/i18n` stays 1.5 kB gz). `setMessageTable`/`getMessageTable`/`getConsumedMessageIds`/`t()` now read the active scope (ALS if present, else the process-global). Added `preservingMessageTable(fn)` (snapshot/restore the global ambient table), wired around the no-locale audio-mix helpers in the CLI (`collectMixAudioInputs`/`buildMixWav`) so they don't clobber or leak a concurrent locale's table. The CLI one-shot is unaffected.
+
+  FIX 4 (`requireParity` within-manifest duplicate ids): the Set-based union/diff swallowed `{en:['a','a','b']}`. `requireParity` now runs a per-manifest duplicate check (`new Set(m.ids).size !== m.ids.length`) FIRST — naming the locale + dup id and throwing a `ParityError` — even for a single (or zero) manifest, before the cross-manifest diff.
+
+  FIX 5 (`osFamilies` brand-warn gap): `buildFontExemptSet` folded the OS catalog into the exempt set; a registered/declared brand family whose name collides with an OS family could be waved through as "OS-only". The OS-catalog fold now SKIPS any name that collides with a registered family, so a declared brand font stays subject to glyph-coverage validation (a missing glyph still warns / throws under `--strict`). The exemption is for genuinely-OS-only families.
+
 ## 0.14.0
 
 ### Minor Changes
