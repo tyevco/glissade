@@ -52,6 +52,24 @@ describe('buildFontExemptSet (FIX 6 — host-independent --strict font validatio
     const set = buildFontExemptSet(registered, { allowSystemFonts: false, strict: false, osCatalog: macCatalog });
     expect([...set]).toEqual(['brand']);
   });
+
+  // 0.15 FIX 5 — a registered/declared family that name-collides with an OS family
+  // is NOT folded in as an "OS-only" exemption; it stays a brand font under validation.
+  it('FIX 5: a registered family colliding with an OS family is NOT re-added via the OS fold', () => {
+    // 'brand' is registered AND also present in the OS catalog (a name collision).
+    const collidingOs = new Set(['brand', 'helvetica neue']);
+    const set = buildFontExemptSet(registered, {
+      allowSystemFonts: true,
+      strict: false,
+      osCatalog: collidingOs,
+    });
+    // 'brand' is exempt only via the registered seed (so core validates it as a
+    // brand font), and a genuinely-OS-only family is still folded in.
+    expect(set.has('brand')).toBe(true);
+    expect(set.has('helvetica neue')).toBe(true);
+    // exactly these two — the OS fold did not duplicate/relabel 'brand' as OS-only.
+    expect([...set].sort()).toEqual(['brand', 'helvetica neue']);
+  });
 });
 
 describe('parseFrameRange (--range is frame-indexed)', () => {

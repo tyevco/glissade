@@ -7,6 +7,11 @@
 // is the third — it awaits the woff2-decoder / hb-subset instancer wasm at
 // ingest/prepare time, an explicitly export-path-only module never reached from
 // evaluate() (and tree-shaken out of the embed; see scripts/check-size.mjs).
+// The 0.14 localization core (i18n.ts) is the fourth — a build/prepare-time
+// doc→doc resolver + t() ambient-table sugar that never runs in evaluate(); 0.15
+// FIX 3 lazily awaits `node:async_hooks` for its per-locale AsyncLocalStorage
+// scope (off the embed; tree-shaken). It carries no time/random, so the other
+// determinism rules don't apply.
 import tsParser from '@typescript-eslint/parser';
 import glissade from '@glissade/eslint-plugin';
 
@@ -18,6 +23,7 @@ export default [
       'packages/scene/src/layoutEngine.ts',
       'packages/scene/src/fontUsage.ts',
       'packages/core/src/fontIngest.ts',
+      'packages/core/src/i18n.ts',
     ],
     languageOptions: { parser: tsParser, ecmaVersion: 2022, sourceType: 'module' },
     plugins: { gas: glissade },

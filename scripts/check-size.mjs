@@ -120,8 +120,15 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
     format: 'esm',
     platform: 'browser',
     write: false,
-    // measure each package alone: workspace deps are externals
-    external: ['@glissade/*'],
+    // measure each package alone: workspace deps are externals. The off-embed,
+    // prepare/render-path `core/i18n` subpath (FIX 3, 0.15) lazily loads
+    // `node:async_hooks` for its per-locale AsyncLocalStorage scope — a node
+    // builtin that is never part of a browser embed (and is reached only via
+    // `runWithMessageTable`, off every base path). Externalize node builtins ONLY
+    // for that subpath so the browser-target bundler doesn't try to resolve it;
+    // the base embed packages keep node builtins resolvable so a real accidental
+    // node-import in a browser package still fails the bundle.
+    external: pkg === 'core/i18n' ? ['@glissade/*', 'node:*'] : ['@glissade/*'],
     // Inject NODE_ENV the way every production bundler does, so the studio-preview
     // `__forceState` escape hatch (gated on `process.env.NODE_ENV !== 'production'`
     // in @glissade/interact) is dead-code-eliminated from the measured bundle.

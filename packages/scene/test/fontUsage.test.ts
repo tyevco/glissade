@@ -191,6 +191,26 @@ describe('validateSceneFonts', () => {
     ).rejects.toThrow(FontValidationError);
   });
 
+  it('FIX 5: a registered family that name-collides with an OS family still gets glyph-coverage (strict throws on a missing glyph)', async () => {
+    // 'DejaVu Sans' is a DECLARED brand asset whose name ALSO collides with an OS
+    // family passed via osFamilies. The OS collision must NOT exempt it — it stays
+    // a registered brand font, so an uncovered glyph still throws under --strict.
+    const doc = timeline({ assets: { 'DejaVu Sans': { kind: 'font', url: 'dejavu.ttf' } } });
+    const scene = createScene({
+      size: { w: 10, h: 10 },
+      children: [new Text({ text: 'Hi', fontFamily: 'DejaVu Sans' })],
+    });
+    const loader = vi.fn(async (): Promise<ArrayBuffer | undefined> => new ArrayBuffer(4)); // empty coverage
+    await expect(
+      validateSceneFonts(scene, doc, loader, {
+        mode: 'strict',
+        osFamilies: new Set(['dejavu sans']), // collides with the registered family
+      }),
+    ).rejects.toThrow(FontValidationError);
+    // the cmap WAS loaded (coverage was actually checked, not skipped by exemption)
+    expect(loader).toHaveBeenCalledWith('dejavu.ttf');
+  });
+
   it('does not load fonts no Text references', async () => {
     const doc = timeline({ assets: { Unused: { kind: 'font', url: 'unused.ttf' } } });
     const scene = createScene({ size: { w: 10, h: 10 }, children: [new Text({ text: 'Hi' })] });

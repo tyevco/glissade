@@ -110,6 +110,16 @@ export interface RenderOptions {
  * verdict depend on the host. The true-OS `osCatalog` is folded in ONLY when
  * `allowSystemFonts` is set AND `strict` is false — so --strict stays host-
  * independent regardless of the flag. Pure: no I/O, no host queries.
+ *
+ * 0.15 FIX 5 (osFamilies brand-warn gap): when an OS family name COLLIDES with a
+ * family glissade actually registered from `doc.assets`, the OS-catalog fold must
+ * NOT re-add it as an "OS-only" exemption — a registered family is a declared
+ * brand font that must stay subject to glyph-coverage validation, not be waved
+ * through as a system family. We therefore skip any osCatalog entry that collides
+ * with a registered family (the `registered` seed already carries it, and core's
+ * `validateFonts` runs coverage for registered families regardless of exemption).
+ * The exemption is for GENUINELY-OS-only families, never registered ones that
+ * happen to share a name.
  */
 export function buildFontExemptSet(
   registered: ReadonlySet<string>,
@@ -117,7 +127,9 @@ export function buildFontExemptSet(
 ): ReadonlySet<string> {
   const exempt = new Set<string>(registered);
   if (opts.allowSystemFonts && !opts.strict) {
-    for (const f of opts.osCatalog) exempt.add(f);
+    // 0.15 FIX 5: a registered/declared family that name-collides with an OS family
+    // is NOT folded in as an OS exemption — it stays a brand font under validation.
+    for (const f of opts.osCatalog) if (!registered.has(f)) exempt.add(f);
   }
   return exempt;
 }
@@ -716,29 +728,37 @@ export async function collectMixAudioInputs(
   opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
   timelineClips?: AudioClip[],
 ): Promise<string[]> {
-  let tl = timelineClips;
-  if (tl === undefined) {
-    try {
-      const mod = await loadSceneModule(opts.modulePath);
-      const { compileTimeline } = await import('@glissade/core');
-      tl = [...compileTimeline(mod.timeline).audio];
-    } catch {
-      tl = [];
+  // --- FIX 3 (0.15 i18n-hardening): self-contained ambient-table region ---
+  // This no-locale helper calls loadSceneModule(modulePath) (no locale), which
+  // clears the process-global ambient table — a concurrent locale render's table
+  // must not be clobbered or leaked into here. Snapshot/restore around the body.
+  const { preservingMessageTable } = await import('@glissade/core/i18n');
+  return preservingMessageTable(async () => {
+    let tl = timelineClips;
+    if (tl === undefined) {
+      try {
+        const mod = await loadSceneModule(opts.modulePath);
+        const { compileTimeline } = await import('@glissade/core');
+        tl = [...compileTimeline(mod.timeline).audio];
+      } catch {
+        tl = [];
+      }
     }
-  }
-  const clips = await collectAudioClips(opts, tl);
-  const { resolveAssetPath } = await import('./audioMix.js');
-  const paths = new Set<string>();
-  for (const c of clips) {
-    try {
-      paths.add(resolveAssetPath(c.asset.url, opts.modulePath));
-    } catch {
-      // a remote/unsupported url can't be byte-hashed locally — fold its url
-      // string so a change to the reference still invalidates the measurement.
-      paths.add(c.asset.url);
+    const clips = await collectAudioClips(opts, tl);
+    const { resolveAssetPath } = await import('./audioMix.js');
+    const paths = new Set<string>();
+    for (const c of clips) {
+      try {
+        paths.add(resolveAssetPath(c.asset.url, opts.modulePath));
+      } catch {
+        // a remote/unsupported url can't be byte-hashed locally — fold its url
+        // string so a change to the reference still invalidates the measurement.
+        paths.add(c.asset.url);
+      }
     }
-  }
-  return [...paths].sort();
+    return [...paths].sort();
+  });
+  // --- FIX 3: end self-contained ambient-table region ---
 }
 
 /**
@@ -836,37 +856,45 @@ export async function buildMixWav(
   if (!ffmpegAvailable()) {
     throw new Error('gs measure-loudness needs FFmpeg on PATH and none was found.');
   }
-  const mod = await loadSceneModule(opts.modulePath);
-  const scene = mod.createScene();
-  const { compileTimeline } = await import('@glissade/core');
-  const compiled = compileTimeline(mod.timeline);
-  const duration = compiled.duration;
+  // --- FIX 3 (0.15 i18n-hardening): self-contained ambient-table region ---
+  // measure-loudness is a no-locale path: loadSceneModule(modulePath) clears the
+  // process-global ambient table. Snapshot/restore so a concurrent locale render's
+  // table isn't clobbered (and a leaked table can't reach the no-locale mix).
+  const { preservingMessageTable } = await import('@glissade/core/i18n');
+  return preservingMessageTable(async () => {
+    const mod = await loadSceneModule(opts.modulePath);
+    const scene = mod.createScene();
+    const { compileTimeline } = await import('@glissade/core');
+    const compiled = compileTimeline(mod.timeline);
+    const duration = compiled.duration;
 
-  const audioClips = await collectAudioClips(opts, [...compiled.audio]);
-  const { planAudioMix } = await import('./audioMix.js');
-  const mix = planAudioMix(audioClips, opts.modulePath, duration);
-  if (!mix) return false;
+    const audioClips = await collectAudioClips(opts, [...compiled.audio]);
+    const { planAudioMix } = await import('./audioMix.js');
+    const mix = planAudioMix(audioClips, opts.modulePath, duration);
+    if (!mix) return false;
 
-  // `planAudioMix` indexes audio inputs as [1:a], [2:a], … because the render
-  // path puts the PNG video at input 0. There's no video here, so a throwaway
-  // `anullsrc` at input 0 keeps the audio indices aligned (we only map [aout],
-  // so the dummy is discarded). The mix renders to 16-bit PCM (the same
-  // float→Int16 quantize §5.3 / renderSfxr golden-hash) at 48 kHz.
-  const args = [
-    '-y', '-hide_banner', '-nostats',
-    '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
-    ...mix.inputs.flatMap((p) => ['-i', p]),
-    '-filter_complex', mix.filterComplex,
-    '-map', '[aout]',
-    '-c:a', 'pcm_s16le', '-ar', '48000',
-    '-t', String(duration),
-    wavOut,
-  ];
-  const result = spawnSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  if (result.status !== 0) {
-    throw new Error(`ffmpeg mix-to-WAV failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
-  }
-  // touch `scene` so the load-and-validate is part of the measure path
-  void scene.size;
-  return true;
+    // `planAudioMix` indexes audio inputs as [1:a], [2:a], … because the render
+    // path puts the PNG video at input 0. There's no video here, so a throwaway
+    // `anullsrc` at input 0 keeps the audio indices aligned (we only map [aout],
+    // so the dummy is discarded). The mix renders to 16-bit PCM (the same
+    // float→Int16 quantize §5.3 / renderSfxr golden-hash) at 48 kHz.
+    const args = [
+      '-y', '-hide_banner', '-nostats',
+      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+      ...mix.inputs.flatMap((p) => ['-i', p]),
+      '-filter_complex', mix.filterComplex,
+      '-map', '[aout]',
+      '-c:a', 'pcm_s16le', '-ar', '48000',
+      '-t', String(duration),
+      wavOut,
+    ];
+    const result = spawnSync('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    if (result.status !== 0) {
+      throw new Error(`ffmpeg mix-to-WAV failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
+    }
+    // touch `scene` so the load-and-validate is part of the measure path
+    void scene.size;
+    return true;
+  });
+  // --- FIX 3: end self-contained ambient-table region ---
 }
