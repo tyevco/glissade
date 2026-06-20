@@ -1,5 +1,33 @@
 # @glissade/scene
 
+## 0.13.0
+
+### Minor Changes
+
+- 88ba5bc: Add `each()` (0.13) — deterministic parametric instancing in `@glissade/scene` (base entry). Pure build-time sugar: generate N scene nodes from a factory, lay them out in aspect-fraction space (`row`/`column`/`grid`/`ring` discriminated-union layouts, or an `(i, n) => [fx, fy]` escape hatch), and optionally fan a motion `clip` across the clones with `stagger` + `distribute` (`'delay'`/`'from-center'`/`'from-edges'`) + seeded `jitter`. Returns `{ node, children, tracks, end, places }`.
+
+  Each clone is stamped with a stable `${id}/${i}` id (a factory-set conflicting id is rejected, an unset one is filled), wrapped in a `Group({ id })`, and its prop signals become ordinary `clip.apply` track targets — so every `--workers` export shard reconstructs the identical id set and the emitted `Track[]` are byte-indistinguishable from hand-authored ones (a golden holds by construction). Per-clone RNG is the seeded `random(mix(seed ?? hash(id), i))` from core, never `Math.random`, so jitter is reproducible and clean under `withDeterminismGuards`. The clip runtime is imported TYPE-ONLY, so `each` adds no clip bytes to the embed.
+
+  Also: the scene target resolver now splits a track target on its LAST `/` (was the first), so node ids that contain slashes — the `${id}/${i}` ids `each` mints — resolve their prop suffix correctly. Single-slash targets are unaffected (no registered prop path contains a slash), so existing scenes are byte-identical.
+
+### Patch Changes
+
+- d1e81b7: 0.13 canary fix: the scene `resolveTarget` now disambiguates a track target's node id from its prop path by the LONGEST REGISTERED NODE-ID PREFIX, rather than splitting on the last (or first) `/`. Both an `each()` clone id (`card/3`) and a `TokenHighlight` range prop path (`money/fill`) carry slashes, so any fixed split mis-resolved one of them: a last-slash split threw `UnboundTargetError` on a normal mount binding a `TokenHighlight` range prop (`hl/money/fill` → nonexistent node `hl/money`), while a first-slash split silently animated the wrong node. The resolver now walks slash boundaries from the longest candidate node id down, binding the first prefix that is an actually-registered node and treating the remainder as the prop path. `card/3/opacity` → node `card/3` + prop `opacity`; `hl/money/fill` → node `hl` + prop `money/fill`.
+- 707d228: displayDiff: the shared collapse-replacer now maps `NaN`/`Infinity`/`-Infinity`
+  to DISTINCT string sentinels instead of letting `JSON.stringify` collapse all
+  three to `null`. Two DisplayLists differing only in WHICH non-finite value
+  reaches a draw field previously collided the §3.5 raster cacheKey (stale raster
+  - a `cacheColdAudit` false-OK); they are now distinguished. FINITE-number
+    serialization is byte-identical — the pinned cacheKey is unchanged.
+- Updated dependencies [d1e81b7]
+- Updated dependencies [1995ee8]
+- Updated dependencies [750367f]
+- Updated dependencies [3bc3270]
+- Updated dependencies [993d46a]
+- Updated dependencies [8bec181]
+- Updated dependencies [0a3d35b]
+  - @glissade/core@0.13.0
+
 ## 0.13.0-pre.3
 
 ### Patch Changes

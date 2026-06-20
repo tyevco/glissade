@@ -1,5 +1,51 @@
 # @glissade/core
 
+## 0.13.0
+
+### Minor Changes
+
+- 3bc3270: Add `morph()` (on the `@glissade/core/clips` sub-path) — a shared-element box-FLIP morph. Given two caller-supplied `Box` literals (a from and a to rect, Rect center convention) and a `{ morphNode, fromNode?, toNode? }` target map, it compiles a FLIP position+scale tween on one shared element plus an optional opacity cross-fade. Pure core (no scene/Yoga query): the FLIP delta is plain arithmetic over the two boxes, emitted through the validated `clip` path so the tracks are byte-indistinguishable from hand-authored ones. Degenerate boxes, non-positive duration, and out-of-range crossfade are rejected at build time.
+- 993d46a: Add `presence()` (0.13) — enter/exit presence scheduling on the `@glissade/core/clips` subpath. Build-time sugar over `clip`: schedules a node's enter on `show`, back-times its exit to land exactly on `hide`, and authors a real `<nodeId>/opacity` window-guard track that culls the node (opacity<=0) outside `[show, hide]`. The enter/exit clips' own opacity keys are reconciled into the guard with the builder's deterministic later-wins coincident-key dedup (no double-authored keys); a clip without an opacity channel synthesizes the 0→1 rise / 1→0 fall. Compiles entirely to keyed `Track[]` via `track()` — byte-indistinguishable from hand-authored, with no runtime visibility flag. Returns `{ tracks, end, shownAt, hiddenAt }` so siblings anchor to the real exit. Overlapping windows throw `PresenceError`.
+
+### Patch Changes
+
+- d1e81b7: 0.13 canary fixes: five deterministic-but-wrong correctness holes in shipped sugar.
+
+  - **clipStdlib**: `popIn()` and `pulse()` authored a SCALAR `scale` channel, but the scene node `scale` prop is a `Vec2Signal` — the vec2 signal read `c[0]`/`c[1]` off a scalar → `[undefined, undefined]` → a NaN local matrix → the node + its subtree silently vanished for the whole clip window. Both now author VEC2 scale keys (`[0.8,0.8]→[1,1]` for popIn; `1→[peak,peak]→1` for pulse). Emitted tracks are byte-identical to the prior hand-authored `popInVec` workaround, so goldens are unaffected.
+  - **presence (degenerate window)**: a no-plateau window (`exitStart == show`) slipped through a strict `<` check; the exit's value-1 key then won the coincident-`t` dedup at `show`, destroying the enter fade AND the pre-show cull (opacity ramped 0→1 across `[0,show)`). The guard is now `<=`, so a window with no live plateau throws `PresenceError`.
+  - **presence (pre-show opacity leak)**: a custom `enter` whose first opacity key value ≠ 0 (e.g. `key(0,0.5)`) lerped the held-0 cull up to that value across the entire pre-show window (`sampleTrack` reads the `hold` flag off the ARRIVAL key). The pre-show segment now HOLDS 0 until the enter's first key (marked `interp:'hold'` only when its value ≠ 0), so the cull holds 0 across `[0,show)` and the ramp begins at `show`. Default-fade bytes are unchanged.
+  - **presence/morph (slash-bearing node ids)**: `presence`/`morph` no longer re-split a caller's node id on the FIRST `/` — they APPEND the prop suffix and trust the caller, so an `each()` clone id like `card/3` targets the CLONE, not the wrapping `card` Group. The scene's longest-registered-prefix resolver disambiguates at bind time.
+  - **valueTypes (mesh bg)**: a one-sided mesh `bg` in a non-hex color (hsl/named/oklch) threw from `parseColor` inside `lerp` during `evaluate()` (the 0.13 symmetric-bg path). `transparentOf` and the bg lerp now fall back to a safe snap instead of throwing.
+
+- 1995ee8: clip: close three byte-indistinguishability nits so emitted `Track[]` stays deep-equal to hand-authored `track()` on currently-unread fields:
+
+  - carry a key's `from` (`'live'`, §4.7) flag through `compileChannel` instead of dropping it;
+  - drop `derived` on a key whose value an override REPLACED (an overridden value is no longer builder-derived; un-overridden keys keep the flag);
+  - reject an ambiguous single-key override (`from` on a 1-key channel, or `from`+`to` both targeting the one key) with a `ClipError` naming the channel, rather than silently dropping a value.
+
+  Goldens unaffected (these touch unread fields / a throw path).
+
+- 750367f: Fix two silently-wrong cases in the animated-mesh `paintType.lerp` (`mesh ↔ mesh`, opt-in path). Both were already deterministic; these make them visually correct.
+
+  - **Interpolation-mode mismatch now snaps instead of pairwise-lerping.** The mesh blend kernel forks on `interpolation` (`gaussian` vs `smooth`/`oklab`), so a `smooth → gaussian` tween used to rasterize the whole way with A's kernel and then flip discretely at the boundary. A matched-point-count mesh whose `interpolation` differs now routes through the snap path (hold A — value **and** kernel — until `t ≥ 1`, then B) and emits a one-time dev warning naming the mode mismatch, consistent with the mismatched-count and cross-kind branches.
+  - **`bg` (mesh baseline) now fades symmetrically.** An appearing `bg` (A has none, B does) used to be dropped for the whole tween and pop in at `t ≥ 1`; a disappearing `bg` froze at A's value then snapped. Both now lift the missing side to a transparent (alpha-0) stand-in of the present color and `lerpColor` whenever **either** side has a `bg`, so it ramps in/out continuously.
+
+  No public API change. All existing goldens are byte-identical (no golden crosses these cases).
+
+- 8bec181: woff2 decode coverage: decode unit test + golden + byte-stable sfnt assertion (DsW-aD_OUMoV item 1).
+
+  The font-ingest woff2/woff subpath was untested (no woff2 bytes existed in the repo) and latently broken: the decode branch read `parseCmap()` on the _compressed_ woff2 bytes to build hb-subset's retain set — which is empty — so the decode dropped every glyph (a stripped cmap, 0 covered code points). It now decodes woff/woff2 → sfnt via `fontverter` (subset-font's own pure codec, dynamically imported on the font-ingest subpath only, never reaching the embed), reads real coverage from the decoded sfnt, and only then optionally instances axes via hb-subset.
+
+  Coverage:
+
+  - **decode unit test** (`packages/core/test/woff2Decode.test.ts`): a committed `Inconsolata-wght600.woff2` (OFL, a woff2 of the in-repo `Inconsolata-wght600.ttf`) ingested through `registerFont`/`ingestFont` → the covered code-point SET equals the round-trip-validated fixture (882 codepoints / 128 ranges) incl. spot-checks (U+0020/0041/0061/0030).
+  - **golden** (`golden-woff2`): a Text scene in the woff2-decoded face, rendered byte-exactly on Skia — proves the decode is byte-stable through the rasterizer.
+  - **byte-stable sfnt assertion**: decoding the same woff2 twice yields byte-identical sfnt bytes (sha256) — decode-once-at-ingest, never in evaluate.
+
+  The woff2 fixture is a TEST asset and the `fontverter` decoder stays on the dynamically-imported font-ingest subpath; the §4.4 leak-guard confirms neither reaches any embed bundle.
+
+- 0a3d35b: Fix `registerFont`/`ingestFont` throwing `Unrecognized font signature` on a woff2/woff passed as a plain `Uint8Array` or `ArrayBuffer` `src` (i.e. every real consumer — `registerFont` normalizes `src` to a plain `Uint8Array`). `fontverter@2.x` sniffs the magic via `Buffer.prototype.toString('ascii',0,4)`, which a plain `Uint8Array` does not honor; the decode now normalizes to a node `Buffer` first. The in-repo woff2 test masked this by feeding a path (→ `readFile` → a `Buffer`); added a regression that ingests a plain `Uint8Array`/`ArrayBuffer` src — the broken public-API contract. (ai-training real-Fontsource validation, the second woff2 bug behind DsW-aD_OUMoV item 1.)
+
 ## 0.13.0-pre.3
 
 ### Patch Changes
