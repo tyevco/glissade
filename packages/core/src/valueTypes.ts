@@ -25,6 +25,16 @@ export type HandoffKind = 'cut' | 'decay' | 'spring' | 'blend-from-frozen';
 
 export interface ValueType<T> {
   id: string;
+  /**
+   * The built-in value type this type is REPRESENTATIONALLY compatible with —
+   * the bind guard (binding.ts) matches a track to a target when their reprs
+   * agree, not just their ids. A custom type that is "a number under a different
+   * id" (e.g. a `cents` type) sets `repr: 'number'` so it binds to `number`
+   * props (and vice versa); `vec2-arc` sets `repr: 'vec2'`. SINGLE-HOP only:
+   * `repr` must name a base type that has no `repr` of its own (no chaining).
+   * Omitted ⇒ the type is its own repr.
+   */
+  repr?: ValueTypeId;
   lerp(a: T, b: T, t: number): T;
   /** Accepts easedT outside [0,1] (spring overshoot)? Otherwise clamped. */
   extrapolates: boolean;
@@ -61,6 +71,17 @@ export function getValueType<T = unknown>(id: ValueTypeId): ValueType<T> {
   return vt as ValueType<T>;
 }
 
+/**
+ * Resolve a value-type id to its REPRESENTATION (the bind guard's compatibility
+ * key, §2.2): a type's `repr` (the built-in it's representationally compatible
+ * with), else the id itself. SINGLE-HOP — `repr` is never chained, so a custom
+ * type's repr must be a base type. An UNREGISTERED id resolves to itself (the
+ * guard's job is repr-compat, not existence — `getValueType` enforces that).
+ */
+export function reprOf(id: ValueTypeId): ValueTypeId {
+  return registry.get(id)?.repr ?? id;
+}
+
 export const numberType: ValueType<number> = {
   id: 'number',
   lerp: (a, b, t) => a + (b - a) * t,
@@ -88,6 +109,7 @@ export const vec2Type: ValueType<Vec2> = {
 /** vec2 swept along a circular arc: polar lerp of radius + shortest-path angle (§2.2). */
 export const vec2ArcType: ValueType<Vec2> = {
   id: 'vec2-arc',
+  repr: 'vec2', // representationally a Vec2 — binds to plain `vec2` props (binding.ts)
   lerp: (a, b, t) => {
     const ra = Math.hypot(a[0], a[1]);
     const rb = Math.hypot(b[0], b[1]);

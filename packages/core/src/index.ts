@@ -63,6 +63,7 @@ export {
   registerValueType,
   vec2ArcType,
   getValueType,
+  reprOf,
   numberType,
   vec2Type,
   colorType,

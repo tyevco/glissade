@@ -117,9 +117,11 @@ export interface BindablePropTarget {
   unbindSource(): void;
   /**
    * The value type(s) this prop accepts — bindTimeline hard-throws a mismatched
-   * track (§2.2). An array for a polymorphic prop (a Shape `fill` is color|paint,
-   * a vec2 prop is vec2|vec2-arc). UNDEFINED for an untagged target (the 2-arg
-   * registerTarget form): bindTimeline skips the guard (0.13 back-compat seam).
+   * track (§2.2). An array for a GENUINELY polymorphic prop (a Shape `fill` is
+   * color|paint — distinct reprs). A plain `vec2` prop tags just `'vec2'`: the
+   * 0.15 repr-compat guard binds a `vec2-arc` track (repr 'vec2') to it without
+   * an array tag. UNDEFINED for an untagged target (the 2-arg registerTarget
+   * form): bindTimeline skips the guard (0.13 back-compat seam).
    */
   readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
 }
@@ -208,11 +210,11 @@ export abstract class Node {
       { equals: matEquals },
     );
 
-    this.registerTarget('position', this.position, ['vec2', 'vec2-arc']);
+    this.registerTarget('position', this.position, 'vec2');
     this.registerTarget('position.x', this.position.x, 'number');
     this.registerTarget('position.y', this.position.y, 'number');
     this.registerTarget('rotation', this.rotation, 'number');
-    this.registerTarget('scale', this.scale, ['vec2', 'vec2-arc']);
+    this.registerTarget('scale', this.scale, 'vec2');
     this.registerTarget('scale.x', this.scale.x, 'number');
     this.registerTarget('scale.y', this.scale.y, 'number');
     this.registerTarget('opacity', this.opacity, 'number');

@@ -8,7 +8,7 @@
 import { beginReadPhase, endReadPhase, signal, type BindableSignal } from './signal.js';
 import { sampleTrack, velocityAt, type Track } from './track.js';
 import { type CompiledTimeline } from './timeline.js';
-import { type ValueTypeId } from './valueTypes.js';
+import { reprOf, type ValueTypeId } from './valueTypes.js';
 
 export type Playhead = BindableSignal<number>;
 
@@ -54,12 +54,14 @@ export interface BindTarget {
   bindSource(fn: () => unknown): void;
   unbindSource(): void;
   /**
-   * The value type this target accepts; a track of any other type is a bind
-   * error. An ARRAY for a polymorphic prop that admits more than one type
-   * (e.g. a Shape `fill` accepts both `color` and `paint`, or a vec2 prop that
-   * accepts both `vec2` and `vec2-arc`). UNDEFINED means the target opted OUT
-   * of the guard (an untagged custom-node prop — back-compat with 0.13, which
-   * had no guard): any track binds without a type check.
+   * The value type this target accepts; a track whose REPRESENTATION (its
+   * `repr`, single-hop) differs is a bind error. So a `vec2-arc` track (repr
+   * 'vec2') binds to a plain `'vec2'` target, and a custom `cents` (repr
+   * 'number') binds to a `'number'` target — the extension door (0.15). An
+   * ARRAY is for GENUINE polymorphism — distinct reprs admitted at one prop
+   * (e.g. a Shape `fill` accepts both `color` and `paint`). UNDEFINED means the
+   * target opted OUT of the guard (an untagged custom-node prop — back-compat
+   * with 0.13, which had no guard): any track binds without a type check.
    */
   readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
 }
@@ -102,7 +104,15 @@ export function bindTimeline(
     // with 0.13's no-guard custom-node seam: a custom node opts INTO the guard
     // by tagging its registerTarget call. Built-in nodes stay tagged.
     if (expects !== undefined) {
-      const ok = Array.isArray(expects) ? expects.includes(got) : got === expects;
+      // Repr-compatibility (0.15): compare REPRESENTATIONS, not raw ids — the
+      // track's type and each accepted type resolve to their `repr` (an id with
+      // no `repr` resolves to itself, single-hop). So `vec2-arc` (repr 'vec2')
+      // binds to a plain-'vec2' prop, and a custom `cents` (repr 'number') binds
+      // to a 'number' prop — the documented extension door. The array form is
+      // kept for GENUINE polymorphism (e.g. fill: color|paint — distinct reprs).
+      const gotRepr = reprOf(got);
+      const accepted: readonly ValueTypeId[] = Array.isArray(expects) ? expects : [expects];
+      const ok = accepted.some((e) => reprOf(e) === gotRepr);
       if (!ok) throw new BindTypeMismatchError(target, got, expects);
     }
     sig.bindSource(() => sampleTrack(tr as Track, playhead()));

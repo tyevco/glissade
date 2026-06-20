@@ -6,6 +6,7 @@ import {
   createPlayhead,
   evaluateAt,
   key,
+  registerValueType,
   signal,
   timeline,
   track,
@@ -182,10 +183,46 @@ describe('bindTimeline (§2.4)', () => {
     ).toThrow(BindTypeMismatchError);
   });
 
-  it('a vec2-arc track binds to a vec2|vec2-arc target without throwing (FIX 1)', () => {
-    const target: BindTarget = { bindSource: () => {}, unbindSource: () => {}, expects: ['vec2', 'vec2-arc'] };
+  it('a vec2-arc track binds to a PLAIN-vec2 target via repr-compat (0.15 — array-tag retired)', () => {
+    // the 0.14 ['vec2','vec2-arc'] array-tag is GONE: the target advertises plain
+    // 'vec2', and the repr guard accepts vec2-arc because vec2ArcType.repr==='vec2'.
+    const sink = vec2Signal([0, 0]);
+    const target: BindTarget = sink; // vec2Signal compound carries expects:'vec2'
+    expect(target.expects).toBe('vec2');
+    const ph = createPlayhead();
     const doc = timeline({ tracks: [track<Vec2>('dot/position', 'vec2-arc', [key<Vec2>(0, [10, 0]), key<Vec2>(1, [0, 10])])] });
-    expect(() => bindTimeline(compileTimeline(doc), () => target)).not.toThrow();
+    expect(() => bindTimeline(compileTimeline(doc), () => target, ph)).not.toThrow();
+    // and it samples to a finite Vec2 along the arc
+    ph.set(0.5);
+    const v = sink();
+    expect(v).toHaveLength(2);
+    expect(Number.isFinite(v[0]!)).toBe(true);
+    expect(Number.isFinite(v[1]!)).toBe(true);
+  });
+
+  it('a custom value type with repr binds to its base type — the extension door (0.15)', () => {
+    // a `cents` type: a number under a different id, declaring repr:'number'.
+    registerValueType<number>({
+      id: 'cents',
+      repr: 'number',
+      lerp: (a, b, t) => a + (b - a) * t,
+      extrapolates: true,
+      equals: Object.is,
+    });
+    const mk = (expects: ValueTypeId | readonly ValueTypeId[]): BindTarget => ({
+      bindSource: () => {},
+      unbindSource: () => {},
+      expects,
+    });
+    // a `cents` track binds to a plain 'number' prop WITHOUT throwing…
+    const centsDoc = timeline({ tracks: [track('price/amount', 'cents', [key(0, 100), key(1, 250)])] });
+    expect(() => bindTimeline(compileTimeline(centsDoc), () => mk('number'))).not.toThrow();
+    // …and the reverse: a 'number' track on a cents-tagged target.
+    const numDoc = timeline({ tracks: [track('price/amount', 'number', [key(0, 100), key(1, 250)])] });
+    expect(() => bindTimeline(compileTimeline(numDoc), () => mk('cents'))).not.toThrow();
+    // a genuinely incompatible repr still throws (cents → vec2).
+    const vecTarget = mk('vec2');
+    expect(() => bindTimeline(compileTimeline(centsDoc), () => vecTarget)).toThrow(BindTypeMismatchError);
   });
 
   it('unbind freezes values', () => {

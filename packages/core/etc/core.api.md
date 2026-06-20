@@ -504,6 +504,9 @@ export interface ReadonlySignal<T> {
 export function registerValueType<T>(vt: ValueType<T>): void;
 
 // @public
+export function reprOf(id: ValueTypeId): ValueTypeId;
+
+// @public
 export interface ResolvedFace {
     // (undocumented)
     family: string;
@@ -879,6 +882,7 @@ export interface ValueType<T> {
     id: string;
     // (undocumented)
     lerp(a: T, b: T, t: number): T;
+    repr?: ValueTypeId;
     // (undocumented)
     scale?(a: T, k: number): T;
     serialize?(value: T): unknown;
