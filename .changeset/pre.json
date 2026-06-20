@@ -24,6 +24,8 @@
     "@glissade/vite-plugin": "0.13.0"
   },
   "changesets": [
+    "canary-fixes-cli",
+    "canary-fixes-core",
     "dx-render-surface-bundle",
     "i18n-localization-core",
     "misaki-zh-spike",
