@@ -139,6 +139,10 @@ export interface NarrationAnchors {
     // (undocumented)
     duration(id: string): number;
     end(id: string): number;
+    idManifest(locale: string): {
+        locale: string;
+        ids: string[];
+    };
     labels(): Record<string, number>;
     require(ids: readonly string[]): NarrationAnchors;
     start(id: string): number;

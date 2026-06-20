@@ -18,8 +18,20 @@ export function parseCaptionsMode(raw: string | undefined): CaptionsMode {
   throw new Error(`--captions must be burn, sidecar, or off (got '${raw}')`);
 }
 
-/** `<module>.narration.timing.json`, when the scene has been narrated. */
-export function timingPathFor(modulePath: string): string | null {
+/**
+ * `<module>.narration.timing.json`, when the scene has been narrated. With a
+ * `locale`, PREFER the locale-tagged sibling `<module>.<locale>.narration.timing.json`
+ * (0.14 localization core) and fall back to the base sibling when it is absent —
+ * so a locale that reuses the base narration still renders. No `locale` (the
+ * base path) resolves the base sibling, byte-identical to today.
+ */
+export function timingPathFor(modulePath: string, locale?: string): string | null {
+  if (locale !== undefined && locale !== '') {
+    // single-source the locale sibling suffix in locale.ts (one-line convention change)
+    const stem = modulePath.replace(/\.[jt]sx?$/, '');
+    const localeCandidate = stem + `.${locale}.narration.timing.json`;
+    if (existsSync(localeCandidate)) return localeCandidate;
+  }
   const candidate = modulePath.replace(/\.[jt]sx?$/, '') + '.narration.timing.json';
   return existsSync(candidate) ? candidate : null;
 }

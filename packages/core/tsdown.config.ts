@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/studioHost.ts', 'src/clips.ts', 'src/font-ingest.ts'],
+  entry: ['src/index.ts', 'src/studioHost.ts', 'src/clips.ts', 'src/i18n.ts', 'src/font-ingest.ts'],
   format: 'esm',
   dts: true,
   hash: false,

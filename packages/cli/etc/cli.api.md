@@ -103,7 +103,7 @@ export interface CaptionProbe {
 export function clearFrameCache(dir: string): void;
 
 // @public
-export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
+export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
 
 // @public
 export function computeGainDb(profile: PublishProfile, inputI: number, inputTp: number): number;
@@ -283,7 +283,7 @@ export type LintRule = 'reading-speed' | 'anchor-budget' | 'caption-fit' | 'beat
 export function lintTimingPathFor(input: string): Promise<string>;
 
 // @public
-export function loadSceneModule(modulePath: string): Promise<SceneModule>;
+export function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule>;
 
 // @public (undocumented)
 export const LOUDNESS_SCHEMA_VERSION: 1;
@@ -462,6 +462,7 @@ export interface RenderOptions {
     fps?: number;
     frame?: number;
     frameRange?: [number, number];
+    locale?: string;
     losslessIntermediate?: boolean;
     loudness?: 'auto' | 'off';
     // (undocumented)

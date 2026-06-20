@@ -21,6 +21,10 @@
       "types": "./dist/clips.d.ts",
       "default": "./dist/clips.js"
     },
+    "./i18n": {
+      "types": "./dist/i18n.d.ts",
+      "default": "./dist/i18n.js"
+    },
     "./font-ingest": {
       "types": "./dist/font-ingest.d.ts",
       "default": "./dist/font-ingest.js"

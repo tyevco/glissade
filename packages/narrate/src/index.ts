@@ -206,6 +206,13 @@ export interface NarrationAnchors {
   readonly totalDuration: number;
   /** '<id>.start' / '<id>.end' labels (segments + pauses) — merge into the timeline for studio visibility */
   labels(): Record<string, number>;
+  /**
+   * The locale id manifest for this narration — every addressable beat id
+   * (segments + pauses) under a locale tag. Feed it to
+   * `requireParity(...)` from `@glissade/core/i18n` to assert two locales'
+   * narration cover the SAME ids (the cross-language analogue of `require`).
+   */
+  idManifest(locale: string): { locale: string; ids: string[] };
   /** narration clips on the existing AudioClip machinery; baseUrl prefixes each file */
   clips(baseUrl: string): AudioClip[];
   /** audio asset manifest entries keyed 'narration-<id>' */
@@ -253,6 +260,7 @@ export function narration(timing: NarrationTiming): NarrationAnchors {
       }
       return out;
     },
+    idManifest: (locale) => ({ locale, ids: [...byId.keys()] }),
     clips: (baseUrl) =>
       timing.segments.map((s) => ({
         asset: { kind: 'audio' as const, url: `${baseUrl}/${s.file}` },

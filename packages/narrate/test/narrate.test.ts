@@ -383,6 +383,23 @@ describe('narration().require — batch fast-fail on stale ids', () => {
   });
 });
 
+describe('narration().idManifest — the 0.14 cross-locale id manifest', () => {
+  it('tags every addressable beat id (segments + pauses) under a locale', () => {
+    const m = narration(PAUSED).idManifest('en');
+    expect(m.locale).toBe('en');
+    expect(new Set(m.ids)).toEqual(new Set(['a', 'b', 'beat']));
+  });
+
+  it('feeds requireParity from @glissade/core/i18n (cross-language analogue of require)', async () => {
+    const { requireParity, ParityError } = await import('@glissade/core/i18n');
+    const en = narration(TIMING).idManifest('en'); // ids a, b, c
+    const zhOk = { locale: 'zh', ids: ['a', 'b', 'c'] };
+    expect(() => requireParity(en, zhOk)).not.toThrow();
+    const zhBad = { locale: 'zh', ids: ['a', 'b'] }; // missing c
+    expect(() => requireParity(en, zhBad)).toThrow(ParityError);
+  });
+});
+
 // auto-fit: long caption segments must stay in-frame (load-bearing for muted
 // 9:16 cutdowns). A char-proportional measurer makes wrapping/shrink testable.
 import type { TextMeasurer } from '@glissade/scene';

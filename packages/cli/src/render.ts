@@ -82,6 +82,13 @@ export interface RenderOptions {
    * shifts every frame's timing → every DisplayList changes → every frame MISSES.
    */
   cache?: { dir: string; mode: import('./frameCache.js').CacheMode; maxSize?: number };
+  /**
+   * --locale <code> (0.14 localization core): resolve the scene against a
+   * per-locale message table (`messages.<code>.json`) and prefer the
+   * locale-tagged narration sibling (`<base>.<code>.narration.timing.json`).
+   * Omitted (the base path) resolves the BASE files → byte-identical to today.
+   */
+  locale?: string;
   onProgress?: (frame: number, total: number) => void;
 }
 
@@ -111,7 +118,19 @@ export function parseFrameRange(flag: string): [number, number] {
   return [a, b];
 }
 
-export async function loadSceneModule(modulePath: string): Promise<SceneModule> {
+export async function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule> {
+  // 0.14 localization core: install the ambient message table BEFORE the module
+  // is imported — `t('id')` runs at module-eval / createScene() time, so the
+  // table must be set first. No --locale leaves the ambient table unset, so
+  // `t(id)` returns `id` verbatim → the base path is byte-identical to today.
+  const { setMessageTable } = await import('@glissade/core/i18n');
+  if (locale !== undefined && locale !== '') {
+    const { loadMessageTable } = await import('./locale.js');
+    setMessageTable(loadMessageTable(modulePath, locale));
+  } else {
+    setMessageTable(undefined);
+  }
+
   const abs = isAbsolute(modulePath) ? modulePath : resolve(process.cwd(), modulePath);
   const jiti = createJiti(pathToFileURL(process.cwd() + '/').href);
   const loaded = (await jiti.import(pathToFileURL(abs).href, { default: true })) as Partial<SceneModule>;
@@ -126,7 +145,7 @@ export function ffmpegAvailable(): boolean {
 }
 
 export async function render(opts: RenderOptions): Promise<{ frames: number; out: string }> {
-  const mod = await loadSceneModule(opts.modulePath);
+  const mod = await loadSceneModule(opts.modulePath, opts.locale);
   const scene = mod.createScene();
   // machine export routes (v2 §A.6): machines render via --trace/--state or error
   const { resolveRenderDoc } = await import('./machines.js');
@@ -135,6 +154,19 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     ...(opts.state !== undefined ? { state: opts.state } : {}),
     ...(opts.force !== undefined ? { force: opts.force } : {}),
   });
+
+  // 0.14 localization core: resolve node-id-targeted string tracks (captions +
+  // narration-derived text live in the doc as string tracks) against the locale
+  // message table. A pure doc→doc swap; no --locale / no table = no-op, so the
+  // base path is byte-identical to today.
+  if (opts.locale !== undefined && opts.locale !== '') {
+    const { loadMessageTable } = await import('./locale.js');
+    const table = loadMessageTable(opts.modulePath, opts.locale);
+    if (table) {
+      const { localize } = await import('@glissade/core/i18n');
+      doc = localize(doc, table, { locale: opts.locale });
+    }
+  }
   const fps = opts.fps ?? doc.fps ?? 60;
 
   // --captions sidecar/off: hide the caption node via a document override —
@@ -357,7 +389,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // timing manifest as the burned track, so they match by construction
   const emitSidecars = (target: string): void => {
     if (captionsMode === 'off') return;
-    const timingPath = timingPathFor(opts.modulePath);
+    const timingPath = timingPathFor(opts.modulePath, opts.locale);
     if (!timingPath) {
       if (captionsMode === 'sidecar') {
         process.stderr.write('note: --captions sidecar: no narration timing manifest found; run gs narrate first\n');
@@ -437,16 +469,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
  * CONTENT measured at commit-time is byte-for-byte the mix rendered later.
  */
 export async function collectAudioClips(
-  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>,
   timelineClips: AudioClip[],
 ): Promise<AudioClip[]> {
   const { timingPathFor } = await import('./captions.js');
   const audioClips = [...timelineClips];
   const { bedAlreadyReferenced, buildMusicClip, buildNarrationClips, musicPathFor } = await import('./music.js');
 
-  // narration: the voice itself
+  // narration: the voice itself (0.14: prefer the locale-tagged narration sibling)
   if ((opts.narration ?? 'auto') === 'auto') {
-    const narrationPath = timingPathFor(opts.modulePath);
+    const narrationPath = timingPathFor(opts.modulePath, opts.locale);
     if (narrationPath) {
       const voice = buildNarrationClips(narrationPath);
       if (voice) {
@@ -465,7 +497,7 @@ export async function collectAudioClips(
   if ((opts.music ?? 'auto') === 'auto') {
     const musicPath = musicPathFor(opts.modulePath);
     if (musicPath) {
-      const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath));
+      const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath, opts.locale));
       if (bed) {
         if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
           process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');

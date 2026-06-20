@@ -69,6 +69,8 @@ render options:
                    (YouTube needs the 1st chapter at 0:00 — auto-anchored — and each chapter >= 10s; author cue ts accordingly)
   --chapters-kind <k[,k]>  cue kinds that become VTT chapters (default: chapter); cues.json keeps all kinds
   --strict         fail on an unregistered font family or an uncovered glyph (§3.6; default: warn)
+  --locale <code>  resolve the scene against messages.<code>.json (node-id text + free-standing t() keys) and prefer
+                   the <base>.<code>.narration.timing.json sibling (0.14). No --locale resolves the BASE files
 
 diff options (DisplayList diff vs a committed baseline — exits non-zero on any divergence):
   --at <t>         time in SECONDS to evaluate the scene at (required)
@@ -479,6 +481,7 @@ async function main(): Promise<void> {
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
+      ...(flags.has('locale') && flags.get('locale') ? { locale: flags.get('locale')! } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),
