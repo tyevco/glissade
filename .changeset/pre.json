@@ -24,6 +24,7 @@
     "@glissade/vite-plugin": "0.15.0"
   },
   "changesets": [
+    "blend-segment-provenance",
     "blended-kokoro-voices"
   ]
 }
