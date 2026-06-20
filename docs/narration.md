@@ -67,6 +67,17 @@ synthesizeScript(script, { providerImpl: kokoroProvider({ dtype: 'fp32', voice: 
 
 Kokoro is **deterministic by construction** — inference uses a fixed voice/style embedding (not diffusion-sampled per call), so the same text re-synthesizes byte-identical with no noise to zero out. `version()` pins the `kokoro-js` version + model + dtype, so any of those moving invalidates the cache.
 
+**Chinese (Mandarin) voices.** Kokoro's `zf_*`/`zm_*` voices (e.g. `"zf_xiaoxiao"`, `"zm_yunxi"`) speak Mandarin, but they need the [`misaki[zh]`](https://github.com/hexgrad/misaki) grapheme-to-phoneme front-end they were trained on (kokoro-js's default English phonemizer garbles Chinese). glissade shells out to a pinned Python `misaki[zh]` for these voices; its pin identity folds into `version()` so a g2p change invalidates the Mandarin cache. Install it with `pip install 'misaki[zh]==0.9.4' 'jieba==0.42.1'` (or set `MISAKI_PYTHON` to an interpreter that has them).
+
+**Blended voices.** A Kokoro voice is a `[510×256]` style vector; a weighted sum of two-or-more is a valid **custom voice**. Pass a blend spec instead of a name (kokoro only):
+
+```jsonc
+// in the .narration.json (per-segment or top-level)
+"voice": { "blend": [["zf_xiaoni", 0.65], ["zf_xiaoxiao", 0.35]] }
+```
+
+Weights are **normalized to sum to 1** (so `[["a",1],["b",1]]` is 50/50, not 2×). All base voices must share a language front-end — all Chinese (`zf_`/`zm_`) **or** all English; a mixed-language blend is rejected (different g2p). The summed style vector is computed **once at prepare** from the committed Apache-2.0 `voices/<name>.bin` bytes, so a blend of two Apache-2.0 voices is itself a derived Apache-2.0 voice (the recipe is logged at synth for an auditable trail). The blend's identity (base names + normalized weights) folds into the **segment cache key**, so changing any weight or base voice re-synthesizes exactly the affected segments. Chinese (`z*`) blends are the tested path; **English blends are not yet supported** (the model's English phonemizer isn't exposed for the bypass route — use a single English voice for now).
+
 **pnpm note.** `kokoro-js` pulls native deps (`onnxruntime-node`, `sharp`, `protobufjs`) whose build scripts pnpm ignores by default — and under pnpm ≥ 10 that ignored-builds gate makes `pnpm install --frozen-lockfile` exit **non-zero** (failing CI). The prebuilt CPU binaries work without those scripts, so tell pnpm so explicitly in your own project. Under pnpm 11 the lever that actually silences the gate is **`allowBuilds`** in `pnpm-workspace.yaml` (the top-level `pnpm.ignoredBuiltDependencies` list did *not* suppress it in practice):
 
 ```yaml

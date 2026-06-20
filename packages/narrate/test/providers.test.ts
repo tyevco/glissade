@@ -8,11 +8,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { NarrationError, type NarrationScript } from '../src/index.js';
+import { NarrationError, isVoiceBlend, type NarrationScript, type VoiceBlend } from '../src/index.js';
 import { JIEBA_PIN, MISAKI_PIN, PHONEME_MAP_VERSION, misakiZhG2p } from '../src/zh-g2p.js';
 import {
   alignerById,
+  BLEND_SPEC_VERSION,
+  blendIdentity,
+  blendStyleVectors,
   cacheKey,
+  espeakProvider,
   fakeProvider,
   floatToWav,
   heuristicAligner,
@@ -22,6 +26,8 @@ import {
   mapAsrToScript,
   piperProvider,
   providerById,
+  requireStringVoice,
+  resolveBlend,
   resolvePiperVoice,
   scriptPathFor,
   stderrTail,
@@ -194,6 +200,126 @@ describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
   }, 180_000);
 });
 
+// ---- blended kokoro voices (gh#2): weighted-sum style vectors ----
+describe('blended kokoro voices (gh#2)', () => {
+  it('isVoiceBlend distinguishes a blend spec from a plain string voice', () => {
+    expect(isVoiceBlend('zf_xiaoni')).toBe(false);
+    expect(isVoiceBlend(undefined)).toBe(false);
+    expect(isVoiceBlend({ blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] })).toBe(true);
+  });
+
+  it('resolveBlend normalizes weights to sum to 1 (preserving spec order)', () => {
+    // [1, 1] → 50/50, not 2×
+    const r = resolveBlend({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', 1]] });
+    expect(r.entries.map(([n]) => n)).toEqual(['zf_xiaoni', 'zf_xiaoxiao']); // spec order
+    expect(r.entries.map(([, w]) => w)).toEqual([0.5, 0.5]);
+    expect(r.language).toBe('zh');
+    // arbitrary weights normalize; the SUM is 1
+    const r2 = resolveBlend({ blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] });
+    expect(r2.entries[0]![1] + r2.entries[1]![1]).toBeCloseTo(1, 12);
+    expect(r2.entries[0]![1]).toBeCloseTo(0.65, 12);
+  });
+
+  it('resolveBlend routes language by base-voice prefix (all zh / all en)', () => {
+    expect(resolveBlend({ blend: [['zf_xiaoni', 1], ['zm_yunxi', 1]] }).language).toBe('zh');
+    expect(resolveBlend({ blend: [['af_heart', 1], ['am_adam', 1]] }).language).toBe('en');
+  });
+
+  it('resolveBlend rejects empty / single-entry / non-finite / non-positive / mixed-language', () => {
+    expect(() => resolveBlend({ blend: [] })).toThrow(/≥2 base voices/);
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1]] })).toThrow(/≥2 base voices/);
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', 0]] })).toThrow(/finite number > 0/);
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', -0.5]] })).toThrow(/finite number > 0/);
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', Number.NaN]] })).toThrow(/finite number > 0/);
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', Infinity]] })).toThrow(/finite number > 0/);
+    // MIXED language (zh + en) → throws (different g2p front-ends)
+    expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['af_heart', 1]] })).toThrow(/mixes languages/);
+    // empty voice name
+    expect(() => resolveBlend({ blend: [['', 1], ['zf_xiaoxiao', 1]] })).toThrow(/empty voice name/);
+  });
+
+  it('blendStyleVectors computes the normalized weighted sum on small fake tensors (the math)', () => {
+    // fake "voices": two 510×256 tensors of constant value 2 and 4. The 50/50
+    // blend of constants 2 and 4 is constant 3; a 0.75/0.25 blend is 2.5.
+    const FLOATS = 510 * 256;
+    const fake = (v: number): Float32Array => new Float32Array(FLOATS).fill(v);
+    const voices: Record<string, Float32Array> = { a: fake(2), b: fake(4) };
+    const load = (n: string): Float32Array => voices[n]!;
+
+    const half = resolveBlend({ blend: [['a', 1], ['b', 1]] });
+    const blended = blendStyleVectors(half.entries, load);
+    expect(blended.length).toBe(FLOATS);
+    expect(blended[0]).toBeCloseTo(3, 6); // 0.5*2 + 0.5*4
+    expect(blended[FLOATS - 1]).toBeCloseTo(3, 6);
+
+    const skew = resolveBlend({ blend: [['a', 3], ['b', 1]] }); // 0.75 / 0.25
+    const blended2 = blendStyleVectors(skew.entries, load);
+    expect(blended2[0]).toBeCloseTo(2.5, 6); // 0.75*2 + 0.25*4
+  });
+
+  it('blendStyleVectors rejects a base tensor of the wrong shape (loud, not silent-truncate)', () => {
+    const ok = new Float32Array(510 * 256).fill(1);
+    const bad = new Float32Array(10).fill(1);
+    const load = (n: string): Float32Array => (n === 'a' ? ok : bad);
+    expect(() => blendStyleVectors([['a', 0.5], ['b', 0.5]], load)).toThrow(/not a valid style vector/);
+  });
+
+  it('blendIdentity is a pure, deterministic string folding names + normalized weights + version', () => {
+    const id = blendIdentity({ blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] });
+    expect(id).toContain('zf_xiaoni:0.650000');
+    expect(id).toContain('zf_xiaoxiao:0.350000');
+    expect(id).toContain('lang=zh');
+    expect(id).toContain(`v${BLEND_SPEC_VERSION}`);
+    // [1,1] and [0.5,0.5] are the SAME blend → same identity (normalized)
+    expect(blendIdentity({ blend: [['zf_xiaoni', 1], ['zf_xiaoxiao', 1]] })).toBe(
+      blendIdentity({ blend: [['zf_xiaoni', 0.5], ['zf_xiaoxiao', 0.5]] }),
+    );
+  });
+
+  it('cacheKey folds the blend identity: different blends/weights → different keys, same blend → stable', () => {
+    const pv = 'kokoro-js 1.2.1 Kokoro-82M dtype=q8 g2p=[misaki-zh map=zh-misaki-1]';
+    const seg = (voice: VoiceBlend): { text: string; voice: VoiceBlend } => ({ text: '你好', voice });
+    const a = cacheKey(seg({ blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] }), 'kokoro', pv);
+    const aSame = cacheKey(seg({ blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] }), 'kokoro', pv);
+    // a DIFFERENT weight
+    const b = cacheKey(seg({ blend: [['zf_xiaoni', 0.5], ['zf_xiaoxiao', 0.5]] }), 'kokoro', pv);
+    // a DIFFERENT base voice
+    const c = cacheKey(seg({ blend: [['zf_xiaoni', 0.65], ['zf_yunxia', 0.35]] }), 'kokoro', pv);
+    expect(a).toBe(aSame); // same blend → stable key
+    expect(a).not.toBe(b); // weight change → key moves
+    expect(a).not.toBe(c); // base-voice change → key moves
+    // a normalized-equivalent spec ([1.3, 0.7] ≡ [0.65, 0.35]) collapses to the SAME key
+    const aEquiv = cacheKey(seg({ blend: [['zf_xiaoni', 1.3], ['zf_xiaoxiao', 0.7]] }), 'kokoro', pv);
+    expect(a).toBe(aEquiv);
+    // a plain string voice still keys distinctly
+    const named = cacheKey({ text: '你好', voice: 'zf_xiaoni' }, 'kokoro', pv);
+    expect(named).not.toBe(a);
+  });
+
+  it('version() folds a CONSTRUCTOR blend voice identity (the per-provider hook)', async () => {
+    try {
+      const v = await kokoroProvider({ voice: { blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] } }).version();
+      expect(v).toContain('blend=[zf_xiaoni:0.650000');
+      expect(v).toContain(`v${BLEND_SPEC_VERSION}`);
+      // a no-blend provider has NO blend= suffix
+      expect(await kokoroProvider().version()).not.toContain('blend=');
+    } catch (e) {
+      // kokoro-js peer absent in this env → version() throws the install hint
+      expect((e as Error).message).toMatch(/kokoro-js.*not found|could not be resolved/s);
+    }
+  });
+
+  it('non-kokoro providers reject a blend voice (it is kokoro-only)', () => {
+    const blend: VoiceBlend = { blend: [['a', 1], ['b', 1]] };
+    expect(() => requireStringVoice(blend, 'piper')).toThrow(/does not support voice blends/);
+    // synthesize on espeak surfaces the same clear error (not a [object Object] arg);
+    // the guard fires synchronously inside synthesize, so assert via the call.
+    expect(() => espeakProvider().synthesize({ text: 'hi', voice: blend })).toThrow(
+      /does not support voice blends/,
+    );
+  });
+});
+
 // gated: downloads the kokoro model (~q8 92MB) and runs onnxruntime — opt in
 // with KOKORO=1 locally / in CI. This is the byte-determinism GATE for the
 // provider (validated 2026-06: same text → identical PCM).
@@ -229,6 +355,27 @@ const KOKORO_GATED = process.env['KOKORO'] === '1';
       expect(r.wav.length).toBeGreaterThan(44); // real PCM, not just a header
       expect(r.duration).toBeGreaterThan(0.1);
       expect(r.duration).toBeLessThan(10);
+    },
+    180_000,
+  );
+
+  // gh#2: a z* BLEND synthesizes Mandarin through the model directly (summed
+  // style vector) WITHOUT throwing — the consumer's e01-zh deliverable. Mirrors
+  // the z* test above; doubly gated (KOKORO=1 + misaki).
+  (misakiOk ? it : it.skip)(
+    'a z* voice BLEND synthesizes a Mandarin line via generate_from_ids/model (no throw)',
+    async () => {
+      const blend: VoiceBlend = { blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] };
+      const p = kokoroProvider({ voice: blend, dtype: 'q8' });
+      // version() folds the blend identity for a blend-constructed provider
+      expect(await p.version()).toContain('blend=[zf_xiaoni:0.650000');
+      const r = await p.synthesize({ text: '你好世界', voice: blend });
+      expect(r.wav.length).toBeGreaterThan(44); // real PCM, not just a header
+      expect(r.duration).toBeGreaterThan(0.1);
+      expect(r.duration).toBeLessThan(10);
+      // a blend is byte-deterministic too (no sampling) — same recipe, same bytes
+      const r2 = await p.synthesize({ text: '你好世界', voice: blend });
+      expect(r.wav.equals(r2.wav)).toBe(true);
     },
     180_000,
   );

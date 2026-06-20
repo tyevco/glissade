@@ -17,18 +17,22 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import {
   isPause,
+  isVoiceBlend,
   NarrationError,
   type NarrationScript,
   type NarrationTiming,
   type TimedPause,
   type TimedSegment,
   type TimedWord,
+  type VoiceBlend,
+  type VoiceSpec,
 } from './index.js';
 import { misakiZhG2p, type ZhG2p } from './zh-g2p.js';
 
 export interface TtsRequest {
   text: string;
-  voice?: string;
+  /** a provider voice NAME (string) or a kokoro `VoiceBlend` (weighted sum) */
+  voice?: VoiceSpec;
   rate?: number;
 }
 
@@ -66,6 +70,19 @@ export function wavDuration(wav: Buffer): number {
     offset += 8 + size + (size % 2);
   }
   throw new NarrationError('WAV has no data chunk');
+}
+
+/**
+ * Coerce a request voice to a plain NAME string for the providers that only
+ * speak named voices (espeak / openai / piper). A `VoiceBlend` is kokoro-only,
+ * so it is a clear authoring error to hand one to any other provider — throw
+ * rather than silently stringify `[object Object]` into the request.
+ */
+export function requireStringVoice(voice: VoiceSpec | undefined, provider: string): string | undefined {
+  if (isVoiceBlend(voice)) {
+    throw new NarrationError(`provider '${provider}' does not support voice blends — only --provider kokoro can blend voices`);
+  }
+  return voice;
 }
 
 // ---- fake: deterministic synthesis for CI, tests, and offline previews ----
@@ -128,8 +145,9 @@ export function espeakProvider(): TtsProvider {
       return Promise.resolve(r.stdout.trim().split('\n')[0] ?? 'espeak-ng');
     },
     synthesize: (req) => {
+      const voice = requireStringVoice(req.voice, 'espeak');
       const args = ['--stdout'];
-      if (req.voice) args.push('-v', req.voice);
+      if (voice) args.push('-v', voice);
       // espeak speed is wpm; map our rate multiplier around its 175 default
       args.push('-s', String(Math.round(175 * (req.rate ?? 1))));
       args.push(req.text);
@@ -151,6 +169,7 @@ export function openaiProvider(opts: { model?: string } = {}): TtsProvider {
     id: 'openai',
     version: () => Promise.resolve(model),
     synthesize: async (req) => {
+      const voice = requireStringVoice(req.voice, 'openai');
       const key = process.env['OPENAI_API_KEY'];
       if (!key) throw new NarrationError('OPENAI_API_KEY is not set — required for --provider openai');
       const res = await fetch('https://api.openai.com/v1/audio/speech', {
@@ -158,7 +177,7 @@ export function openaiProvider(opts: { model?: string } = {}): TtsProvider {
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
         body: JSON.stringify({
           model,
-          voice: req.voice ?? 'alloy',
+          voice: voice ?? 'alloy',
           input: req.text,
           response_format: 'wav',
           ...(req.rate !== undefined ? { speed: req.rate } : {}),
@@ -249,7 +268,7 @@ export function piperProvider(opts: { model?: string; voicesDir?: string; noiseS
       return Promise.resolve([v, noise, opts.model ? basename(opts.model) : null].filter(Boolean).join(' '));
     },
     synthesize: (req) => {
-      const raw = req.voice ?? opts.model;
+      const raw = requireStringVoice(req.voice, 'piper') ?? opts.model;
       if (!raw) {
         throw new NarrationError(
           'piper needs a voice model (.onnx) — pass { model }, or set the segment voice to its path or name',
@@ -322,19 +341,147 @@ interface KokoroAudio {
   audio: Float32Array;
   sampling_rate: number;
 }
+/** the StyleTextToSpeech2 ONNX module call: {input_ids, style, speed} → {waveform}. */
+type KokoroOnnxModel = (inputs: {
+  input_ids: unknown;
+  style: unknown;
+  speed: unknown;
+}) => Promise<{ waveform: { data: Float32Array } }>;
 interface KokoroModel {
   generate(text: string, opts: { voice?: string; speed?: number }): Promise<KokoroAudio>;
   /** char-isolated tokenizer over kokoro's phoneme alphabet → model input ids */
-  tokenizer(text: string, opts?: { truncation?: boolean }): { input_ids: unknown };
+  tokenizer(text: string, opts?: { truncation?: boolean }): { input_ids: KokoroInputIds };
   /** the g2p BYPASS: pre-tokenized phoneme ids straight to the model (no espeak) */
   generate_from_ids(input_ids: unknown, opts: { voice?: string; speed?: number }): Promise<KokoroAudio>;
+  /** the underlying StyleTextToSpeech2 ONNX module — the BLEND path calls it
+   *  directly with a SUMMED style tensor (generate_from_ids only accepts a
+   *  named voice it loads from disk; a blend has no registered name). */
+  model: KokoroOnnxModel;
+}
+/** the tokenizer output we read: token count drives the style-vector slice. */
+interface KokoroInputIds {
+  dims: number[];
 }
 interface KokoroLib {
   KokoroTTS: { from_pretrained(id: string, opts: { dtype?: string; device?: string }): Promise<KokoroModel> };
 }
+/** the @huggingface/transformers Tensor ctor (kokoro-js's own dep) — used to
+ *  wrap the summed style Float32Array as the model's `style` input. */
+type TensorCtor = new (type: 'float32', data: Float32Array | number[], dims: number[]) => unknown;
 
 const KOKORO_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 const KOKORO_DEFAULT_VOICE = 'af_heart';
+
+// ---- blended kokoro voices: a weighted sum of base style vectors (gh#2) ----
+
+/**
+ * A kokoro voice style vector is a `[510 × 256]` float32 tensor (one 256-d
+ * style row per phoneme-token-count bucket); a WEIGHTED SUM of two-or-more such
+ * tensors is a valid custom voice (the HF "Make Custom Voices With KokoroTTS"
+ * recipe). Both base voices are Apache-2.0, so the derived blend is a derived
+ * Apache-2.0 voice (provenance is surfaced in the synth log + folded into
+ * version() so the artifact is auditable). The blend is computed ONCE at
+ * prepare and driven through the model directly (generate_from_ids only accepts
+ * a NAMED voice it loads from disk — a blend has no registered name).
+ */
+const KOKORO_VOICE_ROWS = 510;
+const KOKORO_STYLE_DIM = 256;
+const KOKORO_VOICE_FLOATS = KOKORO_VOICE_ROWS * KOKORO_STYLE_DIM;
+
+/**
+ * Blend-spec identity version. Bump when the blend MATH or canonicalization
+ * changes in a way that can move synthesized bytes (independent of kokoro-js /
+ * model / dtype). Folds into kokoroProvider.version() → the segment cache key.
+ */
+export const BLEND_SPEC_VERSION = 'blend-1';
+
+/** Resolved, validated blend: normalized weights, in SPEC ORDER (preserved). */
+export interface ResolvedBlend {
+  /** `[name, normalizedWeight]` in the author's spec order (NOT re-sorted). */
+  entries: readonly (readonly [string, number])[];
+  /** 'zh' (all zf_/zm_) or 'en' (all other / English) — the g2p front-end. */
+  language: 'zh' | 'en';
+}
+
+/**
+ * Validate + normalize a `VoiceBlend`: ≥2 entries, finite positive weights,
+ * weights NORMALIZED to sum to 1 (so `[["a",1],["b",1]]` = 50/50). The entry
+ * ORDER is PRESERVED from the spec (the weighted sum is commutative, so order
+ * does not affect the result — but a stable order keeps version() deterministic
+ * and the identity readable). Language is inferred from the base-voice prefixes:
+ * all `zf_`/`zm_` → 'zh'; all English → 'en'; a MIXED-language blend throws
+ * (different g2p front-ends can't be blended).
+ */
+export function resolveBlend(spec: VoiceBlend): ResolvedBlend {
+  const raw = spec.blend;
+  if (!Array.isArray(raw) || raw.length < 2) {
+    throw new NarrationError(`voice blend needs ≥2 base voices (got ${Array.isArray(raw) ? raw.length : 'none'})`);
+  }
+  let sum = 0;
+  for (const entry of raw) {
+    if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || typeof entry[1] !== 'number') {
+      throw new NarrationError(`voice blend entries must be ["<voice>", <weight>]; got ${JSON.stringify(entry)}`);
+    }
+    const [name, weight] = entry;
+    if (!name) throw new NarrationError('voice blend entry has an empty voice name');
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new NarrationError(`voice blend weight for '${name}' must be a finite number > 0 (got ${weight})`);
+    }
+    sum += weight;
+  }
+  // language routing: every base voice must share a g2p front-end
+  const chinese = raw.map(([name]) => isKokoroChineseVoice(name));
+  const allZh = chinese.every(Boolean);
+  const allEn = chinese.every((c) => !c);
+  if (!allZh && !allEn) {
+    const zh = raw.filter((_, i) => chinese[i]).map(([n]) => n);
+    const en = raw.filter((_, i) => !chinese[i]).map(([n]) => n);
+    throw new NarrationError(
+      `voice blend mixes languages — Chinese [${zh.join(', ')}] with non-Chinese [${en.join(', ')}]; ` +
+        'a blend must share one g2p front-end (all zf_/zm_ OR all English)',
+    );
+  }
+  const entries = raw.map(([name, weight]) => [name, weight / sum] as const);
+  return { entries, language: allZh ? 'zh' : 'en' };
+}
+
+/**
+ * The blend's cache identity — a PURE deterministic string (no async, no model
+ * load) folded into kokoroProvider.version(). Names are kept in spec order; the
+ * normalized weights are fixed-precision so float formatting never drifts the
+ * key. Any base voice or weight change moves this string → invalidates the
+ * segment cache, EXACTLY the 0.15 g2p-identity pattern.
+ */
+export function blendIdentity(spec: VoiceBlend): string {
+  const { entries, language } = resolveBlend(spec);
+  const parts = entries.map(([name, w]) => `${name}:${w.toFixed(6)}`).join(',');
+  return `blend=[${parts} lang=${language} v${BLEND_SPEC_VERSION}]`;
+}
+
+/**
+ * Compute the normalized weighted sum of base-voice style tensors into one
+ * `[510 × 256]` Float32Array (the derived blended voice). Each loader returns a
+ * base voice's raw `[510 × 256]` float32 data; the weights are already
+ * normalized. Deterministic: a fixed pass over the spec-ordered entries, plain
+ * float adds. Validates every base tensor's length so a wrong-shape voice fails
+ * loudly rather than producing a silently-truncated blend.
+ */
+export function blendStyleVectors(
+  entries: readonly (readonly [string, number])[],
+  loadVoice: (name: string) => Float32Array,
+): Float32Array {
+  const out = new Float32Array(KOKORO_VOICE_FLOATS);
+  for (const [name, weight] of entries) {
+    const vec = loadVoice(name);
+    if (vec.length !== KOKORO_VOICE_FLOATS) {
+      throw new NarrationError(
+        `kokoro voice '${name}' has ${vec.length} floats, expected ${KOKORO_VOICE_FLOATS} (${KOKORO_VOICE_ROWS}×${KOKORO_STYLE_DIM}) — not a valid style vector`,
+      );
+    }
+    for (let i = 0; i < KOKORO_VOICE_FLOATS; i++) out[i]! += vec[i]! * weight;
+  }
+  return out;
+}
 
 /**
  * Apache-2.0 82M neural TTS — markedly more natural than espeak/piper, fully
@@ -379,13 +526,13 @@ function kokoroVersionFrom(entry: string): string {
  * entry URL (so the dynamic import is never bundled) + the resolved version.
  * Throws a NarrationError that carries the REAL resolution error.
  */
-function resolveKokoro(): { entryUrl: string; version: string } {
+function resolveKokoro(): { entry: string; entryUrl: string; version: string } {
   const bases = [pathToFileURL(join(process.cwd(), 'package.json')).href, import.meta.url];
   let lastErr: NodeJS.ErrnoException | undefined;
   for (const base of bases) {
     try {
       const entry = createRequire(base).resolve('kokoro-js');
-      return { entryUrl: pathToFileURL(entry).href, version: kokoroVersionFrom(entry) };
+      return { entry, entryUrl: pathToFileURL(entry).href, version: kokoroVersionFrom(entry) };
     } catch (e) {
       lastErr = e as NodeJS.ErrnoException;
     }
@@ -397,22 +544,94 @@ function resolveKokoro(): { entryUrl: string; version: string } {
   );
 }
 
+/**
+ * Load a base voice's raw `[510×256]` float32 style tensor straight from the
+ * kokoro-js package's committed `voices/<name>.bin` (the same file kokoro-js
+ * reads internally for a named voice). Resolved relative to the kokoro-js entry
+ * (`<pkg>/dist/kokoro.* → ../voices/<name>.bin`), so the blend uses the SAME
+ * Apache-2.0 voice bytes the model was packaged with — no download, fully
+ * deterministic at prepare. A `.bin` whose size isn't 510×256×4 fails loudly.
+ */
+export function loadKokoroVoiceData(entry: string, name: string): Float32Array {
+  const path = resolve(dirname(entry), '..', 'voices', `${name}.bin`);
+  if (!existsSync(path)) {
+    throw new NarrationError(
+      `kokoro voice '${name}' not found at ${path} — blend base voices must be kokoro built-in voices (e.g. zf_xiaoni, zf_xiaoxiao)`,
+    );
+  }
+  const buf = readFileSync(path);
+  if (buf.byteLength !== KOKORO_VOICE_FLOATS * 4) {
+    throw new NarrationError(
+      `kokoro voice '${name}' is ${buf.byteLength} bytes, expected ${KOKORO_VOICE_FLOATS * 4} (${KOKORO_VOICE_ROWS}×${KOKORO_STYLE_DIM} float32)`,
+    );
+  }
+  // copy into an aligned Float32Array (Buffer's byteOffset may be non-zero)
+  return new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+}
+
+/** Resolve the @huggingface/transformers `Tensor` ctor (kokoro-js's own dep) —
+ *  used to wrap the summed style vector as the model's `style` input. Resolved
+ *  RELATIVE to the kokoro-js entry so we get the exact version kokoro-js uses. */
+async function loadTensorCtor(entry: string): Promise<TensorCtor> {
+  const req = createRequire(pathToFileURL(entry).href);
+  let resolved: string;
+  try {
+    resolved = req.resolve('@huggingface/transformers');
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    throw new NarrationError(
+      `@huggingface/transformers could not be resolved from kokoro-js (${err?.code ?? 'error'}: ${err?.message ?? 'not found'}) — ` +
+        'it is a kokoro-js dependency; reinstall kokoro-js, or use a single (non-blended) voice',
+    );
+  }
+  const mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
+  const Tensor = (mod['Tensor'] ?? (mod['default'] as Record<string, unknown> | undefined)?.['Tensor']) as
+    | TensorCtor
+    | undefined;
+  if (!Tensor) throw new NarrationError('@huggingface/transformers loaded but exposes no Tensor export');
+  return Tensor;
+}
+
+/**
+ * Drive a SUMMED style vector through the model — the blend analogue of
+ * generate_from_ids (which only accepts a NAMED voice it loads from disk). This
+ * replicates kokoro-js's exact style-slicing: row = min(max(tokenCount-2, 0),
+ * 509), style = blended[row*256 : row*256+256] → Tensor[1,256], then the same
+ * `model({input_ids, style, speed})` call. Deterministic: a fixed slice + the
+ * model's own forward pass (no sampling).
+ */
+export async function kokoroGenerateFromBlend(
+  tts: KokoroModel,
+  Tensor: TensorCtor,
+  inputIds: KokoroInputIds,
+  blended: Float32Array,
+  speed: number,
+): Promise<KokoroAudio> {
+  const tokens = inputIds.dims.at(-1) ?? 0;
+  const row = Math.min(Math.max(tokens - 2, 0), KOKORO_VOICE_ROWS - 1);
+  const style = blended.slice(row * KOKORO_STYLE_DIM, row * KOKORO_STYLE_DIM + KOKORO_STYLE_DIM);
+  const styleTensor = new Tensor('float32', style, [1, KOKORO_STYLE_DIM]);
+  const speedTensor = new Tensor('float32', [speed], [1]);
+  const { waveform } = await tts.model({ input_ids: inputIds, style: styleTensor, speed: speedTensor });
+  return { audio: waveform.data, sampling_rate: 24000 };
+}
+
 /** A z* (zf_/zm_) kokoro voice routes through misaki[zh] g2p (not espeak cmn). */
 export function isKokoroChineseVoice(voice: string): boolean {
   return voice.startsWith('zf_') || voice.startsWith('zm_');
 }
 
 export function kokoroProvider(
-  opts: { model?: string; voice?: string; dtype?: KokoroDtype; zhG2p?: ZhG2p } = {},
+  opts: { model?: string; voice?: VoiceSpec; dtype?: KokoroDtype; zhG2p?: ZhG2p } = {},
 ): TtsProvider {
   const modelId = opts.model ?? KOKORO_MODEL;
   const dtype: KokoroDtype = opts.dtype ?? 'q8';
   // the Chinese g2p seam (Fork B = pinned Python misaki[zh]); injectable for tests
   const zhG2p: ZhG2p = opts.zhG2p ?? misakiZhG2p();
-  let loaded: Promise<KokoroModel> | null = null;
+  let loaded: Promise<{ tts: KokoroModel; entry: string }> | null = null;
 
-  const loadLib = async (): Promise<KokoroLib> => {
-    const { entryUrl } = resolveKokoro(); // throws (with the real error) if absent
+  const loadLib = async (): Promise<{ lib: KokoroLib; entry: string }> => {
+    const { entry, entryUrl } = resolveKokoro(); // throws (with the real error) if absent
     let mod: Record<string, unknown>;
     try {
       mod = (await import(entryUrl)) as Record<string, unknown>;
@@ -426,10 +645,13 @@ export function kokoroProvider(
     // dual-package interop: ESM exposes named exports; CJS lands under `default`
     const lib = (mod['KokoroTTS'] ? mod : (mod['default'] as Record<string, unknown>)) as unknown as KokoroLib;
     if (!lib?.KokoroTTS) throw new NarrationError(`kokoro-js loaded but exposes no KokoroTTS export (from ${entryUrl})`);
-    return lib;
+    return { lib, entry };
   };
-  const getModel = (): Promise<KokoroModel> =>
-    (loaded ??= loadLib().then((k) => k.KokoroTTS.from_pretrained(modelId, { dtype, device: 'cpu' })));
+  const getModel = (): Promise<{ tts: KokoroModel; entry: string }> =>
+    (loaded ??= loadLib().then(async ({ lib, entry }) => ({
+      tts: await lib.KokoroTTS.from_pretrained(modelId, { dtype, device: 'cpu' }),
+      entry,
+    })));
 
   return {
     id: 'kokoro',
@@ -447,12 +669,64 @@ export function kokoroProvider(
       // with NO opts (providerById('kokoro') / synthesizeScript). Gating the suffix
       // on a constructor voice (the old bug) left the Mandarin cache key carrying no
       // g2p identity → a pin/map bump served STALE Mandarin audio.
-      const v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype} g2p=[${zhG2p.version()}]`;
+      //
+      // BLEND identity (gh#2): when this provider is CONSTRUCTED with a blend
+      // voice, fold its identity too (same model as the g2p suffix). The real CLI
+      // path instead routes the blend per-REQUEST, where cacheKey() canonicalizes
+      // the blend spec into the key — so the cache invalidates on any weight /
+      // base-voice / BLEND_SPEC_VERSION change either way.
+      const blendSuffix = isVoiceBlend(opts.voice) ? ` ${blendIdentity(opts.voice)}` : '';
+      const v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype} g2p=[${zhG2p.version()}]${blendSuffix}`;
       return Promise.resolve(v);
     },
     synthesize: async (req) => {
-      const voice = req.voice ?? opts.voice ?? KOKORO_DEFAULT_VOICE;
+      const voice: VoiceSpec = req.voice ?? opts.voice ?? KOKORO_DEFAULT_VOICE;
       const speed = req.rate !== undefined && req.rate > 0 ? req.rate : undefined;
+
+      // ---- BLEND path (gh#2): a weighted sum of base style vectors ----
+      // generate_from_ids only accepts a NAMED voice it loads from disk, so a
+      // blend (no registered name) is driven through the model directly with a
+      // SUMMED style tensor. Both base voices are Apache-2.0 → the blend is a
+      // derived Apache-2.0 voice (provenance logged below for an auditable trail).
+      if (isVoiceBlend(voice)) {
+        const resolved = resolveBlend(voice); // validate + normalize + language route
+        const { tts, entry } = await getModel();
+        // the blended style vector — computed ONCE from the committed Apache-2.0
+        // voices/<name>.bin bytes (deterministic; no download)
+        const blended = blendStyleVectors(resolved.entries, (name) => loadKokoroVoiceData(entry, name));
+        const Tensor = await loadTensorCtor(entry);
+        // PROVENANCE (license-clean audit trail): both base voices are Apache-2.0,
+        // so the derived blend is Apache-2.0. Surface the recipe in the synth log.
+        const recipe = resolved.entries.map(([n, w]) => `${n}*${w.toFixed(4)}`).join(' + ');
+        // eslint-disable-next-line no-console
+        console.log(`[narrate] kokoro blended voice (Apache-2.0, derived) lang=${resolved.language}: ${recipe}`);
+        // phonemize per the blend's language (all z* → misaki[zh]; English → the
+        // model's own generate(text) tokenizer, run via the tokenizer seam)
+        let inputIds: KokoroInputIds;
+        try {
+          if (resolved.language === 'zh') {
+            const phonemes = zhG2p.phonemize(req.text); // throws install hint if Python/misaki absent
+            inputIds = tts.tokenizer(phonemes, { truncation: true }).input_ids;
+          } else {
+            // English blends: kokoro-js does not expose its English phonemizer for
+            // the generate_from_ids route, so a faithful tokenized-phoneme input is
+            // not reachable here. SCOPED OUT as a documented follow-up — the z*
+            // (Chinese) blend is the tested consumer deliverable (see gh#2).
+            throw new NarrationError(
+              'English voice blends are not yet supported (the z*/Chinese blend is the shipped path) — ' +
+                'use a single English voice, or a Chinese (zf_/zm_) blend; see gh#2 for the English follow-up',
+            );
+          }
+          const audio = await kokoroGenerateFromBlend(tts, Tensor, inputIds, blended, speed ?? 1);
+          const wav = floatToWav(audio.audio, audio.sampling_rate);
+          return { wav, duration: wavDuration(wav) };
+        } catch (e) {
+          if (e instanceof NarrationError) throw e;
+          throw new NarrationError(`kokoro blended synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // ---- named-voice path (unchanged) ----
       const genOpts: { voice: string; speed?: number } =
         speed !== undefined ? { voice, speed } : { voice };
       let audio: KokoroAudio;
@@ -464,7 +738,7 @@ export function kokoroProvider(
       // voices keep the unchanged `generate(text)` espeak path.
       if (isKokoroChineseVoice(voice)) {
         const phonemes = zhG2p.phonemize(req.text); // throws the install hint if Python/misaki absent
-        const tts = await getModel();
+        const { tts } = await getModel();
         try {
           const { input_ids } = tts.tokenizer(phonemes, { truncation: true });
           audio = await tts.generate_from_ids(input_ids, genOpts);
@@ -472,7 +746,7 @@ export function kokoroProvider(
           throw new NarrationError(`kokoro Chinese synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
         }
       } else {
-        const tts = await getModel();
+        const { tts } = await getModel();
         try {
           audio = await tts.generate(req.text, genOpts);
         } catch (e) {
@@ -763,9 +1037,28 @@ export interface SynthesizeResult {
   aligner: string | null;
 }
 
-export function cacheKey(seg: { text: string; voice?: string; rate?: number }, provider: string, providerVersion: string): string {
+/**
+ * Canonicalize a voice for the cache key. A plain string is itself; a BLEND
+ * spec collapses to its `blendIdentity()` — normalized weights + language +
+ * `BLEND_SPEC_VERSION`. This is what folds the blend into the cache key on the
+ * real CLI path (where the blend is a per-REQUEST voice and the provider is
+ * built with no opts): any weight / base-voice / spec-version change moves the
+ * identity → re-synthesizes; the same blend (even re-serialized) stays stable.
+ */
+function voiceCacheIdentity(voice: VoiceSpec | undefined): string | null {
+  if (voice === undefined) return null;
+  return isVoiceBlend(voice) ? blendIdentity(voice) : voice;
+}
+
+export function cacheKey(
+  seg: { text: string; voice?: VoiceSpec; rate?: number },
+  provider: string,
+  providerVersion: string,
+): string {
   return createHash('sha256')
-    .update(JSON.stringify({ text: seg.text, voice: seg.voice ?? null, rate: seg.rate ?? 1, provider, providerVersion }))
+    .update(
+      JSON.stringify({ text: seg.text, voice: voiceCacheIdentity(seg.voice), rate: seg.rate ?? 1, provider, providerVersion }),
+    )
     .digest('hex');
 }
 
@@ -825,7 +1118,7 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
       continue;
     }
     const seg = el;
-    const req: { text: string; voice?: string; rate?: number } = { text: seg.text };
+    const req: { text: string; voice?: VoiceSpec; rate?: number } = { text: seg.text };
     const voice = seg.voice ?? raw.voice;
     const rate = seg.rate ?? raw.rate;
     if (voice !== undefined) req.voice = voice;

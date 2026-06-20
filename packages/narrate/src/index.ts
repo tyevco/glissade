@@ -20,10 +20,42 @@ import {
 
 // ---- the authored script (committed next to the scene module) ----
 
+/**
+ * One weighted base voice in a blend: `[<voiceName>, <weight>]`. Weights are
+ * NORMALIZED to sum to 1 at resolution (so `[["a",1],["b",1]]` is 50/50, not
+ * 2×). Each `weight` must be finite and > 0.
+ */
+export type VoiceBlendEntry = readonly [voice: string, weight: number];
+
+/**
+ * A blended kokoro voice — a weighted sum of two-or-more named base voices'
+ * `[510×256]` style vectors, computed ONCE at prepare time into a derived
+ * custom voice (the HF "Make Custom Voices With KokoroTTS" recipe). All base
+ * voices must share a language front-end (all Chinese `zf_`/`zm_` OR all
+ * English; a mixed-language blend throws — different g2p). Both names + weights
+ * fold into the provider `version()`, so the segment cache invalidates whenever
+ * any weight or base voice changes. kokoro-only.
+ */
+export interface VoiceBlend {
+  /** ≥2 weighted base voices; weights normalized to sum to 1. */
+  blend: readonly VoiceBlendEntry[];
+}
+
+/**
+ * A voice is EITHER a provider voice name (the string form, unchanged) OR a
+ * `VoiceBlend` spec (kokoro only — a weighted sum of named base voices).
+ */
+export type VoiceSpec = string | VoiceBlend;
+
+/** A `VoiceSpec` is a blend when it carries a `blend` array (vs a plain string). */
+export function isVoiceBlend(voice: VoiceSpec | undefined): voice is VoiceBlend {
+  return typeof voice === 'object' && voice !== null && Array.isArray((voice as VoiceBlend).blend);
+}
+
 export interface NarrationSegment {
   id: string;
   text: string;
-  voice?: string;
+  voice?: VoiceSpec;
   /** speaking rate multiplier; 1 = provider default */
   rate?: number;
   /** silence after THIS segment (s); overrides the script default */
@@ -72,7 +104,7 @@ export function isPause(el: NarrationElement): el is NarrationPause {
 export interface NarrationScript {
   narrationVersion: 1;
   provider?: string;
-  voice?: string;
+  voice?: VoiceSpec;
   rate?: number;
   /** silence between segments (s); default 0.35 */
   gap?: number;

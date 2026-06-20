@@ -80,6 +80,9 @@ export interface DuckOptions {
 export function isPause(el: NarrationElement): el is NarrationPause;
 
 // @public
+export function isVoiceBlend(voice: VoiceSpec | undefined): voice is VoiceBlend;
+
+// @public
 export function music(timing: MusicTiming, at?: number): MusicAnchors;
 
 // @public (undocumented)
@@ -185,7 +188,7 @@ export interface NarrationScript {
     rate?: number;
     segments: NarrationElement[];
     // (undocumented)
-    voice?: string;
+    voice?: VoiceSpec;
 }
 
 // @public (undocumented)
@@ -198,7 +201,7 @@ export interface NarrationSegment {
     // (undocumented)
     text: string;
     // (undocumented)
-    voice?: string;
+    voice?: VoiceSpec;
 }
 
 // @public (undocumented)
@@ -269,6 +272,17 @@ export function toVtt(timing: NarrationTiming): string;
 
 // @public (undocumented)
 export function validateMusicTiming(timing: MusicTiming): void;
+
+// @public
+export interface VoiceBlend {
+    blend: readonly VoiceBlendEntry[];
+}
+
+// @public
+export type VoiceBlendEntry = readonly [voice: string, weight: number];
+
+// @public
+export type VoiceSpec = string | VoiceBlend;
 
 // (No @packageDocumentation comment for this package)
 
