@@ -5,14 +5,14 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
 import { buildFontRegistry, type AudioClip } from '@glissade/core';
-import { evaluate, validateSceneFonts, withDeterminismGuards, type SceneModule } from '@glissade/scene';
+import { evaluate, validateSceneFonts, collectLocalizedTextUsages, withDeterminismGuards, type SceneModule } from '@glissade/scene';
 import { collectAssetReferences, validateAssetReferences } from './assetValidation.js';
 import { SkiaBackend } from '@glissade/backend-skia';
 
@@ -56,6 +56,14 @@ export interface RenderOptions {
   /** --strict: font validation throws on an unregistered family / missing glyph (§3.6). Default dev-warn. */
   strictFonts?: boolean;
   /**
+   * --allow-system-fonts (§3.6, 0.14 FIX 6): exempt true-OS-installed families
+   * (the host `GlobalFonts.families` catalog) from the unregistered-family check.
+   * OFF by default — the exempt set is otherwise just the families glissade
+   * registered from `doc.assets`, so the verdict is host-independent. IGNORED
+   * under --strict (strict stays host-independent regardless of this flag).
+   */
+  allowSystemFonts?: boolean;
+  /**
    * --workers N (§5.6): split the frame range into N contiguous sub-ranges, render
    * each in a separate `gs` child process, and join the shard videos. Ignored for
    * a single frame or N <= 1. Only meaningful for a video `out`.
@@ -91,6 +99,27 @@ export interface RenderOptions {
    */
   locale?: string;
   onProgress?: (frame: number, total: number) => void;
+}
+
+/**
+ * Build the case-folded set of families EXEMPT from the §3.6 unregistered-family
+ * check (FIX 6, 0.14). Seeded from the families glissade actually registered out
+ * of `doc.assets` (`registered`, already lower-cased) — NEVER the true-OS
+ * `GlobalFonts.families` catalog, which is host-dependent (3 families on a clean
+ * Linux CI box, hundreds on a dev macOS) and would make the --strict PASS/FAIL
+ * verdict depend on the host. The true-OS `osCatalog` is folded in ONLY when
+ * `allowSystemFonts` is set AND `strict` is false — so --strict stays host-
+ * independent regardless of the flag. Pure: no I/O, no host queries.
+ */
+export function buildFontExemptSet(
+  registered: ReadonlySet<string>,
+  opts: { allowSystemFonts: boolean; strict: boolean; osCatalog: ReadonlySet<string> },
+): ReadonlySet<string> {
+  const exempt = new Set<string>(registered);
+  if (opts.allowSystemFonts && !opts.strict) {
+    for (const f of opts.osCatalog) exempt.add(f);
+  }
+  return exempt;
 }
 
 export class SceneModuleError extends Error {
@@ -161,11 +190,19 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // message table. A pure doc→doc swap; no --locale / no table = no-op, so the
   // base path is byte-identical to today.
   if (opts.locale !== undefined && opts.locale !== '') {
-    const { loadMessageTable } = await import('./locale.js');
+    const { loadMessageTable, messagesFileFor, localeNarrationPathFor, UnknownLocaleError } = await import('./locale.js');
     const table = loadMessageTable(opts.modulePath, opts.locale);
+    // FIX 4 (0.14 canary): a declared --locale that resolves NEITHER a messages
+    // table NOR a locale-tagged narration sibling would silently render the BASE
+    // artifact (wrong language, exit 0). Hard-throw instead. A narration-only
+    // locale legitimately has no messages file, so only fail when BOTH are absent.
+    const narrationPath = localeNarrationPathFor(opts.modulePath, opts.locale);
+    if (!table && !existsSync(narrationPath)) {
+      throw new UnknownLocaleError(opts.locale, messagesFileFor(opts.modulePath, opts.locale), narrationPath);
+    }
     if (table) {
-      const { localize } = await import('@glissade/core/i18n');
-      doc = localize(doc, table, { locale: opts.locale });
+      const { localize, getConsumedMessageIds } = await import('@glissade/core/i18n');
+      doc = localize(doc, table, { locale: opts.locale, consumedIds: getConsumedMessageIds() });
     }
   }
   const fps = opts.fps ?? doc.fps ?? 60;
@@ -276,11 +313,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   const assetDigests = new Map<string, string>();
   const digestBytes = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
+  // Families glissade actually registers from `doc.assets` (FIX 6, 0.14): these
+  // — NOT the true-OS catalog — seed the --strict validation's "exempt" set, so
+  // the PASS/FAIL verdict is host-independent. Case-folded to match isExemptFamily.
+  const registeredFamilies = new Set<string>();
   const fontRegistry = buildFontRegistry(doc.assets);
   if (fontRegistry.faces().length > 0) {
     const { GlobalFonts } = await import('@napi-rs/canvas');
     let ingest: typeof import('@glissade/core/font-ingest') | undefined;
     for (const face of fontRegistry.faces()) {
+      registeredFamilies.add(face.family.toLowerCase());
       const path = resolveAsset(face.url, opts.modulePath);
       if (/\.woff2?$/i.test(face.url)) {
         ingest ??= await import('@glissade/core/font-ingest');
@@ -295,20 +337,36 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     }
   }
 
-  // --- osFamilies (§3.6, 0.14): begin self-contained region ---
-  // A family registered via GlobalFonts.registerFromPath or installed on the OS
-  // (i.e. resolvable by Skia without glissade's FontRegistry) must NOT warn as
-  // "unregistered family" — that's pure noise on a scene that renders fine.
-  // Build the case-folded OS/GlobalFonts family set and exempt it. `families` is
-  // `{ family, styles }[]` in @napi-rs/canvas; lower-case to match isExemptFamily.
-  const { GlobalFonts: GlobalFontsForValidation } = await import('@napi-rs/canvas');
-  const osFamilies = new Set<string>(
-    GlobalFontsForValidation.families.map((f) => f.family.toLowerCase()),
-  );
+  // --- osFamilies (§3.6, 0.14, FIX 6): begin self-contained region ---
+  // The OS catalog is host-dependent (3 families on clean Linux, hundreds on
+  // macOS); reading it into the exempt set made the --strict verdict host-
+  // dependent. Only fold the true-OS catalog when it would actually be USED —
+  // i.e. --allow-system-fonts AND not --strict (buildFontExemptSet ignores it
+  // otherwise). This also avoids importing the catalog on the common path.
+  const includeOsCatalog = !!opts.allowSystemFonts && !opts.strictFonts;
+  const osCatalog = includeOsCatalog
+    ? new Set<string>(
+        (await import('@napi-rs/canvas')).GlobalFonts.families.map((f) => f.family.toLowerCase()),
+      )
+    : new Set<string>();
+  const osFamilies = buildFontExemptSet(registeredFamilies, {
+    allowSystemFonts: !!opts.allowSystemFonts,
+    strict: !!opts.strictFonts,
+    osCatalog,
+  });
   // --- osFamilies: end self-contained region ---
 
   // §3.6 font validation: dev-warn by default, --strict throws on an
-  // unregistered non-generic family or an uncovered glyph.
+  // unregistered non-generic family or an uncovered glyph. FIX 3 (0.14 canary):
+  // also validate the POST-localize string-track values (`doc` is already the
+  // localized doc here) — `validateSceneFonts`'s scene-walk only sees the authored
+  // BASE `node.text()`, which is read BEFORE the localized tracks bind, so a
+  // localized CJK message on a Latin-only font would otherwise pass --strict then
+  // render tofu. Empty for the base (no --locale) render → byte-identical path.
+  const localizedUsages =
+    opts.locale !== undefined && opts.locale !== ''
+      ? collectLocalizedTextUsages(scene, doc)
+      : [];
   await validateSceneFonts(
     scene,
     doc,
@@ -320,7 +378,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
         return undefined;
       }
     },
-    { mode: opts.strictFonts ? 'strict' : 'dev', osFamilies },
+    { mode: opts.strictFonts ? 'strict' : 'dev', osFamilies, extraUsages: localizedUsages },
   );
 
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {

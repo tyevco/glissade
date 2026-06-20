@@ -17,6 +17,7 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'no-warnings',
   'lossless-intermediate',
   'allow-gpu-shards',
+  'allow-system-fonts',
   'verbose',
   'allow-degraded',
   'bisect',

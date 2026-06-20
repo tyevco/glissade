@@ -131,7 +131,7 @@ export class TokenHighlight extends Node {
       this.registerTarget(`${id}/progress`, r.progress, 'number');
       // this range's `scale` is a SCALAR number prop (not a Vec2Signal).
       this.registerTarget(`${id}/scale`, r.scale, 'number');
-      this.registerTarget(`${id}/offset`, r.offset, 'vec2');
+      this.registerTarget(`${id}/offset`, r.offset, ['vec2', 'vec2-arc']);
       this.registerTarget(`${id}/offset.x`, r.offset.x, 'number');
       this.registerTarget(`${id}/offset.y`, r.offset.y, 'number');
       return r;

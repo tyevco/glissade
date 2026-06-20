@@ -158,6 +158,36 @@ describe('bindTimeline (§2.4)', () => {
     ).toThrow(BindTypeMismatchError);
   });
 
+  it('an UNtagged target (expects === undefined) skips the guard — 0.13 back-compat (FIX 2)', () => {
+    // a custom-node prop registered with the 2-arg form leaves `expects` undefined:
+    // bindTimeline must bind ANY track to it without throwing (0.13 had no guard).
+    const sink = signal<unknown>(0);
+    const untagged: BindTarget = {
+      bindSource: (fn) => sink.bindSource(fn),
+      unbindSource: () => sink.unbindSource(),
+      expects: undefined,
+    };
+    const ph = createPlayhead();
+    // bind a vec2 track AND a number track to the same untagged shape — neither throws
+    expect(() =>
+      bindTimeline(compileTimeline(timeline({ tracks: [track<Vec2>('custom/whatever', 'vec2', [key<Vec2>(0, [1, 2])])] })), () => untagged, ph),
+    ).not.toThrow();
+    expect(() =>
+      bindTimeline(compileTimeline(timeline({ tracks: [track('custom/whatever', 'number', [key(0, 5)])] })), () => untagged, ph),
+    ).not.toThrow();
+    // the still-TAGGED built-in targets keep their guard (a real mismatch throws)
+    const tagged: BindTarget = { bindSource: () => {}, unbindSource: () => {}, expects: 'vec2' };
+    expect(() =>
+      bindTimeline(compileTimeline(timeline({ tracks: [track('node/scale', 'number', [key(0, 1)])] })), () => tagged),
+    ).toThrow(BindTypeMismatchError);
+  });
+
+  it('a vec2-arc track binds to a vec2|vec2-arc target without throwing (FIX 1)', () => {
+    const target: BindTarget = { bindSource: () => {}, unbindSource: () => {}, expects: ['vec2', 'vec2-arc'] };
+    const doc = timeline({ tracks: [track<Vec2>('dot/position', 'vec2-arc', [key<Vec2>(0, [10, 0]), key<Vec2>(1, [0, 10])])] });
+    expect(() => bindTimeline(compileTimeline(doc), () => target)).not.toThrow();
+  });
+
   it('unbind freezes values', () => {
     const scene = demoScene();
     const playhead = createPlayhead();

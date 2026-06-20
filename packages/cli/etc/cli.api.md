@@ -448,6 +448,7 @@ export function render(opts: RenderOptions): Promise<{
 // @public (undocumented)
 export interface RenderOptions {
     allowGpuShards?: boolean;
+    allowSystemFonts?: boolean;
     cache?: {
         dir: string;
         mode: CacheMode;
@@ -533,7 +534,7 @@ export function resolveRenderDoc(mod: SceneModule, scene: Scene, flags: MachineR
 // @public
 export function sceneHasGpuNodes(scene: Scene): boolean;
 
-// @public (undocumented)
+// @public
 export class SceneModuleError extends Error {
     constructor(modulePath: string, detail: string);
 }

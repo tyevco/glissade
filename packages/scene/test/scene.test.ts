@@ -4,6 +4,7 @@ import {
   applyToPoint,
   bindScene,
   Circle,
+  Custom,
   createScene,
   DuplicateNodeIdError,
   evaluate,
@@ -268,6 +269,49 @@ describe('bind-time type guard (§2.2, 0.14)', () => {
           ],
         }),
       ),
+    ).not.toThrow();
+  });
+
+  it('a vec2-arc track binds to a node `position`/`scale` and samples to a finite Vec2 (FIX 1)', () => {
+    const scene = sceneWith(new Circle({ id: 'dot', radius: 10, position: [10, 0] }));
+    const doc = timeline({
+      tracks: [
+        track<Vec2>('dot/position', 'vec2-arc', [key<Vec2>(0, [10, 0]), key<Vec2>(1, [0, 10])]),
+        track<Vec2>('dot/scale', 'vec2-arc', [key<Vec2>(0, [1, 1]), key<Vec2>(1, [2, 2])]),
+      ],
+    });
+    // mount must NOT throw — vec2 targets are tagged ['vec2','vec2-arc'] now
+    expect(() => bindScene(scene, doc)).not.toThrow();
+    evaluate(scene, doc, 0.5);
+    const node = scene.nodes.get('dot')!;
+    const pos = (node as unknown as { position: () => Vec2 }).position();
+    expect(pos.length).toBe(2);
+    expect(pos.every((v) => Number.isFinite(v))).toBe(true);
+    expect(node.localMatrix().every((v) => Number.isFinite(v))).toBe(true);
+  });
+
+  it('a custom Node subclass calling the 2-arg registerTarget binds ANY track (FIX 2)', () => {
+    // mirrors the public Custom/Node subclassing seam: an UNtagged prop opts out
+    // of the guard (0.13 back-compat — 0.13 had no guard). A real built-in
+    // mismatch still throws (covered by the scale-number case above).
+    class Widget extends Custom {
+      readonly knob = signal(0);
+      constructor() {
+        super({ id: 'widget' });
+        // 2-arg form: no `expects` → untagged target
+        (this as unknown as { registerTarget(p: string, s: unknown): void }).registerTarget('knob', this.knob);
+      }
+      protected draw(): void {
+        /* nothing to draw */
+      }
+    }
+    const scene = createScene({ size: { w: 100, h: 100 }, children: [new Widget()] });
+    // a number track AND a vec2 track both bind without throwing on the untagged prop
+    expect(() =>
+      bindScene(scene, timeline({ tracks: [track('widget/knob', 'number', [key(0, 0), key(1, 1)])] })),
+    ).not.toThrow();
+    expect(() =>
+      bindScene(scene, timeline({ tracks: [track<Vec2>('widget/knob', 'vec2', [key<Vec2>(0, [0, 0])])] })),
     ).not.toThrow();
   });
 

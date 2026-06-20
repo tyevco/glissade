@@ -53,3 +53,24 @@ export function loadMessageTable(modulePath: string, locale: string): MessageTab
 export function localeNarrationPathFor(modulePath: string, locale: string): string {
   return moduleStem(modulePath) + LOCALE_NARRATION_SUFFIX.replace('%s', locale);
 }
+
+/**
+ * A declared `--locale <code>` resolved to NEITHER a `messages.<code>.json` nor a
+ * `<base>.<code>.narration.timing.json` sibling — the locale has no assets at
+ * all, so a render would silently fall back to the BASE artifact (wrong-language
+ * output, exit 0, no warning). Render hard-throws this instead.
+ *
+ * (A narration-only locale legitimately has no messages file, and a
+ * messages-only locale legitimately reuses the base narration — so this fires
+ * only when BOTH are absent.)
+ */
+export class UnknownLocaleError extends Error {
+  constructor(locale: string, messagesPath: string, narrationPath: string) {
+    super(
+      `--locale '${locale}': no locale assets found — neither a message table nor a narration sibling resolves. ` +
+        `Looked for '${messagesPath}' and '${narrationPath}'. ` +
+        `Add one of those files, or drop --locale to render the base language.`,
+    );
+    this.name = 'UnknownLocaleError';
+  }
+}

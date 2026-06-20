@@ -141,6 +141,7 @@ export {
 
 export {
   collectTextUsages,
+  collectLocalizedTextUsages,
   validateSceneFonts,
   type FontByteLoader,
   type ValidateSceneFontsOptions,

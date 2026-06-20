@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { key, timeline, track, type Timeline } from '../src/index.js';
 import {
+  getConsumedMessageIds,
   getMessageTable,
   localize,
   LocalizationError,
@@ -88,12 +89,53 @@ describe('localize — pure doc→doc resolver', () => {
     expect(JSON.stringify(doc)).toBe(before);
   });
 
-  it('an empty / non-matching table round-trips the doc structurally unchanged', () => {
+  it('an empty table round-trips the doc structurally unchanged', () => {
     const doc = makeDoc();
     const out = localize(doc, {}, { locale: 'en' });
     expect(JSON.stringify(out)).toBe(JSON.stringify(doc));
-    const out2 = localize(doc, { nomatch: 'Y' }, { locale: 'en' });
-    expect(JSON.stringify(out2)).toBe(JSON.stringify(doc));
+  });
+
+  it('throws on an orphaned table key matching no node-id and no t() id (FIX 5)', () => {
+    const doc = makeDoc();
+    let err: unknown;
+    try {
+      localize(doc, { hero: 'X', nomatch: 'Y' }, { locale: 'zh' });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(LocalizationError);
+    const msg = (err as Error).message;
+    expect(msg).toContain("'nomatch'"); // names the orphan
+    expect(msg).not.toContain("'hero'"); // a matched key is not flagged
+  });
+
+  it('a fully node-id-matched table is silent (no orphan throw)', () => {
+    const doc = makeDoc();
+    expect(() => localize(doc, { hero: '你好', captions: '一个字幕' }, { locale: 'zh' })).not.toThrow();
+  });
+
+  it('a key consumed by a free-standing t() (consumedIds) is NOT flagged as orphaned (FIX 5)', () => {
+    const doc = makeDoc();
+    // 'hero' matches a node-id; 'hero.title' is a t() id (no node-id) — passing it
+    // via consumedIds keeps it from being reported as an orphan.
+    expect(() =>
+      localize(doc, { hero: '你好', 'hero.title': '英雄' }, { locale: 'zh', consumedIds: new Set(['hero.title']) }),
+    ).not.toThrow();
+    // ...but an id NOT in consumedIds and NOT a node-id still throws
+    expect(() =>
+      localize(doc, { hero: '你好', 'stale.id': 'Z' }, { locale: 'zh', consumedIds: new Set(['hero.title']) }),
+    ).toThrow(LocalizationError);
+  });
+});
+
+describe('t — consumed-id tracking for the orphaned-key check (FIX 5)', () => {
+  it('records resolved ids into getConsumedMessageIds; setMessageTable resets it', () => {
+    setMessageTable({ 'hero.title': '英雄', 'sub.title': '副标题' });
+    expect(getConsumedMessageIds().size).toBe(0);
+    t('hero.title');
+    expect([...getConsumedMessageIds()]).toEqual(['hero.title']);
+    setMessageTable({ 'hero.title': '英雄' });
+    expect(getConsumedMessageIds().size).toBe(0); // reset on a fresh table
   });
 });
 

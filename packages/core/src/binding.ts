@@ -56,9 +56,12 @@ export interface BindTarget {
   /**
    * The value type this target accepts; a track of any other type is a bind
    * error. An ARRAY for a polymorphic prop that admits more than one type
-   * (e.g. a Shape `fill` accepts both `color` and `paint`).
+   * (e.g. a Shape `fill` accepts both `color` and `paint`, or a vec2 prop that
+   * accepts both `vec2` and `vec2-arc`). UNDEFINED means the target opted OUT
+   * of the guard (an untagged custom-node prop — back-compat with 0.13, which
+   * had no guard): any track binds without a type check.
    */
-  readonly expects: ValueTypeId | readonly ValueTypeId[];
+  readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
 }
 
 /** Analytic value/velocity access to one bound target (v2 addendum §B.6). */
@@ -95,8 +98,13 @@ export function bindTimeline(
     if (!sig) throw new UnboundTargetError(target);
     const got = (tr as Track).type;
     const expects = sig.expects;
-    const ok = Array.isArray(expects) ? expects.includes(got) : got === expects;
-    if (!ok) throw new BindTypeMismatchError(target, got, expects);
+    // An UNtagged target (expects === undefined) skips the guard — back-compat
+    // with 0.13's no-guard custom-node seam: a custom node opts INTO the guard
+    // by tagging its registerTarget call. Built-in nodes stay tagged.
+    if (expects !== undefined) {
+      const ok = Array.isArray(expects) ? expects.includes(got) : got === expects;
+      if (!ok) throw new BindTypeMismatchError(target, got, expects);
+    }
     sig.bindSource(() => sampleTrack(tr as Track, playhead()));
     bound.push(sig);
     samplers.set(target, {

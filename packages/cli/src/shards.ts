@@ -196,6 +196,7 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
         ...(opts.state !== undefined ? ['--state', opts.state] : []),
         ...(opts.force ? ['--force'] : []),
         ...(opts.strictFonts ? ['--strict'] : []),
+        ...(opts.allowSystemFonts ? ['--allow-system-fonts'] : []),
       ];
       const child = spawnSync(process.execPath, childArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
       if (child.status !== 0) {

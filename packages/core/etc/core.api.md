@@ -79,7 +79,7 @@ export interface BindableSignal<T> extends Signal<T> {
 export interface BindTarget {
     // (undocumented)
     bindSource(fn: () => unknown): void;
-    readonly expects: ValueTypeId | readonly ValueTypeId[];
+    readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
     // (undocumented)
     unbindSource(): void;
 }

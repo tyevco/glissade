@@ -53,7 +53,7 @@ export interface BackendCaps {
 export interface BindablePropTarget {
     // (undocumented)
     bindSource(fn: () => unknown): void;
-    readonly expects: ValueTypeId | readonly ValueTypeId[];
+    readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
     // (undocumented)
     unbindSource(): void;
 }
@@ -115,6 +115,9 @@ export class ColdAssetError extends Error {
 
 // @public
 export function collapseReplacer(_key: string, value: unknown): unknown;
+
+// @public
+export function collectLocalizedTextUsages(scene: Scene, doc: Timeline): FontUsage[];
 
 // @public
 export function collectTextUsages(scene: Scene): FontUsage[];
@@ -823,7 +826,7 @@ abstract class Node_2 {
     protected registerTarget(path: string, sig: {
         bindSource(fn: () => unknown): void;
         unbindSource(): void;
-    }, expects: ValueTypeId | readonly ValueTypeId[]): void;
+    }, expects?: ValueTypeId | readonly ValueTypeId[]): void;
     protected requiresGroup(): boolean;
     // (undocumented)
     resolveTarget(path: string): BindablePropTarget | undefined;
@@ -1448,6 +1451,7 @@ export function validateSceneFonts(scene: Scene, doc: Timeline, loadBytes: FontB
 
 // @public (undocumented)
 export interface ValidateSceneFontsOptions {
+    extraUsages?: readonly FontUsage[] | undefined;
     // (undocumented)
     mode?: FontMode;
     osFamilies?: ReadonlySet<string> | undefined;

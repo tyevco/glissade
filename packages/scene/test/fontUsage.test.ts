@@ -10,7 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildFontRegistry, setDevWarning, timeline, FontValidationError } from '@glissade/core';
 import { Group, Text } from '../src/nodes.js';
 import { createScene } from '../src/scene.js';
-import { collectTextUsages, validateSceneFonts } from '../src/fontUsage.js';
+import { key, track } from '@glissade/core';
+import { collectTextUsages, collectLocalizedTextUsages, validateSceneFonts } from '../src/fontUsage.js';
 import type { DisplayListBuilder, FontSpec } from '../src/displayList.js';
 import type { EvalContext } from '../src/node.js';
 import type { TextMeasurer } from '../src/text.js';
@@ -53,6 +54,34 @@ describe('collectTextUsages', () => {
   it('skips empty Text nodes', () => {
     const scene = createScene({ size: { w: 10, h: 10 }, children: [new Text({ text: '' })] });
     expect(collectTextUsages(scene)).toEqual([]);
+  });
+});
+
+describe('collectLocalizedTextUsages (FIX 3 — post-localize string tracks)', () => {
+  it('emits a usage per localized string-track value under the target Text fontFamily', () => {
+    const scene = createScene({
+      size: { w: 100, h: 100 },
+      children: [new Text({ id: 'hero', text: 'Hello', fontFamily: 'Latin' })],
+    });
+    // a localized doc: the hero/text string track now carries CJK (post-localize)
+    const doc = timeline({
+      tracks: [track('hero/text', 'string', [key(0, '你好', { interp: 'hold' as const })])],
+    });
+    expect(collectLocalizedTextUsages(scene, doc)).toEqual([{ family: 'Latin', text: '你好' }]);
+  });
+
+  it('ignores non-string tracks and tracks targeting non-Text / unknown nodes', () => {
+    const scene = createScene({
+      size: { w: 100, h: 100 },
+      children: [new Text({ id: 'hero', text: 'Hi', fontFamily: 'Latin' })],
+    });
+    const doc = timeline({
+      tracks: [
+        track('hero/opacity', 'number', [key(0, 0), key(1, 1)]), // not a string track
+        track('ghost/text', 'string', [key(0, '幽灵', { interp: 'hold' as const })]), // no such node
+      ],
+    });
+    expect(collectLocalizedTextUsages(scene, doc)).toEqual([]);
   });
 });
 
@@ -134,6 +163,32 @@ describe('validateSceneFonts', () => {
     expect(loader).toHaveBeenCalledWith('latin.ttf');
     expect(report.missingGlyphs[0]?.family).toBe('Latin');
     expect(report.missingGlyphs[0]?.codePoints).toEqual(['H'.codePointAt(0)!, 'i'.codePointAt(0)!]);
+  });
+
+  it('FIX 3: a localized CJK value (extraUsages) on a registered Latin font surfaces as a missing glyph; base alone is clean', async () => {
+    // The registered 'Latin' family's loader yields empty coverage (malformed
+    // bytes), so EVERY codepoint counts as missing. The base scene text is empty,
+    // so without extraUsages the report is clean; passing the localized CJK value
+    // via extraUsages makes its codepoint surface — the post-localize-tofu class.
+    const doc = timeline({ assets: { Latin: { kind: 'font', url: 'latin.ttf' } } });
+    const scene = createScene({
+      size: { w: 10, h: 10 },
+      children: [new Text({ id: 'hero', text: '', fontFamily: 'Latin' })], // empty base
+    });
+    const loader = vi.fn(async (): Promise<ArrayBuffer | undefined> => new ArrayBuffer(4));
+
+    // base render (no extraUsages): clean
+    const base = await validateSceneFonts(scene, doc, loader, { mode: 'dev' });
+    expect(base.missingGlyphs).toEqual([]);
+
+    // post-localize CJK value via extraUsages → strict THROWS (uncovered glyph)
+    const cjk = collectLocalizedTextUsages(
+      scene,
+      timeline({ tracks: [track('hero/text', 'string', [key(0, '你', { interp: 'hold' as const })])] }),
+    );
+    await expect(
+      validateSceneFonts(scene, doc, loader, { mode: 'strict', extraUsages: cjk }),
+    ).rejects.toThrow(FontValidationError);
   });
 
   it('does not load fonts no Text references', async () => {

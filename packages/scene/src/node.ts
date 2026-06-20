@@ -117,9 +117,11 @@ export interface BindablePropTarget {
   unbindSource(): void;
   /**
    * The value type(s) this prop accepts — bindTimeline hard-throws a mismatched
-   * track (§2.2). An array for a polymorphic prop (a Shape `fill` is color|paint).
+   * track (§2.2). An array for a polymorphic prop (a Shape `fill` is color|paint,
+   * a vec2 prop is vec2|vec2-arc). UNDEFINED for an untagged target (the 2-arg
+   * registerTarget form): bindTimeline skips the guard (0.13 back-compat seam).
    */
-  readonly expects: ValueTypeId | readonly ValueTypeId[];
+  readonly expects: ValueTypeId | readonly ValueTypeId[] | undefined;
 }
 
 /** Node-local hit-shape override (v2 §C.3) — fat targets for thin strokes. */
@@ -206,11 +208,11 @@ export abstract class Node {
       { equals: matEquals },
     );
 
-    this.registerTarget('position', this.position, 'vec2');
+    this.registerTarget('position', this.position, ['vec2', 'vec2-arc']);
     this.registerTarget('position.x', this.position.x, 'number');
     this.registerTarget('position.y', this.position.y, 'number');
     this.registerTarget('rotation', this.rotation, 'number');
-    this.registerTarget('scale', this.scale, 'vec2');
+    this.registerTarget('scale', this.scale, ['vec2', 'vec2-arc']);
     this.registerTarget('scale.x', this.scale.x, 'number');
     this.registerTarget('scale.y', this.scale.y, 'number');
     this.registerTarget('opacity', this.opacity, 'number');
@@ -222,13 +224,19 @@ export abstract class Node {
    * signal accepts (§2.2). The stamp is what bindTimeline's bind-time guard
    * reads to reject a mismatched track (a scalar on a vec2, a number on a paint
    * prop, …) instead of silently sampling to NaN/undefined.
+   *
+   * `expects` is OPTIONAL: omitting it (the 2-arg form) leaves the target
+   * UNtagged — bindTimeline then skips the type guard for it, which is the
+   * back-compat seam for external `Custom`/`Node` subclasses (DESIGN.md §329)
+   * and prebuilt 0.13 nodes that called the 2-arg form (0.13 had no guard). A
+   * built-in node opts INTO the guard by tagging.
    */
   protected registerTarget(
     path: string,
     sig: { bindSource(fn: () => unknown): void; unbindSource(): void },
-    expects: ValueTypeId | readonly ValueTypeId[],
+    expects?: ValueTypeId | readonly ValueTypeId[],
   ): void {
-    (sig as unknown as { expects: ValueTypeId | readonly ValueTypeId[] }).expects = expects;
+    (sig as unknown as { expects: ValueTypeId | readonly ValueTypeId[] | undefined }).expects = expects;
     this.targets.set(path, sig as BindablePropTarget);
     // builder targets (§2.6): a prop signal of an id-bearing node carries its path
     if (this.id !== undefined) {

@@ -76,6 +76,14 @@ export type MessageTable = Record<string, string>;
 export interface LocalizeOptions {
   /** the locale being resolved (carried for error context only; no behavior depends on it). */
   locale: string;
+  /**
+   * Message ids ALREADY consumed outside the doc — the free-standing `t()` ids
+   * resolved at module-eval / createScene() time (`getConsumedMessageIds()`).
+   * `localize` folds these into the "matched keys" set so the orphaned-key check
+   * (FIX 5) doesn't flag a legitimate `t()` key as unmatched. Omit when there is
+   * no ambient `t()` usage (then only node-id keys count as matched).
+   */
+  consumedIds?: ReadonlySet<string> | undefined;
 }
 
 export class LocalizationError extends Error {
@@ -101,13 +109,22 @@ function nodeIdOf(target: string): string {
  *
  * Pure: no playhead, no time, no filesystem. The base-locale table (or an empty
  * table) leaves the doc structurally identical to the input.
+ *
+ * FIX 5 (0.14 canary): a table key matching NO consumed id (neither a string-track
+ * node-id NOR a `t()` id passed via `opts.consumedIds`) is a stale/typo'd key that
+ * would silently never localize anything — so `localize` throws a `LocalizationError`
+ * naming every orphaned key (the inverse of `t()`'s hard-fail). A fully-matched
+ * table is silent.
  */
-export function localize(doc: Timeline, table: MessageTable, _opts: LocalizeOptions): Timeline {
+export function localize(doc: Timeline, table: MessageTable, opts: LocalizeOptions): Timeline {
   let changed = false;
+  // node-ids this localize walk actually consumes (matched a string track)
+  const consumed = new Set<string>();
   const tracks = doc.tracks.map((tr): Track => {
     if (tr.type !== 'string') return tr;
     const id = nodeIdOf(tr.target);
     if (!(id in table)) return tr;
+    consumed.add(id);
     const localized = table[id]!;
     changed = true;
     return {
@@ -117,6 +134,20 @@ export function localize(doc: Timeline, table: MessageTable, _opts: LocalizeOpti
       ),
     };
   });
+
+  // orphaned-key guard: every table key must be matched by SOME consumer —
+  // either a node-id consumed here, or a `t()` id resolved at module-eval time.
+  const orphans = Object.keys(table)
+    .filter((key) => !consumed.has(key) && !(opts.consumedIds?.has(key) ?? false))
+    .sort();
+  if (orphans.length > 0) {
+    throw new LocalizationError(
+      `message table for locale '${opts.locale}' has ${orphans.length} key(s) that match no node-id ` +
+        `and no t() id: ${orphans.map((k) => `'${k}'`).join(', ')} — a stale/typo'd key would silently ship base text. ` +
+        `Remove the key, or fix it to match a target id.`,
+    );
+  }
+
   if (!changed) return { ...doc };
   return { ...doc, tracks };
 }
@@ -124,19 +155,35 @@ export function localize(doc: Timeline, table: MessageTable, _opts: LocalizeOpti
 // ---- piece 3: t() — build-time sugar over the AMBIENT message table ----
 
 let ambientTable: MessageTable | undefined;
+// FIX 5 (0.14 canary): the ids `t()` actually resolved against the ambient table
+// since the last setMessageTable — folded into localize's orphaned-key check so a
+// legitimate free-standing t() key isn't flagged as an unmatched table key.
+let consumedIds = new Set<string>();
 
 /**
  * Install the ambient message table consulted by `t()`. Called ONCE before
  * scene construction (the render entry injects it from `--locale`). Pass
  * `undefined` to clear it (the base-locale / no-flag path leaves it unset).
+ * Resets the consumed-id set (a fresh table = a fresh resolution pass).
  */
 export function setMessageTable(table: MessageTable | undefined): void {
   ambientTable = table;
+  consumedIds = new Set<string>();
 }
 
 /** The currently installed ambient message table (undefined when none is set). */
 export function getMessageTable(): MessageTable | undefined {
   return ambientTable;
+}
+
+/**
+ * The set of ids `t()` has resolved against the ambient table since the last
+ * `setMessageTable`. The render entry passes this to `localize` so a key consumed
+ * by a free-standing `t()` (which `localize` can't see — it isn't a doc track)
+ * isn't reported as an orphaned table key (FIX 5).
+ */
+export function getConsumedMessageIds(): ReadonlySet<string> {
+  return consumedIds;
 }
 
 /**
@@ -152,6 +199,7 @@ export function getMessageTable(): MessageTable | undefined {
 export function t(id: string): string {
   if (ambientTable === undefined) return id;
   const value = ambientTable[id];
+  if (value !== undefined) consumedIds.add(id);
   if (value === undefined) {
     throw new LocalizationError(
       `t('${id}'): no message for id '${id}' in the active message table ` +

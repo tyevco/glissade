@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createCanvas } from '@napi-rs/canvas';
-import { render, parseFrameRange } from '../src/render.js';
+import { render, parseFrameRange, buildFontExemptSet } from '../src/render.js';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
 const MODULE = join(SCENES, 'golden-shapes.ts');
@@ -19,6 +19,40 @@ const outDir = mkdtempSync(join(tmpdir(), 'glissade-render-'));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
 
 const pngCount = (dir: string): number => readdirSync(dir).filter((f) => f.endsWith('.png')).length;
+
+describe('buildFontExemptSet (FIX 6 — host-independent --strict font validation)', () => {
+  // a "macOS-fat" OS catalog vs a "clean Linux CI" one; the verdict must not differ
+  const macCatalog = new Set(['helvetica neue', 'avenir', 'menlo', 'times new roman']);
+  const linuxCatalog = new Set(['dejavu sans']);
+  const registered = new Set(['brand']); // glissade registered from doc.assets
+
+  it('under --strict the OS catalog is IGNORED regardless of host (an unregistered system family is NOT exempt)', () => {
+    const mac = buildFontExemptSet(registered, { allowSystemFonts: true, strict: true, osCatalog: macCatalog });
+    const linux = buildFontExemptSet(registered, { allowSystemFonts: true, strict: true, osCatalog: linuxCatalog });
+    // same verdict on both hosts: only the glissade-registered family is exempt
+    expect([...mac].sort()).toEqual(['brand']);
+    expect([...linux].sort()).toEqual(['brand']);
+    // 'Helvetica Neue' would throw under --strict on BOTH hosts (not exempt)
+    expect(mac.has('helvetica neue')).toBe(false);
+    expect(linux.has('helvetica neue')).toBe(false);
+  });
+
+  it('a glissade-registered (doc.assets) family is exempt with or without --strict (the 57AnKZ8G1v7o intent)', () => {
+    expect(buildFontExemptSet(registered, { allowSystemFonts: false, strict: true, osCatalog: macCatalog }).has('brand')).toBe(true);
+    expect(buildFontExemptSet(registered, { allowSystemFonts: false, strict: false, osCatalog: macCatalog }).has('brand')).toBe(true);
+  });
+
+  it('--allow-system-fonts (non-strict) opts the OS catalog in', () => {
+    const set = buildFontExemptSet(registered, { allowSystemFonts: true, strict: false, osCatalog: macCatalog });
+    expect(set.has('helvetica neue')).toBe(true); // OS family now exempt
+    expect(set.has('brand')).toBe(true);
+  });
+
+  it('default (no --allow-system-fonts) never consults the OS catalog', () => {
+    const set = buildFontExemptSet(registered, { allowSystemFonts: false, strict: false, osCatalog: macCatalog });
+    expect([...set]).toEqual(['brand']);
+  });
+});
 
 describe('parseFrameRange (--range is frame-indexed)', () => {
   it('parses inclusive integer frame ranges', () => {

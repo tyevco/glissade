@@ -38,6 +38,34 @@ export function collectTextUsages(scene: Scene): FontUsage[] {
   return out;
 }
 
+/** The node-id of a track target ('<nodeId>/<prop.path>' → '<nodeId>'). */
+function nodeIdOf(target: string): string {
+  const slash = target.indexOf('/');
+  return slash >= 0 ? target.slice(0, slash) : target;
+}
+
+/**
+ * Collect font usages from the POST-localize document's STRING tracks (FIX 3,
+ * 0.14 canary). For every `'string'` track whose target node is a Text node,
+ * emit one usage per distinct localized KEY VALUE under that node's fontFamily —
+ * so a localized CJK message bound to a Latin-only font surfaces as an uncovered
+ * glyph. `collectTextUsages` only sees the authored BASE `node.text()`, which is
+ * resolved BEFORE the localized string tracks bind, so it misses this.
+ */
+export function collectLocalizedTextUsages(scene: Scene, doc: Timeline): FontUsage[] {
+  const out: FontUsage[] = [];
+  for (const tr of doc.tracks) {
+    if (tr.type !== 'string') continue;
+    const node = scene.nodes.get(nodeIdOf(tr.target));
+    if (!(node instanceof Text)) continue;
+    for (const k of tr.keys) {
+      const value = k.value;
+      if (typeof value === 'string' && value) out.push({ family: node.fontFamily, text: value });
+    }
+  }
+  return out;
+}
+
 /**
  * Caller-supplied I/O: fetch the raw bytes for a font face URL (the export
  * paths read a file / fetch a URL; this keeps core pure). Returning undefined
@@ -50,6 +78,13 @@ export interface ValidateSceneFontsOptions {
   mode?: FontMode;
   /** OS-installed families to treat as registered (case-insensitive). */
   osFamilies?: ReadonlySet<string> | undefined;
+  /**
+   * Additional usages to validate alongside the scene's authored Text (FIX 3):
+   * the POST-localize document's localized string-track values, which the
+   * scene-walk can't see (they bind AFTER `node.text()` is read). Build them
+   * with `collectLocalizedTextUsages(scene, localizedDoc)`.
+   */
+  extraUsages?: readonly FontUsage[] | undefined;
 }
 
 /**
@@ -66,7 +101,7 @@ export async function validateSceneFonts(
 ): Promise<CoverageReport> {
   const mode: FontMode = options.mode ?? 'dev';
   const registry = buildFontRegistry(doc.assets);
-  const usages = collectTextUsages(scene);
+  const usages = [...collectTextUsages(scene), ...(options.extraUsages ?? [])];
 
   // parse one cmap per registered family that's actually used (and any family
   // in a used family's fallback chain), so we don't load fonts no Text needs
