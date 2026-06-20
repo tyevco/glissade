@@ -1,5 +1,49 @@
 # @glissade/cli
 
+## 0.15.0
+
+### Minor Changes
+
+- a7189dd: Add `gs render <scene> --locales <a,b,c>` (0.15) — render a scene ONCE PER comma-separated locale in a single invocation, over the existing 0.14 `--locale <code>` path. Pure CLI orchestration: each per-locale render IS the 0.14 single-`--locale` render (the locale's `messages.<code>.json` ambient table + the preferred `<base>.<code>.narration.timing.json` sibling, then `render()` runs `localize()`), so `--locales en,zh` ≡ `--locale en` then `--locale zh` with distinct outputs. No render-path change — the 252 goldens stay byte-identical.
+
+  Per-locale output convention: a video/png `--out` gets a locale segment before the extension (`out/episode.mp4` → `out/episode.<locale>.mp4`); a directory `--out` (the PNG-sequence default) gets a per-locale subdir (`out/` → `out/<locale>/`). `--format png-seq` forces the directory convention even for a video-looking name.
+
+  `--locale` and `--locales` are mutually exclusive (passing both is a hard error). A locale in the list with NO resolvable assets (neither a message table nor a narration sibling) throws the 0.14 `UnknownLocaleError` naming the bad locale, aborting the whole fan-out loudly — never silently skipped. The fan-out loop is sequential and the per-locale ambient i18n table can't leak between iterations (`loadSceneModule` re-installs the table at the top of every render). New programmatic exports: `renderLocales`, `parseLocalesList`, `localeOutPath`, `LocaleArgsError`.
+
+### Patch Changes
+
+- 53030d0: 0.15 i18n-hardening 5-pack — residual localization robustness gaps, all OFF the `evaluate()` path (252 goldens byte-identical; the no-locale base path unchanged). Each fix has a violating-input regression test.
+
+  FIX 1 (multi-cue collapse → hard-throw): `localize()` broadcasts `table[id]` to every key of a matched string track. For a multi-cue caption (a string track with >1 DISTINCT keyed value) that froze one caption over the whole video. `localize` now HARD-THROWS a `LocalizationError` naming the id and directing to per-locale narration regen; a single-value / single-key string track still localizes by broadcast.
+
+  FIX 2 (flat-table key collision → throw-on-ambiguity): a key matching BOTH a node-id-with-a-string-track AND a free-standing `t()` id (`opts.consumedIds`) silently rewrote the node's track. `localize` now throws a clear `LocalizationError` on any such collision. PURE ADDITIVE GUARD — the flat `messages.<locale>.json` shape (`MessageTable = Record<string, string>`) is UNCHANGED; no sectioned `{tracks,messages}` format introduced.
+
+  FIX 3 (ambient `t()` race across concurrent renders): the process-global ambient table/consumed-id set was shared across concurrent programmatic `render()`/`loadSceneModule` flows for different locales → wrong-language static `Text`. Added `runWithMessageTable(table, fn)` — an `AsyncLocalStorage`-scoped ambient table that isolates each async flow (lazily loaded `node:async_hooks`, off the embed; `core/i18n` stays 1.5 kB gz). `setMessageTable`/`getMessageTable`/`getConsumedMessageIds`/`t()` now read the active scope (ALS if present, else the process-global). Added `preservingMessageTable(fn)` (snapshot/restore the global ambient table), wired around the no-locale audio-mix helpers in the CLI (`collectMixAudioInputs`/`buildMixWav`) so they don't clobber or leak a concurrent locale's table. The CLI one-shot is unaffected.
+
+  FIX 4 (`requireParity` within-manifest duplicate ids): the Set-based union/diff swallowed `{en:['a','a','b']}`. `requireParity` now runs a per-manifest duplicate check (`new Set(m.ids).size !== m.ids.length`) FIRST — naming the locale + dup id and throwing a `ParityError` — even for a single (or zero) manifest, before the cross-manifest diff.
+
+  FIX 5 (`osFamilies` brand-warn gap): `buildFontExemptSet` folded the OS catalog into the exempt set; a registered/declared brand family whose name collides with an OS family could be waved through as "OS-only". The OS-catalog fold now SKIPS any name that collides with a registered family, so a declared brand font stays subject to glyph-coverage validation (a missing glyph still warns / throws under `--strict`). The exemption is for genuinely-OS-only families.
+
+- ec57f23: 0.15 canary fix (FIX 2): support per-locale publish loudness so a localized render isn't a loudness dead-end.
+
+  A localized render (`gs render --locale zh`) mixes the per-locale narration (the zh wavs) → a different `mixHash` than the base mix, but `gs measure-loudness` was locale-unaware: the committed `*.loudness.json` measured the BASE narration, so `resolveLoudnessGainDb` hard-threw `stale mixHash` for ANY localized video with committed loudness, with no supported way to commit a per-locale measurement.
+
+  `loudnessPathFor(modulePath, locale?)` now emits `<stem>.<locale>.loudness.json` when a locale is set (the base `<stem>.loudness.json` is unchanged for no-locale). `gs measure-loudness --locale <code>` measures the per-locale mix (threaded through `buildMixWav` / `collectMixAudioInputs`) and commits the per-locale file. `resolveLoudnessGainDb` reads the per-locale measurement first when rendering with a locale, and when it is MISSING throws an ACTIONABLE per-locale error (`no <stem>.<locale>.loudness.json — run gs measure-loudness <scene> --locale <locale>`) instead of the generic stale message. `renderLocales` names the failing locale on a per-locale dead-end (still fails loudly, never swallowed). The no-locale loudness path and all goldens are byte-identical.
+
+- Updated dependencies [c87e88b]
+- Updated dependencies [53030d0]
+- Updated dependencies [ec57f23]
+- Updated dependencies [b21fa79]
+  - @glissade/core@0.15.0
+  - @glissade/scene@0.15.0
+  - @glissade/narrate@0.15.0
+  - @glissade/backend-skia@0.15.0
+  - @glissade/interact@0.15.0
+  - @glissade/lottie@0.15.0
+  - @glissade/player@0.15.0
+  - @glissade/sfx@0.15.0
+  - @glissade/svg@0.15.0
+
 ## 0.15.0-pre.1
 
 ### Patch Changes

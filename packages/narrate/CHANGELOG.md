@@ -1,5 +1,44 @@
 # @glissade/narrate
 
+## 0.15.0
+
+### Minor Changes
+
+- b21fa79: narrate: misaki[zh] g2p engine (Fork B) — a real Mandarin route for kokoro z\* voices
+
+  `kokoroProvider` no longer hard-errors on Chinese (`zf_`/`zm_`) voices. A new
+  Zh-g2p seam (`misakiZhG2p`, `packages/narrate/src/zh-g2p.ts`) shells out to a
+  pinned Python `misaki[zh]` (Fork B — same `spawnSync` + ENOENT-feature-detection
+  pattern as the piper/espeak providers) to turn Mandarin text into the custom-IPA
+
+  - arrow-tone phoneme string those voices were trained on, then drives the kokoro
+    `generate_from_ids` g2p bypass (`text → zhG2p(text) → tokenizer(phonemes) →
+generate_from_ids(ids, {voice})`). Non-Chinese voices keep the unchanged
+    `generate(text)` path.
+
+  The g2p identity (engine-id + jieba-dict hash + phoneme-map version + the pinned
+  Python-misaki wheel) folds into `kokoroProvider.version()` for a z\* voice, so any
+  g2p change invalidates the prepare-time segment cache (cache reproducibility).
+  This is all PREPARE-TIME: `evaluate()` and the render path are untouched and stay
+  byte-deterministic.
+
+  A committed parity corpus (`packages/narrate/test/fixtures/misaki-zh-parity.json`,
+  regenerable via `scripts/gen-misaki-parity.py`) is the shared g2p oracle — a
+  future pure-TS Fork A can be validated against the same fixture offline.
+
+### Patch Changes
+
+- ec57f23: 0.15 canary fix (FIX 1 + FIX 3): harden the misaki[zh] g2p cache identity on the real `gs narrate` path.
+
+  `kokoroProvider.version()` now ALWAYS folds the misaki[zh] g2p identity, instead of gating it on a constructor `z*` voice. The CLI constructs `kokoroProvider()` with no opts (`providerById('kokoro')` / `synthesizeScript`) and routes Chinese per-REQUEST, so the gated suffix left a Mandarin segment's cache key carrying NO g2p identity — bumping the pinned wheel / jieba dict / `PHONEME_MAP_VERSION` left the key byte-identical and the segment cache served STALE Mandarin audio.
+
+  To make the unconditional fold free, `zhG2p.version()` is now PURE and Python-free: a pin-based identity string `misaki-zh misaki=<MISAKI_PIN> jieba=<JIEBA_PIN> map=<PHONEME_MAP_VERSION>` (no `spawnSync`, no file read, no `__version__` introspection). The pins are now ENFORCED at synth time: `phonemize()` resolves the installed versions via `importlib.metadata.version(...)` (authoritative dist-info, present even when a wheel exposes no `__version__` — as jieba historically does not) and raises an actionable `installed X != pinned PIN` error on a mismatch, instead of silently degrading to `'unknown'` (which let two divergent wheels collide). No evaluate()/golden bytes touched — prepare-time only.
+
+- Updated dependencies [c87e88b]
+- Updated dependencies [53030d0]
+  - @glissade/core@0.15.0
+  - @glissade/scene@0.15.0
+
 ## 0.15.0-pre.1
 
 ### Patch Changes
