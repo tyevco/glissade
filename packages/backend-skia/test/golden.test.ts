@@ -4,6 +4,7 @@
  * Update goldens intentionally with: GOLDEN_UPDATE=1 pnpm vitest run
  */
 
+import { createHash } from 'node:crypto';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +37,8 @@ import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
+import goldenWoff2 from '../../examples/src/scenes/golden-woff2.js';
+import { ingestFont } from '@glissade/core/font-ingest';
 import goldenMorph from '../../examples/src/scenes/golden-morph.js';
 import goldenPresence from '../../examples/src/scenes/golden-presence.js';
 import goldenEach from '../../examples/src/scenes/golden-each.js';
@@ -55,6 +58,13 @@ GlobalFonts.registerFromPath(
   fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.ttf', import.meta.url)),
   'Inconsolata Semibold',
 );
+// 0.13 woff2-decoded face (§3.6, DsW-aD_OUMoV item 1): the committed woff2 is
+// DECODED ONCE at ingest time (sniff woff2 → fontverter → static sfnt) by the
+// font front door. The decoded sfnt BYTES are registered with Skia directly —
+// proving the decode path is byte-stable end to end through the rasterizer.
+const woff2Path = fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.woff2', import.meta.url));
+const woff2Face = await ingestFont({ family: 'Inconsolata WOFF2', src: woff2Path });
+GlobalFonts.register(Buffer.from(woff2Face.bytes), 'Inconsolata WOFF2');
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 const UPDATE = process.env['GOLDEN_UPDATE'] === '1';
@@ -145,6 +155,10 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // 0.12 §3.6 instanced variable font: a wght:600-pinned static sfnt rendered
   // byte-exactly on Skia — proves variable-font support is the static-parity case
   { name: 'font-instanced', mod: goldenFontInstanced },
+  // 0.13 §3.6 woff2-decoded face (DsW-aD_OUMoV item 1): the committed woff2 is
+  // decoded ONCE at ingest to a static sfnt, then rendered byte-exactly on Skia —
+  // proves the woff2-decode path is byte-stable through the rasterizer
+  { name: 'woff2', mod: goldenWoff2 },
   // 0.13 shared-element box-FLIP morph(): a chip grows into a document — a shared
   // morphFx Rect carries the position+scale FLIP while chip/document cross-fade.
   // Compiles to ordinary vec2/number tracks (byte-exact by construction).
@@ -217,3 +231,21 @@ for (const { name, mod } of CORPUS) {
     });
   });
 }
+
+// 0.13 woff2 decode determinism (DsW-aD_OUMoV item 1): the woff2 golden above
+// renders the DECODED sfnt — but the determinism contract underneath the golden
+// is that the decode itself is byte-stable. Decoding the committed woff2 twice
+// must produce identical sfnt bytes; otherwise the golden would only be stable
+// by luck. (decode-once-at-ingest, NEVER in evaluate.)
+describe('woff2 decode is byte-stable (the golden font-decode contract)', () => {
+  it('decoding the committed woff2 twice yields byte-identical sfnt bytes', async () => {
+    const a = await ingestFont({ family: 'Inconsolata WOFF2', src: woff2Path });
+    const b = await ingestFont({ family: 'Inconsolata WOFF2', src: woff2Path });
+    expect(Buffer.from(a.bytes).equals(Buffer.from(b.bytes))).toBe(true);
+    expect(createHash('sha256').update(a.bytes).digest('hex')).toBe(
+      createHash('sha256').update(b.bytes).digest('hex'),
+    );
+    // and equal to the bytes the harness registered with Skia for the golden.
+    expect(Buffer.from(a.bytes).equals(Buffer.from(woff2Face.bytes))).toBe(true);
+  });
+});

@@ -208,6 +208,37 @@ async function loadSubsetFont(): Promise<SubsetFontFn> {
   return subsetFontPromise;
 }
 
+// minimal structural type for the optional `fontverter` dependency (no @types).
+// `fontverter` is subset-font's own woff/woff2 codec — we reach it DIRECTLY for
+// the pure decode (woff2 → sfnt with EVERY glyph kept) so coverage can be read
+// from the real cmap. (hb-subset can't decode-without-subsetting: it needs the
+// code-point retain set, which is exactly what we don't have until we've decoded.)
+type FontverterConvert = (font: Uint8Array, to: 'truetype' | 'woff' | 'woff2') => Promise<Uint8Array>;
+
+let fontverterPromise: Promise<FontverterConvert> | undefined;
+async function loadFontverter(): Promise<FontverterConvert> {
+  // dynamic import, same rationale as subset-font: the woff2 codec must never
+  // reach the embed graph (asserted by the §4.4 leak-guard in check-size.mjs,
+  // which already lists `fontverter`). This module is the ONLY place it loads.
+  fontverterPromise ??= import('fontverter' as string).then(
+    (m) => {
+      const convert = (m.default ?? m).convert as FontverterConvert | undefined;
+      if (typeof convert !== 'function') {
+        throw new FontIngestError(`'fontverter' loaded but exposes no convert() — incompatible version`);
+      }
+      return convert;
+    },
+    (err) => {
+      throw new FontIngestError(
+        `font ingestion needs the optional 'fontverter' dependency for woff/woff2 decode — install it. (${String(
+          (err as Error)?.message ?? err,
+        )})`,
+      );
+    },
+  );
+  return fontverterPromise;
+}
+
 /**
  * Build the "retain every code point" string from a font's own cmap — used to
  * run hb-subset purely as a woff2 DECODER / variable-axis INSTANCER without
@@ -243,16 +274,21 @@ export async function ingestFont(init: RegisterFontInit): Promise<FontFaceResult
     // ttf/otf/ttc straight through — Skia consumes it directly, no wasm needed.
     bytes = input;
   } else {
-    const subsetFont = await loadSubsetFont();
-    // 1) decode (woff2/woff → sfnt) with a full-coverage retain so no glyph is
-    //    dropped, then re-parse coverage from the decoded sfnt for instancing.
     let decoded = input;
+    // 1) decode (woff/woff2 → sfnt) via fontverter, the pure codec — it inflates
+    //    EVERY glyph, so the decoded sfnt's cmap is the real, full coverage. We
+    //    must NOT route the decode through hb-subset here: subsetting needs the
+    //    retain set up front, and the woff2 bytes are compressed, so parseCmap()
+    //    on them is empty — feeding that back drops every glyph (the bug this
+    //    fixes). Decode first, then read coverage from the decoded sfnt.
     if (needsDecode) {
-      // first pass: decode + retain everything the source covers.
-      const coverage = parseCmap(input);
-      decoded = await subsetFont(input, retainAllText(coverage), { targetFormat: 'sfnt' });
+      const convert = await loadFontverter();
+      decoded = await convert(input, 'truetype');
     }
     if (needsInstance) {
+      const subsetFont = await loadSubsetFont();
+      // instance to a static face at the pinned axis tuple, retaining every code
+      // point the (now-decoded) source covers — subsetting stays the deferred case.
       const coverage = parseCmap(decoded);
       decoded = await subsetFont(decoded, retainAllText(coverage), {
         targetFormat: 'sfnt',

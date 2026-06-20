@@ -39,6 +39,7 @@
     "directory": "packages/core"
   },
   "optionalDependencies": {
+    "fontverter": "^2.0.0",
     "subset-font": "^2.5.0"
   }
 }
