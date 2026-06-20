@@ -172,6 +172,17 @@ export interface TimedSegment {
   words?: TimedWord[];
   /** anchor budget (s) carried from the script's per-segment `maxSec`; lint reads it here */
   maxSec?: number;
+  /**
+   * Per-segment voice PROVENANCE (auditability, gh#2): the RESOLVED voice
+   * identity that produced THIS segment's audio. A named voice records its name
+   * string (e.g. `"zf_xiaoxiao"`); a BLEND records its canonical `blendIdentity()`
+   * recipe (`blend=[zf_xiaoni:0.650000,zf_xiaoxiao:0.350000 lang=zh v1]` —
+   * normalized weights + base names + language + BLEND_SPEC_VERSION). Optional/
+   * additive: omitted when a segment used the provider/script default with no
+   * explicit voice. Distinct from the script-level `providerVersion`, which is
+   * computed once and cannot capture a per-segment (or per-blend) override.
+   */
+  voice?: string;
 }
 
 /** A resolved pause window in the committed manifest. */

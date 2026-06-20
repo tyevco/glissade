@@ -252,6 +252,7 @@ export interface TimedSegment {
     start: number;
     // (undocumented)
     text: string;
+    voice?: string;
     words?: TimedWord[];
 }
 

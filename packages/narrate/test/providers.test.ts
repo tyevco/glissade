@@ -320,6 +320,80 @@ describe('blended kokoro voices (gh#2)', () => {
   });
 });
 
+// per-segment voice PROVENANCE in the committed timing manifest (gh#2): from the
+// timing.json you can audit WHICH voice/blend produced each segment. Provider-
+// agnostic — the manifest records the RESOLVED voice identity, so a fake-synth
+// provider that accepts a blend voice exercises it without loading the model.
+describe('synthesizeScript: per-segment voice provenance (gh#2 auditability)', () => {
+  // a fake provider that accepts ANY voice (named or blend) and emits a real WAV,
+  // so we can drive synthesizeScript with a blend voice without the kokoro model.
+  function anyVoiceProvider(id = 'fake'): TtsProvider {
+    const fake = fakeProvider();
+    return { id, version: () => Promise.resolve('v-1'), synthesize: (req) => fake.synthesize(req) };
+  }
+
+  it('records the blend recipe for a blend segment and the name for a named segment', async () => {
+    const blend: VoiceBlend = { blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] };
+    const script: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'fake',
+      segments: [
+        { id: 'blended', text: '你好世界', voice: blend },
+        { id: 'named', text: 'hello', voice: 'zf_xiaoxiao' },
+        { id: 'default', text: 'no explicit voice' },
+      ],
+    };
+    const r = await synthesizeScript(writeScript('provenance', script), {
+      providerImpl: anyVoiceProvider(),
+      alignerImpl: null,
+    });
+    const [blended, named, def] = r.timing.segments;
+    // the blend segment carries the canonical blendIdentity() recipe — auditable
+    expect(blended!.voice).toBe(blendIdentity(blend));
+    expect(blended!.voice).toContain('blend=[zf_xiaoni:0.650000,zf_xiaoxiao:0.350000');
+    expect(blended!.voice).toContain('lang=zh');
+    expect(blended!.voice).toContain(`v${BLEND_SPEC_VERSION}`);
+    // a named voice records the plain name string
+    expect(named!.voice).toBe('zf_xiaoxiao');
+    // no explicit voice (provider/script default) → field omitted (additive)
+    expect(def!.voice).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(def, 'voice')).toBe(false);
+  });
+
+  it('inherits the script-level voice as provenance when a segment sets none', async () => {
+    const script: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'fake',
+      voice: 'zf_xiaoni',
+      segments: [{ id: 'inherits', text: 'uses the script default voice' }],
+    };
+    const r = await synthesizeScript(writeScript('provenance-inherit', script), {
+      providerImpl: anyVoiceProvider(),
+      alignerImpl: null,
+    });
+    expect(r.timing.segments[0]!.voice).toBe('zf_xiaoni');
+  });
+
+  it('the manifest round-trips (write → parse) with the provenance field intact', async () => {
+    const blend: VoiceBlend = { blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] };
+    const script: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'fake',
+      segments: [{ id: 'blended', text: '你好', voice: blend }],
+    };
+    const r = await synthesizeScript(writeScript('provenance-roundtrip', script), {
+      providerImpl: anyVoiceProvider(),
+      alignerImpl: null,
+    });
+    const onDisk = JSON.parse(readFileSync(r.timingPath, 'utf8')) as {
+      segments: { id: string; voice?: string }[];
+    };
+    expect(onDisk.segments[0]!.voice).toBe(blendIdentity(blend));
+    // the in-memory result and the committed JSON agree
+    expect(onDisk.segments[0]!.voice).toBe(r.timing.segments[0]!.voice);
+  });
+});
+
 // gated: downloads the kokoro model (~q8 92MB) and runs onnxruntime — opt in
 // with KOKORO=1 locally / in CI. This is the byte-determinism GATE for the
 // provider (validated 2026-06: same text → identical PCM).

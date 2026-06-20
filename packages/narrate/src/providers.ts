@@ -1163,6 +1163,14 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
       }
     }
 
+    // PROVENANCE (gh#2): record the RESOLVED voice identity that produced this
+    // segment's audio — a named voice's name, or a blend's canonical
+    // `blendIdentity()` recipe — so the committed manifest is auditable per
+    // segment (a script can use DIFFERENT blends per segment; the script-level
+    // providerVersion can't carry that). `voiceCacheIdentity` returns the name
+    // for a string voice, the blend identity for a blend, and null when no
+    // explicit voice was set (omit cleanly, additive).
+    const voiceProvenance = voiceCacheIdentity(voice);
     const timed: TimedSegment = {
       id: seg.id,
       text: seg.text,
@@ -1172,6 +1180,7 @@ export async function synthesizeScript(scriptPath: string, opts: SynthesizeOptio
       // carry an anchor budget through to the committed manifest so the lint
       // (which reads the manifest) sees it (§narration-lint); per-segment wins
       ...(seg.maxSec !== undefined ? { maxSec: seg.maxSec } : {}),
+      ...(voiceProvenance !== null ? { voice: voiceProvenance } : {}),
     };
     if (words) {
       timed.words = words.map(
