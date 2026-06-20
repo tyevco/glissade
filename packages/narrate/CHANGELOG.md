@@ -1,5 +1,52 @@
 # @glissade/narrate
 
+## 0.16.0
+
+### Minor Changes
+
+- 6ce395e: feat(narrate): blended Kokoro voices — pinned style-vector interpolation (gh#2)
+
+  A segment's `voice` now accepts EITHER a provider voice name (string, unchanged)
+  OR a Kokoro **blend spec** — a weighted sum of two-or-more base voices' `[510×256]`
+  style vectors:
+
+  ```jsonc
+  "voice": { "blend": [["zf_xiaoni", 0.65], ["zf_xiaoxiao", 0.35]] }
+  ```
+
+  Weights normalize to sum to 1; the summed style vector is computed once at prepare
+  from the committed Apache-2.0 `voices/<name>.bin` bytes (the blend of two Apache-2.0
+  voices is itself a derived Apache-2.0 voice, logged at synth for provenance) and driven
+  through the model directly (the g2p-bypass route — a blend has no registered name). The
+  blend identity (base names + normalized weights + a spec version) folds into the segment
+  cache key, so any weight / base-voice change re-synthesizes exactly the affected segments,
+  mirroring the 0.15 misaki g2p-identity contract.
+
+  Language is inferred from the base-voice prefixes (all `zf_`/`zm_` → Chinese via
+  `misaki[zh]`; all English → English); a mixed-language blend throws. Chinese (`z*`) blends
+  are the tested deliverable; English blends are scoped out as a documented follow-up (the
+  model's English phonemizer isn't exposed for the bypass route). Non-kokoro providers reject
+  a blend with a clear error. Prepare-time only — render, `evaluate()`, and the golden frames
+  are untouched.
+
+### Patch Changes
+
+- 577f485: narrate: record per-segment voice provenance in the timing manifest (blend artifact auditability, gh#2)
+
+  Each `TimedSegment` now carries an optional `voice` field recording the RESOLVED
+  voice identity that produced its audio: a named voice records its name (e.g.
+  `"zf_xiaoxiao"`); a blend records its canonical `blendIdentity()` recipe
+  (`blend=[zf_xiaoni:0.650000,zf_xiaoxiao:0.350000 lang=zh v1]` — normalized
+  weights + base names + language + BLEND_SPEC_VERSION). Optional/additive: omitted
+  when a segment used the provider/script default with no explicit voice. Lets you
+  audit, from the committed `timing.json`, which voice/blend produced each segment
+  (a script may use different blends per segment, which the script-level
+  `providerVersion` cannot capture). No cache-key change — invalidation was already
+  correct via `voiceCacheIdentity`.
+
+  - @glissade/core@0.16.0
+  - @glissade/scene@0.16.0
+
 ## 0.16.0-pre.1
 
 ### Patch Changes
