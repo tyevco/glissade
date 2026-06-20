@@ -285,6 +285,14 @@ export function lintTimingPathFor(input: string): Promise<string>;
 // @public
 export function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule>;
 
+// @public
+export class LocaleArgsError extends Error {
+    constructor(detail: string);
+}
+
+// @public
+export function localeOutPath(out: string, locale: string, format?: 'png-seq'): string;
+
 // @public (undocumented)
 export const LOUDNESS_SCHEMA_VERSION: 1;
 
@@ -394,6 +402,9 @@ export function parseCacheMaxSize(flag: string): number;
 export function parseEncoderList(output: string): Set<string>;
 
 // @public
+export function parseLocalesList(raw: string): string[];
+
+// @public
 export function parseLoudnormJson(stderr: string): {
     inputI: number;
     inputTp: number;
@@ -444,6 +455,15 @@ export function render(opts: RenderOptions): Promise<{
     frames: number;
     out: string;
 }>;
+
+// @public
+export function renderLocales(opts: Omit<RenderOptions, 'locale'>, locales: readonly string[]): Promise<{
+    locale: string;
+    result: {
+        frames: number;
+        out: string;
+    };
+}[]>;
 
 // @public (undocumented)
 export interface RenderOptions {

@@ -122,6 +122,95 @@ export function buildFontExemptSet(
   return exempt;
 }
 
+// --- locales fan-out (§0.15): begin self-contained region ---
+// `gs render <scene> --locales en,zh,ja` renders the scene ONCE PER locale over
+// the existing 0.14 `--locale <code>` path, writing one artifact per locale.
+// Pure CLI orchestration — no render-path change, every per-locale render is the
+// EXACT 0.14 single-locale render, so the 252 goldens stay byte-identical. The
+// loop runs sequentially: `render()` → `loadSceneModule()` calls `setMessageTable`
+// at the top of every iteration, fully REPLACING the ambient i18n table, so the
+// per-locale ambient state can't leak between iterations (no snapshot/restore
+// needed against today's module-global table; if i18n-hardening later threads the
+// table via AsyncLocalStorage, this loop composes over it unchanged — each
+// `render()` call is still a self-contained locale).
+
+export class LocaleArgsError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'LocaleArgsError';
+  }
+}
+
+/**
+ * Parse the `--locales <a,b,c>` comma-separated list into a de-duplicated,
+ * order-preserving array of locale codes. Empty / whitespace-only entries are
+ * dropped; an all-empty list is rejected (a `--locales` with nothing to render
+ * is a user error, not a silent no-op).
+ */
+export function parseLocalesList(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(',')) {
+    const code = part.trim();
+    if (code === '' || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  if (out.length === 0) {
+    throw new LocaleArgsError(`--locales is empty — pass a comma-separated list, e.g. --locales en,zh`);
+  }
+  return out;
+}
+
+/**
+ * Derive the per-locale output path from the base `out` and a locale code.
+ *
+ * Convention: a video/PNG FILE path (`out/episode.mp4`, `out/still.png`) gets a
+ * locale segment inserted before the extension → `out/episode.<locale>.mp4`. Any
+ * other `out` (a PNG-sequence DIRECTORY, the default `out`) gets a per-locale
+ * SUBDIR → `out/<locale>` (so `out/en/frame-00000.png`, `out/zh/frame-00000.png`).
+ * `--format png-seq` forces the directory convention even for a video-looking
+ * name, matching how `render()` itself treats `out` under that flag.
+ */
+export function localeOutPath(out: string, locale: string, format?: 'png-seq'): string {
+  const isVideoName = format !== 'png-seq' && /\.(mp4|webm)$/i.test(out);
+  const isPngFile = format !== 'png-seq' && /\.png$/i.test(out);
+  if (isVideoName || isPngFile) {
+    return out.replace(/(\.[^.]+)$/, `.${locale}$1`);
+  }
+  // directory (PNG sequence) output → a per-locale subdirectory
+  return join(out, locale);
+}
+
+/**
+ * §0.15 `--locales` fan-out: render the scene once per locale, writing one
+ * artifact per locale to a distinct per-locale path (`localeOutPath`). Each
+ * per-locale render IS the 0.14 single-`--locale` render — so `--locales en,zh`
+ * ≡ `--locale en` then `--locale zh` with distinct outputs.
+ *
+ * Fails LOUDLY: a locale in the list with no resolvable assets throws the 0.14
+ * `UnknownLocaleError` (naming the bad locale) from inside `render()`, aborting
+ * the whole fan-out — locales already rendered keep their artifacts, but the
+ * process exits non-zero so a missing-asset locale is never silently skipped.
+ */
+export async function renderLocales(
+  opts: Omit<RenderOptions, 'locale'>,
+  locales: readonly string[],
+): Promise<{ locale: string; result: { frames: number; out: string } }[]> {
+  const results: { locale: string; result: { frames: number; out: string } }[] = [];
+  for (const locale of locales) {
+    const result = await render({
+      ...opts,
+      out: localeOutPath(opts.out, locale, opts.format),
+      locale,
+    });
+    results.push({ locale, result });
+  }
+  return results;
+}
+// --- locales fan-out: end self-contained region ---
+
+/** A scene module's default export is not a valid `SceneModule`. */
 export class SceneModuleError extends Error {
   constructor(modulePath: string, detail: string) {
     super(

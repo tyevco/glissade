@@ -4,7 +4,7 @@
  *   gs render <scene-module> [--out <dir|file.mp4|file.webm>] [--fps N] [--range a..b]
  */
 
-import { render, parseFrameRange } from './render.js';
+import { render, parseFrameRange, renderLocales, parseLocalesList, LocaleArgsError } from './render.js';
 import { parseCaptionsMode, type CaptionsMode } from './captions.js';
 import { parseArgs } from './args.js';
 
@@ -73,6 +73,11 @@ render options:
                    off by default, IGNORED under --strict so the strict verdict stays host-independent; §3.6)
   --locale <code>  resolve the scene against messages.<code>.json (node-id text + free-standing t() keys) and prefer
                    the <base>.<code>.narration.timing.json sibling (0.14). No --locale resolves the BASE files
+  --locales <a,b>  (0.15) fan out: render the scene ONCE PER comma-separated locale, each over the --locale <code>
+                   path, to a DISTINCT per-locale output. A video/png --out gets a locale segment before the
+                   extension (out/ep.mp4 → out/ep.<locale>.mp4); a directory --out gets a per-locale subdir
+                   (out/ → out/<locale>/). Mutually exclusive with --locale. A locale with NO resolvable assets
+                   aborts the whole fan-out with the same UnknownLocaleError --locale throws (never silently skipped)
 
 diff options (DisplayList diff vs a committed baseline — exits non-zero on any divergence):
   --at <t>         time in SECONDS to evaluate the scene at (required)
@@ -461,10 +466,26 @@ async function main(): Promise<void> {
     process.stderr.write('note: --watch is not yet implemented in this release; rendering once\n');
   }
 
+  // --locales <a,b,c> (0.15 fan-out): render once per locale to distinct paths.
+  // Mutually exclusive with --locale (a single render can't be many locales at
+  // once); passing both is a user error. Self-contained block (clean hand-merge
+  // with the i18n-hardening edits to render.ts).
+  let locales: string[] | undefined;
+  if (flags.has('locales') && flags.get('locales')) {
+    if (flags.has('locale') && flags.get('locale')) {
+      fail('--locale and --locales are mutually exclusive — pass one (--locale renders a single locale; --locales fans out over many)');
+    }
+    try {
+      locales = parseLocalesList(flags.get('locales')!);
+    } catch (err) {
+      fail(err instanceof LocaleArgsError ? err.message : err instanceof Error ? err.message : String(err));
+    }
+  }
+
   const fpsFlag = flags.get('fps');
   const started = performance.now();
   try {
-    const result = await render({
+    const sharedOpts = {
       modulePath,
       out: flags.get('out') ?? 'out',
       ...(fpsFlag ? { fps: parseInt(fpsFlag, 10) } : {}),
@@ -484,13 +505,12 @@ async function main(): Promise<void> {
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
-      ...(flags.has('locale') && flags.get('locale') ? { locale: flags.get('locale')! } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),
       sfx: flags.get('sfx') === 'off' ? ('off' as const) : ('auto' as const),
       loudness: flags.get('loudness') === 'off' ? ('off' as const) : ('auto' as const),
-      onProgress: (n, total) => {
+      onProgress: (n: number, total: number) => {
         // TTY: live \r line; piped/CI: sparse newline-terminated updates
         if (process.stderr.isTTY) {
           if (n % 30 === 0 || n === total) process.stderr.write(`\rrendering ${n}/${total} frames`);
@@ -498,10 +518,26 @@ async function main(): Promise<void> {
           process.stderr.write(`rendering ${n}/${total} frames\n`);
         }
       },
-    });
-    const secs = ((performance.now() - started) / 1000).toFixed(2);
+    } satisfies import('./render.js').RenderOptions;
+
     const cr = process.stderr.isTTY ? '\r' : '';
-    process.stderr.write(`${cr}rendered ${result.frames} frames in ${secs}s → ${result.out}\n`);
+    if (locales) {
+      // 0.15 fan-out: render once per locale to distinct per-locale paths. A bad
+      // locale throws UnknownLocaleError from inside render(), aborting the loop.
+      const fan = await renderLocales(sharedOpts, locales);
+      const secs = ((performance.now() - started) / 1000).toFixed(2);
+      for (const { locale, result } of fan) {
+        process.stderr.write(`${cr}rendered [${locale}] ${result.frames} frames → ${result.out}\n`);
+      }
+      process.stderr.write(`done: ${fan.length} locale${fan.length === 1 ? '' : 's'} in ${secs}s\n`);
+    } else {
+      const result = await render({
+        ...sharedOpts,
+        ...(flags.has('locale') && flags.get('locale') ? { locale: flags.get('locale')! } : {}),
+      });
+      const secs = ((performance.now() - started) / 1000).toFixed(2);
+      process.stderr.write(`${cr}rendered ${result.frames} frames in ${secs}s → ${result.out}\n`);
+    }
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
   }

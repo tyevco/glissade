@@ -1,6 +1,9 @@
 // @glissade/cli — programmatic render API; the `gs` binary wraps this.
 export {
   render,
+  renderLocales,
+  parseLocalesList,
+  localeOutPath,
   loadSceneModule,
   ffmpegAvailable,
   planFinalAudio,
@@ -8,6 +11,7 @@ export {
   resolveLoudnessGainDb,
   buildMixWav,
   SceneModuleError,
+  LocaleArgsError,
   type RenderOptions,
 } from './render.js';
 export {
