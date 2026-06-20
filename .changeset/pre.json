@@ -34,6 +34,7 @@
     "morph-flip",
     "presence-enter-exit",
     "verify-determinism-against-robustness",
-    "woff2-decode-coverage"
+    "woff2-decode-coverage",
+    "woff2-uint8array-decode"
   ]
 }
