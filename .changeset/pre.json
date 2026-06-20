@@ -33,6 +33,7 @@
     "mesh-lerp-quality",
     "morph-flip",
     "presence-enter-exit",
-    "verify-determinism-against-robustness"
+    "verify-determinism-against-robustness",
+    "woff2-decode-coverage"
   ]
 }
