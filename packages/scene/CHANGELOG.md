@@ -1,5 +1,33 @@
 # @glissade/scene
 
+## 0.14.0-pre.0
+
+### Minor Changes
+
+- 7456761: Add the 0.14 scalar→vec2 **bind-time type guard** (§2.2) — the runtime correctness floor for the silent-NaN class. A scalar `number` track bound to a `vec2` prop (e.g. authoring `scale: 0.8` instead of `[0.8, 0.8]`) used to silently sample to `[undefined, undefined]` → a NaN matrix → the node and its whole subtree vanishing, with no error. Any track-type ↔ target-shape mismatch (a `number` track on a `paint`/`path` prop, a `color` on a `number`, …) was the same silent failure.
+
+  Now `bindTimeline` (`@glissade/core`) checks each compiled track's `type` against the target's declared accepted type and hard-throws a typed `BindTypeMismatchError` — naming the target, the got (track) type, the expected (prop) type, and a fix hint (`scale.x`/`scale.y` for the vec2 case). This matches the existing "unbound tracks are build errors" precedent (`UnboundTargetError`): a mismatched bind is a build error, not a silent no-op.
+
+  Mechanism (additive, golden-safe — a _correct_ bind is unchanged, so all 252 goldens stay byte-identical):
+
+  - `BindTarget` (core) gains `readonly expects: ValueTypeId | readonly ValueTypeId[]` (an array for a polymorphic prop — a Shape `fill` accepts both `color` and `paint`). New exports: `BindTypeMismatchError`, the `Vec2Component` type.
+  - `vec2Signal` tags its compound (`'vec2'`) and its `.x`/`.y` sub-signals (`'number'`).
+  - `registerTarget` (`@glissade/scene`) takes the prop's accepted type and stamps it; every node prop is tagged (`position`/`scale` vec2; their `.x`/`.y` + `opacity`/`rotation`/`zIndex`/`width`/`height`/`cornerRadius`/`radius`/`strokeWidth`/`reveal`/`fontSize`/Layout/shader uniforms number; `fill` color|paint, `stroke`/Text-`fill`/Highlight color, `d` path, `text` string).
+
+  The 0.13 clip stdlib `popIn`/`pulse` already author vec2 `scale` keys, so they pass the new guard unchanged. The scalar→pair _broadcast_ (lifting `0.8` → `[0.8, 0.8]`) is deliberately deferred to 0.15 — it would mask the wrong-prop mistakes this guard is meant to catch.
+
+### Patch Changes
+
+- 3281514: 0.14 DX bundle — three render-surface paper-cuts:
+
+  - **Clearer undeclared-asset error.** `gs render` now pre-validates every Image/Video `assetId` against `timeline.assets` before evaluation, throwing an `UnknownAssetError` that names the real mistake — an Image/Video needs an `assetId` + a `timeline.assets` entry `{ kind, url }`, not a `src` URL (§2.5: remote URLs are not fetched at render) — instead of the downstream `asset 'undefined' not ready` ColdAssetError. (Image/Video carry a new `static assetKind` marker so the walk stays robust; the validation lives in the CLI, off the embed path.)
+  - **No false font-validation warning for GlobalFonts/system families.** `gs render` builds an `osFamilies` set from `GlobalFonts.families` and exempts those families from the §3.6 unregistered-family check, so a family registered via `GlobalFonts.registerFromPath` (or OS-installed) no longer warns as "unregistered". A genuinely-unregistered family still warns.
+  - **`each()` jitter decorrelation.** The per-index motion-jitter RNG is now salted (`mix(mix(baseSeed, i), JITTER_SALT)`) so it decorrelates from `ctx.rng` (both previously derived from the same `mix(baseSeed, i)` stream). Determinism-neutral; no corpus golden uses each-jitter, so all golden frames stay byte-identical.
+
+- Updated dependencies [1795d1c]
+- Updated dependencies [7456761]
+  - @glissade/core@0.14.0-pre.0
+
 ## 0.13.0
 
 ### Minor Changes
