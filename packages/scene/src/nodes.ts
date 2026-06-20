@@ -495,6 +495,8 @@ export interface ImageProps extends NodeProps {
 }
 
 export class ImageNode extends Node {
+  /** Marks this node as referencing a kind 'image' timeline asset (§2.3). */
+  static readonly assetKind = 'image' as const;
   readonly assetId: string;
   readonly width: BindableSignal<number>;
   readonly height: BindableSignal<number>;
@@ -547,6 +549,8 @@ export interface VideoProps extends NodeProps {
  * and references the exact source-grid frame; backends resolve it.
  */
 export class Video extends Node {
+  /** Marks this node as referencing a kind 'video' timeline asset (§3.8). */
+  static readonly assetKind = 'video' as const;
   readonly assetId: string;
   readonly at: number;
   readonly trimStart: number;

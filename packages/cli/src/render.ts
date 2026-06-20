@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
 import { buildFontRegistry, type AudioClip } from '@glissade/core';
 import { evaluate, validateSceneFonts, withDeterminismGuards, type SceneModule } from '@glissade/scene';
+import { collectAssetReferences, validateAssetReferences } from './assetValidation.js';
 import { SkiaBackend } from '@glissade/backend-skia';
 
 export interface RenderOptions {
@@ -248,6 +249,15 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     await loadYogaLayoutEngine();
   }
 
+  // Pre-validate every Image/Video asset reference against the declared
+  // timeline assets BEFORE warming/evaluate, so an undeclared (or undefined —
+  // the `new Image({ src })` mistake) asset id surfaces the REAL cause instead
+  // of the downstream `asset 'undefined' not ready` ColdAssetError (§2.5).
+  validateAssetReferences(
+    collectAssetReferences(scene.root as unknown as Parameters<typeof collectAssetReferences>[0]),
+    Object.keys(doc.assets ?? {}),
+  );
+
   // Warm timeline assets before evaluation (§2.5 readiness precondition).
   const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
   const { resolveAssetPath: resolveAsset } = await import('./audioMix.js');
@@ -285,6 +295,18 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     }
   }
 
+  // --- osFamilies (§3.6, 0.14): begin self-contained region ---
+  // A family registered via GlobalFonts.registerFromPath or installed on the OS
+  // (i.e. resolvable by Skia without glissade's FontRegistry) must NOT warn as
+  // "unregistered family" — that's pure noise on a scene that renders fine.
+  // Build the case-folded OS/GlobalFonts family set and exempt it. `families` is
+  // `{ family, styles }[]` in @napi-rs/canvas; lower-case to match isExemptFamily.
+  const { GlobalFonts: GlobalFontsForValidation } = await import('@napi-rs/canvas');
+  const osFamilies = new Set<string>(
+    GlobalFontsForValidation.families.map((f) => f.family.toLowerCase()),
+  );
+  // --- osFamilies: end self-contained region ---
+
   // §3.6 font validation: dev-warn by default, --strict throws on an
   // unregistered non-generic family or an uncovered glyph.
   await validateSceneFonts(
@@ -298,7 +320,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
         return undefined;
       }
     },
-    { mode: opts.strictFonts ? 'strict' : 'dev' },
+    { mode: opts.strictFonts ? 'strict' : 'dev', osFamilies },
   );
 
   for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {

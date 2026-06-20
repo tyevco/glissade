@@ -83,6 +83,28 @@ describe('validateSceneFonts', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
+  it('exempts an osFamilies (GlobalFonts/system) family — no unregistered warn', async () => {
+    // mirrors render.ts: a family registered via GlobalFonts.registerFromPath or
+    // OS-installed is passed in osFamilies (lower-cased) and must NOT warn, while
+    // a genuinely-unregistered family in the SAME scene still does.
+    const warn = vi.fn();
+    setDevWarning(warn);
+    const scene = createScene({
+      size: { w: 10, h: 10 },
+      children: [
+        new Text({ text: 'Hi', fontFamily: 'DejaVu Sans' }), // exempt via osFamilies
+        new Text({ text: 'Yo', fontFamily: 'Brand Sans' }), // genuinely unregistered
+      ],
+    });
+    const report = await validateSceneFonts(scene, timeline({}), noBytes, {
+      mode: 'dev',
+      osFamilies: new Set(['dejavu sans']),
+    });
+    expect(report.unregistered).toEqual(['Brand Sans']); // DejaVu Sans exempted
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![0]).not.toContain('DejaVu Sans');
+  });
+
   it('default mode is dev (no throw) when option omitted', async () => {
     const scene = createScene({
       size: { w: 10, h: 10 },

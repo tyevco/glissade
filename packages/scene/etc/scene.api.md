@@ -642,6 +642,7 @@ class ImageNode extends Node_2 {
     constructor(props: ImageProps);
     // (undocumented)
     readonly assetId: string;
+    static readonly assetKind: "image";
     // (undocumented)
     protected draw(out: DisplayListBuilder): void;
     // (undocumented)
@@ -1456,6 +1457,7 @@ export class Video extends Node_2 {
     constructor(props: VideoProps);
     // (undocumented)
     readonly assetId: string;
+    static readonly assetKind: "video";
     // (undocumented)
     readonly at: number;
     // (undocumented)

@@ -181,6 +181,30 @@ describe('each — jitter determinism', () => {
     expect(() => withDeterminismGuards('throw', build)).not.toThrow(DeterminismViolationError);
     expect(withDeterminismGuards('throw', build).tracks).toEqual(build().tracks);
   });
+
+  it('jitter rng is decorrelated from ctx.rng at the same index (salt)', () => {
+    // The factory rng (ctx.rng) and the per-index jitter rng both derive from
+    // the base seed + index; without a distinct salt they would be the SAME
+    // stream — drawing the SAME first value at every index. Capture both axes'
+    // first draw per index and assert they diverge.
+    const ctxDraws: number[] = [];
+    const jitterDraws: number[] = [];
+    const factory = (i: number, ctx: { rng: () => number }): Rect => {
+      ctxDraws[i] = ctx.rng();
+      return new Rect({ width: 40, height: 40, fill: '#9ef0c0' });
+    };
+    const jit = (i: number, rng: () => number): Record<string, ChannelOverride> => {
+      jitterDraws[i] = rng();
+      return { opacity: { to: jitterDraws[i]! } };
+    };
+    each(6, factory, { id: 'card', layout: { kind: 'row' }, seed: 7, motion: { clip: popIn(), jitter: jit } });
+    expect(ctxDraws).toHaveLength(6);
+    expect(jitterDraws).toHaveLength(6);
+    // not a single index shares its first draw across the two rng axes
+    for (let i = 0; i < 6; i++) {
+      expect(jitterDraws[i]).not.toBe(ctxDraws[i]);
+    }
+  });
 });
 
 describe('each — edge cases', () => {

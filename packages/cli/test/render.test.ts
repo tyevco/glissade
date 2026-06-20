@@ -5,11 +5,12 @@
  * back-compat of the seconds-based programmatic `range`.
  */
 
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createCanvas } from '@napi-rs/canvas';
 import { render, parseFrameRange } from '../src/render.js';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -68,5 +69,64 @@ describe('render frame-indexing', () => {
     expect(result.out).toBe(out);
     expect(existsSync(out)).toBe(true);
     expect(statSync(out).isFile()).toBe(true); // a file at the path, not out/frame-00007.png
+  });
+});
+
+describe('render asset-reference pre-validation (0.14 DX)', () => {
+  it('an undeclared assetId fails before evaluate with the real-cause message', async () => {
+    const mod = join(outDir, 'undeclared-asset.ts');
+    writeFileSync(
+      mod,
+      `
+import { timeline } from '@glissade/core';
+import { createScene, Rect, Image, type SceneModule } from '@glissade/scene';
+const m: SceneModule = {
+  createScene: () => createScene({
+    size: { w: 64, h: 64 },
+    children: [
+      new Rect({ id: 'bg', width: 64, height: 64, position: [32, 32], fill: '#000' }),
+      new Image({ id: 'logo', assetId: 'logo', width: 32, height: 32, position: [32, 32] }),
+    ],
+  }),
+  timeline: timeline({ duration: 1, fps: 30, assets: { other: { kind: 'image', url: './x.png' } } }),
+};
+export default m;
+`,
+    );
+    await expect(render({ modulePath: mod, out: join(outDir, 'undeclared'), frame: 0 })).rejects.toThrow(
+      /assetId 'logo' .* is not declared in timeline\.assets \(declared: other\) .* not a `src` URL/s,
+    );
+  });
+
+  it('a declared assetId renders normally', async () => {
+    // write a real 32x32 PNG next to the scene so warming resolves it
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-asset-ok-'));
+    const c = createCanvas(32, 32);
+    const cx = c.getContext('2d');
+    cx.fillStyle = '#ff0000';
+    cx.fillRect(0, 0, 32, 32);
+    writeFileSync(join(dir, 'logo.png'), c.toBuffer('image/png'));
+    const mod = join(dir, 'declared-asset.ts');
+    writeFileSync(
+      mod,
+      `
+import { timeline } from '@glissade/core';
+import { createScene, Rect, Image, type SceneModule } from '@glissade/scene';
+const m: SceneModule = {
+  createScene: () => createScene({
+    size: { w: 64, h: 64 },
+    children: [
+      new Rect({ id: 'bg', width: 64, height: 64, position: [32, 32], fill: '#000' }),
+      new Image({ id: 'logo', assetId: 'logo', width: 32, height: 32, position: [32, 32] }),
+    ],
+  }),
+  timeline: timeline({ duration: 1, fps: 30, assets: { logo: { kind: 'image', url: './logo.png' } } }),
+};
+export default m;
+`,
+    );
+    const result = await render({ modulePath: mod, out: join(dir, 'out.png'), frame: 0 });
+    expect(existsSync(result.out)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

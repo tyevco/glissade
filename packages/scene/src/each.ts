@@ -128,6 +128,15 @@ function mix(seed: number, i: number): number {
   return (h ^ (h >>> 15)) >>> 0;
 }
 
+/**
+ * Salt folded into the motion-jitter seed so the per-index jitter rng
+ * decorrelates from `ctx.rng` (the factory rng). Both axes derive from
+ * `mix(baseSeed, i)`; without a distinct salt they would be the SAME stream,
+ * so a factory that draws from `ctx.rng` and a `jitter` callback would see
+ * correlated "independent" randomness. An arbitrary fixed odd constant.
+ */
+const JITTER_SALT = 0x6a09e667;
+
 /** Resolve a built-in layout (or call the escape-hatch fn) to a fraction. */
 function placeAt(layout: EachLayout, i: number, n: number): Place {
   if (typeof layout === 'function') return layout(i, n);
@@ -260,7 +269,9 @@ export function each(
     const start = m.startSec ?? 0;
     const at = staggerFn(m, n);
     for (let i = 0; i < n; i++) {
-      const rngI = random(mix(baseSeed, i));
+      // salt the jitter seed so it decorrelates from ctx.rng (both otherwise
+      // derive from mix(baseSeed, i) — the same stream).
+      const rngI = random(mix(mix(baseSeed, i), JITTER_SALT));
       const overrides = m.jitter?.(i, rngI, n);
       const applyOpts: ApplyOpts = {
         ...(overrides !== undefined ? { overrides } : {}),
