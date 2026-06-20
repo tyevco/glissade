@@ -24,6 +24,7 @@ import {
   type TimedSegment,
   type TimedWord,
 } from './index.js';
+import { misakiZhG2p, type ZhG2p } from './zh-g2p.js';
 
 export interface TtsRequest {
   text: string;
@@ -323,6 +324,10 @@ interface KokoroAudio {
 }
 interface KokoroModel {
   generate(text: string, opts: { voice?: string; speed?: number }): Promise<KokoroAudio>;
+  /** char-isolated tokenizer over kokoro's phoneme alphabet → model input ids */
+  tokenizer(text: string, opts?: { truncation?: boolean }): { input_ids: unknown };
+  /** the g2p BYPASS: pre-tokenized phoneme ids straight to the model (no espeak) */
+  generate_from_ids(input_ids: unknown, opts: { voice?: string; speed?: number }): Promise<KokoroAudio>;
 }
 interface KokoroLib {
   KokoroTTS: { from_pretrained(id: string, opts: { dtype?: string; device?: string }): Promise<KokoroModel> };
@@ -392,9 +397,20 @@ function resolveKokoro(): { entryUrl: string; version: string } {
   );
 }
 
-export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: KokoroDtype } = {}): TtsProvider {
+/** A z* (zf_/zm_) kokoro voice routes through misaki[zh] g2p (not espeak cmn). */
+export function isKokoroChineseVoice(voice: string): boolean {
+  return voice.startsWith('zf_') || voice.startsWith('zm_');
+}
+
+export function kokoroProvider(
+  opts: { model?: string; voice?: string; dtype?: KokoroDtype; zhG2p?: ZhG2p } = {},
+): TtsProvider {
   const modelId = opts.model ?? KOKORO_MODEL;
   const dtype: KokoroDtype = opts.dtype ?? 'q8';
+  // the Chinese g2p seam (Fork B = pinned Python misaki[zh]); injectable for tests
+  const zhG2p: ZhG2p = opts.zhG2p ?? misakiZhG2p();
+  // the default voice is English, so a z* run only happens when a z* voice is set
+  const usesChinese = isKokoroChineseVoice(opts.voice ?? KOKORO_DEFAULT_VOICE);
   let loaded: Promise<KokoroModel> | null = null;
 
   const loadLib = async (): Promise<KokoroLib> => {
@@ -424,29 +440,43 @@ export function kokoroProvider(opts: { model?: string; voice?: string; dtype?: K
       // packaging can move bytes); resolveKokoro throws the install hint +
       // real error when the optional peer is absent (feature-detection)
       const { version } = resolveKokoro();
-      return Promise.resolve(`kokoro-js ${version} ${basename(modelId)} dtype=${dtype}`);
+      let v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype}`;
+      // CACHE-REPRODUCIBILITY: when this provider is configured for a Chinese
+      // (z*) voice, the misaki[zh] g2p identity (engine-id + jieba-dict hash +
+      // phoneme-map version + the pinned Python-misaki wheel) folds in — any of
+      // those moving must invalidate the segment cache (else stale/divergent
+      // audio). English-only runs never touch the g2p (no Python required).
+      if (usesChinese) v += ` g2p=[${zhG2p.version()}]`;
+      return Promise.resolve(v);
     },
     synthesize: async (req) => {
       const voice = req.voice ?? opts.voice ?? KOKORO_DEFAULT_VOICE;
-      // kokoro Chinese (z*) floor: kokoro-js 1.2.1 routes Chinese through espeak-ng
-      // `cmn`, NOT the misaki[zh] g2p these voices were trained on → mismatched
-      // phonemes → garbled audio. Hard-error (before loading the model) rather
-      // than ship garble.
-      if (voice.startsWith('zf_') || voice.startsWith('zm_')) {
-        throw new NarrationError(
-          'kokoro Chinese voices (z*) need misaki[zh] g2p (pinyin+jieba), which is not wired — ' +
-            'kokoro-js routes zh through espeak-ng cmn (mismatched phonemes → garbled). ' +
-            'Use --provider piper for Chinese. (tracked: card 24vKUw2HVC6D)',
-        );
-      }
-      const tts = await getModel();
+      const speed = req.rate !== undefined && req.rate > 0 ? req.rate : undefined;
       const genOpts: { voice: string; speed?: number } =
-        req.rate !== undefined && req.rate > 0 ? { voice, speed: req.rate } : { voice };
+        speed !== undefined ? { voice, speed } : { voice };
       let audio: KokoroAudio;
-      try {
-        audio = await tts.generate(req.text, genOpts);
-      } catch (e) {
-        throw new NarrationError(`kokoro synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
+      // kokoro Chinese (z*) route: kokoro-js 1.2.x `generate(text)` only phonemizes
+      // via espeak (en), so z* text through it garbles. Instead run the misaki[zh]
+      // g2p these voices were trained on, then drive the g2p BYPASS:
+      //   text → zhG2p(text) → tokenizer(phonemes) → generate_from_ids(ids, {voice}).
+      // The g2p identity folds into version() (above) → the cache key. Non-z*
+      // voices keep the unchanged `generate(text)` espeak path.
+      if (isKokoroChineseVoice(voice)) {
+        const phonemes = zhG2p.phonemize(req.text); // throws the install hint if Python/misaki absent
+        const tts = await getModel();
+        try {
+          const { input_ids } = tts.tokenizer(phonemes, { truncation: true });
+          audio = await tts.generate_from_ids(input_ids, genOpts);
+        } catch (e) {
+          throw new NarrationError(`kokoro Chinese synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      } else {
+        const tts = await getModel();
+        try {
+          audio = await tts.generate(req.text, genOpts);
+        } catch (e) {
+          throw new NarrationError(`kokoro synthesis failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
       const wav = floatToWav(audio.audio, audio.sampling_rate);
       return { wav, duration: wavDuration(wav) };

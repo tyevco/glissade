@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { NarrationError, type NarrationScript } from '../src/index.js';
+import { misakiZhG2p } from '../src/zh-g2p.js';
 import {
   alignerById,
   cacheKey,
@@ -122,16 +123,35 @@ describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
     expect(wavDuration(a)).toBeCloseTo(2400 / 24000, 9);
   });
 
-  it('Chinese voices (z*) HARD-ERROR before loading the model (espeak cmn ≠ misaki[zh] → garbled)', async () => {
-    // The guard fires before getModel(), so it throws even without the 92MB model
-    // downloaded — naming misaki[zh] and the piper escape hatch.
-    const p = kokoroProvider();
-    await expect(p.synthesize({ text: '你好', voice: 'zf_xiaoxiao' })).rejects.toThrow(NarrationError);
-    await expect(p.synthesize({ text: '你好', voice: 'zf_xiaoxiao' })).rejects.toThrow(
-      /misaki\[zh].*piper/s,
-    );
-    // a zm_ (male) voice trips the same floor
-    await expect(p.synthesize({ text: '你好', voice: 'zm_yunxi' })).rejects.toThrow(/misaki\[zh]/);
+  it('Chinese voices (z*) route through misaki[zh] g2p (0.15) — not the old hard-error', async () => {
+    // 0.15 flip: z* no longer hard-errors. It runs the misaki[zh] g2p, then the
+    // generate_from_ids bypass. The retired floor said "(z*) need misaki[zh] g2p
+    // ... which is not wired" — that message must be GONE from every z* path.
+    const g2pAvailable = (() => {
+      try {
+        misakiZhG2p().version();
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!g2pAvailable) {
+      // g2p absent → phonemize throws BEFORE the model loads, with the install
+      // hint (Python/misaki), and NEVER the retired "not wired" floor.
+      const p = kokoroProvider();
+      const err = await p.synthesize({ text: '你好', voice: 'zf_xiaoxiao' }).then(
+        () => null,
+        (e: Error) => e,
+      );
+      expect(err).toBeInstanceOf(NarrationError);
+      expect(err!.message).toMatch(/misaki\[zh].*pip install/s);
+      expect(err!.message).not.toMatch(/not wired/);
+    } else {
+      // g2p present → the phoneme step succeeds; the seam reproduces the spike
+      // line. (The full model round-trip is the gated KOKORO=1 test below.)
+      expect(misakiZhG2p().phonemize('你好')).toBe('ni↓xau↓');
+    }
   });
 
   it('an English voice (af_heart) is NOT caught by the z* guard', async () => {
@@ -161,6 +181,31 @@ const KOKORO_GATED = process.env['KOKORO'] === '1';
     expect(a.wav.equals(b.wav)).toBe(true);
     expect(a.duration).toBeCloseTo(b.duration, 9);
   }, 180_000);
+
+  // the 0.15 headline: a z* voice synthesizes Mandarin via the misaki[zh] →
+  // generate_from_ids route WITHOUT throwing (mirrors kokoro-zh-spike.test.ts).
+  // Doubly gated: KOKORO=1 (model) AND misaki importable (the g2p shell-out).
+  const misakiOk = (() => {
+    try {
+      misakiZhG2p().version();
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  (misakiOk ? it : it.skip)(
+    'a z* voice synthesizes a Mandarin line via the misaki[zh] route (no throw)',
+    async () => {
+      const p = kokoroProvider({ voice: 'zf_xiaoxiao', dtype: 'q8' });
+      // version() must fold the g2p identity for a z* provider (cache key)
+      expect(await p.version()).toMatch(/g2p=\[misaki-zh /);
+      const r = await p.synthesize({ text: '你好世界', voice: 'zf_xiaoxiao' });
+      expect(r.wav.length).toBeGreaterThan(44); // real PCM, not just a header
+      expect(r.duration).toBeGreaterThan(0.1);
+      expect(r.duration).toBeLessThan(10);
+    },
+    180_000,
+  );
 });
 
 describe('piperProvider (feature-detected, like espeak/openai)', () => {
