@@ -27,6 +27,8 @@
     "guard-repr-compat",
     "i18n-hardening-5pack",
     "locales-fan-out",
+    "localized-loudness",
+    "misaki-g2p-cache-identity",
     "misaki-zh-g2p-fork-b"
   ]
 }
