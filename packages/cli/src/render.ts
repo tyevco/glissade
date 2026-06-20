@@ -204,6 +204,11 @@ export function localeOutPath(out: string, locale: string, format?: 'png-seq'): 
  * `UnknownLocaleError` (naming the bad locale) from inside `render()`, aborting
  * the whole fan-out — locales already rendered keep their artifacts, but the
  * process exits non-zero so a missing-asset locale is never silently skipped.
+ *
+ * 0.15 FIX 2: a per-locale loudness dead-end (no `<stem>.<locale>.loudness.json`
+ * committed) also aborts the batch — but a bare error mid-fan-out reads like a
+ * generic crash, so each per-locale failure is wrapped to NAME the failing locale.
+ * It still fails loudly (never swallowed): the wrapped message stays actionable.
  */
 export async function renderLocales(
   opts: Omit<RenderOptions, 'locale'>,
@@ -211,11 +216,22 @@ export async function renderLocales(
 ): Promise<{ locale: string; result: { frames: number; out: string } }[]> {
   const results: { locale: string; result: { frames: number; out: string } }[] = [];
   for (const locale of locales) {
-    const result = await render({
-      ...opts,
-      out: localeOutPath(opts.out, locale, opts.format),
-      locale,
-    });
+    let result: { frames: number; out: string };
+    try {
+      result = await render({
+        ...opts,
+        out: localeOutPath(opts.out, locale, opts.format),
+        locale,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // a per-locale dead-end (loudness/assets) mustn't read like a generic batch
+      // crash. The 0.14 UnknownLocaleError and the FIX 2 loudness error already
+      // NAME the locale, so rethrow those as-is (preserving the type). Only wrap an
+      // error that DOESN'T already mention the locale, so it stays actionable.
+      if (err instanceof Error && msg.includes(`'${locale}'`)) throw err;
+      throw new Error(`--locales: locale '${locale}' failed — ${msg}`, { cause: err });
+    }
     results.push({ locale, result });
   }
   return results;
@@ -725,19 +741,21 @@ export async function collectAudioClips(
  * clips — the narration/music/sfx siblings still resolve from `modulePath`.
  */
 export async function collectMixAudioInputs(
-  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>,
   timelineClips?: AudioClip[],
 ): Promise<string[]> {
   // --- FIX 3 (0.15 i18n-hardening): self-contained ambient-table region ---
-  // This no-locale helper calls loadSceneModule(modulePath) (no locale), which
-  // clears the process-global ambient table — a concurrent locale render's table
-  // must not be clobbered or leaked into here. Snapshot/restore around the body.
+  // This helper loads the scene to compile its timeline audio, which sets/clears
+  // the process-global ambient table — a concurrent render's table must not be
+  // clobbered or leaked into here. Snapshot/restore around the body. The 0.15
+  // FIX 2 locale (when set) selects the localized narration sibling so the mixHash
+  // is over the SAME (per-locale) wavs the localized render mixes.
   const { preservingMessageTable } = await import('@glissade/core/i18n');
   return preservingMessageTable(async () => {
     let tl = timelineClips;
     if (tl === undefined) {
       try {
-        const mod = await loadSceneModule(opts.modulePath);
+        const mod = await loadSceneModule(opts.modulePath, opts.locale);
         const { compileTimeline } = await import('@glissade/core');
         tl = [...compileTimeline(mod.timeline).audio];
       } catch {
@@ -773,22 +791,50 @@ export async function collectMixAudioInputs(
  * `.wav`/music stem invalidates the measurement here too (the §5.3 stale-gain
  * gate). `timelineClips` defaults to the scene's compiled timeline audio when
  * omitted, so a bare `{ modulePath }` call still gates correctly.
+ *
+ * 0.15 FIX 2 (localized loudness): a localized render (`--locale zh`) mixes the
+ * per-locale narration → a DIFFERENT mixHash than the base measurement. So when a
+ * locale is set it reads the per-locale file `<stem>.<locale>.loudness.json` FIRST.
+ * When that per-locale file is MISSING it throws an ACTIONABLE per-locale error
+ * (naming the file + the `gs measure-loudness … --locale` to run) instead of the
+ * generic stale-mixHash message — there is otherwise no supported way to commit a
+ * per-locale measurement, so a base file would always read as stale and dead-end.
  */
 export async function resolveLoudnessGainDb(
-  opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx'>,
+  opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx' | 'locale'>,
   timelineClips?: AudioClip[],
 ): Promise<number | null> {
   if ((opts.loudness ?? 'auto') === 'off') return null;
   const { readLoudness, computeMixHash, loudnessPathFor } = await import('./loudness.js');
-  const measurement = readLoudness(opts.modulePath);
-  if (!measurement) return null;
+  const hasLocale = opts.locale !== undefined && opts.locale !== '';
+  const measurement = readLoudness(opts.modulePath, opts.locale);
+  if (!measurement) {
+    // a base render with no committed measurement → no gain (unchanged). But a
+    // LOCALIZED render with no PER-LOCALE measurement is a dead-end (the base file
+    // can't gate the per-locale mix), so fail actionably — UNLESS there is no base
+    // measurement either (the scene opts out of loudness entirely → no gain).
+    if (hasLocale && readLoudness(opts.modulePath) !== null) {
+      const perLocale = loudnessPathFor(opts.modulePath, opts.locale);
+      throw new Error(
+        `loudness: no ${perLocale} for locale '${opts.locale!}' — a localized render mixes the per-locale narration, ` +
+          `which has a different loudness than the base mix, so it needs its OWN measurement. ` +
+          `Run \`gs measure-loudness ${opts.modulePath} --locale ${opts.locale!}\` to commit it ` +
+          `(or pass --loudness off to render this locale without normalization).`,
+      );
+    }
+    return null;
+  }
   const extraInputs = await collectMixAudioInputs(opts, timelineClips);
   const actual = computeMixHash(opts.modulePath, extraInputs);
   if (actual !== measurement.mixHash) {
+    const path = loudnessPathFor(opts.modulePath, opts.locale);
+    const reRun = hasLocale
+      ? `gs measure-loudness ${opts.modulePath} --locale ${opts.locale!}`
+      : `gs measure-loudness ${opts.modulePath}`;
     throw new Error(
-      `loudness: ${loudnessPathFor(opts.modulePath)} is stale — the mix inputs changed since it was measured ` +
+      `loudness: ${path} is stale — the mix inputs changed since it was measured ` +
         `(committed mixHash ${measurement.mixHash.slice(0, 23)}…, current ${actual.slice(0, 23)}…). ` +
-        `Re-run \`gs measure-loudness ${opts.modulePath}\` (or pass --loudness off to render without normalization).`,
+        `Re-run \`${reRun}\` (or pass --loudness off to render without normalization).`,
     );
   }
   return measurement.gain;
@@ -850,19 +896,20 @@ export async function planFinalAudio(
  * what render will later mix. Returns false when the scene has no audio.
  */
 export async function buildMixWav(
-  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>,
+  opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>,
   wavOut: string,
 ): Promise<boolean> {
   if (!ffmpegAvailable()) {
     throw new Error('gs measure-loudness needs FFmpeg on PATH and none was found.');
   }
   // --- FIX 3 (0.15 i18n-hardening): self-contained ambient-table region ---
-  // measure-loudness is a no-locale path: loadSceneModule(modulePath) clears the
-  // process-global ambient table. Snapshot/restore so a concurrent locale render's
-  // table isn't clobbered (and a leaked table can't reach the no-locale mix).
+  // loadSceneModule(modulePath, locale) sets/clears the process-global ambient
+  // table. Snapshot/restore so a concurrent render's table isn't clobbered (and a
+  // leaked table can't reach this mix). 0.15 FIX 2: a locale (when set) selects the
+  // localized narration sibling so measure-loudness measures the per-locale mix.
   const { preservingMessageTable } = await import('@glissade/core/i18n');
   return preservingMessageTable(async () => {
-    const mod = await loadSceneModule(opts.modulePath);
+    const mod = await loadSceneModule(opts.modulePath, opts.locale);
     const scene = mod.createScene();
     const { compileTimeline } = await import('@glissade/core');
     const compiled = compileTimeline(mod.timeline);

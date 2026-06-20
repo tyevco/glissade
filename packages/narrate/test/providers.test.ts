@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { NarrationError, type NarrationScript } from '../src/index.js';
-import { misakiZhG2p } from '../src/zh-g2p.js';
+import { JIEBA_PIN, MISAKI_PIN, PHONEME_MAP_VERSION, misakiZhG2p } from '../src/zh-g2p.js';
 import {
   alignerById,
   cacheKey,
@@ -104,14 +104,38 @@ describe('providerById', () => {
 });
 
 describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
-  it('version() pins lib version + model + dtype (the cache key); absence throws the install hint', async () => {
+  it('version() pins lib version + model + dtype + the g2p identity (the cache key); absence throws the install hint', async () => {
     // kokoro-js is a devDep here, so version() reads its real version without
     // touching the model; a consumer without the optional peer gets the hint.
     try {
-      expect(await kokoroProvider().version()).toMatch(/kokoro-js [\d.]+ Kokoro-82M.* dtype=q8/);
+      const v = await kokoroProvider().version();
+      expect(v).toMatch(/kokoro-js [\d.]+ Kokoro-82M.* dtype=q8/);
       expect(await kokoroProvider({ dtype: 'fp32' }).version()).toMatch(/dtype=fp32/);
+      // FIX 1 (0.15 canary): the g2p identity is ALWAYS folded — even on a
+      // no-opts (English-default) provider, which is how the real CLI path
+      // (providerById('kokoro') / synthesizeScript) constructs it. version() is
+      // pure, so this requires NO Python.
+      expect(v).toMatch(/g2p=\[misaki-zh /);
     } catch (e) {
       expect((e as Error).message).toMatch(/kokoro-js not found.*npm install kokoro-js/s);
+    }
+  });
+
+  it('version() ALWAYS folds the g2p identity even with no z* voice configured (FIX 1; no Python)', async () => {
+    // the BUG: the g2p suffix used to be gated on a constructor z* voice, but the
+    // real CLI constructs kokoroProvider() with NO opts and routes z* per-REQUEST
+    // → the Mandarin segment cache key carried no g2p identity → a pin/map bump
+    // served stale Mandarin audio. Now it's unconditional + pure.
+    const need = async (): Promise<string | null> => {
+      try {
+        return await kokoroProvider().version(); // no voice opt
+      } catch {
+        return null; // kokoro-js peer absent — skip the byte assertion
+      }
+    };
+    const v = await need();
+    if (v !== null) {
+      expect(v).toContain(`g2p=[misaki-zh misaki=${MISAKI_PIN} jieba=${JIEBA_PIN} map=${PHONEME_MAP_VERSION}]`);
     }
   });
 
@@ -129,7 +153,8 @@ describe('kokoroProvider (Apache-2.0 local neural TTS via kokoro-js)', () => {
     // ... which is not wired" — that message must be GONE from every z* path.
     const g2pAvailable = (() => {
       try {
-        misakiZhG2p().version();
+        // version() is now pure — probe actual availability via phonemize()
+        misakiZhG2p().phonemize('你好');
         return true;
       } catch {
         return false;
@@ -187,7 +212,8 @@ const KOKORO_GATED = process.env['KOKORO'] === '1';
   // Doubly gated: KOKORO=1 (model) AND misaki importable (the g2p shell-out).
   const misakiOk = (() => {
     try {
-      misakiZhG2p().version();
+      // version() is now pure — probe actual availability via phonemize()
+      misakiZhG2p().phonemize('你好');
       return true;
     } catch {
       return false;
@@ -498,6 +524,62 @@ describe('synthesizeScript: the cache contract', () => {
     await synthesizeScript(scriptPath);
     const r = await synthesizeScript(scriptPath, { force: true });
     expect(r.synthesized).toEqual(['one', 'two', 'three']);
+  });
+
+  // FIX 1 (0.15 canary): the real CLI path (script provider 'kokoro' → no-opts
+  // kokoroProvider) routes z* per REQUEST. The cache key for a Mandarin segment
+  // MUST fold the g2p identity, so a pin/map bump invalidates it. We prove this
+  // end-to-end through synthesizeScript WITHOUT Python (version() is pure) by
+  // injecting a stub zhG2p whose identity we move between runs.
+  it('a z* segment cache key folds the g2p identity → a g2p bump re-synthesizes (FIX 1; no Python)', async () => {
+    const zhScript: NarrationScript = {
+      narrationVersion: 1,
+      provider: 'kokoro',
+      segments: [{ id: 'zh', text: '你好世界', voice: 'zf_xiaoxiao' }],
+    };
+    // a fake-synth kokoro provider: REAL version() (the unconditional g2p fold,
+    // no Python) composed with a deterministic synthesize that emits a real WAV.
+    const fake = fakeProvider();
+    const mkKokoro = (g2pVersion: string): TtsProvider => {
+      const stubG2p = { id: 'misaki-zh', version: () => g2pVersion, phonemize: (t: string) => t };
+      let real: TtsProvider;
+      try {
+        real = kokoroProvider({ zhG2p: stubG2p });
+      } catch {
+        return null as unknown as TtsProvider; // kokoro-js peer absent → skip below
+      }
+      return { id: real.id, version: real.version, synthesize: (req) => fake.synthesize(req) };
+    };
+
+    const a = mkKokoro('misaki-zh map=zh-misaki-1');
+    if (a === null) return; // kokoro-js not installed in this env — nothing to assert
+
+    // the injected g2p identity must appear in the provider version (cache key)
+    expect(await a.version()).toContain('g2p=[misaki-zh map=zh-misaki-1]');
+
+    const scriptPath = writeScript('zh-cachekey', zhScript);
+    const first = await synthesizeScript(scriptPath, { providerImpl: a, alignerImpl: null });
+    expect(first.synthesized).toEqual(['zh']);
+    const keysAfterFirst = Object.keys(
+      (JSON.parse(readFileSync(join(first.cacheDir, 'cache.json'), 'utf8')) as { entries: Record<string, unknown> }).entries,
+    );
+
+    // re-run with the SAME g2p identity → reused (the cache key is stable)
+    const same = await synthesizeScript(scriptPath, { providerImpl: mkKokoro('misaki-zh map=zh-misaki-1'), alignerImpl: null });
+    expect(same.reused).toEqual(['zh']);
+    expect(same.synthesized).toEqual([]);
+
+    // BUMP the g2p identity (≡ a PHONEME_MAP_VERSION / pin move) → the cache key
+    // changes → the Mandarin segment re-synthesizes instead of serving stale audio.
+    const bumped = await synthesizeScript(scriptPath, { providerImpl: mkKokoro('misaki-zh map=zh-misaki-2'), alignerImpl: null });
+    expect(bumped.synthesized).toEqual(['zh']);
+    expect(bumped.reused).toEqual([]);
+    const keysAfterBump = Object.keys(
+      (JSON.parse(readFileSync(join(bumped.cacheDir, 'cache.json'), 'utf8')) as { entries: Record<string, unknown> }).entries,
+    );
+    // a brand-new key landed (the old one is left behind) — proof the key moved
+    expect(keysAfterBump.length).toBe(keysAfterFirst.length + 1);
+    expect(keysAfterBump.some((k) => !keysAfterFirst.includes(k))).toBe(true);
   });
 
   it('rejects duplicate segment ids and bad versions', async () => {

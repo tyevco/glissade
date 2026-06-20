@@ -14,10 +14,11 @@
  * feature-detection + identity contract is still asserted with no Python.
  */
 
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { NarrationError } from '../src/index.js';
 import { JIEBA_PIN, MISAKI_PIN, PHONEME_MAP_VERSION, misakiZhG2p } from '../src/zh-g2p.js';
 
@@ -26,10 +27,11 @@ const corpus = JSON.parse(
   readFileSync(join(here, 'fixtures', 'misaki-zh-parity.json'), 'utf8'),
 ) as { text: string; phonemes: string }[];
 
-/** Is the misaki[zh] g2p actually reachable from the configured interpreter? */
+/** Is the misaki[zh] g2p actually reachable from the configured interpreter?
+ *  version() is now PURE (no Python), so availability is probed via phonemize(). */
 function misakiAvailable(): boolean {
   try {
-    misakiZhG2p().version();
+    misakiZhG2p().phonemize('你好');
     return true;
   } catch {
     return false;
@@ -37,7 +39,14 @@ function misakiAvailable(): boolean {
 }
 const MISAKI_OK = misakiAvailable();
 
+// temp dirs holding throwaway "python" stubs — cleaned up after the suite
+const stubDirs: string[] = [];
+
 describe('misaki-zh g2p seam (Fork B: pinned Python misaki[zh] shell-out)', () => {
+  afterAll(() => {
+    for (const d of stubDirs) rmSync(d, { recursive: true, force: true });
+  });
+
   it('has a stable engine id and pins the misaki + jieba versions', () => {
     expect(misakiZhG2p().id).toBe('misaki-zh');
     expect(MISAKI_PIN).toBe('0.9.4');
@@ -45,12 +54,42 @@ describe('misaki-zh g2p seam (Fork B: pinned Python misaki[zh] shell-out)', () =
     expect(PHONEME_MAP_VERSION).toBe('zh-misaki-1');
   });
 
-  it('a definitely-absent Python throws the install hint (ENOENT), not a silent pass', () => {
+  // FIX 3 (0.15 canary): version() is PURE + Python-free — a pin-based identity.
+  it('version() is a pure pin-based identity (no Python, deterministic, folds the pins+map)', () => {
+    // even an absent interpreter must NOT throw from version() — it spawns nothing
+    const v = misakiZhG2p({ python: '/no/such/python-xyz' }).version();
+    expect(v).toBe(`misaki-zh misaki=${MISAKI_PIN} jieba=${JIEBA_PIN} map=${PHONEME_MAP_VERSION}`);
+    // stable across calls and independent of the interpreter
+    expect(misakiZhG2p().version()).toBe(v);
+  });
+
+  it('a definitely-absent Python throws the install hint (ENOENT) from phonemize, not a silent pass', () => {
     const g = misakiZhG2p({ python: '/no/such/python-xyz' });
-    expect(() => g.version()).toThrow(NarrationError);
-    expect(() => g.version()).toThrow(/not found.*misaki\[zh]/s);
+    expect(() => g.phonemize('你好')).toThrow(NarrationError);
     expect(() => g.phonemize('你好')).toThrow(/not found.*misaki\[zh]/s);
   });
+
+  // FIX 3 (0.15 canary): a pin-mismatch at synth time raises the ACTIONABLE error
+  // (never a silent 'unknown'). Driven by a POSIX-shell "python" stub that emits
+  // the mismatch sentinel — needs NO real Python/misaki, just /bin/sh.
+  (process.platform === 'win32' ? it.skip : it)(
+    'phonemize raises an actionable error when the installed wheel diverges from the pins',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'misaki-pinstub-'));
+      stubDirs.push(dir);
+      const stub = join(dir, 'python-stub');
+      // mimic _check_pins() finding misaki installed=0.9.3 != pinned MISAKI_PIN:
+      // write `<dist>:<installed>:<pinned>` to stderr and exit 96 (the sentinel).
+      writeFileSync(
+        stub,
+        `#!/bin/sh\nprintf 'misaki:0.9.3:${MISAKI_PIN}\\n' 1>&2\nexit 96\n`,
+      );
+      chmodSync(stub, 0o755);
+      const g = misakiZhG2p({ python: stub });
+      expect(() => g.phonemize('你好')).toThrow(NarrationError);
+      expect(() => g.phonemize('你好')).toThrow(/installed misaki 0\.9\.3 != pinned MISAKI_PIN/);
+    },
+  );
 
   // the committed corpus is the oracle regardless of Python presence
   it('the parity corpus exists, covers the spike line, and exercises tone sandhi', () => {
@@ -63,15 +102,6 @@ describe('misaki-zh g2p seam (Fork B: pinned Python misaki[zh] shell-out)', () =
 
   // Fork B's g2p IS the shell-out, so parity RUNS it — gated on misaki-available.
   (MISAKI_OK ? describe : describe.skip)('parity vs the committed oracle (gated: misaki importable)', () => {
-    it("version() folds the g2p identity (engine-id + jieba-dict hash + map version)", () => {
-      const v = misakiZhG2p().version();
-      expect(v).toMatch(/^misaki-zh /);
-      expect(v).toMatch(/misaki=[\d.]+/);
-      expect(v).toMatch(/jieba=[\d.]+/);
-      expect(v).toMatch(/dict=[0-9a-f]{12}/); // the jieba-dict hash
-      expect(v).toContain(`map=${PHONEME_MAP_VERSION}`);
-    });
-
     it(
       'phonemize(text) reproduces every corpus entry byte-for-byte',
       () => {

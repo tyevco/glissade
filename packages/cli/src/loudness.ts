@@ -175,14 +175,23 @@ export function computeMixHash(modulePath: string, extraInputs: readonly string[
 
 // ---- the committed-file path ----
 
-/** `<module>.loudness.json` for a scene module. */
-export function loudnessPathFor(modulePath: string): string {
-  return modulePath.replace(/\.[jt]sx?$/, '') + '.loudness.json';
+/**
+ * The committed loudness measurement path for a scene module.
+ *
+ * Base (no locale): `<stem>.loudness.json` — UNCHANGED. With a locale set (0.15
+ * FIX 2): `<stem>.<locale>.loudness.json`. A localized render mixes the per-locale
+ * narration (e.g. the zh wavs) → a DIFFERENT mixHash than the base, so it needs its
+ * OWN committed measurement; one base file can't gate a localized render (it would
+ * always read as a stale mixHash, with no supported way to commit a per-locale one).
+ */
+export function loudnessPathFor(modulePath: string, locale?: string): string {
+  const stem = modulePath.replace(/\.[jt]sx?$/, '');
+  return locale !== undefined && locale !== '' ? `${stem}.${locale}.loudness.json` : `${stem}.loudness.json`;
 }
 
 /** Read + validate a committed measurement, or null when none is committed. */
-export function readLoudness(modulePath: string): LoudnessMeasurement | null {
-  const path = loudnessPathFor(modulePath);
+export function readLoudness(modulePath: string, locale?: string): LoudnessMeasurement | null {
+  const path = loudnessPathFor(modulePath, locale);
   if (!existsSync(path)) return null;
   const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<LoudnessMeasurement>;
   if (raw.loudnessVersion !== LOUDNESS_SCHEMA_VERSION) {
@@ -259,6 +268,13 @@ export interface MeasureLoudnessOptions {
   narration?: 'auto' | 'off';
   music?: 'auto' | 'off';
   sfx?: 'auto' | 'off';
+  /**
+   * locale code (0.15 FIX 2). When set, measure the per-locale mix (the localized
+   * narration sibling) and commit `<stem>.<locale>.loudness.json` instead of the
+   * base file. Mirrors `gs render --locale`, so the measured content matches what
+   * a localized render mixes.
+   */
+  locale?: string;
 }
 
 export interface MeasureLoudnessResult {
@@ -292,6 +308,9 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
         narration: opts.narration ?? 'auto',
         music: opts.music ?? 'auto',
         sfx: opts.sfx ?? 'auto',
+        // 0.15 FIX 2: measure the per-locale mix when a locale is set, so the
+        // committed measurement matches the localized render's mixHash.
+        ...(opts.locale !== undefined && opts.locale !== '' ? { locale: opts.locale } : {}),
       },
       wavPath,
     );
@@ -313,6 +332,7 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
       narration: opts.narration ?? 'auto',
       music: opts.music ?? 'auto',
       sfx: opts.sfx ?? 'auto',
+      ...(opts.locale !== undefined && opts.locale !== '' ? { locale: opts.locale } : {}),
     });
     const mixHash = computeMixHash(opts.modulePath, extraInputs);
 
@@ -326,7 +346,7 @@ export async function measureLoudnessCommand(opts: MeasureLoudnessOptions): Prom
       mixHash,
     };
 
-    const loudnessPath = loudnessPathFor(opts.modulePath);
+    const loudnessPath = loudnessPathFor(opts.modulePath, opts.locale);
     writeFileSync(loudnessPath, JSON.stringify(measurement, null, 2) + '\n');
 
     // advisory: a peaky un-normalized target that 0.12's (deferred) brickwall

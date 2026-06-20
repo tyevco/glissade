@@ -409,8 +409,6 @@ export function kokoroProvider(
   const dtype: KokoroDtype = opts.dtype ?? 'q8';
   // the Chinese g2p seam (Fork B = pinned Python misaki[zh]); injectable for tests
   const zhG2p: ZhG2p = opts.zhG2p ?? misakiZhG2p();
-  // the default voice is English, so a z* run only happens when a z* voice is set
-  const usesChinese = isKokoroChineseVoice(opts.voice ?? KOKORO_DEFAULT_VOICE);
   let loaded: Promise<KokoroModel> | null = null;
 
   const loadLib = async (): Promise<KokoroLib> => {
@@ -440,13 +438,16 @@ export function kokoroProvider(
       // packaging can move bytes); resolveKokoro throws the install hint +
       // real error when the optional peer is absent (feature-detection)
       const { version } = resolveKokoro();
-      let v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype}`;
-      // CACHE-REPRODUCIBILITY: when this provider is configured for a Chinese
-      // (z*) voice, the misaki[zh] g2p identity (engine-id + jieba-dict hash +
-      // phoneme-map version + the pinned Python-misaki wheel) folds in — any of
-      // those moving must invalidate the segment cache (else stale/divergent
-      // audio). English-only runs never touch the g2p (no Python required).
-      if (usesChinese) v += ` g2p=[${zhG2p.version()}]`;
+      // CACHE-REPRODUCIBILITY: ALWAYS fold the misaki[zh] g2p identity (the pinned
+      // misaki/jieba wheels + phoneme-map version). It is now a PURE, Python-free
+      // pin-based string, so folding it unconditionally costs nothing on
+      // English-only runs (a stable deterministic suffix, no Python required) — and
+      // it is the ONLY way the real CLI path keys the Mandarin segment cache, since
+      // synthesize() routes z* per-REQUEST voice while this provider is constructed
+      // with NO opts (providerById('kokoro') / synthesizeScript). Gating the suffix
+      // on a constructor voice (the old bug) left the Mandarin cache key carrying no
+      // g2p identity → a pin/map bump served STALE Mandarin audio.
+      const v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype} g2p=[${zhG2p.version()}]`;
       return Promise.resolve(v);
     },
     synthesize: async (req) => {

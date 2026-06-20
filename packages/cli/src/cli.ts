@@ -31,7 +31,7 @@ const USAGE = `usage:
   gs narration-lint <scene-module|script.narration.timing.json> [--json] [--fix] [--max-cps <n>]
   gs sfx <scene-module|script.sfx.json> [--verbose]
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
-  gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>]
+  gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>] [--locale <code>]
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
 
@@ -105,6 +105,9 @@ measure-loudness options (the explicit publish-loudness measure step; commits *.
   --profile <id>   youtube (default) | shorts (both -14 LUFS) | podcast (-16) | broadcast/ebu (-23); all cap at -1 dBTP
                    measures the final mix (ebur128) and commits a deterministic peak-clamped gain; render applies it
                    as a pure scalar. Needs ffmpeg. Brickwall limiter deferred — peaky un-normalized profiles warn.
+  --locale <code>  (0.15) measure the per-locale mix (the localized narration sibling) and commit
+                   <stem>.<locale>.loudness.json. A localized 'gs render --locale <code>' REQUIRES this per-locale
+                   file (the base measurement can't gate the per-locale mix). No --locale measures the base mix.
 
 narrate options (the explicit TTS prepare step; render itself stays offline):
   --provider <id>  fake | espeak | piper | kokoro | openai (default: the script's provider, else espeak)
@@ -289,12 +292,15 @@ async function main(): Promise<void> {
   if (command === 'measure-loudness') {
     const { measureLoudnessCommand } = await import('./loudness.js');
     try {
+      const mlLocale = flags.get('locale');
       const result = await measureLoudnessCommand({
         modulePath,
         ...(flags.has('profile') ? { profile: flags.get('profile')! } : {}),
         ...(flags.get('narration') === 'off' ? { narration: 'off' as const } : {}),
         ...(flags.get('music') === 'off' ? { music: 'off' as const } : {}),
         ...(flags.get('sfx') === 'off' ? { sfx: 'off' as const } : {}),
+        // 0.15 FIX 2: measure the per-locale mix → commit <stem>.<locale>.loudness.json
+        ...(mlLocale !== undefined && mlLocale !== '' ? { locale: mlLocale } : {}),
       });
       const m = result.measurement;
       process.stderr.write(

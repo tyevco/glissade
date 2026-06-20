@@ -41,7 +41,7 @@ export function availableEncoders(): Set<string>;
 export function buildCaptionProbe(input: string, maxLines: number): Promise<CaptionProbe | null>;
 
 // @public
-export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx'>, wavOut: string): Promise<boolean>;
+export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>, wavOut: string): Promise<boolean>;
 
 // @public
 export interface CacheKeyContext {
@@ -314,7 +314,7 @@ export interface LoudnessMeasurement {
 }
 
 // @public
-export function loudnessPathFor(modulePath: string): string;
+export function loudnessPathFor(modulePath: string, locale?: string): string;
 
 // @public (undocumented)
 export class MachineExportError extends Error {
@@ -343,6 +343,7 @@ export function measureLoudnessCommand(opts: MeasureLoudnessOptions): Promise<Me
 
 // @public (undocumented)
 export interface MeasureLoudnessOptions {
+    locale?: string;
     // (undocumented)
     modulePath: string;
     // (undocumented)
@@ -448,7 +449,7 @@ export interface PublishProfile {
 }
 
 // @public
-export function readLoudness(modulePath: string): LoudnessMeasurement | null;
+export function readLoudness(modulePath: string, locale?: string): LoudnessMeasurement | null;
 
 // @public (undocumented)
 export function render(opts: RenderOptions): Promise<{
@@ -543,7 +544,7 @@ export interface RenderShardedArgs {
 export function resolveAssetPath(url: string, modulePath: string): string;
 
 // @public
-export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx'>, timelineClips?: AudioClip[]): Promise<number | null>;
+export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips?: AudioClip[]): Promise<number | null>;
 
 // @public
 export function resolveProfile(id: string): PublishProfile;

@@ -272,6 +272,93 @@ describe('resolveLoudnessGainDb (render-time read + mixHash gate)', () => {
   });
 });
 
+// ---- FIX 2 (0.15 canary): localized loudness — per-locale path + dead-end ----
+
+describe('resolveLoudnessGainDb: localized loudness (FIX 2)', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'glissade-loud-locale-'));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+  const mod = join(tmp, 'scene.ts');
+
+  // a narration timing references a wav under <stem>.narration-cache/; the cache
+  // base derives from the timing FILENAME, so the base and zh siblings reference
+  // DISTINCT wavs → distinct mixHashes (the whole point of a per-locale measurement).
+  const writeNarration = (timingName: string, wavName: string): void => {
+    writeFileSync(join(tmp, `${wavName}`), Buffer.from(`WAV-${wavName}`));
+    writeFileSync(
+      join(tmp, timingName),
+      JSON.stringify({
+        narrationVersion: 1,
+        segments: [{ id: 'a', text: 'hi', start: 0, duration: 1, file: wavName }],
+      }),
+    );
+  };
+  it('base render is UNCHANGED by the locale plumbing (no per-locale read, no throw)', async () => {
+    // base narration + a committed BASE measurement gates exactly as before.
+    writeNarration('scene.narration.timing.json', 'base.wav');
+    const extra = await collectMixAudioInputs({ modulePath: mod });
+    writeFileSync(
+      loudnessPathFor(mod),
+      JSON.stringify({
+        loudnessVersion: LOUDNESS_SCHEMA_VERSION,
+        profileId: 'youtube',
+        inputI: -24,
+        inputTp: -21,
+        inputLra: 0,
+        gain: 5,
+        mixHash: computeMixHash(mod, extra),
+      }),
+    );
+    expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(5);
+    // loudnessPathFor with no locale is byte-identical to before
+    expect(loudnessPathFor(mod)).toBe(join(tmp, 'scene.loudness.json'));
+    expect(loudnessPathFor(mod, 'zh')).toBe(join(tmp, 'scene.zh.loudness.json'));
+  });
+
+  it('--locale zh with only a BASE measurement → actionable per-locale dead-end error', async () => {
+    // a zh narration sibling exists (so the localized render has assets), and a
+    // BASE measurement is committed — but NO per-locale measurement. Render must
+    // throw the actionable "no <stem>.zh.loudness.json … --locale zh" error, NOT
+    // the generic stale-mixHash message and NOT silently apply the base gain.
+    writeNarration('scene.zh.narration.timing.json', 'zh.wav');
+    const err = await resolveLoudnessGainDb({ modulePath: mod, locale: 'zh' }).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toMatch(/no .*scene\.zh\.loudness\.json/);
+    expect(err!.message).toMatch(/--locale zh/);
+    expect(err!.message).not.toMatch(/is stale/); // distinct from the generic message
+  });
+
+  it('--locale zh PASSES once the per-locale measurement is committed', async () => {
+    // commit a per-locale measurement bound to the per-locale (zh) mix inputs.
+    const extraZh = await collectMixAudioInputs({ modulePath: mod, locale: 'zh' });
+    writeFileSync(
+      loudnessPathFor(mod, 'zh'),
+      JSON.stringify({
+        loudnessVersion: LOUDNESS_SCHEMA_VERSION,
+        profileId: 'youtube',
+        inputI: -20,
+        inputTp: -18,
+        inputLra: 0,
+        gain: 3,
+        mixHash: computeMixHash(mod, extraZh),
+      }),
+    );
+    expect(await resolveLoudnessGainDb({ modulePath: mod, locale: 'zh' })).toBe(3);
+    // the base render still reads the BASE measurement — untouched by the per-locale one
+    expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(5);
+  });
+
+  it('a scene with NO base measurement and a --locale renders without normalization (no dead-end)', async () => {
+    // a locale render where the scene opts out of loudness ENTIRELY (no base file)
+    // must NOT be a dead-end — there is simply no gain to apply.
+    const other = join(tmp, 'noloud.ts');
+    writeNarration('noloud.zh.narration.timing.json', 'noloud-zh.wav');
+    expect(await resolveLoudnessGainDb({ modulePath: other, locale: 'zh' })).toBeNull();
+  });
+});
+
 // ---- end-to-end measure → render determinism (ffmpeg-gated) ----
 
 describe.runIf(ffmpegAvailable())('measure → render determinism + publish guarantee', () => {
