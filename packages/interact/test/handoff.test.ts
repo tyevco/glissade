@@ -21,8 +21,13 @@ beforeEach(() => {
 });
 
 function targetSigs(...names: string[]) {
-  const map = new Map<string, BindableSignal<unknown>>();
-  for (const n of names) map.set(n, signal<unknown>(0));
+  const map = new Map<string, BindableSignal<unknown> & { expects: string }>();
+  for (const n of names) {
+    const s = signal<unknown>(0) as BindableSignal<unknown> & { expects: string };
+    // bind-time guard (§2.2): type by suffix — `/p` is a vec2, `/fill` a color, else scalar.
+    s.expects = n.endsWith('/p') ? 'vec2' : n.endsWith('/fill') ? 'color' : 'number';
+    map.set(n, s);
+  }
   return { sig: (n: string) => map.get(n)!, resolve: (t: string) => map.get(t) };
 }
 

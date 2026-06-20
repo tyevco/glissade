@@ -17,6 +17,7 @@ import {
   timeline,
   track,
   velocityAt,
+  type BindTarget,
   type Track,
   type Vec2,
 } from '../src/index.js';
@@ -230,9 +231,9 @@ describe('per-target samplers from bindTimeline (§B.6, additive)', () => {
       ],
     });
     const playhead = createPlayhead();
-    const targets = new Map<string, { bindSource(fn: () => unknown): void; unbindSource(): void }>([
-      ['a/x', { bindSource: () => {}, unbindSource: () => {} }],
-      ['a/fill', { bindSource: () => {}, unbindSource: () => {} }],
+    const targets = new Map<string, BindTarget>([
+      ['a/x', { bindSource: () => {}, unbindSource: () => {}, expects: 'number' }],
+      ['a/fill', { bindSource: () => {}, unbindSource: () => {}, expects: 'color' }],
     ]);
     const bound = bindTimeline(compileTimeline(doc), (t) => targets.get(t), playhead);
 

@@ -24,7 +24,7 @@ export {
   type Scheduler,
 } from './ticker.js';
 
-export { vec2Signal, type Vec2Signal } from './vec2Signal.js';
+export { vec2Signal, type Vec2Signal, type Vec2Component } from './vec2Signal.js';
 
 export {
   easings,
@@ -168,6 +168,7 @@ export {
   bindTimeline,
   evaluateAt,
   UnboundTargetError,
+  BindTypeMismatchError,
   type Playhead,
   type BindTarget,
   type BoundTimeline,

@@ -42,8 +42,8 @@ export class Highlight extends Node {
     this.progress = init(signal(1), props.progress);
     this.padding = props.padding ?? [4, 2];
     this.cornerRadius = props.cornerRadius ?? 4;
-    this.registerTarget('progress', this.progress);
-    this.registerTarget('color', this.color);
+    this.registerTarget('progress', this.progress, 'number');
+    this.registerTarget('color', this.color, 'color');
   }
 
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {

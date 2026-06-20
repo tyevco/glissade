@@ -79,12 +79,23 @@ export interface BindableSignal<T> extends Signal<T> {
 export interface BindTarget {
     // (undocumented)
     bindSource(fn: () => unknown): void;
+    readonly expects: ValueTypeId | readonly ValueTypeId[];
     // (undocumented)
     unbindSource(): void;
 }
 
 // @public
 export function bindTimeline(compiled: CompiledTimeline, resolve: (target: string) => BindTarget | undefined, playhead?: Playhead): BoundTimeline;
+
+// @public
+export class BindTypeMismatchError extends Error {
+    constructor(target: string, got: ValueTypeId, expected: ValueTypeId | readonly ValueTypeId[]);
+    readonly expected: ValueTypeId | readonly ValueTypeId[];
+    // (undocumented)
+    readonly got: ValueTypeId;
+    // (undocumented)
+    readonly target: string;
+}
 
 // @public (undocumented)
 export const booleanType: ValueType<boolean>;
@@ -889,20 +900,26 @@ export type Vec2 = readonly [number, number];
 // @public
 export const vec2ArcType: ValueType<Vec2>;
 
+// @public
+export type Vec2Component = BindableSignal<number> & {
+    readonly expects: ValueTypeId;
+};
+
 // @public (undocumented)
 export const vec2Equals: (a: Vec2, b: Vec2) => boolean;
 
 // @public (undocumented)
 export interface Vec2Signal extends ReadonlySignal<Vec2> {
     bindSource(fn: () => Vec2): void;
+    readonly expects: ValueTypeId;
     // (undocumented)
     set(value: Vec2): void;
     // (undocumented)
     unbindSource(): void;
     // (undocumented)
-    readonly x: BindableSignal<number>;
+    readonly x: Vec2Component;
     // (undocumented)
-    readonly y: BindableSignal<number>;
+    readonly y: Vec2Component;
 }
 
 // @public (undocumented)

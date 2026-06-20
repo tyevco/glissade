@@ -2,10 +2,11 @@
  * Bundle-size budgets (DESIGN.md §4.4), enforced in CI: each embed-path
  * package is bundled standalone (esbuild, minified) and its gzipped size
  * checked against the spec budget. Base embed path (core + scene + canvas2d
- * + player) must stay ≤ 37 kB (raised 35→36 in 0.12 for the §3 mesh Paint
+ * + player) must stay ≤ 38 kB (raised 35→36 in 0.12 for the §3 mesh Paint
  * kernel — a real, non-tree-shakeable render path, the milestone's determinism
  * tentpole; 36→37 in 0.13 for scene's each() instancing — see the scene budget
- * note); element adds ≤ 5 kB.
+ * note; 37→38 in 0.14 for the §2.2 scalar→vec2 bind-time guard — see the core
+ * budget note); element adds ≤ 5 kB.
  */
 
 import { build } from 'esbuild';
@@ -63,7 +64,7 @@ function* distFiles(dir) {
 
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
-  core: 15, // raised 8→10→11→12→14→15 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings; 0.9 §3.6 FontRegistry + hand-rolled cmap reader (formats 4/12) + font validation — DEV/export-path only, never in evaluate(), tree-shaken out of real embeds; 0.10.1 §2.2 paint value type: gradient (linear/radial) Paint + keyframe interpolation (lerp/lift/snap) — a first-class animatable value like path/color, registered so it can't tree-shake, ~0.5 kB; base embed path stays ~33/35)
+  core: 16, // raised 8→10→11→12→14→15→16 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings; 0.9 §3.6 FontRegistry + hand-rolled cmap reader (formats 4/12) + font validation — DEV/export-path only, never in evaluate(), tree-shaken out of real embeds; 0.10.1 §2.2 paint value type: gradient (linear/radial) Paint + keyframe interpolation (lerp/lift/snap) — a first-class animatable value like path/color, registered so it can't tree-shake, ~0.5 kB; 0.14 §2.2 scalar→vec2 bind-time guard — BindTypeMismatchError + the per-track type check in bindTimeline that hard-throws a scalar-on-vec2 / type↔shape mismatch instead of silently NaN-ing the matrix, ~0.1 kB. A runtime correctness FLOOR for the silent-NaN class — on the synchronous embed path (bindTimeline runs at bind), so it can't tree-shake; base embed path stays ~37/38)
   'core/clips': 7, // §2 motion clips: build-time authoring sugar (clip/clipList + the popIn/slideIn/pulse/driftLoop literals + 0.13 morph (shared-element box-FLIP) + 0.13 presence (enter/exit scheduling)) on a tree-shakeable sub-path, never in the base index. Standalone bundle inlines the same-package track/valueTypes/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared compile path, not the literals; base core stays ~14.8/15 with clips fully tree-shaken out. Raised 6→7 for the 0.13 clip tier (morph + presence)
   'core/i18n': 2, // 0.14 localization core: requireParity (pure id-set diff) + localize (pure doc→doc resolver) + t() (ambient-table build-time sugar). Tree-shakeable sub-path off the base index — the resolver bytes never touch the embed budget. timeline/track are TYPE-only imports, so the standalone bundle is essentially just these three functions.
   scene: 19, // raised 12→13→14→15→16→17→18→19 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp); 0.12 §3 mesh Paint kernel — the shared deterministic Shepard/gaussian IDW rasterizer (meshGradient.ts) + the clip+drawImage blit branch in Raster2D, ~0.8 kB. This is the REAL render path (one CPU kernel both backends run, no SkSL fork), not tree-shakeable; it is the determinism tentpole of the milestone; 18→19 in 0.13 for each() — deterministic parametric instancing (layout arithmetic + seeded mix + id stamping), ~1 kB. The clip runtime it fans is imported TYPE-ONLY, so the @glissade/core/clips bytes stay in the consumer bundle, NOT scene — verified: the scene metafile carries no clip/clipStdlib input)
@@ -147,9 +148,9 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   }
 }
 
-const baseOk = baseTotal <= 37;
+const baseOk = baseTotal <= 38;
 if (!baseOk) failed = true;
-console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 37 kB)`);
+console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 38 kB)`);
 
 // §3.2 guard: the BASE scene bundle must NOT pull in Yoga — flexbox layout is a
 // separately-budgeted entry (@glissade/scene/layout). A static import would

@@ -143,10 +143,11 @@ abstract class Shape extends Node {
     this.stroke = initProp(signal(''), props.stroke);
     this.strokeWidth = initProp(signal(0), props.strokeWidth);
     this.reveal = initProp(signal(1), props.reveal);
-    this.registerTarget('fill', this.fill);
-    this.registerTarget('stroke', this.stroke);
-    this.registerTarget('strokeWidth', this.strokeWidth);
-    this.registerTarget('reveal', this.reveal);
+    // fill is polymorphic: a solid color string ('color') OR a Paint object ('paint').
+    this.registerTarget('fill', this.fill, ['color', 'paint']);
+    this.registerTarget('stroke', this.stroke, 'color');
+    this.registerTarget('strokeWidth', this.strokeWidth, 'number');
+    this.registerTarget('reveal', this.reveal, 'number');
     if (props.sketch) validateSketch(props.sketch);
     if (props.sketchFill) validateHachure(props.sketchFill);
     if (props.sketchFill && !props.sketch) {
@@ -358,9 +359,9 @@ export class Rect extends Shape {
     this.width = initProp(signal(0), props.width);
     this.height = initProp(signal(0), props.height);
     this.cornerRadius = initProp(signal(0), props.cornerRadius);
-    this.registerTarget('width', this.width);
-    this.registerTarget('height', this.height);
-    this.registerTarget('cornerRadius', this.cornerRadius);
+    this.registerTarget('width', this.width, 'number');
+    this.registerTarget('height', this.height, 'number');
+    this.registerTarget('cornerRadius', this.cornerRadius, 'number');
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -382,7 +383,7 @@ export class Circle extends Shape {
   constructor(props: ShapeProps & { radius?: PropInit<number> } = {}) {
     super(props);
     this.radius = initProp(signal(0), props.radius);
-    this.registerTarget('radius', this.radius);
+    this.registerTarget('radius', this.radius, 'number');
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -412,7 +413,7 @@ export class Path extends Shape {
   constructor(props: PathProps = {}) {
     super(props);
     this.data = initProp(signal<PathValue>([]), props.data);
-    this.registerTarget('d', this.data);
+    this.registerTarget('d', this.data, 'path');
   }
 
   /** Control-point bounding box (conservative: contains the true curve). */
@@ -506,8 +507,8 @@ export class ImageNode extends Node {
     this.assetId = props.assetId;
     this.width = initProp(signal(0), props.width);
     this.height = initProp(signal(0), props.height);
-    this.registerTarget('width', this.width);
-    this.registerTarget('height', this.height);
+    this.registerTarget('width', this.width, 'number');
+    this.registerTarget('height', this.height, 'number');
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -570,8 +571,8 @@ export class Video extends Node {
     this.sourceFps = props.sourceFps;
     this.width = initProp(signal(0), props.width);
     this.height = initProp(signal(0), props.height);
-    this.registerTarget('width', this.width);
-    this.registerTarget('height', this.height);
+    this.registerTarget('width', this.width, 'number');
+    this.registerTarget('height', this.height, 'number');
   }
 
   /** Frame-indexed media time for timeline time t; null when outside the clip. */
@@ -664,11 +665,12 @@ export class Text extends Node {
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
     this.reveal = initProp(signal(Number.POSITIVE_INFINITY), props.reveal);
-    this.registerTarget('width', this.width);
-    this.registerTarget('text', this.text);
-    this.registerTarget('fill', this.fill);
-    this.registerTarget('fontSize', this.fontSize);
-    this.registerTarget('reveal', this.reveal);
+    this.registerTarget('width', this.width, 'number');
+    this.registerTarget('text', this.text, 'string');
+    // Text fill is a plain color string (no gradients) — color only.
+    this.registerTarget('fill', this.fill, 'color');
+    this.registerTarget('fontSize', this.fontSize, 'number');
+    this.registerTarget('reveal', this.reveal, 'number');
   }
 
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {

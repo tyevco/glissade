@@ -26,8 +26,14 @@ beforeEach(() => {
 });
 
 function targetSigs(...names: string[]) {
-  const map = new Map<string, BindableSignal<unknown>>();
-  for (const n of names) map.set(n, signal<unknown>(0));
+  // bind-time guard (§2.2): a target advertises the value type it accepts.
+  // These mocks carry the type matching their track (`/fill` is color).
+  const map = new Map<string, BindableSignal<unknown> & { expects: string }>();
+  for (const n of names) {
+    const s = signal<unknown>(0) as BindableSignal<unknown> & { expects: string };
+    s.expects = n.endsWith('/fill') ? 'color' : 'number';
+    map.set(n, s);
+  }
   return { sig: (n: string) => map.get(n)!, resolve: (t: string) => map.get(t) };
 }
 

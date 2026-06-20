@@ -12,6 +12,7 @@ import {
   TARGET_PATH,
   type BindableSignal,
   type ReadonlySignal,
+  type ValueTypeId,
   type Vec2,
   type Vec2Signal,
 } from '@glissade/core';
@@ -114,6 +115,11 @@ export interface NodeProps {
 export interface BindablePropTarget {
   bindSource(fn: () => unknown): void;
   unbindSource(): void;
+  /**
+   * The value type(s) this prop accepts — bindTimeline hard-throws a mismatched
+   * track (§2.2). An array for a polymorphic prop (a Shape `fill` is color|paint).
+   */
+  readonly expects: ValueTypeId | readonly ValueTypeId[];
 }
 
 /** Node-local hit-shape override (v2 §C.3) — fat targets for thin strokes. */
@@ -200,19 +206,30 @@ export abstract class Node {
       { equals: matEquals },
     );
 
-    this.registerTarget('position', this.position);
-    this.registerTarget('position.x', this.position.x);
-    this.registerTarget('position.y', this.position.y);
-    this.registerTarget('rotation', this.rotation);
-    this.registerTarget('scale', this.scale);
-    this.registerTarget('scale.x', this.scale.x);
-    this.registerTarget('scale.y', this.scale.y);
-    this.registerTarget('opacity', this.opacity);
-    this.registerTarget('zIndex', this.zIndex);
+    this.registerTarget('position', this.position, 'vec2');
+    this.registerTarget('position.x', this.position.x, 'number');
+    this.registerTarget('position.y', this.position.y, 'number');
+    this.registerTarget('rotation', this.rotation, 'number');
+    this.registerTarget('scale', this.scale, 'vec2');
+    this.registerTarget('scale.x', this.scale.x, 'number');
+    this.registerTarget('scale.y', this.scale.y, 'number');
+    this.registerTarget('opacity', this.opacity, 'number');
+    this.registerTarget('zIndex', this.zIndex, 'number');
   }
 
-  protected registerTarget(path: string, sig: BindablePropTarget): void {
-    this.targets.set(path, sig);
+  /**
+   * Register a track-target path → bindable signal, stamping the value type the
+   * signal accepts (§2.2). The stamp is what bindTimeline's bind-time guard
+   * reads to reject a mismatched track (a scalar on a vec2, a number on a paint
+   * prop, …) instead of silently sampling to NaN/undefined.
+   */
+  protected registerTarget(
+    path: string,
+    sig: { bindSource(fn: () => unknown): void; unbindSource(): void },
+    expects: ValueTypeId | readonly ValueTypeId[],
+  ): void {
+    (sig as unknown as { expects: ValueTypeId | readonly ValueTypeId[] }).expects = expects;
+    this.targets.set(path, sig as BindablePropTarget);
     // builder targets (§2.6): a prop signal of an id-bearing node carries its path
     if (this.id !== undefined) {
       (sig as unknown as Record<symbol, string>)[TARGET_PATH] = `${this.id}/${path}`;

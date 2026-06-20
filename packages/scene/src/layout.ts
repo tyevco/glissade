@@ -87,10 +87,10 @@ export class Layout extends Group {
     this.direction = props.direction ?? 'row';
     this.justify = props.justify ?? 'start';
     this.align = props.align ?? 'center';
-    this.registerTarget('width', this.width);
-    this.registerTarget('height', this.height);
-    this.registerTarget('gap', this.gap);
-    this.registerTarget('padding', this.padding);
+    this.registerTarget('width', this.width, 'number');
+    this.registerTarget('height', this.height, 'number');
+    this.registerTarget('gap', this.gap, 'number');
+    this.registerTarget('padding', this.padding, 'number');
   }
 
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {

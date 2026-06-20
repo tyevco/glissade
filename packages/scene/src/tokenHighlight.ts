@@ -126,13 +126,14 @@ export class TokenHighlight extends Node {
         run,
         bound: runText(boxes, run),
       };
-      this.registerTarget(`${id}/fill`, r.fill);
-      this.registerTarget(`${id}/opacity`, r.opacity);
-      this.registerTarget(`${id}/progress`, r.progress);
-      this.registerTarget(`${id}/scale`, r.scale);
-      this.registerTarget(`${id}/offset`, r.offset);
-      this.registerTarget(`${id}/offset.x`, r.offset.x);
-      this.registerTarget(`${id}/offset.y`, r.offset.y);
+      this.registerTarget(`${id}/fill`, r.fill, 'color');
+      this.registerTarget(`${id}/opacity`, r.opacity, 'number');
+      this.registerTarget(`${id}/progress`, r.progress, 'number');
+      // this range's `scale` is a SCALAR number prop (not a Vec2Signal).
+      this.registerTarget(`${id}/scale`, r.scale, 'number');
+      this.registerTarget(`${id}/offset`, r.offset, 'vec2');
+      this.registerTarget(`${id}/offset.x`, r.offset.x, 'number');
+      this.registerTarget(`${id}/offset.y`, r.offset.y, 'number');
       return r;
     });
   }

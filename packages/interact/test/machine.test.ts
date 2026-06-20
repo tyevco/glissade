@@ -28,8 +28,12 @@ beforeEach(() => {
 });
 
 function targetSigs(...names: string[]) {
-  const map = new Map<string, BindableSignal<unknown>>();
-  for (const n of names) map.set(n, signal<unknown>(0));
+  const map = new Map<string, BindableSignal<unknown> & { expects: string }>();
+  for (const n of names) {
+    const s = signal<unknown>(0) as BindableSignal<unknown> & { expects: string };
+    s.expects = 'number'; // these mocks all target scalar props (bind-time guard §2.2)
+    map.set(n, s);
+  }
   return {
     sig: (n: string) => map.get(n)!,
     resolve: (t: string) => map.get(t),

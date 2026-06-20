@@ -48,7 +48,7 @@ export class TextCursor extends Node {
     this.solidWhileTyping = props.solidWhileTyping ?? true;
     this.caretWidth = props.width ?? 2;
     this.fill = init(signal(''), props.fill);
-    this.registerTarget('fill', this.fill);
+    this.registerTarget('fill', this.fill, 'color');
   }
 
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {

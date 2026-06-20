@@ -85,7 +85,8 @@ describe('machineBuilder (§C.7): builder output IS the document', () => {
   });
 
   it('built machines run: a buildable toggle transitions like a hand-written one', () => {
-    const sig = signal<unknown>(0);
+    const sig = signal<unknown>(0) as BindableSignal<unknown> & { expects: string };
+    sig.expects = 'number'; // 'n/x' is a scalar prop (bind-time guard §2.2)
     const doc = machineBuilder('t')
       .input('on', 'boolean')
       .state('off', pose({ 'n/x': 0 }))
@@ -93,7 +94,7 @@ describe('machineBuilder (§C.7): builder output IS the document', () => {
       .transition('off', 'on', { when: { input: 'on', is: true } })
       .transition('on', 'off', { when: { input: 'on', is: false } })
       .build();
-    const m = createMachine(doc, { resolve: (t) => (t === 'n/x' ? (sig as BindableSignal<unknown>) : undefined) });
+    const m = createMachine(doc, { resolve: (t) => (t === 'n/x' ? sig : undefined) });
     m.step(0);
     expect(sig()).toBe(0);
     m.input('on').set(true);

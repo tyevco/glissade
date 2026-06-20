@@ -8,6 +8,7 @@
 import { beginReadPhase, endReadPhase, signal, type BindableSignal } from './signal.js';
 import { sampleTrack, velocityAt, type Track } from './track.js';
 import { type CompiledTimeline } from './timeline.js';
+import { type ValueTypeId } from './valueTypes.js';
 
 export type Playhead = BindableSignal<number>;
 
@@ -22,9 +23,42 @@ export class UnboundTargetError extends Error {
   }
 }
 
+/**
+ * A track's value type doesn't match the shape of the property it targets — the
+ * silent-NaN class (§2.2): e.g. a scalar `number` track bound to a `vec2` prop
+ * makes the compound a number, its `.x`/`.y` index it to `undefined`, and the
+ * node's matrix goes NaN — the node and its subtree vanish. Caught at BIND time
+ * (the track's type is known then), the precedent being UnboundTargetError:
+ * mismatched binds are build errors, not silent no-ops.
+ */
+export class BindTypeMismatchError extends Error {
+  /** The accepted type(s) — a single id, or the set a polymorphic prop (e.g. `fill`: color|paint) admits. */
+  readonly expected: ValueTypeId | readonly ValueTypeId[];
+  constructor(
+    readonly target: string,
+    readonly got: ValueTypeId,
+    expected: ValueTypeId | readonly ValueTypeId[],
+  ) {
+    const prop = target.slice(target.lastIndexOf('/') + 1);
+    const want = [expected].flat();
+    // The vec2↔scalar shape gets a component-targeting hint — the popIn/pulse
+    // silent-NaN class this guard exists to catch.
+    const hint = got === 'number' && want.includes('vec2') ? `; target '${prop}.x'/'${prop}.y' or author a vec2 track` : '';
+    super(`track '${target}' is '${got}' but '${prop}' expects '${want.join("'|'")}' (would silently NaN evaluation)${hint}`);
+    this.name = 'BindTypeMismatchError';
+    this.expected = expected;
+  }
+}
+
 export interface BindTarget {
   bindSource(fn: () => unknown): void;
   unbindSource(): void;
+  /**
+   * The value type this target accepts; a track of any other type is a bind
+   * error. An ARRAY for a polymorphic prop that admits more than one type
+   * (e.g. a Shape `fill` accepts both `color` and `paint`).
+   */
+  readonly expects: ValueTypeId | readonly ValueTypeId[];
 }
 
 /** Analytic value/velocity access to one bound target (v2 addendum §B.6). */
@@ -59,6 +93,10 @@ export function bindTimeline(
   for (const [target, tr] of compiled.tracks) {
     const sig = resolve(target);
     if (!sig) throw new UnboundTargetError(target);
+    const got = (tr as Track).type;
+    const expects = sig.expects;
+    const ok = Array.isArray(expects) ? expects.includes(got) : got === expects;
+    if (!ok) throw new BindTypeMismatchError(target, got, expects);
     sig.bindSource(() => sampleTrack(tr as Track, playhead()));
     bound.push(sig);
     samplers.set(target, {

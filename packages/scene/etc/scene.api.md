@@ -23,6 +23,7 @@ import { ReadonlySignal } from '@glissade/core';
 import { Rng } from '@glissade/core';
 import { Timeline } from '@glissade/core';
 import { Track } from '@glissade/core';
+import { ValueTypeId } from '@glissade/core';
 import { Vec2 } from '@glissade/core';
 import { Vec2Signal } from '@glissade/core';
 
@@ -52,6 +53,7 @@ export interface BackendCaps {
 export interface BindablePropTarget {
     // (undocumented)
     bindSource(fn: () => unknown): void;
+    readonly expects: ValueTypeId | readonly ValueTypeId[];
     // (undocumented)
     unbindSource(): void;
 }
@@ -818,8 +820,10 @@ abstract class Node_2 {
     parent: Node_2 | null;
     // (undocumented)
     readonly position: Vec2Signal;
-    // (undocumented)
-    protected registerTarget(path: string, sig: BindablePropTarget): void;
+    protected registerTarget(path: string, sig: {
+        bindSource(fn: () => unknown): void;
+        unbindSource(): void;
+    }, expects: ValueTypeId | readonly ValueTypeId[]): void;
     protected requiresGroup(): boolean;
     // (undocumented)
     resolveTarget(path: string): BindablePropTarget | undefined;

@@ -31,7 +31,7 @@ export class ShaderEffect extends Group {
     for (const [name, value] of Object.entries(props.uniforms ?? {})) {
       const sig = signal(value);
       map.set(name, sig);
-      this.registerTarget(`u.${name}`, sig);
+      this.registerTarget(`u.${name}`, sig, 'number');
     }
     this.uniformSignals = map;
   }

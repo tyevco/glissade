@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { key, timeline, track, signal } from '@glissade/core';
+import { key, timeline, track, signal, BindTypeMismatchError, type Paint, type Vec2, type PathValue } from '@glissade/core';
 import {
   applyToPoint,
+  bindScene,
   Circle,
   createScene,
   DuplicateNodeIdError,
@@ -9,6 +10,7 @@ import {
   fromTRS,
   Group,
   multiply,
+  Path,
   Rect,
   ReservedNodeIdError,
   Text,
@@ -198,5 +200,92 @@ describe('resource interning', () => {
     });
     const list = evaluate(scene, timeline({}), 0);
     expect(list.resources).toHaveLength(1);
+  });
+});
+
+// 0.14 scalar→vec2 bind-time guard: a track whose value type doesn't match the
+// target prop's shape is the silent-NaN class (a scalar on a vec2 prop → the
+// compound becomes a number, .x/.y index it to undefined → NaN matrix → the
+// node + subtree vanish). The guard hard-throws at BIND time (the track's type
+// is known then), naming the target/got/expected with a fix hint.
+describe('bind-time type guard (§2.2, 0.14)', () => {
+  const sceneWith = (n: Rect | Circle | Path): ReturnType<typeof createScene> =>
+    createScene({ size: { w: 200, h: 100 }, children: [n] });
+
+  it('a SCALAR track on a vec2 `scale` prop throws BindTypeMismatchError (clear message)', () => {
+    const scene = sceneWith(new Rect({ id: 'card', width: 40, height: 40 }));
+    const doc = timeline({ tracks: [track('card/scale', 'number', [key(0, 0.8), key(0.3, 1)])] });
+    let err: unknown;
+    try {
+      bindScene(scene, doc);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(BindTypeMismatchError);
+    const m = (err as BindTypeMismatchError).message;
+    expect(m).toContain('card/scale');
+    expect(m).toContain("'number'"); // got
+    expect(m).toContain("'vec2'"); // expected
+    expect(m).toContain('scale.x'); // fix hint points at the component path
+  });
+
+  it('the SAME scalar track on `scale.x` (a component) binds fine — no throw, finite matrix', () => {
+    const scene = sceneWith(new Rect({ id: 'card', width: 40, height: 40 }));
+    const doc = timeline({ tracks: [track('card/scale.x', 'number', [key(0, 0.8), key(0.3, 1)])] });
+    expect(() => bindScene(scene, doc)).not.toThrow();
+    evaluate(scene, doc, 0.15);
+    const node = scene.nodes.get('card')!;
+    expect(node.localMatrix().every((v) => Number.isFinite(v))).toBe(true);
+  });
+
+  it('a NUMBER track on `fill` (color|paint) throws', () => {
+    const scene = sceneWith(new Rect({ id: 'card', width: 40, height: 40, fill: '#fff' }));
+    const doc = timeline({ tracks: [track('card/fill', 'number', [key(0, 0), key(1, 1)])] });
+    expect(() => bindScene(scene, doc)).toThrow(BindTypeMismatchError);
+  });
+
+  it('a COLOR track on a number `opacity` prop throws', () => {
+    const scene = sceneWith(new Rect({ id: 'card', width: 40, height: 40 }));
+    const doc = timeline({ tracks: [track('card/opacity', 'color', [key(0, '#000'), key(1, '#fff')])] });
+    expect(() => bindScene(scene, doc)).toThrow(BindTypeMismatchError);
+  });
+
+  it('a `fill` prop accepts BOTH a color track AND a paint track (polymorphic, no throw)', () => {
+    const colorScene = sceneWith(new Circle({ id: 'orb', radius: 20, fill: '#e6a700' }));
+    expect(() =>
+      bindScene(colorScene, timeline({ tracks: [track('orb/fill', 'color', [key(0, '#e6a700'), key(1, '#7c4dff')])] })),
+    ).not.toThrow();
+    const paintScene = sceneWith(new Rect({ id: 'orb', width: 40, height: 40, fill: '#000' }));
+    expect(() =>
+      bindScene(
+        paintScene,
+        timeline({
+          tracks: [
+            track('orb/fill', 'paint', [
+              key<Paint>(0, { kind: 'color', color: '#000' }),
+              key<Paint>(1, { kind: 'color', color: '#fff' }),
+            ]),
+          ],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('a path track on Path `d` and a number track on `opacity` bind unchanged (correct binds pass)', () => {
+    const square: PathValue = [
+      { closed: true, v: [[0, 0], [10, 0], [10, 10], [0, 10]] as Vec2[], in: [[0, 0], [0, 0], [0, 0], [0, 0]] as Vec2[], out: [[0, 0], [0, 0], [0, 0], [0, 0]] as Vec2[] },
+    ];
+    const scene = sceneWith(new Path({ id: 'p', data: square, fill: '#fff' }));
+    const doc = timeline({
+      tracks: [
+        track('p/d', 'path', [key(0, square), key(1, square)]),
+        track('p/opacity', 'number', [key(0, 0), key(1, 1)]),
+        track('p/scale', 'vec2', [key<Vec2>(0, [1, 1]), key<Vec2>(1, [2, 2])]),
+        track('p/position', 'vec2', [key<Vec2>(0, [0, 0]), key<Vec2>(1, [5, 5])]),
+      ],
+    });
+    expect(() => bindScene(scene, doc)).not.toThrow();
+    evaluate(scene, doc, 0.5);
+    expect(scene.nodes.get('p')!.localMatrix().every((v) => Number.isFinite(v))).toBe(true);
   });
 });

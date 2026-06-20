@@ -175,7 +175,7 @@ export class FollowPath extends Node {
     this.progress = signal(1);
     if (typeof props.progress === 'function') this.progress.bindSource(props.progress);
     else if (props.progress !== undefined) this.progress.set(props.progress);
-    this.registerTarget('progress', this.progress);
+    this.registerTarget('progress', this.progress, 'number');
 
     // a Path node is followed LIVE; a raw PathValue is static. The arc-length
     // table is rebuilt only when the underlying PathValue reference changes —
