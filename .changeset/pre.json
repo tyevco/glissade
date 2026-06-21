@@ -24,5 +24,8 @@
     "glissade": "0.18.0",
     "@glissade/vite-plugin": "0.18.0"
   },
-  "changesets": []
+  "changesets": [
+    "bless-controlled-drive",
+    "builder-sugar-019"
+  ]
 }

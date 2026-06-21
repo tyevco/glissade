@@ -1,5 +1,34 @@
 # @glissade/scene
 
+## 0.19.0-pre.0
+
+### Minor Changes
+
+- 6124d7f: 0.19: bless controlled/imperative drive mode. Add an `evaluate(scene)` overload
+  (no timeline argument) as the first-class entry point for a host that owns the
+  clock and the values — drive nodes imperatively with `node.set(...)` between
+  frames and render, with no timeline to compile. It evaluates against an empty
+  timeline at the scene's current playhead, so imperative sets survive untouched
+  into the DisplayList.
+
+  The precedence contract is now documented and regression-tested: a live timeline
+  track always overrides `set(...)` on the property it targets (last writer wins),
+  per property — so a timeline can own the animated props while the host drives
+  the rest by hand. See the new `docs/controlled-drive.md` recipe.
+
+- bf0d4e8: 0.19 builder sugar — three additive, pure build-time slices that compile to the serializable Timeline document (goldens stay byte-identical):
+
+  - **Unknown builder options now throw** (`k-g1zn`). `to` / `fromTo` / `set` / `stagger` validate their options object against a known-key allow-list and throw a `TimelineValidationError` naming the offending key(s) and the method, instead of silently swallowing it. Known keys: `to`/`fromTo` → `duration`, `ease`, `at`, `from`; `set` → `at`; `stagger` spec → `to`, `from`, `duration`, `ease`; `stagger` opts → `each`, `anchor`, `at`. **Mildly breaking:** stray keys that were previously ignored now fail loudly at build time.
+  - **Per-target `stagger` spec values** (`ppCUmU`). `StaggerSpec.to` and `.from` now accept a function `(index, count) => value` resolved per target (a runtime `typeof` branch, consistent with `each` and scene `each()`), so a per-target-destination cascade is expressible. A plain value still fans uniformly. Emits N ordinary tweens, byte-identical to hand-authored.
+  - **`tl.tracks(tracks)`** (`Isuo8Gxn`) — a fluent bridge for the clip tier. Inject the pre-built `Track[]` returned by `presence`/`clip`/`each`/`morph` straight into the document; they land as ordinary absolute-time track rows via the same finalize→coalesce path `add()` uses for child tracks. Scoped to raw absolute-time tracks (no cursor-offset/rebasing wrapper).
+
+  `@glissade/scene`'s `describe()` manifest is updated in lockstep: the new `tracks` builder method is listed and the `stagger` signature reflects the `to`/`from` function form.
+
+### Patch Changes
+
+- Updated dependencies [bf0d4e8]
+  - @glissade/core@0.19.0-pre.0
+
 ## 0.18.0
 
 ### Minor Changes
