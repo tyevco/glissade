@@ -55,6 +55,17 @@ const panel = Stack({
 
 `align: 'start'` gives a column a true left edge — every label's origin lands on the same x, which is what you want for a stacked label/caption column. A bare `Layout` centers its children instead. Reach for the underlying `Layout` directly when you want the centered/row defaults or just prefer to be explicit; everything below applies to both.
 
+### `Row` / `Column` — named aliases
+
+For the two common cases a named pair reads better than `Stack({ direction })`. `Row` and `Column` are trivial aliases that pin the direction; everything else is `Stack` (including its `align: 'start'` default and the identical pure, memoized resolve). `direction` is omitted from their props — it's already fixed — so `Row(props)` is byte-identical to `Stack({ ...props, direction: 'row' })`, and `Column(props)` to `Stack({ ...props, direction: 'column' })`.
+
+```ts
+import { Row, Column, loadYogaLayoutEngine } from '@glissade/scene/layout';
+
+const labels = Column({ gap: 8, children: [/* … */] }); // a vertical, left-aligned stack
+const toolbar = Row({ gap: 12, children: [/* … */] });   // a horizontal stack
+```
+
 ## Container props
 
 Both `Stack` and `Layout` accept the same props (plus all the usual node props — `id`, `position`, `opacity`, …):

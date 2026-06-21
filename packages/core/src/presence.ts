@@ -235,6 +235,54 @@ function partitionOpacity(
 }
 
 /**
+ * The same stable-sort + coincident-`t` later-wins dedup the opacity guard uses,
+ * factored out so the NON-opacity channels reconcile identically. Given keys
+ * already in merge order (earlier-emitted first), sort by `t` keeping that order
+ * at ties, then collapse a coincident-`t` run to its LAST key. Pure.
+ */
+function reconcileKeys(keys: Key[]): Key[] {
+  const sorted = stableSortByT(keys);
+  const deduped: Key[] = [];
+  for (const k of sorted) {
+    const last = deduped[deduped.length - 1];
+    if (last && last.t === k.t) deduped[deduped.length - 1] = k;
+    else deduped.push(k);
+  }
+  return deduped;
+}
+
+/**
+ * Reconcile the enter's then the exit's NON-opacity tracks per target. When enter
+ * AND exit animate the SAME non-opacity channel (e.g. both slide `position` — a
+ * slide-in-hold-slide-out), emit ONE track per target whose keys are the enter's
+ * then the exit's, fused with the SAME stable-sort + later-wins dedup as opacity:
+ * at a coincident `t` (the enter's settle vs the exit's start) the exit wins, so
+ * the merged ramp is continuous and no key is silently dropped by
+ * `compileTimeline`'s `coalesce()`. Disjoint targets pass straight through.
+ * Output order is stable: first appearance across [enterRest, exitRest].
+ */
+function reconcileNonOpacity(enterRest: Track[], exitRest: Track[]): Track[] {
+  const order: string[] = [];
+  const byTarget = new Map<string, Track[]>();
+  for (const tr of [...enterRest, ...exitRest]) {
+    const bucket = byTarget.get(tr.target);
+    if (bucket) bucket.push(tr);
+    else {
+      byTarget.set(tr.target, [tr]);
+      order.push(tr.target);
+    }
+  }
+  return order.map((target) => {
+    const group = byTarget.get(target)!;
+    if (group.length === 1) return group[0]!;
+    // enter keys precede exit keys (array order above), so the exit wins at any
+    // coincident t — deep-equal to the hand-authored single reconciled track.
+    const merged = group.flatMap((tr) => tr.keys as Key[]);
+    return track(target, group[0]!.type, reconcileKeys(merged));
+  });
+}
+
+/**
  * Schedule a node's enter/exit presence. Emits keyed `Track[]` only.
  *
  *   presence('card', { show: 1, hide: 5 })  // fade in at 1, fade out to land on 5
@@ -330,19 +378,14 @@ export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResul
   // apply the builder's coincident-`t` later-wins dedup so the overlay ramp keys
   // replace the bare held guard keys they coincide with. Fixed merge order →
   // byte-deterministic output, deep-equal to the hand-authored reconciled track.
-  const merged = [...bareGuard, ...overlay];
-  const sorted = stableSortByT(merged);
-  const deduped: Key[] = [];
-  for (const k of sorted) {
-    const last = deduped[deduped.length - 1];
-    if (last && last.t === k.t) deduped[deduped.length - 1] = k;
-    else deduped.push(k);
-  }
+  const opacityTrack = track(opacityTarget, 'number', reconcileKeys([...bareGuard, ...overlay]));
 
-  const opacityTrack = track(opacityTarget, 'number', deduped);
-
-  // Non-opacity channels (scale / position / …) from BOTH clips pass through.
-  const tracks: Track[] = [opacityTrack, ...enterRest, ...exitRest];
+  // Non-opacity channels (scale / position / …): reconcile per-target so an enter
+  // AND exit animating the SAME channel (a slide-in-hold-slide-out) fuse into ONE
+  // track — never two same-target tracks for `compileTimeline`'s coalesce() to
+  // silently truncate. Disjoint channels pass straight through.
+  const nonOpacity = reconcileNonOpacity(enterRest, exitRest);
+  const tracks: Track[] = [opacityTrack, ...nonOpacity];
 
   return { tracks, end: hide, shownAt: show, hiddenAt: hide };
 }

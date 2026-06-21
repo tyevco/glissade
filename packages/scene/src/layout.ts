@@ -223,6 +223,30 @@ export function Stack(props: StackProps = {}): Layout {
   });
 }
 
+/**
+ * `Row`/`Column` props — `Stack`'s surface MINUS `direction` (the alias pins it).
+ * Omitting `direction` from the type means an explicit one can't even be passed,
+ * so `Row({...})` is unambiguously a row and `Column({...})` a column.
+ */
+export interface RowProps extends Omit<StackProps, 'direction'> {}
+
+/**
+ * `Stack({ direction: 'row' })` read as a name — a horizontal stack. Inherits
+ * Stack's `align:'start'` default and Layout's pure memoized resolve; the only
+ * difference from `Stack` is the pinned `direction`.
+ */
+export function Row(props: RowProps = {}): Layout {
+  return Stack({ ...props, direction: 'row' });
+}
+
+/**
+ * `Stack({ direction: 'column' })` read as a name — a vertical stack (the same
+ * direction `Stack` already defaults to, made explicit at the call site).
+ */
+export function Column(props: RowProps = {}): Layout {
+  return Stack({ ...props, direction: 'column' });
+}
+
 function initProp<T>(sig: BindableSignal<T>, init: PropInit<T> | undefined): BindableSignal<T> {
   if (typeof init === 'function') sig.bindSource(init as () => T);
   else if (init !== undefined) sig.set(init);

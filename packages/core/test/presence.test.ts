@@ -157,6 +157,75 @@ describe('presence — synthesis & pass-through', () => {
   });
 });
 
+describe('presence — overlapping enter+exit on a SAME non-opacity channel (0.18 pre.4)', () => {
+  // THE BUG (in-house canary): a slide-in-hold-slide-out animates `position` in
+  // BOTH the enter and the exit. Presence used to emit TWO `card/position` tracks
+  // (enterRest + exitRest), so when they overlapped in t, compileTimeline's
+  // coalesce() dropped the enter's settle key and dev-warned — the hold leg of the
+  // slide silently vanished. The fix reconciles non-opacity channels per target
+  // into ONE track, mirroring the opacity guard's stable-sort + later-wins dedup.
+  it('fuses a slide-in / slide-out into ONE position track keeping both the enter settle and exit start', () => {
+    // enter slides FROM below to origin over [1,1.4]; exit slides origin→below over
+    // [exitStart, 5]. A long exit (1.0s) makes exitStart = 4.0 → [4,5] (no t-overlap),
+    // but we still demand a SINGLE merged track with the enter settle + the exit start.
+    const slideEnter = clip({
+      channels: { offset: { path: 'position', keys: [key(0, [0, 16]), key(0.4, [0, 0])] } },
+    });
+    const slideExit = clip({
+      channels: { offset: { path: 'position', keys: [key(0, [0, 0]), key(1.0, [0, 16])] } },
+    });
+    const { tracks } = presence('card', { show: 1, hide: 5, enter: slideEnter, exit: slideExit });
+    const pos = tracks.filter((t) => t.target === 'card/position');
+    // exactly ONE position track (not two same-target tracks)
+    expect(pos.length).toBe(1);
+    const ts = pos[0]!.keys.map((k) => k.t);
+    // enter: [1, 1.4]; exit: exitStart = 5 - 1.0 = 4.0, lands at 5 → [4, 5]
+    expect(ts).toEqual([1, 1.4, 4, 5]);
+    // the enter's settle (origin @ 1.4) and the exit's start (origin @ 4.0) BOTH survive
+    expect(pos[0]!.keys[1]!.value).toEqual([0, 0]); // enter settle preserved
+    expect(pos[0]!.keys[2]!.value).toEqual([0, 0]); // exit start preserved
+    expect(pos[0]!.keys[3]!.value).toEqual([0, 16]); // exit lands below
+    // no duplicate coincident keys
+    expect(new Set(ts).size).toBe(ts.length);
+  });
+
+  it('reconciles a t-OVERLAPPING enter settle / exit start at coincident t (exit wins, no dropped key)', () => {
+    // enter settles at enterEnd = 1 + 0.4 = 1.4; craft an exit whose start lands at
+    // EXACTLY 1.4 (exitStart = hide - exitDur). hide=2.4, exitDur=1.0 → exitStart=1.4.
+    const slideEnter = clip({
+      channels: { offset: { path: 'position', keys: [key(0, [0, 16]), key(0.4, [0, 0])] } },
+    });
+    const slideExit = clip({
+      channels: { offset: { path: 'position', keys: [key(0, [0, 0]), key(1.0, [0, 30])] } },
+    });
+    const { tracks } = presence('card', { show: 1, hide: 2.4, enter: slideEnter, exit: slideExit });
+    const pos = tracks.filter((t) => t.target === 'card/position');
+    expect(pos.length).toBe(1);
+    const ts = pos[0]!.keys.map((k) => k.t);
+    // coincident enter-settle/exit-start at 1.4 collapse to one key (later-wins = exit)
+    expect(ts).toEqual([1, 1.4, 2.4]);
+    expect(new Set(ts).size).toBe(ts.length);
+    // both endpoints are origin here; the survivor at 1.4 is the EXIT's start
+    expect(pos[0]!.keys[1]!.value).toEqual([0, 0]);
+    expect(pos[0]!.keys[2]!.value).toEqual([0, 30]);
+  });
+
+  it('default opacity-only presence is UNCHANGED (only the opacity track, bytes preserved)', () => {
+    const { tracks } = presence('card', { show: 1, hide: 5 });
+    expect(tracks.map((t) => t.target)).toEqual(['card/opacity']);
+    const hand: Track[] = [
+      track('card/opacity', 'number', [
+        key(0, 0, { interp: 'hold' }),
+        key(1, 0),
+        key(1.3, 1),
+        key(4.7, 1),
+        key(5, 0),
+      ]),
+    ];
+    expect(tracks).toEqual(hand);
+  });
+});
+
 describe('presence — target rejection', () => {
   it('throws on a structural (~) id', () => {
     expect(() => presence('~Rect.0', { show: 0, hide: 2 })).toThrow();

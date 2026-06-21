@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
 import { createScene, evaluate, Rect } from '../src/index.js';
-import { Layout, Stack, loadYogaLayoutEngine } from '../src/layout.js';
+import { Column, Layout, Row, Stack, loadYogaLayoutEngine } from '../src/layout.js';
 
 /**
  * Stack is a THIN factory alias over the already-shipped Yoga Layout node:
@@ -89,6 +89,39 @@ describe('Stack factory (thin alias over Layout)', () => {
     const layoutLefts = translatesOf(layoutScene).map(([x], i) => x - widths[i]! / 2);
     expect(new Set(layoutLefts).size).toBeGreaterThan(1); // row spreads across x
     expect(layoutLefts).not.toEqual([-100, -100, -100]); // no shared left edge
+  });
+
+  it('Row({gap}) resolves IDENTICALLY to Stack({direction:row, gap}); Column likewise (0.18 pre.4)', () => {
+    const sceneOf = (node: ReturnType<typeof Stack>) =>
+      createScene({ size: { w: 640, h: 360 }, children: [node] });
+
+    // Row vs Stack({direction:'row'})
+    const rowScene = sceneOf(Row({ id: 'row1', gap: 12, padding: 8, position: [320, 180], children: kids() }));
+    const rowStackScene = sceneOf(
+      Stack({ id: 'row2', direction: 'row', gap: 12, padding: 8, position: [320, 180], children: kids() }),
+    );
+    expect(translatesOf(rowScene)).toEqual(translatesOf(rowStackScene));
+
+    // Column vs Stack({direction:'column'})
+    const colScene = sceneOf(Column({ id: 'col1', gap: 12, padding: 8, position: [320, 180], children: kids() }));
+    const colStackScene = sceneOf(
+      Stack({ id: 'col2', direction: 'column', gap: 12, padding: 8, position: [320, 180], children: kids() }),
+    );
+    expect(translatesOf(colScene)).toEqual(translatesOf(colStackScene));
+
+    // Row and Column genuinely differ (proves the direction is actually applied)
+    expect(translatesOf(rowScene)).not.toEqual(translatesOf(colScene));
+  });
+
+  it('Row/Column are deterministic (same inputs → same positions across calls)', () => {
+    const build = () =>
+      translatesOf(
+        createScene({
+          size: { w: 640, h: 360 },
+          children: [Row({ id: 'r', gap: 6, position: [320, 180], children: kids() })],
+        }),
+      );
+    expect(build()).toEqual(build());
   });
 
   it('nested Stack-in-Stack (a row of columns) resolves', () => {
