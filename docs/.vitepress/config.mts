@@ -22,6 +22,7 @@ export default defineConfig({
         items: [
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Concepts', link: '/concepts' },
+          { text: 'Single-file browser bundle', link: '/browser' },
           { text: 'Interactivity (v2)', link: '/interactivity' },
           { text: 'Narration & captions', link: '/narration' },
           { text: 'Music & the beat grid', link: '/music' },

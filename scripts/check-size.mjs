@@ -75,6 +75,7 @@ const BUDGETS = {
   interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
   'interact/audio': 2, // v2 §C.6: offline audio as a separate export ≤ 2 kB gz
   'effects-webgpu': 4, // §3.7 browser-only shader runner (incl. built-in WGSL strings)
+  browser: 45, // §4.4 single-file IIFE: the WHOLE embed path INLINED (core+scene+canvas2d+player+element), measured from the prebuilt dist/glissade.browser.js (39.3 kB measured + headroom). Not measured by the standalone loop below (that externalizes @glissade/*, which would leave an empty shell) — see the dedicated block after the loop.
 };
 
 /** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */
@@ -98,6 +99,10 @@ let failed = false;
 let baseTotal = 0;
 
 for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
+  // The single-file IIFE is INLINED, not externalized — bundling it through the
+  // standalone (external @glissade/*) path below would measure an empty shell.
+  // It is measured from its prebuilt dist in the dedicated block after the loop.
+  if (pkg === 'browser') continue;
   const subset = SUBSET_EXPORTS[pkg];
   const result = await build({
     ...(subset
@@ -228,6 +233,32 @@ for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
       staticOk ? '' : ` (leaked: ${staticHits.map((h) => `${h.file.slice(root.length)}:${h.line}`).join(', ')})`
     }`,
   );
+}
+
+// §4.4: the single-file `@glissade/browser` IIFE is built separately (the whole
+// embed path inlined into `dist/glissade.browser.js` via scripts/build-browser.mjs).
+// Measure that PREBUILT artifact directly — gz must stay ≤ the browser budget.
+// Skip gracefully (don't fail) when it's absent (unbuilt: `pnpm build:browser`
+// hasn't run), so a plain `pnpm build && check:size` doesn't false-fail.
+{
+  const browserFile = `${root}packages/browser/dist/glissade.browser.js`;
+  let raw;
+  try {
+    raw = readFileSync(browserFile);
+  } catch {
+    raw = null;
+  }
+  if (raw === null) {
+    console.log(`skip browser             (dist/glissade.browser.js not built — run pnpm build:browser)`);
+  } else {
+    const budgetKb = BUDGETS.browser;
+    const gz = gzipSync(raw).length / 1024;
+    const ok = gz <= budgetKb;
+    if (!ok) failed = true;
+    console.log(
+      `${ok ? 'ok  ' : 'FAIL'} ${'browser'.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB, ${(raw.length / 1024).toFixed(2)} kB raw)`,
+    );
+  }
 }
 
 process.exit(failed ? 1 : 0);

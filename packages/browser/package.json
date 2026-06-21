@@ -1,0 +1,37 @@
+{
+  "name": "@glissade/browser",
+  "version": "0.16.0",
+  "description": "glissade single-file IIFE bundle: the realtime browser embed path (core + scene + canvas2d + player + element) for <script src> / no-build use — window.glissade.*, auto-registers <gs-player>.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/core": "workspace:*",
+    "@glissade/element": "workspace:*",
+    "@glissade/player": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/browser"
+  }
+}

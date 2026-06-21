@@ -41,6 +41,21 @@ type Drawable = Exclude<CanvasImageSource, SVGImageElement>;
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
+/**
+ * Allocate an offscreen layer (hit only by group opacity<1 / blend / filter /
+ * mesh). Prefer `OffscreenCanvas`, but fall back to a detached `<canvas>` where
+ * it's unavailable — so the single-file `@glissade/browser` bundle survives
+ * environments without `OffscreenCanvas`. Inert where `OffscreenCanvas` exists
+ * (every test + the Skia twin, which never reaches this), so it moves no golden.
+ */
+function createLayerCanvas(w: number, h: number): AnyCanvas {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  return canvas;
+}
+
 export type { TextMetricsLite } from '@glissade/scene';
 
 /** Largest canvas dimension browsers reliably allocate. */
@@ -62,7 +77,7 @@ export class Canvas2DBackend implements RenderBackend {
         // one structural cast at the seam: the DOM context satisfies Ctx2DLike
         // (fillStyle/getTransform widen to unknown); behavior is golden/SSIM-tested
         context: (c) => this.context(c) as unknown as Ctx2DLike<Path2D, Drawable>,
-        createCanvas: (w, h) => new OffscreenCanvas(w, h),
+        createCanvas: (w, h) => createLayerCanvas(w, h),
         newPath: () => new Path2D(),
         applyShader: (layer, shader, w, h) => shaderRunner?.apply(layer, shader, w, h) ?? null,
       },

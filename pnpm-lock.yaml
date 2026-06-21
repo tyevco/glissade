@@ -75,6 +75,24 @@ importers:
         specifier: ^0.1.65
         version: 0.1.100
 
+  packages/browser:
+    dependencies:
+      '@glissade/backend-canvas2d':
+        specifier: workspace:*
+        version: link:../backend-canvas2d
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+      '@glissade/element':
+        specifier: workspace:*
+        version: link:../element
+      '@glissade/player':
+        specifier: workspace:*
+        version: link:../player
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+
   packages/cli:
     dependencies:
       '@glissade/backend-skia':

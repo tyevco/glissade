@@ -5,6 +5,11 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "build:browser": {
+      "dependsOn": ["build"],
+      "outputs": ["packages/browser/dist/**"],
+      "cache": false
+    },
     "typecheck": {
       "dependsOn": ["^build"]
     }

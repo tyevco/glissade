@@ -35,6 +35,7 @@ const ALLOWED = {
   // heavier (backend-skia/cli/studio/export-web) may appear or the embed
   // import-direction promise breaks.
   umbrella: ['core', 'scene', 'player'],
+  browser: ['core', 'scene', 'backend-canvas2d', 'player', 'element'], // §4.4 prebuilt IIFE bundle, leaf consumer
   'eslint-plugin': [], // standalone dev tool: imports no @glissade packages
 
   cli: ['core', 'scene', 'backend-skia', 'interact', 'player', 'lottie', 'svg', 'narrate', 'sfx'], // interact/player: machine replay + the gs dev harness; lottie/svg: gs import
