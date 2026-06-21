@@ -1,5 +1,14 @@
 # @glissade/export-web
 
+## 0.19.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies [fc58403]
+  - @glissade/scene@0.19.0-pre.3
+  - @glissade/backend-canvas2d@0.19.0-pre.3
+  - @glissade/core@0.19.0-pre.3
+
 ## 0.19.0-pre.2
 
 ### Patch Changes
