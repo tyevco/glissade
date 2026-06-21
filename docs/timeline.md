@@ -80,6 +80,26 @@ An **empty** `targets` list is a true no-op (the cursor is untouched). A non-fin
 
 It is **not** for a **per-target-destination** cascade — e.g. cards dealt where each flies from its own start to its own grid slot. Those are genuinely N *different* position tweens; author them as an explicit loop of `to`/`fromTo` calls (optionally each offset like `stagger` does). Reaching for `stagger` there fights the shared-value model. *(A future `spec.to: (i) => value` form could close this — see the per-target-spec card — but the explicit loop is the correct shape today.)*
 
+## Composing build-time tracks — `presence` / `clip` / `each` / `morph`
+
+The clip tier on `@glissade/core/clips` (`presence`, `clip`, `clipList`, `each`, `morph`) is **not** part of the fluent builder — those are functions that **return `{ tracks, … }`**, and you compose their tracks into a **Timeline document** directly:
+
+```ts
+import { presence, clip } from '@glissade/core/clips';
+
+const card  = presence('card',  { window: [1, 5], enter: { opacity: [0, 1], offset: 16, dur: 0.5 }, exit: {} });
+const label = presence('label', { show: card.hiddenAt, hide: 6 });
+
+const doc = {
+  duration: 6,
+  tracks: [...card.tracks, ...label.tracks],   // compose the returned tracks
+};
+```
+
+`doc` is an ordinary serializable Timeline document — the same shape `timeline(tl => …)` compiles to — so `evaluate(scene, doc, t)` runs it. (The fluent builder has no `tl.presence()` / inject-raw-tracks method **yet** — composing into the document is the path today; a builder bridge is roadmapped.)
+
+> **In the no-build `@glissade/browser` IIFE:** `presence`/`clip`/`each`/`morph` are on `window.glissade`, but you still compose their `.tracks` into a Timeline-document literal as above (there's no fluent-builder shortcut). This is the same "compose at build time" boundary as `@glissade/scene/layout` — the functions run, you assemble the document.
+
 ## Why this is data, not code
 
-Every composition method emits plain `ChildEntry` rows on the parent document. There are no generators and no promise-chained sequencing: the result is the same JSON you could have written by hand, so seek behaves identically to play-through and the whole timeline stays serializable, diffable, and editable in the studio.
+Every composition method emits plain `ChildEntry` rows (or, for the clip tier, plain `Track` rows) you compose into the document. There are no generators and no promise-chained sequencing: the result is the same JSON you could have written by hand, so seek behaves identically to play-through and the whole timeline stays serializable, diffable, and editable in the studio.
