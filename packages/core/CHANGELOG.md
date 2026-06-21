@@ -1,5 +1,55 @@
 # @glissade/core
 
+## 0.18.0-pre.4
+
+### Minor Changes
+
+- 35968a1: feat(core): stagger `anchor` rename + non-uniform `each` + cursor fixes, and a `.call()` sibling-collision fix
+
+  **stagger API (pre-only, no back-compat):**
+
+  - `StaggerOpts.from` → `StaggerOpts.anchor`. The placement anchor shared the word
+    `from` with `StaggerSpec.from` (the start VALUE that routes a target through
+    `fromTo`) — two different axes, one word. Renamed the placement one to `anchor`
+    (`'start' | 'end' | 'center' | 'edges' | number`).
+  - `each` widened to `number | ((rank, count) => number)`. A number keeps the
+    uniform cascade `d_i = rank_i * each`; a function maps each target's rank +
+    group size to its own delay, completing GSAP parity for accel/decel/eased
+    cascades. Keys stay byte-identical to the hand-authored equivalent.
+
+  **stagger cursor-semantics fixes** (the post-stagger cursor a following
+  `'<'`/`'>'`/`'+='`/default step resolves against):
+
+  - A spring `spec.ease` now contributes its real `spring.duration(ease)` to the
+    group end, not the local `duration ?? 1`.
+  - An empty `targets` list is a true no-op — the cursor is untouched.
+  - The group reports its **true** min/max delay (over all `d_i`, init from `d_0`),
+    so a backward / non-monotonic spread anchors honestly.
+  - A delay that would place a key at `t < 0`, or a non-finite `each`/`anchor`
+    (incl. a function returning NaN/Infinity), throws a `TimelineValidationError`
+    at build time instead of emitting silent negative / NaN keys.
+
+  **`.call()` sibling-collision fix:** auto-named `call:N` markers are namespaced by
+  the sub's position path (`c<index>/…`) when rebased into a parent, and the same
+  prefix is applied when forwarding the sub's callback map. Two sibling subs that
+  each define a `.call()` (both auto-named `call:0`) now land under distinct keys
+  and both fire — previously one callback was dropped and the other double-fired.
+
+### Patch Changes
+
+- 0a8967c: fix(core): presence reconciles non-opacity channels per target (slide-in-hold-slide-out no longer truncates)
+
+  When a `presence()`'s enter AND exit both animated the SAME non-opacity channel
+  (e.g. both slide `position` — a slide-in, hold, slide-out), presence emitted TWO
+  same-target tracks. `compileTimeline`'s `coalesce()` then dropped the enter's
+  settle key and dev-warned — the hold leg of the slide was silently truncated.
+
+  Non-opacity channels are now reconciled per target into ONE track, using the same
+  stable-sort + coincident-`t` later-wins dedup the opacity guard already uses (at a
+  coincident enter-settle / exit-start `t` the exit wins). The enter settle and exit
+  start both survive, so a slide-in-hold-slide-out works. Default opacity-only
+  presence is byte-unchanged (the presence golden is byte-identical).
+
 ## 0.18.0-pre.3
 
 ### Minor Changes

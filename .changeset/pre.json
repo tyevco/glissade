@@ -25,9 +25,12 @@
     "@glissade/vite-plugin": "0.17.1"
   },
   "changesets": [
+    "presence-channel-reconcile",
     "presence-inline-literal-sugar",
+    "row-column-layout-aliases",
     "sequence-and-at-builder-methods",
     "stack-layout-alias",
+    "stagger-anchor-each-call-collision",
     "stagger-builder-method"
   ]
 }

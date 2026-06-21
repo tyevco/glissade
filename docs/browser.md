@@ -17,6 +17,25 @@ Serve the file from anywhere (it's fully offline — one file, no network deps) 
 
 Loading the script **auto-registers `<gs-player>`** — the `@glissade/element` module runs `customElements.define('gs-player', …)` at load. You don't call anything to register it.
 
+### Where to get the file (versions & channels)
+
+The bundle ships on npm as `@glissade/browser`, so any npm CDN serves it as one `<script src>`-able file. Pick the URL by how pinned you want to be:
+
+```
+# track the STABLE channel (auto-updates to the newest @latest release)
+https://cdn.jsdelivr.net/npm/@glissade/browser@latest/dist/glissade.browser.js
+
+# track the PRE-RELEASE channel (auto-updates to the newest @pre — e.g. a 0.X.0-pre.N)
+https://cdn.jsdelivr.net/npm/@glissade/browser@pre/dist/glissade.browser.js
+
+# PIN an exact version (fully reproducible)
+https://cdn.jsdelivr.net/npm/@glissade/browser@0.17.1/dist/glissade.browser.js
+```
+
+`unpkg.com/@glissade/browser@<tag-or-version>/dist/glissade.browser.js` works identically. Each GitHub Release also attaches the file as an asset (`https://github.com/tyevco/glissade/releases/download/v<version>/glissade.browser.js`) — note that asset URL is **version-specific** (the tag is in the path), and `/releases/latest/download/` follows the latest **stable** release only (not pre-releases). For a single URL that tracks pre-releases, use the CDN `@pre` tag above. *(CDN dist-tag resolution caches briefly, so a brand-new publish can take a few minutes to appear on the `@latest`/`@pre` URLs.)*
+
+For the **offline single-file** case, fetch one of these once at build time and inline the contents into your `<script>` — the bundle has no runtime network dependency.
+
 ## Two ways to render
 
 ### 1. The lean own-rAF path
