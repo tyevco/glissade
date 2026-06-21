@@ -74,6 +74,12 @@ timeline((tl) => {
 
 An **empty** `targets` list is a true no-op (the cursor is untouched). A non-finite `each`/`anchor`, or a delay that would place a key at `t < 0`, throws a `TimelineValidationError` at build time rather than emitting silent NaN / negative keys.
 
+### When `stagger` fits — and when it doesn't
+
+`stagger` fans **one shared tween** across the targets: `spec.to`/`spec.from` are single values. So it's the right tool for a **same-tween cascade** — N items animating the *identical* opacity / scale / reveal, offset in time (a list revealing, dots filling, a row checking in).
+
+It is **not** for a **per-target-destination** cascade — e.g. cards dealt where each flies from its own start to its own grid slot. Those are genuinely N *different* position tweens; author them as an explicit loop of `to`/`fromTo` calls (optionally each offset like `stagger` does). Reaching for `stagger` there fights the shared-value model. *(A future `spec.to: (i) => value` form could close this — see the per-target-spec card — but the explicit loop is the correct shape today.)*
+
 ## Why this is data, not code
 
 Every composition method emits plain `ChildEntry` rows on the parent document. There are no generators and no promise-chained sequencing: the result is the same JSON you could have written by hand, so seek behaves identically to play-through and the whole timeline stays serializable, diffable, and editable in the studio.
