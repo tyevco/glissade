@@ -6,6 +6,11 @@
 import { describe as vdescribe, expect, it } from 'vitest';
 import { describe, type ApiManifest } from '../src/describe.js';
 import { timeline, type TimelineBuilder } from '@glissade/core';
+import { Group, Rect, Circle, Path, Text, ImageNode, Video } from '../src/nodes.js';
+import { Layout, Stack, Row, Column } from '../src/layout.js';
+import { createScene } from '../src/scene.js';
+import { bindScene } from '../src/scene.js';
+import { type Node } from '../src/node.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -27,8 +32,10 @@ vdescribe('describe() manifest', () => {
     expect(JSON.parse(JSON.stringify(m))).toEqual(m);
   });
 
-  it('lists every built-in node type', () => {
-    expect(Object.keys(m.nodes).sort()).toEqual(['Circle', 'Group', 'Image', 'Path', 'Rect', 'Text', 'Video']);
+  it('lists every built-in node type (base index + the layout family)', () => {
+    expect(Object.keys(m.nodes).sort()).toEqual([
+      'Circle', 'Column', 'Group', 'Image', 'Layout', 'Path', 'Rect', 'Row', 'Stack', 'Text', 'Video',
+    ]);
   });
 
   it('tags Rect.position as an animatable vec2 target with arity 2', () => {
@@ -141,6 +148,215 @@ vdescribe('describe() docs-honesty', () => {
     for (const t of targets) {
       const prop = t.slice(t.indexOf('/') + 1);
       expect(propIsReal(prop), `docs target '${t}' (prop '${prop}') not found in describe()`).toBe(true);
+    }
+  });
+});
+
+vdescribe('describe() construction props', () => {
+  const m = describe();
+
+  it('flags Image.assetId as a REQUIRED, non-animatable string with no target', () => {
+    expect(m.nodes.Image!.props.assetId).toEqual({
+      type: 'string',
+      animatable: false,
+      required: true,
+    });
+    expect(m.nodes.Image!.props.assetId!.target).toBeUndefined();
+  });
+
+  it('flags Video.assetId required and its clip props (at/trimStart/...) as construction-only', () => {
+    expect(m.nodes.Video!.props.assetId).toEqual({ type: 'string', animatable: false, required: true });
+    for (const p of ['at', 'trimStart', 'playbackRate', 'clipDuration', 'sourceFps']) {
+      expect(m.nodes.Video!.props[p]!.animatable).toBe(false);
+      expect(m.nodes.Video!.props[p]!.target).toBeUndefined();
+    }
+  });
+
+  it('exposes Text fontFamily/align/anchor as construction-only (animatable:false, no target)', () => {
+    for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight']) {
+      const prop = m.nodes.Text!.props[p];
+      expect(prop, `Text.${p} missing`).toBeDefined();
+      expect(prop!.animatable, `Text.${p} must be construction-only`).toBe(false);
+      expect(prop!.target, `Text.${p} must have no target`).toBeUndefined();
+      expect(prop!.required).toBeUndefined();
+    }
+  });
+
+  it('keeps the animatable Text props (text/fill/fontSize/width/reveal/position) as real targets', () => {
+    for (const p of ['text', 'fill', 'fontSize', 'width', 'reveal', 'position', 'opacity']) {
+      const prop = m.nodes.Text!.props[p];
+      expect(prop!.animatable, `Text.${p} must stay animatable`).toBe(true);
+      expect(prop!.target).toBe(`<id>/${p}`);
+    }
+  });
+
+  it('gives every node the shared base construction props (id/blend/filters/anchor/cache)', () => {
+    for (const [name, node] of Object.entries(m.nodes)) {
+      for (const p of ['id', 'blend', 'filters', 'anchor', 'cache']) {
+        expect(node.props[p], `${name}.${p} missing`).toBeDefined();
+        expect(node.props[p]!.animatable, `${name}.${p} construction-only`).toBe(false);
+        expect(node.props[p]!.target).toBeUndefined();
+      }
+    }
+  });
+
+  // DRIFT GUARD: construct each node using EXACTLY the manifest's construction
+  // props — the constructor must accept them — and assert no construction prop
+  // name collides with an animatable target name.
+  it('each node constructs from exactly its manifest construction props (no drift, no collision)', () => {
+    const ctorArgFor: { [name: string]: (props: Record<string, unknown>) => Node } = {
+      Group: (p) => new Group(p),
+      Rect: (p) => new Rect(p),
+      Circle: (p) => new Circle(p),
+      Path: (p) => new Path(p),
+      Text: (p) => new Text(p),
+      Image: (p) => new ImageNode(p as { assetId: string }),
+      Video: (p) => new Video(p as { assetId: string }),
+      Layout: (p) => new Layout(p),
+      Stack: (p) => Stack(p),
+      Row: (p) => Row(p),
+      Column: (p) => Column(p),
+    };
+    // a concrete value of the right shape for each construction prop type
+    const sample: { [type: string]: unknown } = {
+      'string': 'x',
+      'number': 1,
+      'boolean': true,
+      'Node[]': [],
+      'BlendMode': 'source-over',
+      'FilterSpec[]': [],
+      'AnchorSpec': 'center',
+      'SketchStyle': { kind: 'pencil' },
+      'HachureSpec': { gap: 4 },
+      "'normal'|'italic'": 'normal',
+      "'left'|'center'|'right'": 'center',
+      "'row'|'column'": 'row',
+      "'start'|'center'|'end'|'space-between'|'space-around'": 'start',
+      "'start'|'center'|'end'|'stretch'": 'start',
+    };
+    for (const [name, node] of Object.entries(m.nodes)) {
+      const animatable = new Set(Object.entries(node.props).filter(([, p]) => p.animatable).map(([k]) => k));
+      const props: Record<string, unknown> = {};
+      for (const [prop, spec] of Object.entries(node.props)) {
+        if (spec.animatable) continue;
+        // a construction prop must NOT also be an animatable target name
+        expect(animatable.has(prop), `${name}.${prop} is both construction and animatable`).toBe(false);
+        expect(spec.type in sample, `no sample for ${name}.${prop} type '${spec.type}'`).toBe(true);
+        props[prop] = sample[spec.type];
+      }
+      // 'anchor' on a Group/Layout warns + is ignored, but must still be accepted
+      expect(() => ctorArgFor[name]!(props), `${name} must construct from its construction props`).not.toThrow();
+    }
+  });
+});
+
+vdescribe('describe() layout nodes', () => {
+  const m = describe();
+
+  it('lists Layout/Stack/Row/Column in .nodes on the @glissade/scene/layout subpath', () => {
+    for (const name of ['Layout', 'Stack', 'Row', 'Column']) {
+      const node = m.nodes[name];
+      expect(node, `${name} missing from .nodes`).toBeDefined();
+      expect(node!.subpath).toBe('@glissade/scene/layout');
+    }
+  });
+
+  it('exposes layout width/height/gap/padding as animatable, direction/justify/align as construction', () => {
+    const L = m.nodes.Layout!;
+    for (const p of ['width', 'height', 'gap', 'padding']) {
+      expect(L.props[p]!.animatable, `${p} animatable`).toBe(true);
+      expect(L.props[p]!.target).toBe(`<id>/${p}`);
+    }
+    for (const p of ['direction', 'justify', 'align', 'children']) {
+      expect(L.props[p]!.animatable, `${p} construction`).toBe(false);
+      expect(L.props[p]!.target).toBeUndefined();
+    }
+  });
+
+  // DRIFT GUARD vs the real Layout: the curated animatable set must equal the
+  // real node's listTargets() (minus base transform targets), and the curated
+  // schema must not invent props the constructor rejects (covered above).
+  it("matches the real Layout node's registered targets", () => {
+    const real = new Layout();
+    const realTargets = new Set(real.listTargets().map((t) => t.path));
+    // every curated animatable Layout prop is a real registered target
+    for (const [prop, spec] of Object.entries(m.nodes.Layout!.props)) {
+      if (spec.animatable) expect(realTargets.has(prop), `Layout.${prop} not a real target`).toBe(true);
+    }
+    // and the layout-specific targets (width/height/gap/padding) are all surfaced
+    for (const p of ['width', 'height', 'gap', 'padding']) {
+      expect(m.nodes.Layout!.props[p]!.animatable).toBe(true);
+    }
+  });
+});
+
+vdescribe('describe() createScene surfaces the assets manifest', () => {
+  const m = describe();
+  it('documents the timeline.assets shape (kind image|video, url)', () => {
+    expect(m.createScene).toMatch(/assets/);
+    expect(m.createScene).toMatch(/image/);
+    expect(m.createScene).toMatch(/video/);
+    expect(m.createScene).toMatch(/url/);
+    expect(m.createScene).toMatch(/assetId/);
+  });
+});
+
+vdescribe('describe() stagger signature shows the non-uniform each', () => {
+  const m = describe();
+  it('documents each as number | ((rank, count) => number)', () => {
+    const stagger = m.builder.methods.find((x) => x.name === 'stagger');
+    expect(stagger).toBeDefined();
+    expect(stagger!.signature).toMatch(/each:\s*number\s*\|\s*\(\(rank,\s*count\)\s*=>\s*number\)/);
+  });
+});
+
+// THE NEGATIVE-SPACE GUARD: a construction-only prop is NOT a real animatable
+// target — binding a track to it is REJECTED by the bind guard. This catches an
+// accidentally-animatable construction prop (e.g. an `assetId` that slipped into
+// registerTarget).
+vdescribe('describe() negative space: construction props are not bindable', () => {
+  const m = describe();
+
+  /** Does binding a track on `<id>/<prop>` throw (target not registered)? */
+  function bindingRejected(node: Node, prop: string): boolean {
+    const scene = createScene({ size: { w: 10, h: 10 }, children: [node] });
+    const doc = timeline({
+      tracks: [
+        {
+          target: `n/${prop}`,
+          type: 'string',
+          keys: [
+            { t: 0, value: 'a' },
+            { t: 1, value: 'b' },
+          ],
+        } as never,
+      ],
+    });
+    try {
+      bindScene(scene, doc);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  it("rejects binding a track on Image 'assetId' (construction-only)", () => {
+    expect(m.nodes.Image!.props.assetId!.target).toBeUndefined();
+    expect(bindingRejected(new ImageNode({ id: 'n', assetId: 'a' }), 'assetId')).toBe(true);
+  });
+
+  it("rejects binding a track on Text 'fontFamily' (construction-only)", () => {
+    expect(m.nodes.Text!.props.fontFamily!.target).toBeUndefined();
+    expect(bindingRejected(new Text({ id: 'n', fontFamily: 'serif' }), 'fontFamily')).toBe(true);
+  });
+
+  it('confirms every construction-only prop in the manifest has no target', () => {
+    for (const [name, node] of Object.entries(m.nodes)) {
+      for (const [prop, spec] of Object.entries(node.props)) {
+        if (!spec.animatable) {
+          expect(spec.target, `${name}.${prop} is construction-only but carries a target`).toBeUndefined();
+        }
+      }
     }
   });
 });

@@ -35,20 +35,42 @@ const RAW_VERSION = '__GLISSADE_VERSION__';
 // fallback only off the build path.
 const PACKAGE_VERSION = RAW_VERSION.includes('GLISSADE_'.concat('VERSION')) ? '0.0.0-dev' : RAW_VERSION;
 
-/** One animatable / settable prop in the manifest. */
+/**
+ * One prop in the manifest. The `animatable` flag is the load-bearing
+ * distinction an AI reads to tell "animate this" from "set at construction":
+ *
+ * - An ANIMATABLE prop (`animatable: true`) carries a `target` — a real track
+ *   target you bind via `to`/`fromTo`/`set`. Generated from `listTargets()`,
+ *   so it is a registered target by construction.
+ * - A CONSTRUCTION prop (`animatable: false`) has NO `target` — it is passed to
+ *   the node constructor and NEVER bindable (binding it is rejected by the bind
+ *   guard). `required: true` marks one you can't omit (e.g. Image `assetId`).
+ *
+ * This negative space is the manifest's point: it prevents an AI from
+ * attempting to animate a construction-only prop (an `assetId` track, a
+ * `fontFamily` tween) — those are construction-time decisions, not tracks.
+ */
 export interface DescribedProp {
   /** The §2.2 value-type id this prop accepts (e.g. `'vec2'`, `'number'`, `'color'`). */
   type: string;
-  /** Whether a Track can drive it (every registered target is animatable). */
+  /** Whether a Track can drive it. `true` ⇒ a `target` is present; `false` ⇒ construction-only, no `target`. */
   animatable: boolean;
-  /** The track-target template, `'<id>/<path>'` — substitute the node's real id. */
+  /** The track-target template, `'<id>/<path>'` — present ONLY on animatable props; substitute the node's real id. */
   target?: string;
   /** Component count of the value (`vec2` → 2, scalar → 1); omitted for non-numeric reprs. */
   arity?: number;
+  /** Construction-only props: `true` when the constructor REQUIRES it (e.g. Image/Video `assetId`). */
+  required?: boolean;
 }
 
 export interface DescribedNode {
   props: { [prop: string]: DescribedProp };
+  /**
+   * The tree-shakeable subpath this node is imported from, when not the base
+   * `@glissade/scene` index (e.g. the Layout family lives on
+   * `@glissade/scene/layout`). Omitted for base-index nodes.
+   */
+  subpath?: string;
 }
 
 export interface DescribedBuilderMethod {
@@ -85,9 +107,87 @@ function expectsToType(expects: string | readonly string[] | undefined): string 
   return Array.isArray(expects) ? expects.join('|') : (expects as string);
 }
 
-/** Introspect one freshly-instantiated node into its prop manifest, reading the
- * REAL `registerTarget` calls via `listTargets()` (so it can't drift). */
-function describeNode(node: Node): DescribedNode {
+/**
+ * A construction-only prop spec — a prop you pass to the node constructor that
+ * is NOT a track target. Curated per node (TS Props types erase at runtime, so
+ * there is no registry to read), and guarded against drift by `describe.test.ts`,
+ * which CONSTRUCTS each node from exactly these names (the constructor must
+ * accept them) and asserts none collides with an animatable target.
+ */
+interface ConstructionProp {
+  type: string;
+  required?: boolean;
+}
+
+/**
+ * Construction-only props by node type — the difference between a node's Props
+ * interface and its `registerTarget` set (its animatable props). These are set
+ * once at `new Node({...})` and can never be animated.
+ *
+ * Base `NodeProps` construction props (`id`, `blend`, `filters`, `anchor`,
+ * `cache`) are shared by EVERY node and merged in separately, so this map holds
+ * only each node's OWN construction surface.
+ */
+const CONSTRUCTION_PROPS: { [typeName: string]: { [prop: string]: ConstructionProp } } = {
+  Group: {
+    children: { type: 'Node[]' },
+  },
+  Rect: {
+    // hand-drawn look (sketch.ts) — geometry-time, not animatable
+    sketch: { type: 'SketchStyle' },
+    sketchFill: { type: 'HachureSpec' },
+    sketchSeed: { type: 'number' },
+  },
+  Circle: {
+    sketch: { type: 'SketchStyle' },
+    sketchFill: { type: 'HachureSpec' },
+    sketchSeed: { type: 'number' },
+  },
+  Path: {
+    sketch: { type: 'SketchStyle' },
+    sketchFill: { type: 'HachureSpec' },
+    sketchSeed: { type: 'number' },
+  },
+  Text: {
+    fontFamily: { type: 'string' },
+    fontWeight: { type: 'number' },
+    fontStyle: { type: "'normal'|'italic'" },
+    align: { type: "'left'|'center'|'right'" },
+    lineHeight: { type: 'number' },
+  },
+  Image: {
+    // REQUIRED: an Image references a Timeline asset by id — you cannot
+    // construct one without it. (NOT the media URL: that lives in the assets
+    // manifest, keyed by this id — see createScene's `assets` shape.)
+    assetId: { type: 'string', required: true },
+  },
+  Video: {
+    assetId: { type: 'string', required: true },
+    at: { type: 'number' },
+    trimStart: { type: 'number' },
+    playbackRate: { type: 'number' },
+    clipDuration: { type: 'number' },
+    sourceFps: { type: 'number' },
+  },
+};
+
+/**
+ * Base-`NodeProps` construction props shared by every node — set at
+ * construction, never animatable (none is a registered target).
+ */
+const BASE_CONSTRUCTION_PROPS: { [prop: string]: ConstructionProp } = {
+  id: { type: 'string' },
+  blend: { type: 'BlendMode' },
+  filters: { type: 'FilterSpec[]' },
+  anchor: { type: 'AnchorSpec' },
+  cache: { type: 'boolean' },
+};
+
+/** Introspect one freshly-instantiated node into its prop manifest: the
+ * ANIMATABLE props come from the REAL `registerTarget` calls via `listTargets()`
+ * (so they can't drift); the CONSTRUCTION-only props are merged from the curated
+ * schema (drift-guarded by a constructor test). */
+function describeNode(node: Node, typeName: string): DescribedNode {
   const props: { [prop: string]: DescribedProp } = {};
   for (const { path, expects } of node.listTargets()) {
     const type = expectsToType(expects);
@@ -99,7 +199,64 @@ function describeNode(node: Node): DescribedNode {
       ...(arity !== undefined ? { arity } : {}),
     };
   }
+  // Construction-only props: base NodeProps + this node's own. No `target`:
+  // these are never bindable, and the bind guard rejects any track on them.
+  const construction = { ...BASE_CONSTRUCTION_PROPS, ...(CONSTRUCTION_PROPS[typeName] ?? {}) };
+  for (const [prop, spec] of Object.entries(construction)) {
+    props[prop] = {
+      type: spec.type,
+      animatable: false,
+      ...(spec.required ? { required: true } : {}),
+    };
+  }
   return { props };
+}
+
+/**
+ * The Layout family — `Layout` and its `Stack`/`Row`/`Column` ergonomic
+ * factories — lives on the budgeted `@glissade/scene/layout` entry (it ships
+ * Yoga wasm), so describe() does NOT import it (that would drag Yoga onto the
+ * describe/browser bundle). Instead it carries a CURATED schema, drift-guarded
+ * by `describe.test.ts`, which imports the real Layout and asserts these
+ * animatable props match its `listTargets()` and these construction props match
+ * its constructor.
+ *
+ * `width`/`height` are animatable number targets; `direction`/`justify`/`align`
+ * are construction-only (set once, not tweened). `children` is construction.
+ */
+const LAYOUT_SUBPATH = '@glissade/scene/layout';
+const LAYOUT_ANIMATABLE: { [prop: string]: { type: string } } = {
+  width: { type: 'number' },
+  height: { type: 'number' },
+  gap: { type: 'number' },
+  padding: { type: 'number' },
+};
+const LAYOUT_CONSTRUCTION: { [prop: string]: ConstructionProp } = {
+  direction: { type: "'row'|'column'" },
+  justify: { type: "'start'|'center'|'end'|'space-between'|'space-around'" },
+  align: { type: "'start'|'center'|'end'|'stretch'" },
+  children: { type: 'Node[]' },
+};
+
+/**
+ * Build a Layout-family node manifest from the curated schema. Layout is a
+ * `Group` subclass, so it inherits every base transform target — reuse a
+ * throwaway `Group`'s `listTargets()` for those (no drift on the inherited set),
+ * then add the layout-specific animatable + construction props.
+ */
+function describeLayoutNode(): DescribedNode {
+  // inherited base transform targets (position/rotation/scale/opacity/zIndex)
+  const props = describeNode(new Group(), 'Group').props;
+  delete props.children; // Layout declares its own children construction prop below
+  for (const [prop, spec] of Object.entries(LAYOUT_ANIMATABLE)) {
+    const arity = arityOf(spec.type);
+    props[prop] = { type: spec.type, animatable: true, target: `<id>/${prop}`, ...(arity !== undefined ? { arity } : {}) };
+  }
+  const construction = LAYOUT_CONSTRUCTION;
+  for (const [prop, spec] of Object.entries(construction)) {
+    props[prop] = { type: spec.type, animatable: false, ...(spec.required ? { required: true } : {}) };
+  }
+  return { props, subpath: LAYOUT_SUBPATH };
 }
 
 // The built-in node taxonomy members that have a concrete class on the base scene
@@ -124,7 +281,7 @@ const NODE_FACTORIES: { [typeName: string]: () => Node } = {
 const BUILDER_METHODS: DescribedBuilderMethod[] = [
   { name: 'to', signature: 'to<T>(target, value, opts?: { duration?, ease?, at?, from? }): TimelineBuilder' },
   { name: 'fromTo', signature: 'fromTo<T>(target, from, to, opts?: { duration?, ease?, at? }): TimelineBuilder' },
-  { name: 'stagger', signature: 'stagger<T>(targets, { to, from?, duration?, ease? }, { each, anchor?, at? }): TimelineBuilder' },
+  { name: 'stagger', signature: 'stagger<T>(targets, { to, from?, duration?, ease? }, { each: number | ((rank, count) => number), anchor?, at? }): TimelineBuilder' },
   { name: 'set', signature: 'set<T>(target, value, opts?: { at? }): TimelineBuilder' },
   { name: 'label', signature: 'label(name, at?): TimelineBuilder' },
   { name: 'add', signature: "add(child, at?, opts?: { mode?: 'add'|'sync', timeScale? }): TimelineBuilder" },
@@ -154,15 +311,25 @@ const SUBPATHS: { [entry: string]: string } = {
 export function describe(): ApiManifest {
   const nodes: { [typeName: string]: DescribedNode } = {};
   for (const [name, factory] of Object.entries(NODE_FACTORIES)) {
-    nodes[name] = describeNode(factory());
+    nodes[name] = describeNode(factory(), name);
   }
+  // The Layout family lives on @glissade/scene/layout (Yoga); describe() can't
+  // import it, so a curated, drift-guarded schema gives it first-class entries.
+  // Stack/Row/Column are ergonomic factories over Layout — same props, different
+  // defaults — so they share its manifest verbatim.
+  const layout = describeLayoutNode();
+  for (const name of ['Layout', 'Stack', 'Row', 'Column']) nodes[name] = layout;
   return {
     version: PACKAGE_VERSION,
     nodes,
     valueTypes: listValueTypes(),
     easings: Object.keys(easings),
     builder: { methods: BUILDER_METHODS },
-    createScene: 'createScene({ size: { w, h }, children: Node[] }): Scene',
+    // The full construct-a-scene surface: the size + children AND the asset
+    // manifest (so Image/Video `assetId` resolves to a real media URL). An
+    // `assetId` on a node names an entry in this `assets` map.
+    createScene:
+      "createScene({ size: { w, h }, children: Node[] }): Scene  —  media assets are declared on the Timeline document: timeline({ assets: { <id>: { kind: 'image'|'video', url } } }); an Image/Video node's `assetId` names an entry here.",
     subpaths: SUBPATHS,
   };
 }
