@@ -58,6 +58,8 @@ scene.setTextMeasurer(backend); // the backend supplies text metrics to scene
 
 // Animation is data — the builder compiles to a serializable Timeline document.
 // Builder: to(target, value, opts) and fromTo(target, from, to, opts); `ease` is a FUNCTION.
+// Options are strict: an unknown opts key throws a TimelineValidationError naming it.
+// See the per-method known-key reference in ./timeline.md ("Options are strict").
 const timeline = G.timeline((tl) => {
   tl.fromTo('box/position', [80, 140], [480, 140], { duration: 2, ease: G.easings.cubicInOut });
 });

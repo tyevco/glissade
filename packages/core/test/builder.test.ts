@@ -771,3 +771,130 @@ describe('tl.sequence + tl.at — pure build-time sugar over add()', () => {
     expect(compiled.markers.filter((m) => m.name === 'c1/call:0')).toHaveLength(1);
   });
 });
+
+describe('k-g1zn: unknown builder options throw (no silent swallow)', () => {
+  it('an unknown key on to() throws naming the key', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.to('a/x', 1, { duration: 1, esae: 'linear' } as never);
+      }),
+    ).toThrow(/to:.*'esae'/);
+    expect(() =>
+      timeline((tl) => {
+        tl.to('a/x', 1, { esae: 'linear' } as never);
+      }),
+    ).toThrow(TimelineValidationError);
+  });
+
+  it('an unknown key on fromTo() throws naming the method and key', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.fromTo('a/x', 0, 1, { dur: 1 } as never);
+      }),
+    ).toThrow(/fromTo:.*'dur'/);
+  });
+
+  it('an unknown key on set() throws naming the key', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.set('a/x', 1, { att: 0 } as never);
+      }),
+    ).toThrow(/set:.*'att'/);
+  });
+
+  it('an unknown key on the stagger spec throws naming the key', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x'], { to: 1, easing: 'linear' } as never, { each: 0.1 });
+      }),
+    ).toThrow(/stagger spec:.*'easing'/);
+  });
+
+  it('an unknown key on the stagger opts throws naming the key', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x'], { to: 1 }, { each: 0.1, anchorr: 'start' } as never);
+      }),
+    ).toThrow(/stagger opts:.*'anchorr'/);
+  });
+
+  it('all VALID keys still pass (no false positives)', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.to('a/x', 1, { duration: 1, ease: 'linear', at: 0, from: 0 })
+          .fromTo('b/x', 0, 1, { duration: 1, ease: 'linear', at: '+=1' })
+          .set('c/x', 1, { at: 2 })
+          .stagger(['d/x', 'e/x'], { to: 1, from: 0, duration: 1, ease: 'linear' }, { each: 0.1, anchor: 'start', at: 3 });
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('ppCUmU: per-target stagger spec values (to/from as a function)', () => {
+  it('to: (i) => slot[i] produces per-target destinations matching hand-authored', () => {
+    const slot = [10, 20, 30];
+    const staggered = timeline((tl) => {
+      tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: (i) => slot[i]! }, { each: 0.1 });
+    });
+    const hand = timeline((tl) => {
+      tl.fromTo('a/x', 0, 10, { at: 0 }).fromTo('b/x', 0, 20, { at: 0.1 }).fromTo('c/x', 0, 30, { at: 0.2 });
+    });
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+
+  it('from: (i) => fn likewise resolves per-target start values', () => {
+    const fromAt = [100, 200];
+    const staggered = timeline((tl) => {
+      tl.stagger(['a/x', 'b/x'], { from: (i) => fromAt[i]!, to: 0 }, { each: 0.1 });
+    });
+    const hand = timeline((tl) => {
+      tl.fromTo('a/x', 100, 0, { at: 0 }).fromTo('b/x', 200, 0, { at: 0.1 });
+    });
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+
+  it('the count arg is the group size; both i and n flow to the fn', () => {
+    const staggered = timeline((tl) => {
+      tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: (i, n) => i * 10 + n }, { each: 0.1 });
+    });
+    const hand = timeline((tl) => {
+      tl.fromTo('a/x', 0, 3, { at: 0 }).fromTo('b/x', 0, 13, { at: 0.1 }).fromTo('c/x', 0, 23, { at: 0.2 });
+    });
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+
+  it('a non-fn value still fans uniformly (unchanged)', () => {
+    const staggered = timeline((tl) => {
+      tl.stagger(['a/x', 'b/x'], { to: 1 }, { each: 0.1 });
+    });
+    const hand = timeline((tl) => {
+      tl.to('a/x', 1, { at: 0 }).to('b/x', 1, { at: 0.1 });
+    });
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+});
+
+describe('Isuo8Gxn: tl.tracks(tracks) — the clip-tier bridge', () => {
+  it("injects presence()'s tracks into the document", async () => {
+    const { presence } = await import('../src/presence.js');
+    const pres = presence('card', { window: [1, 3], enter: { opacity: [0, 1] }, exit: { opacity: [1, 0] } });
+    const doc = timeline((tl) => {
+      tl.tracks(pres.tracks);
+    });
+    const presOpacity = pres.tracks.find((t) => t.target === 'card/opacity')!;
+    expect(doc.tracks.find((t) => t.target === 'card/opacity')).toEqual(presOpacity);
+  });
+
+  it('composes alongside tl.to(...) in the same chain', async () => {
+    const { presence } = await import('../src/presence.js');
+    const pres = presence('card', { window: [1, 3], enter: { opacity: [0, 1] }, exit: { opacity: [1, 0] } });
+    const doc = timeline((tl) => {
+      tl.to('box/x', 1, { duration: 1 }).tracks(pres.tracks);
+    });
+    // the builder's own emitted track survives
+    expect(doc.tracks.find((t) => t.target === 'box/x')).toBeDefined();
+    // and the injected presence track lands verbatim
+    const presOpacity = pres.tracks.find((t) => t.target === 'card/opacity')!;
+    expect(doc.tracks.find((t) => t.target === 'card/opacity')).toEqual(presOpacity);
+  });
+});

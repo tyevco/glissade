@@ -4,6 +4,8 @@ A `Timeline` document is the serializable source of truth: tracks, labels, marke
 
 A "sub" is just a built `Timeline` — the output of `timeline(tl => …)`. Author it from time 0; the parent decides where it lands.
 
+> **Options are strict.** `to` / `fromTo` / `set` / `stagger` validate their options object against a known-key allow-list and **throw a `TimelineValidationError`** naming any unknown key — a misspelled or wrong option (`{ esae: … }`, `{ dur: … }`) fails loudly at build time instead of being silently ignored. The known keys are: `to`/`fromTo` → `duration`, `ease`, `at`, `from`; `set` → `at`; `stagger` spec → `to`, `from`, `duration`, `ease`; `stagger` opts → `each`, `anchor`, `at`.
+
 ```ts
 const intro = timeline((tl) => {
   tl.to('title/opacity', 1, { duration: 0.5 }).to('title/position.y', 0, { duration: 0.5 });
@@ -60,7 +62,15 @@ timeline((tl) => {
 });
 ```
 
-- **`spec`** is the shared tween (`{ to, from?, duration?, ease? }`). `spec.from` is the start **value** — when present each target routes through `fromTo`.
+- **`spec`** is the shared tween (`{ to, from?, duration?, ease? }`). `spec.from` is the start **value** — when present each target routes through `fromTo`. Both `spec.to` and `spec.from` accept either a single value (fanned uniformly across every target) **or** a function `(index, count) => value` resolved **per target** — so a per-target-destination cascade (each card flying to its own slot) is expressible:
+
+  ```ts
+  const slot = [10, 20, 30];
+  // each target lands at its OWN destination, still time-offset by `each`
+  tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: (i) => slot[i] }, { each: 0.1 });
+  ```
+
+  The branch is a runtime `typeof` check (consistent with `each` and scene `each()`): a callable value is **called**, so if `T` itself is a function, pass it through an explicit loop instead.
 - **`opts.anchor`** picks the placement the cascade ranks outward from — `'start'` (default), `'end'`, `'center'`, `'edges'`, or a numeric index. This is the placement **axis**, distinct from `spec.from` (the start value). Earlier releases called this `from`; it was renamed to `anchor` to remove that collision.
 - **`opts.each`** is the per-target delay. A **number** gives the uniform cascade `d_i = rank_i * each`. A **function** `(rank, count) => seconds` maps each target's rank (and the group size) to its own delay — accelerating, decelerating, or eased cascades:
 
@@ -76,9 +86,9 @@ An **empty** `targets` list is a true no-op (the cursor is untouched). A non-fin
 
 ### When `stagger` fits — and when it doesn't
 
-`stagger` fans **one shared tween** across the targets: `spec.to`/`spec.from` are single values. So it's the right tool for a **same-tween cascade** — N items animating the *identical* opacity / scale / reveal, offset in time (a list revealing, dots filling, a row checking in).
+`stagger` fans **one shared tween** across the targets — so it's the natural tool for a **same-tween cascade**: N items animating the *identical* opacity / scale / reveal, offset in time (a list revealing, dots filling, a row checking in).
 
-It is **not** for a **per-target-destination** cascade — e.g. cards dealt where each flies from its own start to its own grid slot. Those are genuinely N *different* position tweens; author them as an explicit loop of `to`/`fromTo` calls (optionally each offset like `stagger` does). Reaching for `stagger` there fights the shared-value model. *(A future `spec.to: (i) => value` form could close this — see the per-target-spec card — but the explicit loop is the correct shape today.)*
+A **per-target-destination** cascade — cards dealt where each flies from its own start to its own grid slot — is now expressible too: pass `spec.to`/`spec.from` as a function `(index, count) => value` (above). Each target then gets its own endpoint while still sharing the cascade's timing, duration, and ease; the emitted keys are byte-identical to the equivalent explicit loop of `fromTo` calls. (When the per-target shape needs more than its endpoint to differ — a different ease or duration per item — an explicit loop of `to`/`fromTo` remains the right tool.)
 
 ## Composing build-time tracks — `presence` / `clip` / `each` / `morph`
 
@@ -96,9 +106,24 @@ const doc = {
 };
 ```
 
-`doc` is an ordinary serializable Timeline document — the same shape `timeline(tl => …)` compiles to — so `evaluate(scene, doc, t)` runs it. (The fluent builder has no `tl.presence()` / inject-raw-tracks method **yet** — composing into the document is the path today; a builder bridge is roadmapped.)
+`doc` is an ordinary serializable Timeline document — the same shape `timeline(tl => …)` compiles to — so `evaluate(scene, doc, t)` runs it.
 
-> **In the no-build `@glissade/browser` IIFE:** `presence`/`clip`/`each`/`morph` are on `window.glissade`, but you still compose their `.tracks` into a Timeline-document literal as above (there's no fluent-builder shortcut). This is the same "compose at build time" boundary as `@glissade/scene/layout` — the functions run, you assemble the document.
+### `tl.tracks(tracks)` — inject clip-tier tracks into the fluent chain
+
+You don't have to drop out of the fluent builder to use the clip tier. `tl.tracks(tracks)` injects pre-built `Track[]` (the `{ tracks }` a `presence`/`clip`/`each`/`morph` returns) straight into the document, so a clip-tier cascade composes **alongside** ordinary `to`/`stagger` steps in one chain:
+
+```ts
+import { presence } from '@glissade/core/clips';
+
+timeline((tl) => {
+  tl.to('box/x', 1, { duration: 1 })
+    .tracks(presence('card', { window: [1, 3], enter: { opacity: [0, 1] } }).tracks);
+});
+```
+
+The injected tracks carry their **own absolute keyframe times** — `tl.tracks` lands them as ordinary track rows (the same finalize→coalesce path `add()` uses for child tracks; same-target rows coalesce, later wins) and does **not** move the cursor. It is scoped tightly to raw absolute-time tracks: there is no cursor-offset / rebasing wrapper (that's deferred), so author the clip's times where you want them on the parent axis.
+
+> **In the no-build `@glissade/browser` IIFE:** `presence`/`clip`/`each`/`morph` are on `window.glissade`, and `tl.tracks(...)` is available on the fluent builder there too — or compose `.tracks` into a Timeline-document literal as shown above. This is the same "compose at build time" boundary as `@glissade/scene/layout` — the functions run, you assemble the document.
 
 ## Why this is data, not code
 

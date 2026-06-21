@@ -717,9 +717,8 @@ export interface StaggerSpec<T = unknown> {
     duration?: number;
     // (undocumented)
     ease?: EaseSpec;
-    from?: T;
-    // (undocumented)
-    to: T;
+    from?: T | ((index: number, count: number) => T);
+    to: T | ((index: number, count: number) => T);
 }
 
 // @public (undocumented)
@@ -800,6 +799,7 @@ export interface TimelineBuilder {
     stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
     // (undocumented)
     to<T>(target: TweenTarget, value: T, opts?: TweenOpts<T>): TimelineBuilder;
+    tracks(tracks: Track[]): TimelineBuilder;
 }
 
 // @public (undocumented)

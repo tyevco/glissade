@@ -40,9 +40,20 @@ export interface TweenOpts<T = unknown> {
 
 /** The shared tween shape applied to every staggered target (§2.6 stagger sugar). */
 export interface StaggerSpec<T = unknown> {
-  to: T;
-  /** Explicit start value — routes each target through `fromTo` when present. */
-  from?: T;
+  /**
+   * The destination value. A plain `T` fans uniformly across every target; a
+   * function `(index, count) => T` resolves a PER-TARGET destination (a card
+   * flying to its own slot). Resolved by a runtime typeof branch — consistent
+   * with `each: number | fn` and scene `each()`; mildly lossy when `T` is itself
+   * callable (acceptable). Emits N ordinary tweens, byte-identical to hand-authored.
+   */
+  to: T | ((index: number, count: number) => T);
+  /**
+   * Explicit start value — routes each target through `fromTo` when present. A
+   * plain `T` fans uniformly; a function `(index, count) => T` resolves a
+   * per-target start (same runtime typeof branch as `to`).
+   */
+  from?: T | ((index: number, count: number) => T);
   duration?: number;
   ease?: EaseSpec;
 }
@@ -84,6 +95,16 @@ export interface TimelineBuilder {
    * honestly to the cursor).
    */
   stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
+  /**
+   * Build-time bridge for the CLIP tier (Isuo8Gxn): inject pre-built `Track[]`
+   * (the `{ tracks }` returned by `presence`/`clip`/`each`/`morph` on
+   * `@glissade/core/clips`) straight into the document. The tracks carry their
+   * OWN absolute keyframe times — they land as ordinary track rows through the
+   * same finalize→coalesce path `add()` uses for child tracks (same-target rows
+   * coalesce, later wins). Scoped to raw absolute-time tracks: no cursor-offset
+   * or rebasing wrapper (deferred). Does NOT move the cursor.
+   */
+  tracks(tracks: Track[]): TimelineBuilder;
   /** Hold key: the value snaps at the resolved position (§2.6). */
   set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
@@ -147,6 +168,32 @@ export class PositionError extends Error {
   }
 }
 
+/**
+ * Reject UNKNOWN keys on a builder method's options object (k-g1zn). Each method
+ * destructures only the keys it understands and historically SWALLOWED the rest
+ * silently — a misspelled/wrong option vanished with no error. Validate against
+ * an allow-list and THROW a `TimelineValidationError` naming the offending key(s)
+ * and the method, matching the build-time-fail pattern (t<0 / non-finite each).
+ * Mildly breaking: stray keys that were ignored now throw.
+ */
+function rejectUnknownOpts(method: string, opts: object, known: readonly string[]): void {
+  const allow = new Set(known);
+  const unknown = Object.keys(opts).filter((k) => !allow.has(k));
+  if (unknown.length > 0) {
+    throw new TimelineValidationError(
+      `${method}: unknown option${unknown.length > 1 ? 's' : ''} ${unknown
+        .map((k) => `'${k}'`)
+        .join(', ')} — known: ${known.map((k) => `'${k}'`).join(', ')}`,
+    );
+  }
+}
+
+// The KNOWN key sets, enumerated from each method's real destructuring below.
+const TO_OPTS_KEYS = ['duration', 'ease', 'at', 'from'] as const;
+const SET_OPTS_KEYS = ['at'] as const;
+const STAGGER_SPEC_KEYS = ['to', 'from', 'duration', 'ease'] as const;
+const STAGGER_OPTS_KEYS = ['each', 'anchor', 'at'] as const;
+
 function peekBase(target: TweenTarget): unknown {
   return typeof target !== 'string' && typeof (target as { peek?: () => unknown }).peek === 'function'
     ? (target as { peek: () => unknown }).peek()
@@ -165,6 +212,11 @@ export function buildTimeline(
   init: Omit<TimelineInit, 'tracks' | 'children' | 'markers'> = {},
 ): Timeline {
   const insertions: Insertion[] = [];
+  // Pre-built tracks injected via tl.tracks() (the clip-tier bridge, Isuo8Gxn).
+  // They carry absolute keyframe times; they land as ordinary track rows after
+  // the finalize-emitted builder tracks, so compileTimeline's coalesce() merges
+  // same-target rows later-wins (the same path add()'s child tracks take).
+  const injectedTracks: Track[] = [];
   const labels: Record<string, number> = { ...init.labels };
   const children: (ChildEntry & { _pos: Position | undefined })[] = [];
   const markers: Marker[] = [];
@@ -195,6 +247,7 @@ export function buildTimeline(
 
   const builder: TimelineBuilder = {
     to(target, value, opts = {}) {
+      rejectUnknownOpts('to', opts, TO_OPTS_KEYS);
       const ease = opts.ease ?? DEFAULT_EASE;
       const isSpring = typeof ease === 'object' && ease.kind === 'spring';
       const duration = isSpring
@@ -224,11 +277,14 @@ export function buildTimeline(
       return builder;
     },
     fromTo(target, from, to, opts = {}) {
+      rejectUnknownOpts('fromTo', opts, TO_OPTS_KEYS);
       builder.to(target, to, opts);
       insertions[insertions.length - 1]!.explicitFrom = from;
       return builder;
     },
     stagger(targets, spec, opts) {
+      rejectUnknownOpts('stagger spec', spec, STAGGER_SPEC_KEYS);
+      rejectUnknownOpts('stagger opts', opts, STAGGER_OPTS_KEYS);
       const n = targets.length;
       // one group base, resolved once against the live cursor (default chain end)
       const base = resolvePosition(opts.at);
@@ -274,9 +330,17 @@ export function buildTimeline(
         // never silently emit a t<0 key — the document is the source of truth
         if (start < 0) throw new TimelineValidationError(`stagger: target would land at t=${start} (< 0); shift opts.at`);
         const t = targets[i]!;
+        // ppCUmU: a spec value may be a per-target function `(index, count) => T`
+        // — resolve it against this target's i (and n) so a per-target cascade
+        // (a card flying to its OWN slot) is expressible; a plain value still
+        // fans uniformly. Runtime typeof branch (mirrors `each` / scene `each()`).
+        const toVal = typeof spec.to === 'function' ? (spec.to as (i: number, n: number) => unknown)(i, n) : spec.to;
         // reuse the shipped emission verbatim → byte-identical to hand-offset tweens
-        if (spec.from !== undefined) builder.fromTo(t, spec.from, spec.to, tweenOpts(d));
-        else builder.to(t, spec.to, tweenOpts(d));
+        if (spec.from !== undefined) {
+          const fromVal =
+            typeof spec.from === 'function' ? (spec.from as (i: number, n: number) => unknown)(i, n) : spec.from;
+          builder.fromTo(t, fromVal, toVal, tweenOpts(d));
+        } else builder.to(t, toVal, tweenOpts(d));
       }
       // an empty stagger is a true no-op — leave the cursor untouched
       if (n > 0) {
@@ -287,6 +351,7 @@ export function buildTimeline(
       return builder;
     },
     set(target, value, opts = {}) {
+      rejectUnknownOpts('set', opts, SET_OPTS_KEYS);
       const start = resolvePosition(opts.at);
       insertions.push({
         kind: 'set',
@@ -301,6 +366,13 @@ export function buildTimeline(
       });
       prevStart = start;
       prevEnd = start;
+      return builder;
+    },
+    tracks(tracks) {
+      // Inject pre-built absolute-time tracks verbatim — no rebasing, no cursor
+      // move (deferred). They land as ordinary rows alongside the builder's own
+      // finalize-emitted tracks and coalesce in compileTimeline().
+      for (const tr of tracks) injectedTracks.push(tr);
       return builder;
     },
     label(name, at) {
@@ -450,6 +522,11 @@ export function buildTimeline(
     if (editable) tr.editable = true;
     tracks.push(tr);
   }
+
+  // tl.tracks() rows land AFTER the builder's finalize-emitted tracks so that, at
+  // a shared target, the injected row coalesces later-wins in compileTimeline()
+  // (the same row-order discipline add()'s child tracks follow).
+  for (const tr of injectedTracks) tracks.push(tr);
 
   const doc = makeTimeline({
     ...init,
