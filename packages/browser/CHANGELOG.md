@@ -1,5 +1,19 @@
 # @glissade/browser
 
+## 0.19.0-pre.2
+
+### Minor Changes
+
+- e60d55e: Expose `renderToDataURL` / `snapshotCanvas` on the `@glissade/browser` IIFE (`window.glissade.renderToDataURL`). The no-build consumer works only against the single-file bundle, so the screenshot DX helper must be on it to be usable. Browser budget raised 46→47 for the +0.36 kB (the convenience bundle; the base embed stays lean at 38.6/39).
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.19.0-pre.2
+- @glissade/core@0.19.0-pre.2
+- @glissade/element@0.19.0-pre.2
+- @glissade/player@0.19.0-pre.2
+- @glissade/scene@0.19.0-pre.2
+
 ## 0.19.0-pre.1
 
 ### Minor Changes
