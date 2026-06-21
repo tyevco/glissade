@@ -25,6 +25,7 @@
     "@glissade/vite-plugin": "0.17.1"
   },
   "changesets": [
+    "describe-api-manifest",
     "presence-channel-reconcile",
     "presence-inline-literal-sugar",
     "row-column-layout-aliases",
