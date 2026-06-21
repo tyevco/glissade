@@ -54,6 +54,31 @@ describe('Path node (Lottie S0): bezier geometry as a first-class, animatable no
     expect(at(1)).toBe(-20); // pure: re-sampling identical
   });
 
+  it('coerces an SVG `d` STRING to PathValue at construction and RENDERS it (0.17.1 design-agent repro)', () => {
+    // The repro: a raw SVG path string used to build fine but THROW at render
+    // (the contour walk dereferenced `.v` on a string char). Now it parses.
+    const path = new Path({ id: 'p', data: 'M0 0 L40 0 M28 -8 L40 0 L28 8', stroke: '#fff', position: [50, 50] });
+    const scene = createScene({ size: { w: 100, h: 100 }, children: [path] });
+    // No throw at evaluate; the DisplayList carries the parsed path commands.
+    const list = evaluate(scene, timeline({ duration: 1 }), 0);
+    const res = list.resources.find((r) => r.kind === 'path') as { segs: [string, ...number[]][] } | undefined;
+    expect(res).toBeDefined();
+    const ops = res!.segs.map((s) => s[0]);
+    // Two subpaths (two 'M'), straight 'L' segments → emitted as 'M' + cubic 'C'.
+    expect(ops.filter((o) => o === 'M').length).toBe(2);
+    expect(ops).toContain('C');
+    expect(res!.segs[0]).toEqual(['M', 0, 0]);
+  });
+
+  it('accepts a constant PathValue unchanged and throws a clear error on garbage data', () => {
+    // A normal PathContour[] still works.
+    const ok = new Path({ data: tri(5) });
+    expect(ok.data()).toEqual(tri(5));
+    // A number (or any non-string / non-contour-array) throws at construction.
+    expect(() => new Path({ data: 42 as unknown as PathValue })).toThrow(/Path\.data expects PathValue/);
+    expect(() => new Path({ data: null as unknown as PathValue })).toThrow(/got null/);
+  });
+
   it('bounds/intrinsicSize cover control points; flowOffset is the true box top-left', () => {
     const path = new Path({
       data: [

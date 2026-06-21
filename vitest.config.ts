@@ -19,6 +19,7 @@ export default defineConfig({
       '@glissade/scene': src('scene'),
       '@glissade/react': src('react'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
+      '@glissade/element': src('element'),
       '@glissade/player': src('player'),
       '@glissade/backend-skia': src('backend-skia'),
       '@glissade/cli': src('cli'),

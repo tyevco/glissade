@@ -75,7 +75,7 @@ const BUDGETS = {
   interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
   'interact/audio': 2, // v2 §C.6: offline audio as a separate export ≤ 2 kB gz
   'effects-webgpu': 4, // §3.7 browser-only shader runner (incl. built-in WGSL strings)
-  browser: 45, // §4.4 single-file IIFE: the WHOLE embed path INLINED (core+scene+canvas2d+player+element), measured from the prebuilt dist/glissade.browser.js (39.3 kB measured + headroom). Not measured by the standalone loop below (that externalizes @glissade/*, which would leave an empty shell) — see the dedicated block after the loop.
+  browser: 45, // §4.4 single-file IIFE: the WHOLE embed path INLINED (core+scene+canvas2d+player+element) PLUS the @glissade/core/clips tier (presence/each/morph/clip + stdlib) for window.glissade discoverability — measured from the prebuilt dist/glissade.browser.js (42.3 kB measured w/ clips + headroom; was 39.3 kB before clips). Not measured by the standalone loop below (that externalizes @glissade/*, which would leave an empty shell) — see the dedicated block after the loop.
 };
 
 /** Packages whose sum is the §4.4 base embed path; element and interact are opt-in layers. */

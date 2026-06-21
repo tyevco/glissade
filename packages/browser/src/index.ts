@@ -16,6 +16,12 @@
 // `<gs-player>` — and re-exported for `GsPlayerElement` / `defineGsPlayer`.
 
 export * from '@glissade/core';
+// The clip tier (presence/each/morph/clip/clipList + the stdlib) lives on the
+// `@glissade/core/clips` subpath — tree-shaken off the base index for the core
+// budget. The single-file convenience bundle SHOULD expose the whole authoring
+// surface, so re-export it here (NOT from the core base index, which would pull
+// it into the core/index size budget).
+export * from '@glissade/core/clips';
 export * from '@glissade/scene';
 export * from '@glissade/player';
 export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';

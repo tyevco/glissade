@@ -66,7 +66,27 @@ For play/pause/scrubber chrome and a managed loop, assign a scene module to the 
 </script>
 ```
 
-`controls`, `loop`, and `autoplay` are attributes; `scene` is a property (scene structure is code — there is no URL loading). Default controls (play/pause, scrubber, time readout) are themable via CSS parts (`controls`, `button`, `scrubber`, `time`).
+`controls`, `loop`, `pingpong`, and `autoplay` are attributes; `scene` is a property (scene structure is code — there is no URL loading). `loop` restarts at the end; `pingpong` (alias `yoyo`) plays the timeline forward then backward, ping-ponging (the player's alternate loop mode). Default controls (play/pause, scrubber, time readout) are themable via CSS parts (`controls`, `button`, `scrubber`, `time`).
+
+```html
+<!-- ping-pong (yoyo) playback instead of a hard restart -->
+<gs-player controls pingpong autoplay></gs-player>
+```
+
+## Paths from an SVG `d` string
+
+`Path` accepts a raw SVG path `d` string for `data` (parsed at construction), not just the verbose `PathValue` contour form — handy for icon-style arrowheads and glyph outlines:
+
+```js
+var arrow = new G.Path({
+  id: 'arrow',
+  data: 'M0 0 L40 0 M28 -8 L40 0 L28 8', // SVG `d` — parsed to PathValue
+  stroke: '#cdd6f4',
+  position: [200, 180],
+});
+```
+
+The lean parser inside `@glissade/scene` covers `M L H V C Q Z` (absolute + relative). For the full SVG command set (`S`/`T`/`A` smooth-curves + arcs), import a `.svg` file through `@glissade/svg` with a build toolchain. A non-string, non-`PathValue` `data` (e.g. a number) throws a clear construction-time error rather than crashing at render.
 
 ## FOUT caveat (own-rAF consumers)
 

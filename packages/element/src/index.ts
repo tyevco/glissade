@@ -2,7 +2,8 @@
  * <gs-player> (DESIGN.md §4.3 tier 2, controls inventory per §8): a
  * zero-framework custom element over mount(). The scene module is assigned
  * via the `scene` property (scene structure is code, §2.3 — there is no URL
- * loading); `controls`, `loop`, and `autoplay` are attributes. Default
+ * loading); `controls`, `loop`, `pingpong` (alias `yoyo`), and `autoplay` are
+ * attributes (`loop` restarts, `pingpong` alternates/yoyos). Default
  * controls are exactly the decided set — play/pause, scrubber, time readout —
  * themable via CSS parts (controls, button, scrubber, time); everything else
  * belongs to the page via the JS API.
@@ -38,7 +39,7 @@ interface Controls {
 }
 
 export class GsPlayerElement extends HTMLElement {
-  static observedAttributes = ['loop', 'autoplay', 'controls'];
+  static observedAttributes = ['loop', 'pingpong', 'yoyo', 'autoplay', 'controls'];
 
   #mounted: Mounted | null = null;
   #scene: SceneModule | null = null;
@@ -196,8 +197,13 @@ export class GsPlayerElement extends HTMLElement {
     const scene = this.#scene.createScene();
     this.#canvas.width = scene.size.w;
     this.#canvas.height = scene.size.h;
+    // `pingpong` (alias `yoyo`) selects the player's alternate loop mode; the
+    // bare `loop` attr is the default restart loop. pingpong wins if both are
+    // set (it's the more specific intent). Defaults off → no loop.
+    const pingpong = this.hasAttribute('pingpong') || this.hasAttribute('yoyo');
+    const loop = pingpong ? ({ mode: 'alternate' } as const) : this.hasAttribute('loop');
     this.#mounted = mount(scene, this.#scene.timeline, this.#canvas, {
-      loop: this.hasAttribute('loop'),
+      loop,
       autoplay: this.hasAttribute('autoplay'),
     });
     this.#playhead = scene.playhead;

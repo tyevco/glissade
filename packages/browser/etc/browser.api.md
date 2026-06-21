@@ -13,6 +13,7 @@ export { setShaderRunner }
 
 
 export * from "@glissade/core";
+export * from "@glissade/core/clips";
 export * from "@glissade/element";
 export * from "@glissade/player";
 export * from "@glissade/scene";

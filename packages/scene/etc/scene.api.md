@@ -103,6 +103,9 @@ export class Circle extends Shape {
     readonly radius: BindableSignal<number>;
 }
 
+// @public
+export function coercePathData(data: unknown): PathValue;
+
 // @public (undocumented)
 export class ColdAssetError extends Error {
     constructor(assetId: string, detail: string, mediaT?: number);
@@ -875,6 +878,9 @@ export { Paint }
 export function parseDisplaySnapshot(json: string): DisplayList;
 
 // @public
+export function parseSvgPathData(d: string): PathSeg[];
+
+// @public
 export class Path extends Shape {
     constructor(props?: PathProps);
     bounds(): {
@@ -922,7 +928,7 @@ export interface PathLike {
 
 // @public (undocumented)
 export interface PathProps extends ShapeProps {
-    data?: PropInit<PathValue>;
+    data?: PropInit<PathValue> | string;
 }
 
 // @public

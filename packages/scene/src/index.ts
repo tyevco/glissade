@@ -51,6 +51,8 @@ export {
   Custom,
   roundedRectSegs,
   pathFromSegs,
+  parseSvgPathData,
+  coercePathData,
   revealSchedule,
   type LineBox,
   type WordBox,

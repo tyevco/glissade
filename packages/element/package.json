@@ -27,6 +27,9 @@
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*"
   },
+  "devDependencies": {
+    "jsdom": "^26.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tyevco/glissade.git",

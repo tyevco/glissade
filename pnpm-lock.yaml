@@ -92,6 +92,10 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+    devDependencies:
+      jsdom:
+        specifier: ^26.0.0
+        version: 26.1.0
 
   packages/cli:
     dependencies:
@@ -168,6 +172,10 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+    devDependencies:
+      jsdom:
+        specifier: ^26.0.0
+        version: 26.1.0
 
   packages/eslint-plugin:
     devDependencies:
