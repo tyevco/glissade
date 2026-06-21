@@ -17,6 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm build:browser # the @glissade/browser IIFE, so check-size guards it
       - run: pnpm typecheck
       - run: pnpm lint # determinism rules (@glissade/eslint-plugin) on core/scene src
       - run: pnpm test

@@ -24,6 +24,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # build the @glissade/browser IIFE BEFORE publish so dist/glissade.browser.js
+      # ships in the npm tarball (dist is gitignored) AND can attach to the Release.
+      - run: pnpm build:browser
       - run: pnpm typecheck
       - run: pnpm test
       - run: node scripts/check-deps.mjs
@@ -46,3 +49,33 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
+
+      # Tag the release commit + create a GitHub Release (notes from the umbrella
+      # CHANGELOG) with the browser IIFE attached as an asset. Lockstep: one
+      # v<version> tag/release per cut (NOT changeset's per-package tags).
+      # Prereleases (0.X.0-pre.N) are marked --prerelease and never become Latest.
+      - name: Tag + GitHub Release (browser bundle attached)
+        run: |
+          VERSION=$(node -p "require('./packages/umbrella/package.json').version")
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::release $TAG already exists; skipping"
+            exit 0
+          fi
+          # notes: the release commit's body (the rich "Version Packages" summary);
+          # fall back to the umbrella CHANGELOG section, then a stub.
+          git log -1 --format=%b > notes.md
+          if [ ! -s notes.md ]; then
+            awk -v v="## ${VERSION}" '$0==v {f=1;next} /^## / && f {exit} f {print}' \
+              packages/umbrella/CHANGELOG.md > notes.md
+          fi
+          [ -s notes.md ] || echo "glissade ${VERSION} (lockstep, Apache-2.0). See package CHANGELOGs." > notes.md
+          case "$VERSION" in
+            *-pre.*|*-rc.*|*-beta.*|*-alpha.*) FLAGS="--prerelease --latest=false" ;;
+            *) FLAGS="--latest" ;;
+          esac
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+            --notes-file notes.md $FLAGS \
+            packages/browser/dist/glissade.browser.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
