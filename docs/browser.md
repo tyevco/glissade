@@ -30,12 +30,22 @@ const canvasEl = document.querySelector('canvas');
 // NOTE: Canvas2DBackend takes the CANVAS ELEMENT, not a 2d context.
 const backend = new G.Canvas2DBackend(canvasEl);
 
-const scene = G.createScene(/* … */);
+// Nodes take `position:[x,y]` + `size:[w,h]`, under `children`.
+const scene = G.createScene({
+  size: { w: 640, h: 360 },
+  children: [new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa' })],
+});
 scene.setTextMeasurer(backend); // the backend supplies text metrics to scene
 
+// Animation is data — the builder compiles to a serializable Timeline document.
+// Builder: to(target, value, opts) and fromTo(target, from, to, opts); `ease` is a FUNCTION.
+const timeline = G.timeline((tl) => {
+  tl.fromTo('box/position', [80, 140], [480, 140], { duration: 2, ease: G.easings.cubicInOut });
+});
+
 function frame(tMs) {
-  const t = tMs / 1000;
-  backend.render(G.evaluate(scene, scene.timeline ?? timeline, t));
+  const t = (tMs / 1000) % 2; // you own the clock
+  backend.render(G.evaluate(scene, timeline, t)); // evaluate = pure fn of time → render
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -93,55 +103,68 @@ A single self-contained file — a `<canvas>`, a tiny scene + timeline in plain 
     <style>
       body { margin: 0; display: grid; place-items: center; min-height: 100vh; background: #111; }
       canvas { background: #1e1e2e; border-radius: 8px; }
+      .row { position: fixed; bottom: 16px; display: flex; gap: 8px; align-items: center; color: #ccc; font: 13px system-ui; }
     </style>
   </head>
   <body>
     <canvas id="stage" width="640" height="360"></canvas>
+    <div class="row">
+      <button id="toggle">play / pause</button>
+      <input id="scrub" type="range" min="0" max="1" step="0.001" value="0" style="width:280px" />
+      <span id="t">t=0.00</span>
+    </div>
 
     <script src="glissade.browser.js"></script>
     <script>
       var G = window.glissade;
       var canvasEl = document.getElementById('stage');
 
-      // A scene: one rectangle we'll animate.
+      // Scene: nodes take `position:[x,y]` + `size:[w,h]` (Rect/Text/…), under `children`.
       var scene = G.createScene({
         size: { w: 640, h: 360 },
-        build: function (s) {
-          return s.add(
-            new G.Rect({
-              id: 'box',
-              x: 100,
-              y: 150,
-              width: 80,
-              height: 80,
-              fill: '#89b4fa',
-            }),
-          );
-        },
+        children: [
+          new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa', cornerRadius: 10 }),
+          new G.Text({ id: 'label', position: [80, 250], text: 'glissade', fontSize: 28, fill: '#cdd6f4', fontFamily: 'system-ui, sans-serif' }),
+        ],
       });
 
-      // The Canvas2DBackend takes the CANVAS ELEMENT (not a 2d context).
+      // Canvas2DBackend takes the CANVAS ELEMENT (it grabs the 2d context itself).
       var backend = new G.Canvas2DBackend(canvasEl);
-      scene.setTextMeasurer(backend);
+      scene.setTextMeasurer(backend); // canvas-native measureText — correct text layout, no Node
 
-      // A timeline: slide the box across, looping every 2s. Animation is data —
-      // the fluent builder compiles to a serializable document; nothing runs at
-      // play time.
+      // Animation is DATA: the builder compiles to a serializable doc; nothing runs at play time.
+      // Builder: to(target, value, opts) and fromTo(target, from, to, opts); `ease` is a FUNCTION.
+      var DURATION = 2;
       var timeline = G.timeline(function (tl) {
-        tl.to('box/x', 100, 460, { duration: 2, easing: 'easeInOutCubic' });
+        tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.cubicInOut });
       });
 
-      // Lean own-rAF loop: evaluate (pure function of time) → render.
-      var DURATION = 2;
-      function frame(tMs) {
-        var t = (tMs / 1000) % DURATION;
-        backend.render(G.evaluate(scene, timeline, t));
+      // FOUT: on the lean own-rAF path YOU repaint when fonts arrive (only mount() auto-repaints).
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { draw(playhead); });
+
+      var playhead = 0, playing = true, last = null;
+      function draw(t) {
+        backend.render(G.evaluate(scene, timeline, t)); // evaluate = pure fn of time → render
+        document.getElementById('scrub').value = String(t / DURATION);
+        document.getElementById('t').textContent = 't=' + t.toFixed(2);
+      }
+      function frame(ms) {
+        if (playing) {
+          if (last != null) playhead = (playhead + (ms - last) / 1000) % DURATION;
+          last = ms;
+          draw(playhead);
+        } else { last = ms; }
         requestAnimationFrame(frame);
       }
+      // your own scrubber drives the playhead; persist to localStorage as you like
+      document.getElementById('scrub').addEventListener('input', function (e) {
+        playing = false; playhead = e.target.value * DURATION; draw(playhead);
+      });
+      document.getElementById('toggle').addEventListener('click', function () { playing = !playing; });
       requestAnimationFrame(frame);
     </script>
   </body>
 </html>
 ```
 
-> The exact `createScene` / `Rect` / `timeline` shapes above mirror the scoped-package API — see [Getting started](/getting-started) and [Concepts](/concepts) for the authoritative signatures; the bundle exposes the identical names on `window.glissade`.
+> The `createScene` / `Rect` / `timeline` shapes above are the verified `window.glissade.*` API (identical to the scoped packages). See [Getting started](/getting-started) and [Concepts](/concepts) for the full signatures.
