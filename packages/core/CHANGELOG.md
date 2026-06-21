@@ -1,5 +1,7 @@
 # @glissade/core
 
+## 0.18.0-pre.6
+
 ## 0.18.0-pre.5
 
 ### Minor Changes

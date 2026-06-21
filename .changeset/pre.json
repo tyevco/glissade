@@ -26,6 +26,7 @@
   },
   "changesets": [
     "describe-api-manifest",
+    "describe-construction-completeness",
     "presence-channel-reconcile",
     "presence-inline-literal-sugar",
     "row-column-layout-aliases",

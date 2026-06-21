@@ -1,5 +1,15 @@
 # @glissade/element
 
+## 0.18.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies [3dc7adb]
+  - @glissade/scene@0.18.0-pre.6
+  - @glissade/backend-canvas2d@0.18.0-pre.6
+  - @glissade/player@0.18.0-pre.6
+  - @glissade/core@0.18.0-pre.6
+
 ## 0.18.0-pre.5
 
 ### Patch Changes

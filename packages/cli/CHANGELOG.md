@@ -1,5 +1,20 @@
 # @glissade/cli
 
+## 0.18.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies [3dc7adb]
+  - @glissade/scene@0.18.0-pre.6
+  - @glissade/backend-skia@0.18.0-pre.6
+  - @glissade/interact@0.18.0-pre.6
+  - @glissade/lottie@0.18.0-pre.6
+  - @glissade/narrate@0.18.0-pre.6
+  - @glissade/player@0.18.0-pre.6
+  - @glissade/svg@0.18.0-pre.6
+  - @glissade/core@0.18.0-pre.6
+  - @glissade/sfx@0.18.0-pre.6
+
 ## 0.18.0-pre.5
 
 ### Patch Changes
