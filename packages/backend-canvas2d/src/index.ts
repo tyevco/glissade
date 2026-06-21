@@ -117,6 +117,16 @@ export class Canvas2DBackend implements RenderBackend {
     return ctx.getImageData(0, 0, this.target.width, this.target.height).data;
   }
 
+  /**
+   * The backend's underlying canvas. Exposed so the tree-shakeable
+   * `@glissade/backend-canvas2d/snapshot` subpath (`snapshotCanvas`) can read it
+   * WITHOUT pulling the data-URL/Blob-encode code onto this base index — a
+   * trivial getter that adds no encode bytes here.
+   */
+  get canvas(): AnyCanvas {
+    return this.target;
+  }
+
   dispose(): void {
     this.raster.dispose();
   }

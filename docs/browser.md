@@ -127,6 +127,31 @@ document.fonts.ready.then(() => {
 });
 ```
 
+## Snapshot a frame as a data URL
+
+Need to *capture* a rendered frame — a thumbnail, a test fixture, or a screenshot a tool can read — rather than just paint it to a live canvas? `renderToDataURL` evaluates a frame, renders it on an offscreen canvas, and returns a `data:image/png;base64,…` string in one call (`G.renderToDataURL` on the bundle):
+
+```js
+const url = await G.renderToDataURL(scene, timeline, 0.5); // frame at t=0.5s
+// → "data:image/png;base64,iVBORw0KGgo…"  (drop into an <img src>, POST it, diff it)
+```
+
+It allocates its own offscreen target sized to the scene, so you don't need a `<canvas>` in the page. The no-timeline (controlled-drive) overload works too — `await G.renderToDataURL(scene)` snapshots the scene at its current playhead. An optional final `{ type, quality }` bag picks the encoding (default `image/png`):
+
+```js
+const webp = await G.renderToDataURL(scene, timeline, 0.5, { type: 'image/webp', quality: 0.9 });
+```
+
+On the single-file `window.glissade` bundle this is just `G.renderToDataURL`. With an **npm** build it lives on a tree-shakeable subpath — `@glissade/backend-canvas2d/snapshot` — so a playback-only embed never pays for the data-URL encode bytes; import it explicitly:
+
+```js
+import { renderToDataURL, snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
+```
+
+If you already hold a `Canvas2DBackend` over a live canvas, `await snapshotCanvas(backend)` captures whatever it last rendered (same `{ type, quality }` args; you can also pass a raw `HTMLCanvasElement`/`OffscreenCanvas`). Both are **async** (offscreen serialization is `OffscreenCanvas.convertToBlob`, falling back to `HTMLCanvasElement.toDataURL`).
+
+> **Browser-only.** `renderToDataURL` / `snapshotCanvas` rely on the browser canvas (`OffscreenCanvas` / `toDataURL`); they are not for Node. The headless, byte-exact path is the Skia backend / `gs render` CLI — see the export docs.
+
 ## What is NOT in this bundle
 
 This is the **realtime** surface only. It deliberately excludes:

@@ -46,6 +46,15 @@ describe('@glissade/browser entry surface', () => {
     expect(customElements.get('gs-player')).toBeDefined();
   });
 
+  it('exposes renderToDataURL — the 0.19 frame-screenshot DX helper (from @glissade/backend-canvas2d)', () => {
+    // The "can't screenshot a live canvas" wall: window.glissade.renderToDataURL
+    // is the one-shot evaluate→render→snapshot data-URL helper. Browser-only
+    // (OffscreenCanvas/toDataURL), so merely asserting it is present + callable
+    // here (the IIFE inlines backend-canvas2d).
+    expect(typeof glissade.renderToDataURL).toBe('function');
+    expect(typeof glissade.Canvas2DBackend).toBe('function');
+  });
+
   it('exposes the SVG `d`-string path parser (from @glissade/scene/path)', () => {
     // The parser is tree-shaken off the base scene index but the convenience
     // bundle re-exports it, so `window.glissade.pathFromSvg` is present.

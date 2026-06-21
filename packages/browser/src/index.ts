@@ -37,4 +37,12 @@ export * from '@glissade/scene/path';
 export * from '@glissade/scene/describe';
 export * from '@glissade/player';
 export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';
+// `renderToDataURL` (0.19): the one-shot "screenshot a frame as a data URL" DX
+// helper an AI consumer reached for when it couldn't drive a live <canvas>. It
+// is DX/screenshot TOOLING, so it lives on the tree-shakeable
+// `@glissade/backend-canvas2d/snapshot` subpath — OFF the base embed (the base
+// playback path never needs it). The single-file convenience bundle SHOULD
+// expose it, so re-export it here — `window.glissade.renderToDataURL` (and
+// `snapshotCanvas`) for no-build use. Browser-only (OffscreenCanvas/toDataURL).
+export { renderToDataURL, snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 export * from '@glissade/element';

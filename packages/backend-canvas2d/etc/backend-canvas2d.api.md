@@ -20,6 +20,7 @@ export class Canvas2DBackend implements RenderBackend {
     constructor(target: AnyCanvas, opts?: {
         shaderCaps?: ShaderCaps;
     });
+    get canvas(): AnyCanvas;
     get caps(): BackendCaps;
     // (undocumented)
     dispose(): void;

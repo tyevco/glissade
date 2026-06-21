@@ -76,6 +76,7 @@ const BUDGETS = {
   'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
   'scene/type': 5, // 0.19: splitText() — build-time split-text sub-targets (word/line/grapheme → a Group of positioned per-part child Texts). Ships ONLY on this separate entry, never the base scene index — ZERO base-scene cost, mirroring each()/scene/layout/scene/path. The standalone bundle inlines the same-package Text/Group/measurement helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared node-construction path, not splitText's own ~1 kB.
   'backend-canvas2d': 8,
+  'backend-canvas2d/snapshot': 3, // 0.19: the `renderToDataURL` / `snapshotCanvas` data-URL DX seam (Blob→data: encode + the evaluate→render→snapshot one-shot) ships ONLY on this separate entry, never the base backend-canvas2d index — a no-build playback embed never needs to screenshot. Keeping it off the base index returned the base embed to ~38.44 (it had crept to 38.84 when the snapshot code lived on the index). Standalone bundle inlines the same-package backend index it renders through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared backend path, not the encode helper.
   player: 4,
   element: 5,
   interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
@@ -205,6 +206,43 @@ const typeInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\
 const typeOk = typeInBase.length === 0;
 if (!typeOk) failed = true;
 console.log(`${typeOk ? 'ok  ' : 'FAIL'} base scene excludes splitText${typeOk ? '' : ` (leaked: ${typeInBase.join(', ')})`}`);
+
+// 0.19 guard: the base backend-canvas2d index must NOT pull in the snapshot /
+// data-URL DX seam (`renderToDataURL` / `snapshotCanvas` + the Blob→data: encode)
+// — it's a separately-budgeted entry (@glissade/backend-canvas2d/snapshot). A
+// no-build playback embed never screenshots, so it must tree-shake off the base
+// embed; if it crept back onto the index the base embed grows ~0.4 kB (it did,
+// 38.44→38.84, before this split). Assert via the metafile that snapshot.ts never
+// enters the base backend graph, AND grep the minified output for the data-URL
+// encode tokens (a belt-and-suspenders check the encode code didn't inline).
+const canvas2dIndex = await build({
+  entryPoints: [`${root}packages/backend-canvas2d/dist/index.js`],
+  bundle: true,
+  minify: true,
+  format: 'esm',
+  platform: 'browser',
+  write: false,
+  external: ['@glissade/*'],
+  metafile: true,
+  logLevel: 'silent',
+});
+const snapshotInBase = Object.keys(canvas2dIndex.metafile.inputs).filter((i) =>
+  /backend-canvas2d\/(src|dist)\/snapshot\./.test(i),
+);
+const canvas2dOut = new TextDecoder().decode(canvas2dIndex.outputFiles[0].contents);
+// The encode path's distinctive tokens — `convertToBlob` + `btoa` are the
+// Blob→data:URL round-trip, present only in snapshot.ts. (`toDataURL` lives in
+// readPixels-adjacent code? no — only snapshot uses it, so it's a fair sentinel.)
+const encodeTokens = ['convertToBlob', 'btoa', 'renderToDataURL'].filter((t) => canvas2dOut.includes(t));
+const snapshotOk = snapshotInBase.length === 0 && encodeTokens.length === 0;
+if (!snapshotOk) failed = true;
+console.log(
+  `${snapshotOk ? 'ok  ' : 'FAIL'} base backend-canvas2d excludes snapshot/data-URL code${
+    snapshotOk
+      ? ''
+      : ` (leaked: ${[...snapshotInBase, ...encodeTokens.map((t) => `token:${t}`)].join(', ')})`
+  }`,
+);
 
 // §3.6 / §4.4 guard: the font INGEST deps (the woff2 decoder + the hb-subset
 // variable-axis instancer) are EXPORT/prepare-path only — they live on the
