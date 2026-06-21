@@ -26,6 +26,16 @@ describe('@glissade/browser entry surface', () => {
     expect(typeof glissade.driftLoop).toBe('function');
     // `stagger` was already on the core base index — still present.
     expect(typeof glissade.stagger).toBe('function');
+    // 0.18: the presence inline-literal sugar — `presence` accepts a terse
+    // enter/exit literal and the `transitionToClip` compiler rides the bundle.
+    expect(typeof glissade.transitionToClip).toBe('function');
+    expect(() =>
+      glissade.presence('card', {
+        window: [1, 5],
+        enter: { opacity: [0, 1], offset: 16, dur: 0.5, ease: 'easeOutCubic' },
+        exit: { opacity: [1, 0], offset: 16, dur: 0.4 },
+      }),
+    ).not.toThrow();
   });
 
   it('still exposes the base embed surface (scene + player + element)', () => {

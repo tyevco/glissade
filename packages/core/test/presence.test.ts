@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { key, track, sampleTrack, type Track } from '../src/index.js';
-import { clip, presence, PresenceError } from '../src/clips.js';
+import {
+  clip,
+  presence,
+  PresenceError,
+  transitionToClip,
+  type PresenceTransition,
+} from '../src/clips.js';
 
 /** Find the reconciled '<id>/opacity' track in a presence result. */
 function opacityTrack(tracks: Track[], id: string): Track {
@@ -154,5 +160,132 @@ describe('presence — synthesis & pass-through', () => {
 describe('presence — target rejection', () => {
   it('throws on a structural (~) id', () => {
     expect(() => presence('~Rect.0', { show: 0, hide: 2 })).toThrow();
+  });
+});
+
+describe('presence — inline-literal sugar (0.18)', () => {
+  // THE ACCEPTANCE CONTRACT: an inline enter/exit literal must produce Track[]
+  // DEEP-EQUAL to the same presence() call written with hand-built clip() channels.
+  it('inline enter/exit deep-equals the hand-built clip({channels}) version', () => {
+    const inline = presence('card', {
+      window: [1, 5],
+      enter: { opacity: [0, 1], offset: 16, dur: 0.5, ease: 'easeOutCubic' },
+      exit: { opacity: [1, 0], offset: 16, dur: 0.4 },
+    });
+
+    // The hand-authored equivalent: enter slides FROM below (edge 'bottom' = [0,+16])
+    // TO [0,0]; exit slides FROM [0,0] TO below ([0,+16]). Ease only on the arriving
+    // (last) key, mirroring the clipStdlib slideIn convention.
+    const handEnter = clip({
+      channels: {
+        opacity: { path: 'opacity', keys: [key(0, 0), key(0.5, 1, 'easeOutCubic')] },
+        offset: { path: 'position', keys: [key(0, [0, 16]), key(0.5, [0, 0], 'easeOutCubic')] },
+      },
+    });
+    const handExit = clip({
+      channels: {
+        opacity: { path: 'opacity', keys: [key(0, 1), key(0.4, 0)] },
+        offset: { path: 'position', keys: [key(0, [0, 0]), key(0.4, [0, 16])] },
+      },
+    });
+    const hand = presence('card', { show: 1, hide: 5, enter: handEnter, exit: handExit });
+
+    expect(inline.tracks).toEqual(hand.tracks);
+    expect(inline.end).toBe(hand.end);
+    expect(inline.shownAt).toBe(hand.shownAt);
+    expect(inline.hiddenAt).toBe(hand.hiddenAt);
+  });
+
+  it('window:[t0,t1] is an alias for {show:t0, hide:t1}', () => {
+    const aliased = presence('card', { window: [1.5, 4.2] });
+    const explicit = presence('card', { show: 1.5, hide: 4.2 });
+    expect(aliased.tracks).toEqual(explicit.tracks);
+    expect(aliased.shownAt).toBe(1.5);
+    expect(aliased.hiddenAt).toBe(4.2);
+  });
+
+  it('throws when neither show/hide nor window is given', () => {
+    expect(() => presence('card', {})).toThrow(PresenceError);
+  });
+
+  // OMIT-OPACITY: a transition with only offset/scale emits NO opacity channel and
+  // relies on presence()'s synthesized rise/fall (matching the Clip path exactly).
+  it('an offset-only enter emits no opacity channel (synthesized fade takes over)', () => {
+    const enter: PresenceTransition = { offset: 20, dur: 0.4 };
+    const c = transitionToClip(enter, 'enter');
+    // the compiled clip has ONLY a position channel — no opacity channel authored
+    expect(Object.keys(c.spec.channels)).toEqual(['offset']);
+
+    const { tracks } = presence('card', { show: 1, hide: 5, enter });
+    const op = tracks.find((t) => t.target === 'card/opacity')!;
+    // presence still synthesizes the 0→1 rise across the enter span so the node un-culls
+    expect(sampleTrack(op, 1)).toBe(0);
+    expect(sampleTrack(op, 1.4)).toBe(1);
+    // the position channel passes through
+    expect(tracks.find((t) => t.target === 'card/position')).toBeDefined();
+  });
+
+  it('a scale-only enter broadcasts a scalar pair to Vec2 (popIn convention)', () => {
+    const enter: PresenceTransition = { scale: [0.8, 1], dur: 0.3 };
+    const c = transitionToClip(enter, 'enter');
+    expect(Object.keys(c.spec.channels)).toEqual(['scale']);
+    const { tracks } = presence('card', { show: 0, hide: 4, enter });
+    const scale = tracks.find((t) => t.target === 'card/scale')!;
+    expect(scale.keys.map((k) => k.value)).toEqual([
+      [0.8, 0.8],
+      [1, 1],
+    ]);
+  });
+
+  it('a default-edge scalar offset slides up from below (edge bottom)', () => {
+    const c = transitionToClip({ offset: 16 }, 'enter');
+    const ch = c.spec.channels.offset!;
+    expect(ch.keys[0]!.value).toEqual([0, 16]); // displaced below
+    expect(ch.keys[1]!.value).toEqual([0, 0]); // settles to origin
+  });
+
+  it('an exit slide is the inverse direction of an enter slide', () => {
+    const enter = transitionToClip({ offset: 16, edge: 'left' }, 'enter');
+    const exit = transitionToClip({ offset: 16, edge: 'left' }, 'exit');
+    expect(enter.spec.channels.offset!.keys.map((k) => k.value)).toEqual([
+      [-16, 0],
+      [0, 0],
+    ]);
+    expect(exit.spec.channels.offset!.keys.map((k) => k.value)).toEqual([
+      [0, 0],
+      [-16, 0],
+    ]);
+  });
+
+  it('explicit [Vec2,Vec2] offset endpoints are used verbatim (no direction flip)', () => {
+    const c = transitionToClip({ offset: [[10, 20], [0, 0]] }, 'exit');
+    expect(c.spec.channels.offset!.keys.map((k) => k.value)).toEqual([
+      [10, 20],
+      [0, 0],
+    ]);
+  });
+
+  it('the inline literal culls the node outside [show,hide]', () => {
+    const { tracks } = presence('card', {
+      window: [1, 5],
+      enter: { opacity: [0, 1], offset: 16, dur: 0.5 },
+      exit: { opacity: [1, 0], offset: 16, dur: 0.4 },
+    });
+    const op = tracks.find((t) => t.target === 'card/opacity')!;
+    expect(sampleTrack(op, 0.5)).toBe(0); // pre-show culled
+    expect(sampleTrack(op, 3)).toBe(1); // live
+    expect(sampleTrack(op, 6)).toBe(0); // post-hide culled
+  });
+
+  // GROUP-LEVEL targeting needs no code change — presence only suffixes /opacity
+  // and /position; a Group id flows through identically.
+  it('a Group target works with the inline literal', () => {
+    const { tracks } = presence('cardGroup', {
+      window: [1, 5],
+      enter: { opacity: [0, 1], offset: 16, dur: 0.5 },
+      exit: { opacity: [1, 0], offset: 16, dur: 0.4 },
+    });
+    expect(tracks.find((t) => t.target === 'cardGroup/opacity')).toBeDefined();
+    expect(tracks.find((t) => t.target === 'cardGroup/position')).toBeDefined();
   });
 });

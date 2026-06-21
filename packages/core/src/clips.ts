@@ -43,6 +43,8 @@ export {
 export {
   presence,
   PresenceError,
+  transitionToClip,
   type PresenceOpts,
   type PresenceResult,
+  type PresenceTransition,
 } from './presence.js';

@@ -18,8 +18,11 @@
 
 import { key, track, type Key, type Track } from './track.js';
 import { resolveTweenTarget, type TweenTarget } from './targetRef.js';
-import type { Clip, ApplyOpts } from './clip.js';
+import type { Clip, ApplyOpts, ClipChannel } from './clip.js';
 import { clip } from './clip.js';
+import type { SlideEdge } from './clipStdlib.js';
+import type { EaseSpec } from './easing.js';
+import type { Vec2 } from './valueTypes.js';
 
 export class PresenceError extends Error {
   constructor(message: string) {
@@ -41,19 +44,149 @@ function defaultExit(): Clip {
   return clip({ channels: { opacity: { path: 'opacity', keys: [key(0, 1), key(DEFAULT_FADE, 0)] } } });
 }
 
+/**
+ * An inline ENTER/EXIT literal (0.18 sugar): a terse alternative to hand-building
+ * a `clip({channels})`. `transitionToClip` compiles it to the SAME `Clip` an author
+ * would write by hand, so presence() then runs UNCHANGED on the result — the inline
+ * spelling is byte-INDISTINGUISHABLE from the hand-authored clip path.
+ *
+ * Conventions mirror clipStdlib (`slideIn`/`popIn`): a scalar `offset` slides that
+ * magnitude in along `edge` (default 'bottom' = slide up from below); a scalar
+ * `scale` broadcasts to a Vec2; OMITTING `opacity` emits NO opacity channel so
+ * presence()'s synthesized rise/fall takes over (matching the Clip path exactly).
+ */
+export interface PresenceTransition {
+  /** Opacity endpoints [from,to]. OMIT to rely on presence()'s synthesized rise/fall. */
+  opacity?: [number, number];
+  /**
+   * Slide displacement. A scalar slides that magnitude along `edge`; a single Vec2
+   * is the displaced point (animates to/from [0,0]); a [Vec2,Vec2] is explicit
+   * endpoints. Omit for no position channel.
+   */
+  offset?: number | Vec2 | [Vec2, Vec2];
+  /** Slide edge for a scalar `offset` (clipStdlib convention). Default 'bottom'. */
+  edge?: SlideEdge;
+  /** Scale endpoints. A scalar pair broadcasts each value to a Vec2 (popIn convention). */
+  scale?: [number, number] | [Vec2, Vec2];
+  /** Transition length in seconds. Default = the presence DEFAULT_FADE (0.3). */
+  dur?: number;
+  /** Arriving ease of every channel's last segment. */
+  ease?: EaseSpec;
+}
+
 export interface PresenceOpts {
   /** Wall-clock second the node ENTERS (becomes visible). */
-  show: number;
+  show?: number;
   /** Wall-clock second the node has fully EXITED (the exit LANDS here). */
-  hide: number;
-  /** Entrance clip (default = a plain opacity fade-in 0→1, ~0.3s). */
-  enter?: Clip;
-  /** Exit clip (default = a plain opacity fade-out 1→0, ~0.3s). Back-timed to land on `hide`. */
-  exit?: Clip;
+  hide?: number;
+  /** Alias for `{ show: window[0], hide: window[1] }`. */
+  window?: [number, number];
+  /** Entrance clip, or an inline transition literal (default = a plain opacity fade-in 0→1, ~0.3s). */
+  enter?: Clip | PresenceTransition;
+  /** Exit clip, or an inline transition literal (default = a plain opacity fade-out 1→0, ~0.3s). Back-timed to land on `hide`. */
+  exit?: Clip | PresenceTransition;
   /** Forwarded to `enter.apply` (speed / per-channel overrides). */
   enterOpts?: ApplyOpts;
   /** Forwarded to `exit.apply` (speed / per-channel overrides). */
   exitOpts?: ApplyOpts;
+}
+
+/** A `PresenceTransition` is a plain bag; a `Clip` carries `apply`. Discriminate on that. */
+function isClip(t: Clip | PresenceTransition): t is Clip {
+  return typeof (t as Clip).apply === 'function';
+}
+
+/** Is a value a Vec2 ([number, number])? */
+function isVec2(v: number | Vec2): v is Vec2 {
+  return Array.isArray(v);
+}
+
+/**
+ * Compile an inline `PresenceTransition` literal into the SAME `Clip` an author
+ * would hand-write — an opacity channel (only when `opacity` is given), a position
+ * channel from `offset`+`edge` (slideIn convention), and a scale channel (scalar
+ * broadcast to Vec2, popIn convention). presence() then runs UNCHANGED on it.
+ *
+ * `dir` selects the slide direction: an `enter` slides FROM the edge-displaced
+ * point TO [0,0]; an `exit` slides FROM [0,0] TO the edge-displaced point (so a
+ * back-timed exit reads as the inverse of the entrance). For an explicit
+ * `[Vec2,Vec2]` offset the endpoints are used verbatim (no direction flip).
+ */
+export function transitionToClip(t: PresenceTransition, dir: 'enter' | 'exit'): Clip {
+  const d = t.dur ?? DEFAULT_FADE;
+  const ease = t.ease;
+  const channels: Record<string, ClipChannel> = {};
+
+  if (t.opacity !== undefined) {
+    const [from, to] = t.opacity;
+    channels.opacity = { path: 'opacity', keys: [key(0, from), key(d, to, ...easeArg(ease))] };
+  }
+
+  if (t.offset !== undefined) {
+    const [from, to] = offsetEndpoints(t.offset, t.edge ?? 'bottom', dir);
+    channels.offset = { path: 'position', keys: [key(0, from), key(d, to, ...easeArg(ease))] };
+  }
+
+  if (t.scale !== undefined) {
+    const [from, to] = scaleEndpoints(t.scale);
+    channels.scale = { path: 'scale', keys: [key(0, from), key(d, to, ...easeArg(ease))] };
+  }
+
+  return clip({ channels });
+}
+
+/** Spread-arg helper: pass `ease` to `key()` only when defined (no `undefined` arg). */
+function easeArg(ease: EaseSpec | undefined): [EaseSpec] | [] {
+  return ease !== undefined ? [ease] : [];
+}
+
+/** Edge → unit displacement direction (matches clipStdlib's slideIn `from` vectors). */
+function edgeVec(edge: SlideEdge, dist: number): Vec2 {
+  return edge === 'left'
+    ? [-dist, 0]
+    : edge === 'right'
+      ? [dist, 0]
+      : edge === 'top'
+        ? [0, -dist]
+        : [0, dist];
+}
+
+/**
+ * Resolve the `offset` field to position [from, to] endpoints. A scalar slides that
+ * magnitude along `edge`; a single Vec2 is the displaced point; a [Vec2,Vec2] is
+ * verbatim endpoints. enter goes displaced→[0,0]; exit goes [0,0]→displaced.
+ */
+function offsetEndpoints(
+  offset: number | Vec2 | [Vec2, Vec2],
+  edge: SlideEdge,
+  dir: 'enter' | 'exit',
+): [Vec2, Vec2] {
+  // Explicit [Vec2, Vec2] endpoints: a tuple whose first element is itself a Vec2.
+  if (Array.isArray(offset) && isVec2(offset[0] as number | Vec2)) {
+    return offset as [Vec2, Vec2];
+  }
+  const displaced: Vec2 = isVec2(offset as number | Vec2)
+    ? (offset as Vec2)
+    : edgeVec(edge, offset as number);
+  const origin: Vec2 = [0, 0];
+  return dir === 'enter' ? [displaced, origin] : [origin, displaced];
+}
+
+/** Resolve the `scale` field to [from, to] Vec2 endpoints (scalar pair → broadcast). */
+function scaleEndpoints(scale: [number, number] | [Vec2, Vec2]): [Vec2, Vec2] {
+  const [a, b] = scale;
+  const broadcast = (v: number | Vec2): Vec2 => (isVec2(v) ? v : [v, v]);
+  return [broadcast(a), broadcast(b)];
+}
+
+/** Normalize an enter/exit option (Clip or inline literal) to a Clip. */
+function resolveTransition(
+  t: Clip | PresenceTransition | undefined,
+  dir: 'enter' | 'exit',
+  fallback: () => Clip,
+): Clip {
+  if (t === undefined) return fallback();
+  return isClip(t) ? t : transitionToClip(t, dir);
 }
 
 export interface PresenceResult {
@@ -107,7 +240,15 @@ function partitionOpacity(
  *   presence('card', { show: 1, hide: 5 })  // fade in at 1, fade out to land on 5
  */
 export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResult {
-  const { show, hide } = opts;
+  // `window:[t0,t1]` is an alias for `{ show: t0, hide: t1 }`. Explicit show/hide
+  // take precedence if both are given (window only fills the gaps).
+  const show = opts.show ?? opts.window?.[0];
+  const hide = opts.hide ?? opts.window?.[1];
+  if (show === undefined || hide === undefined) {
+    throw new PresenceError(
+      `presence() needs a window: pass { show, hide } or { window: [show, hide] }`,
+    );
+  }
   // Resolve the node id once (rejects '~' structural / anonymous ids). The node
   // id may itself carry slashes (an each() clone like 'card/3'); DO NOT re-split
   // it — APPEND the opacity suffix and trust the caller. The scene's
@@ -119,8 +260,10 @@ export function presence(nodeId: TweenTarget, opts: PresenceOpts): PresenceResul
   const lastSlash = opacityTarget.lastIndexOf('/');
   const nodeIdStr = lastSlash < 0 ? opacityTarget : opacityTarget.slice(0, lastSlash);
 
-  const enter = opts.enter ?? defaultEnter();
-  const exit = opts.exit ?? defaultExit();
+  // enter/exit accept a Clip OR an inline PresenceTransition literal; both normalize
+  // to a Clip, after which the rest of presence() runs UNCHANGED.
+  const enter = resolveTransition(opts.enter, 'enter', defaultEnter);
+  const exit = resolveTransition(opts.exit, 'exit', defaultExit);
 
   // --- enter: applied at `show` ---
   const enterRes = enter.apply(nodeIdStr, show, opts.enterOpts);
