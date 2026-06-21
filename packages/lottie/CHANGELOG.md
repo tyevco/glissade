@@ -1,5 +1,12 @@
 # @glissade/lottie
 
+## 0.17.0
+
+### Patch Changes
+
+- @glissade/core@0.17.0
+- @glissade/scene@0.17.0
+
 ## 0.17.0-pre.0
 
 ### Patch Changes
