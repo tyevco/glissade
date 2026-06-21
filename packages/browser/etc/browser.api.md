@@ -17,6 +17,7 @@ export * from "@glissade/core/clips";
 export * from "@glissade/element";
 export * from "@glissade/player";
 export * from "@glissade/scene";
+export * from "@glissade/scene/path";
 
 // (No @packageDocumentation comment for this package)
 

@@ -35,4 +35,13 @@ describe('@glissade/browser entry surface', () => {
     // The element side-effect auto-registered <gs-player>.
     expect(customElements.get('gs-player')).toBeDefined();
   });
+
+  it('exposes the SVG `d`-string path parser (from @glissade/scene/path)', () => {
+    // The parser is tree-shaken off the base scene index but the convenience
+    // bundle re-exports it, so `window.glissade.pathFromSvg` is present.
+    expect(typeof glissade.pathFromSvg).toBe('function');
+    expect(typeof glissade.parseSvgPathData).toBe('function');
+    // A round-trip through the helper builds a Path that constructs (no throw).
+    expect(() => new glissade.Path({ data: glissade.pathFromSvg('M0 0 L40 0') })).not.toThrow();
+  });
 });

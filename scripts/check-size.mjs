@@ -69,6 +69,7 @@ const BUDGETS = {
   'core/i18n': 2, // 0.14 localization core: requireParity (pure id-set diff) + localize (pure doc→doc resolver) + t() (ambient-table build-time sugar). Tree-shakeable sub-path off the base index — the resolver bytes never touch the embed budget. timeline/track are TYPE-only imports, so the standalone bundle is essentially just these three functions.
   scene: 20, // raised 12→13→14→15→16→17→18→19→20 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp); 0.12 §3 mesh Paint kernel — the shared deterministic Shepard/gaussian IDW rasterizer (meshGradient.ts) + the clip+drawImage blit branch in Raster2D, ~0.8 kB. This is the REAL render path (one CPU kernel both backends run, no SkSL fork), not tree-shakeable; it is the determinism tentpole of the milestone; 18→19 in 0.13 for each() — deterministic parametric instancing (layout arithmetic + seeded mix + id stamping), ~1 kB. The clip runtime it fans is imported TYPE-ONLY, so the @glissade/core/clips bytes stay in the consumer bundle, NOT scene — verified: the scene metafile carries no clip/clipStdlib input; 19→20 in 0.14 for collectLocalizedTextUsages — the FIX 3 (0.14 NO-GO canary) post-localize string-track font-usage collector that the --strict CJK-tofu gate needs; it reuses the existing node-walk + Text instanceof path, ~0.01 kB over the tight 19 budget)
   'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
+  'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
@@ -182,6 +183,15 @@ const yogaInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => i.inclu
 const yogaOk = yogaInBase.length === 0;
 if (!yogaOk) failed = true;
 console.log(`${yogaOk ? 'ok  ' : 'FAIL'} base scene excludes yoga-layout${yogaOk ? '' : ` (leaked: ${yogaInBase.length} input(s))`}`);
+
+// 0.17.1 guard: the base scene bundle must NOT pull in the SVG `d`-string parser
+// — it's a separately-budgeted entry (@glissade/scene/path). `Path({ data })` on a
+// bare string throws pointing there rather than dragging the parser onto every
+// embed, so assert via the metafile that path.ts never enters the base graph.
+const pathInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\/(src|dist)\/path\./.test(i));
+const pathOk = pathInBase.length === 0;
+if (!pathOk) failed = true;
+console.log(`${pathOk ? 'ok  ' : 'FAIL'} base scene excludes path parser${pathOk ? '' : ` (leaked: ${pathInBase.join(', ')})`}`);
 
 // §3.6 / §4.4 guard: the font INGEST deps (the woff2 decoder + the hb-subset
 // variable-axis instancer) are EXPORT/prepare-path only — they live on the

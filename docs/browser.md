@@ -75,18 +75,20 @@ For play/pause/scrubber chrome and a managed loop, assign a scene module to the 
 
 ## Paths from an SVG `d` string
 
-`Path` accepts a raw SVG path `d` string for `data` (parsed at construction), not just the verbose `PathValue` contour form — handy for icon-style arrowheads and glyph outlines:
+`Path.data` wants the verbose `PathValue` contour form — but you can build one from a raw SVG path `d` string with `pathFromSvg`, handy for icon-style arrowheads and glyph outlines. In the single-file bundle it's on `window.glissade` (`G.pathFromSvg`):
 
 ```js
 var arrow = new G.Path({
   id: 'arrow',
-  data: 'M0 0 L40 0 M28 -8 L40 0 L28 8', // SVG `d` — parsed to PathValue
+  data: G.pathFromSvg('M0 0 L40 0 M28 -8 L40 0 L28 8'), // SVG `d` → PathValue
   stroke: '#cdd6f4',
   position: [200, 180],
 });
 ```
 
-The lean parser inside `@glissade/scene` covers `M L H V C Q Z` (absolute + relative). For the full SVG command set (`S`/`T`/`A` smooth-curves + arcs), import a `.svg` file through `@glissade/svg` with a build toolchain. A non-string, non-`PathValue` `data` (e.g. a number) throws a clear construction-time error rather than crashing at render.
+The parser is **off the base embed** — it lives on the tree-shakeable `@glissade/scene/path` subpath (`import { pathFromSvg } from '@glissade/scene/path'` when bundling), so a no-build embed that never touches SVG strings doesn't pay for it. Passing a bare string straight to `Path.data` throws a clear construction-time error naming `pathFromSvg`; a non-`PathValue` `data` (e.g. a number) does too, rather than crashing at render.
+
+The lean parser covers `M L H V C Q Z` (absolute + relative). For the full SVG command set (`S`/`T`/`A` smooth-curves + arcs), import a `.svg` file through `@glissade/svg` with a build toolchain.
 
 ## FOUT caveat (own-rAF consumers)
 

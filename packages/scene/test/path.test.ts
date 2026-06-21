@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { key, timeline, track, type PathValue } from '@glissade/core';
 import { createScene, evaluate, Path } from '../src/index.js';
+import { pathFromSvg, parseSvgPathData } from '../src/path.js';
 
 const tri = (s: number): PathValue => [
   {
@@ -54,10 +55,17 @@ describe('Path node (Lottie S0): bezier geometry as a first-class, animatable no
     expect(at(1)).toBe(-20); // pure: re-sampling identical
   });
 
-  it('coerces an SVG `d` STRING to PathValue at construction and RENDERS it (0.17.1 design-agent repro)', () => {
-    // The repro: a raw SVG path string used to build fine but THROW at render
-    // (the contour walk dereferenced `.v` on a string char). Now it parses.
-    const path = new Path({ id: 'p', data: 'M0 0 L40 0 M28 -8 L40 0 L28 8', stroke: '#fff', position: [50, 50] });
+  it('a bare SVG `d` STRING throws a clear construction error naming pathFromSvg (0.17.1)', () => {
+    // The parser is off the base embed (@glissade/scene/path). Passing a raw
+    // string used to crash at render (the contour walk dereferenced `.v` on a
+    // string char); now it throws at CONSTRUCTION pointing at the helper.
+    expect(() => new Path({ id: 'p', data: 'M0 0 L40 0' })).toThrow(/pathFromSvg/);
+    expect(() => new Path({ data: 'M0 0 L40 0' })).toThrow(/@glissade\/scene\/path/);
+  });
+
+  it('renders an SVG `d` STRING parsed via pathFromSvg (0.17.1 design-agent repro)', () => {
+    // The repro, via the helper: parse to PathValue first, then build the Path.
+    const path = new Path({ id: 'p', data: pathFromSvg('M0 0 L40 0 M28 -8 L40 0 L28 8'), stroke: '#fff', position: [50, 50] });
     const scene = createScene({ size: { w: 100, h: 100 }, children: [path] });
     // No throw at evaluate; the DisplayList carries the parsed path commands.
     const list = evaluate(scene, timeline({ duration: 1 }), 0);
@@ -70,13 +78,21 @@ describe('Path node (Lottie S0): bezier geometry as a first-class, animatable no
     expect(res!.segs[0]).toEqual(['M', 0, 0]);
   });
 
+  it('parseSvgPathData tokenizes the lean M/L/H/V/C/Q/Z set (absolute + relative)', () => {
+    expect(parseSvgPathData('M0 0 L40 0')).toEqual([['M', 0, 0], ['L', 40, 0]]);
+    // relative l/h/v and implicit-repeat (M→L)
+    expect(parseSvgPathData('M10 10 l5 0 h5 v5 Z')).toEqual([
+      ['M', 10, 10], ['L', 15, 10], ['L', 20, 10], ['L', 20, 15], ['Z'],
+    ]);
+  });
+
   it('accepts a constant PathValue unchanged and throws a clear error on garbage data', () => {
     // A normal PathContour[] still works.
     const ok = new Path({ data: tri(5) });
     expect(ok.data()).toEqual(tri(5));
     // A number (or any non-string / non-contour-array) throws at construction.
     expect(() => new Path({ data: 42 as unknown as PathValue })).toThrow(/Path\.data expects PathValue/);
-    expect(() => new Path({ data: null as unknown as PathValue })).toThrow(/got null/);
+    expect(() => new Path({ data: null as unknown as PathValue })).toThrow(/Path\.data expects PathValue/);
   });
 
   it('bounds/intrinsicSize cover control points; flowOffset is the true box top-left', () => {

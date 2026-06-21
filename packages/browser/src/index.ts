@@ -23,6 +23,12 @@ export * from '@glissade/core';
 // it into the core/index size budget).
 export * from '@glissade/core/clips';
 export * from '@glissade/scene';
+// The SVG `d`-string parser lives on the tree-shaken `@glissade/scene/path`
+// subpath (off the base scene index for the scene budget). The single-file
+// convenience bundle SHOULD expose it, so re-export it here — `pathFromSvg` +
+// `parseSvgPathData` land on `window.glissade` for `new Path({ data:
+// G.pathFromSvg('M0 0 …') })`.
+export * from '@glissade/scene/path';
 export * from '@glissade/player';
 export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';
 export * from '@glissade/element';

@@ -878,9 +878,6 @@ export { Paint }
 export function parseDisplaySnapshot(json: string): DisplayList;
 
 // @public
-export function parseSvgPathData(d: string): PathSeg[];
-
-// @public
 export class Path extends Shape {
     constructor(props?: PathProps);
     bounds(): {

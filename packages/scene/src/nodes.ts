@@ -267,101 +267,15 @@ function emitDrawOnStroke(
 }
 
 /**
- * Minimal SVG `<path d>` tokenizer → `PathSeg[]`, kept inside `scene` so that
- * `Path({ data: '<d string>' })` can coerce without importing `@glissade/svg`
- * (that would invert the enforced dependency direction, scene ← svg). Handles
- * the common command set: M/m L/l H/h V/v C/c Q/q Z/z (absolute + relative,
- * implicit-repeat per spec). For the FULL set (S/T/A smooth-curves + arcs, with
- * reflection), import a `.svg` through `@glissade/svg`'s `parseSvgPath`; this
- * lean copy covers hand-written `data` strings. Unknown commands are skipped.
- */
-export function parseSvgPathData(d: string): PathSeg[] {
-  const tokens = d.match(/[MmLlHhVvCcQqZz]|-?(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?/g) ?? [];
-  const segs: PathSeg[] = [];
-  let i = 0;
-  let cx = 0;
-  let cy = 0;
-  let sx = 0;
-  let sy = 0;
-  let prevCmd = '';
-  const num = (): number => Number(tokens[i++]);
-  const isCmd = (t: string | undefined): boolean => !!t && /^[MmLlHhVvCcQqZz]$/.test(t);
-  while (i < tokens.length) {
-    let cmd = tokens[i]!;
-    if (isCmd(cmd)) i++;
-    else cmd = prevCmd === 'M' ? 'L' : prevCmd === 'm' ? 'l' : prevCmd; // implicit repeat (M→L)
-    if (!cmd) break;
-    const rel = cmd === cmd.toLowerCase();
-    switch (cmd.toUpperCase()) {
-      case 'M': {
-        const x = num() + (rel ? cx : 0);
-        const y = num() + (rel ? cy : 0);
-        cx = x; cy = y; sx = x; sy = y;
-        segs.push(['M', x, y]);
-        break;
-      }
-      case 'L': {
-        const x = num() + (rel ? cx : 0);
-        const y = num() + (rel ? cy : 0);
-        cx = x; cy = y;
-        segs.push(['L', x, y]);
-        break;
-      }
-      case 'H': {
-        const x = num() + (rel ? cx : 0);
-        cx = x;
-        segs.push(['L', x, cy]);
-        break;
-      }
-      case 'V': {
-        const y = num() + (rel ? cy : 0);
-        cy = y;
-        segs.push(['L', cx, y]);
-        break;
-      }
-      case 'C': {
-        const x1 = num() + (rel ? cx : 0);
-        const y1 = num() + (rel ? cy : 0);
-        const x2 = num() + (rel ? cx : 0);
-        const y2 = num() + (rel ? cy : 0);
-        const x = num() + (rel ? cx : 0);
-        const y = num() + (rel ? cy : 0);
-        cx = x; cy = y;
-        segs.push(['C', x1, y1, x2, y2, x, y]);
-        break;
-      }
-      case 'Q': {
-        const x1 = num() + (rel ? cx : 0);
-        const y1 = num() + (rel ? cy : 0);
-        const x = num() + (rel ? cx : 0);
-        const y = num() + (rel ? cy : 0);
-        cx = x; cy = y;
-        segs.push(['Q', x1, y1, x, y]);
-        break;
-      }
-      case 'Z': {
-        segs.push(['Z']);
-        cx = sx; cy = sy;
-        break;
-      }
-      default:
-        i++; // skip an unsupported command token rather than spinning
-        break;
-    }
-    prevCmd = cmd;
-  }
-  return segs;
-}
-
-/**
- * Coerce a `Path.data` init to a `PathValue`: an SVG `d` string is parsed
- * (`parseSvgPathData` → `pathFromSegs`); an array of contour objects passes
- * through; anything else is a construction-time error. Returns `[]` for
- * `undefined` (the empty-path default).
+ * Coerce a `Path.data` init to a `PathValue`: an array of contour objects
+ * passes through; anything else (a string, a number, …) is a construction-time
+ * error. SVG `d` strings are NOT parsed here — that parser lives on the
+ * tree-shakeable `@glissade/scene/path` subpath (kept off the base embed), so a
+ * string `data` throws a clear error pointing at `pathFromSvg(d)`. Returns `[]`
+ * for `undefined` (the empty-path default).
  */
 export function coercePathData(data: unknown): PathValue {
   if (data === undefined) return [];
-  if (typeof data === 'string') return pathFromSegs(parseSvgPathData(data));
   if (Array.isArray(data)) {
     const ok = data.every(
       (c) =>
@@ -373,7 +287,7 @@ export function coercePathData(data: unknown): PathValue {
     if (ok) return data as PathValue;
   }
   throw new TypeError(
-    `Path.data expects PathValue (PathContour[]) or an SVG path string; got ${data === null ? 'null' : typeof data}`,
+    `Path.data expects PathValue (PathContour[]); for an SVG path 'd' string, parse it with pathFromSvg(d) from "@glissade/scene/path" (or window.glissade.pathFromSvg in the browser bundle)`,
   );
 }
 
@@ -511,10 +425,11 @@ export class Circle extends Shape {
 export interface PathProps extends ShapeProps {
   /**
    * The geometry (§2.2 'path' value): bezier contours in vertex form,
-   * animatable via a track on '<id>/d'. Accepts a `PathValue` directly, an SVG
-   * `d` string (parsed at construction via the lean M/L/H/V/C/Q/Z parser — see
-   * `parseSvgPathData`; use `@glissade/svg` for the full S/T/A set), or a
-   * computed `() => PathValue`.
+   * animatable via a track on '<id>/d'. Accepts a `PathValue` directly or a
+   * computed `() => PathValue`. For an SVG `d` STRING, parse it first with
+   * `pathFromSvg(d)` from the tree-shakeable `@glissade/scene/path` subpath
+   * (off the base embed) — passing a bare string throws a clear construction
+   * error rather than dragging the parser onto every embed.
    */
   data?: PropInit<PathValue> | string;
 }

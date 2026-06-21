@@ -16,6 +16,10 @@
     "./layout": {
       "types": "./dist/layout.d.ts",
       "default": "./dist/layout.js"
+    },
+    "./path": {
+      "types": "./dist/path.d.ts",
+      "default": "./dist/path.js"
     }
   },
   "files": [
