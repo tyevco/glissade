@@ -5,17 +5,11 @@
 ```ts
 
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
-import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
-import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 
 export { Canvas2DBackend }
 
-export { renderToDataURL }
-
 export { setShaderRunner }
-
-export { snapshotCanvas }
 
 
 export * from "@glissade/core";

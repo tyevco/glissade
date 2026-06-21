@@ -46,12 +46,13 @@ describe('@glissade/browser entry surface', () => {
     expect(customElements.get('gs-player')).toBeDefined();
   });
 
-  it('exposes renderToDataURL — the 0.19 frame-screenshot DX helper (from @glissade/backend-canvas2d)', () => {
-    // The "can't screenshot a live canvas" wall: window.glissade.renderToDataURL
-    // is the one-shot evaluate→render→snapshot data-URL helper. Browser-only
-    // (OffscreenCanvas/toDataURL), so merely asserting it is present + callable
-    // here (the IIFE inlines backend-canvas2d).
-    expect(typeof glissade.renderToDataURL).toBe('function');
+  it('does NOT expose renderToDataURL on the IIFE in 0.19 (npm-subpath only — budget deferral)', () => {
+    // renderToDataURL (the frame-screenshot DX helper) ships on the npm subpath
+    // `@glissade/backend-canvas2d/snapshot`, NOT on window.glissade: the IIFE is
+    // at its 46 kB ceiling and per the zero-budget-bump call its +0.36 kB IIFE
+    // exposure defers to the browser-budget review. Guard that it stays OFF the
+    // bundle so the size saving isn't silently undone by a stray re-export.
+    expect(glissade.renderToDataURL).toBeUndefined();
     expect(typeof glissade.Canvas2DBackend).toBe('function');
   });
 
