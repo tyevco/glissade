@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=20.19"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": true,
   "exports": {
