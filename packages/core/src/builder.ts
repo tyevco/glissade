@@ -36,9 +36,40 @@ export interface TweenOpts<T = unknown> {
   from?: T;
 }
 
+/** The shared tween shape applied to every staggered target (§2.6 stagger sugar). */
+export interface StaggerSpec<T = unknown> {
+  to: T;
+  /** Explicit start value — routes each target through `fromTo` when present. */
+  from?: T;
+  duration?: number;
+  ease?: EaseSpec;
+}
+
+/**
+ * Stagger placement. `each` is the per-rank delay (seconds, number-only in v1).
+ * `from` picks the anchor the cascade ranks outward from (GSAP parity); `at`
+ * places the whole group's base position (defaults to the chain end).
+ */
+export interface StaggerOpts {
+  each: number;
+  from?: 'start' | 'end' | 'center' | 'edges' | number;
+  at?: Position;
+}
+
 export interface TimelineBuilder {
   to<T>(target: TweenTarget, value: T, opts?: TweenOpts<T>): TimelineBuilder;
   fromTo<T>(target: TweenTarget, from: T, to: T, opts?: TweenOpts<T>): TimelineBuilder;
+  /**
+   * Build-time sugar: loop the shipped `to`/`fromTo` emission over `targets`,
+   * cascading each by a per-rank delay. Emits keys byte-identical to N
+   * hand-authored offset tweens. The `from` anchor ranks targets over their
+   * array index i (n = targets.length, c = (n-1)/2): `'start'` → i; `'end'` →
+   * (n-1)-i; `'center'` → round(|i-c|); `'edges'` → round(c-|i-c|); numeric k →
+   * round(|i-k|). Delay d_i = rank_i * each, inserted at `base + d_i` where
+   * `base = resolvePosition(opts.at)`. The group reads as one block to a
+   * following `'<'`/`'>'`/`'+='` step.
+   */
+  stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
   /** Hold key: the value snaps at the resolved position (§2.6). */
   set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
@@ -165,6 +196,41 @@ export function buildTimeline(
     fromTo(target, from, to, opts = {}) {
       builder.to(target, to, opts);
       insertions[insertions.length - 1]!.explicitFrom = from;
+      return builder;
+    },
+    stagger(targets, spec, opts) {
+      const n = targets.length;
+      // one group base, resolved once against the live cursor (default chain end)
+      const base = resolvePosition(opts.at);
+      const c = (n - 1) / 2;
+      const rankOf = (i: number): number => {
+        const f = opts.from ?? 'start';
+        if (f === 'start') return i;
+        if (f === 'end') return n - 1 - i;
+        if (f === 'center') return Math.round(Math.abs(i - c));
+        if (f === 'edges') return Math.round(c - Math.abs(i - c));
+        return Math.round(Math.abs(i - f)); // numeric origin
+      };
+      const duration = spec.duration ?? 1;
+      let maxDelay = 0;
+      const tweenOpts = (d: number): TweenOpts =>
+        // spread-conditionally — exactOptionalPropertyTypes forbids passing undefined
+        ({
+          at: base + d,
+          ...(spec.duration !== undefined ? { duration: spec.duration } : {}),
+          ...(spec.ease !== undefined ? { ease: spec.ease } : {}),
+        });
+      for (let i = 0; i < n; i++) {
+        const d = rankOf(i) * opts.each;
+        if (d > maxDelay) maxDelay = d;
+        const t = targets[i]!;
+        // reuse the shipped emission verbatim → byte-identical to hand-offset tweens
+        if (spec.from !== undefined) builder.fromTo(t, spec.from, spec.to, tweenOpts(d));
+        else builder.to(t, spec.to, tweenOpts(d));
+      }
+      // the whole group reads as ONE block to a following '<'/'>'/'+=' step
+      prevStart = base;
+      prevEnd = base + maxDelay + duration;
       return builder;
     },
     set(target, value, opts = {}) {

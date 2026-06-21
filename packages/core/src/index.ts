@@ -151,6 +151,8 @@ export {
   PositionError,
   type TimelineBuilder,
   type TweenOpts,
+  type StaggerSpec,
+  type StaggerOpts,
   type Position,
 } from './builder.js';
 

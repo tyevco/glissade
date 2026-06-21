@@ -698,6 +698,27 @@ export function springTo<T>(endT: number, from: T, to: T, cfg: SpringConfig): [K
 // @public
 export function stagger<T>(tracks: readonly Track<T>[], delay: number | ((index: number) => number)): Track<T>[];
 
+// @public
+export interface StaggerOpts {
+    // (undocumented)
+    at?: Position;
+    // (undocumented)
+    each: number;
+    // (undocumented)
+    from?: 'start' | 'end' | 'center' | 'edges' | number;
+}
+
+// @public
+export interface StaggerSpec<T = unknown> {
+    // (undocumented)
+    duration?: number;
+    // (undocumented)
+    ease?: EaseSpec;
+    from?: T;
+    // (undocumented)
+    to: T;
+}
+
 // @public (undocumented)
 export const stringType: ValueType<string>;
 
@@ -769,6 +790,7 @@ export interface TimelineBuilder {
     set<T>(target: TweenTarget, value: T, opts?: {
         at?: Position;
     }): TimelineBuilder;
+    stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
     // (undocumented)
     to<T>(target: TweenTarget, value: T, opts?: TweenOpts<T>): TimelineBuilder;
 }

@@ -335,3 +335,174 @@ describe('editableDuration() / isDurationEditable() (§6.2 rule 4)', () => {
     expect(isDurationEditable(JSON.parse(JSON.stringify(raw)) as typeof raw)).toBe(true);
   });
 });
+
+describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
+  /** Start time of a target's first emitted key. */
+  const startOf = (doc: ReturnType<typeof compileTimeline>, target: string) =>
+    doc.tracks.get(target)!.keys[0]!.t;
+
+  it('keys are byte-identical to N hand-authored offset tweens', () => {
+    const sa = prop('a/opacity', 0);
+    const sb = prop('b/opacity', 0);
+    const sc = prop('c/opacity', 0);
+    const staggered = timeline((tl) => {
+      tl.stagger([sa, sb, sc], { to: 1 }, { each: 0.1 });
+    });
+
+    const ha = prop('a/opacity', 0);
+    const hb = prop('b/opacity', 0);
+    const hc = prop('c/opacity', 0);
+    const hand = timeline((tl) => {
+      tl.to(ha, 1, { at: 0 }).to(hb, 1, { at: 0.1 }).to(hc, 1, { at: 0.2 });
+    });
+
+    // key-for-key equality — the acceptance contract
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+
+  it('from: start ranks i — earliest target at base', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, from: 'start' });
+      }),
+    );
+    expect(startOf(doc, 'a/x')).toBeCloseTo(0);
+    expect(startOf(doc, 'b/x')).toBeCloseTo(0.1);
+    expect(startOf(doc, 'c/x')).toBeCloseTo(0.2);
+  });
+
+  it('from: end ranks (n-1)-i', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, from: 'end' });
+      }),
+    );
+    expect(startOf(doc, 'a/x')).toBeCloseTo(0.2);
+    expect(startOf(doc, 'b/x')).toBeCloseTo(0.1);
+    expect(startOf(doc, 'c/x')).toBeCloseTo(0);
+  });
+
+  it('from: center ranks round(|i-c|) — middle first, tie at even n', () => {
+    // odd n=5, c=2 → ranks 2,1,0,1,2
+    const odd = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, from: 'center' });
+      }),
+    );
+    expect([startOf(odd, 'a/x'), startOf(odd, 'b/x'), startOf(odd, 'c/x'), startOf(odd, 'd/x'), startOf(odd, 'e/x')]).toEqual(
+      [0.2, 0.1, 0, 0.1, 0.2].map((v) => expect.closeTo(v)),
+    );
+    // even n=4, c=1.5 → round(|i-1.5|) = 2,1,1,2 — two rank-1 middles (no rank-0)
+    const even = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, from: 'center' });
+      }),
+    );
+    expect([startOf(even, 'a/x'), startOf(even, 'b/x'), startOf(even, 'c/x'), startOf(even, 'd/x')]).toEqual(
+      [0.2, 0.1, 0.1, 0.2].map((v) => expect.closeTo(v)),
+    );
+  });
+
+  it('from: edges ranks round(c-|i-c|) — ends first', () => {
+    // odd n=5, c=2 → 0,1,2,1,0
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, from: 'edges' });
+      }),
+    );
+    expect([startOf(doc, 'a/x'), startOf(doc, 'b/x'), startOf(doc, 'c/x'), startOf(doc, 'd/x'), startOf(doc, 'e/x')]).toEqual(
+      [0, 0.1, 0.2, 0.1, 0].map((v) => expect.closeTo(v)),
+    );
+  });
+
+  it('from: numeric origin ranks round(|i-k|)', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, from: 1 });
+      }),
+    );
+    // |i-1| = 1,0,1,2
+    expect([startOf(doc, 'a/x'), startOf(doc, 'b/x'), startOf(doc, 'c/x'), startOf(doc, 'd/x')]).toEqual(
+      [0.1, 0, 0.1, 0.2].map((v) => expect.closeTo(v)),
+    );
+  });
+
+  it('spec.from routes each target through fromTo (explicitFrom set)', () => {
+    const sa = prop('a/opacity', 0.5);
+    const sb = prop('b/opacity', 0.5);
+    const staggered = timeline((tl) => {
+      tl.stagger([sa, sb], { from: 0, to: 1 }, { each: 0.1 });
+    });
+    const ha = prop('a/opacity', 0.5);
+    const hb = prop('b/opacity', 0.5);
+    const hand = timeline((tl) => {
+      tl.fromTo(ha, 0, 1, { at: 0 }).fromTo(hb, 0, 1, { at: 0.1 });
+    });
+    expect(staggered.tracks).toEqual(hand.tracks);
+    // the from-key is explicit (not derived)
+    const a = staggered.tracks.find((t) => t.target === 'a/opacity')!;
+    expect(a.keys[0]).toMatchObject({ t: 0, value: 0 });
+    expect(a.keys[0]).not.toHaveProperty('derived');
+  });
+
+  it('group reads as ONE block to a following < / += step', () => {
+    // 3 targets, each 0.1, duration 1 → base 0, delays 0/0.1/0.2, group end = 0.2 + 1 = 1.2
+    const next = prop('z/x', 0);
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, duration: 1 }, { each: 0.1 }).to(next, 1, {
+          duration: 1,
+          at: '<',
+        });
+      }),
+    );
+    // '<' aligns with the group's base (0), not the last target's start (0.2)
+    expect(startOf(doc, 'z/x')).toBeCloseTo(0);
+  });
+
+  it("'+=' resolves against the group's end (base + maxDelay + duration)", () => {
+    const next = prop('z/x', 0);
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, duration: 1 }, { each: 0.1 }).to(next, 1, {
+          duration: 1,
+          at: '+=0.5',
+        });
+      }),
+    );
+    // group end = 0.2 + 1 = 1.2; +=0.5 → 1.7
+    expect(startOf(doc, 'z/x')).toBeCloseTo(1.7);
+  });
+
+  it('opts.at places the group base (label and +=x)', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 1 })
+          .label('mark')
+          .stagger(['a/x', 'b/x'], { from: 0, to: 1, duration: 1 }, { each: 0.1, at: 'mark+=0.5' });
+      }),
+    );
+    // mark = 1, +=0.5 → base 1.5; delays 0/0.1
+    expect(startOf(doc, 'a/x')).toBeCloseTo(1.5);
+    expect(startOf(doc, 'b/x')).toBeCloseTo(1.6);
+
+    const rel = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 1 }).stagger(['a/x', 'b/x'], { from: 0, to: 1, duration: 1 }, { each: 0.1, at: '+=0.5' });
+      }),
+    );
+    // seed end = 1; +=0.5 → base 1.5
+    expect(startOf(rel, 'a/x')).toBeCloseTo(1.5);
+    expect(startOf(rel, 'b/x')).toBeCloseTo(1.6);
+  });
+
+  it('default base = chain end (prevEnd)', () => {
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 2 }).stagger(['a/x', 'b/x'], { from: 0, to: 1 }, { each: 0.1 });
+      }),
+    );
+    expect(startOf(doc, 'a/x')).toBeCloseTo(2);
+    expect(startOf(doc, 'b/x')).toBeCloseTo(2.1);
+  });
+});
