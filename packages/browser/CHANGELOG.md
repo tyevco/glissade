@@ -1,5 +1,16 @@
 # @glissade/browser
 
+## 0.18.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies [e3a2f6a]
+  - @glissade/core@0.18.0-pre.0
+  - @glissade/backend-canvas2d@0.18.0-pre.0
+  - @glissade/element@0.18.0-pre.0
+  - @glissade/player@0.18.0-pre.0
+  - @glissade/scene@0.18.0-pre.0
+
 ## 0.17.1
 
 ### Patch Changes
