@@ -1,5 +1,13 @@
 # @glissade/backend-canvas2d
 
+## 0.18.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies [7f815f9]
+  - @glissade/core@0.18.0-pre.3
+  - @glissade/scene@0.18.0-pre.3
+
 ## 0.18.0-pre.2
 
 ### Patch Changes

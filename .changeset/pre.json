@@ -25,6 +25,7 @@
     "@glissade/vite-plugin": "0.17.1"
   },
   "changesets": [
+    "presence-inline-literal-sugar",
     "sequence-and-at-builder-methods",
     "stack-layout-alias",
     "stagger-builder-method"
