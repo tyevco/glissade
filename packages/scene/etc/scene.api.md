@@ -817,6 +817,10 @@ abstract class Node_2 {
         w: number;
         h: number;
     } | null;
+    listTargets(): {
+        path: string;
+        expects: ValueTypeId | readonly ValueTypeId[] | undefined;
+    }[];
     // (undocumented)
     readonly localMatrix: ReadonlySignal<Mat2x3>;
     measurerSource: (() => TextMeasurer) | null;

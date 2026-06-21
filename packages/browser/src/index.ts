@@ -29,6 +29,12 @@ export * from '@glissade/scene';
 // `parseSvgPathData` land on `window.glissade` for `new Path({ data:
 // G.pathFromSvg('M0 0 …') })`.
 export * from '@glissade/scene/path';
+// The machine-readable API manifest (0.18) lives on the tree-shakeable
+// `@glissade/scene/describe` subpath (off the base scene index). The single-file
+// convenience bundle SHOULD expose it for discoverability, so re-export it here —
+// `glissade.describe()` lands on `window.glissade`, and the build writes its
+// JSON.stringify(describe()) to dist/glissade.api.json.
+export * from '@glissade/scene/describe';
 export * from '@glissade/player';
 export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';
 export * from '@glissade/element';

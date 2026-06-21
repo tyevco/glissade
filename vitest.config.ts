@@ -16,6 +16,7 @@ export default defineConfig({
       '@glissade/core/font-ingest': src('core').replace('index.ts', 'font-ingest.ts'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene/path': src('scene').replace('index.ts', 'path.ts'),
+      '@glissade/scene/describe': src('scene').replace('index.ts', 'describe.ts'),
       '@glissade/core': src('core'),
       '@glissade/scene': src('scene'),
       '@glissade/react': src('react'),

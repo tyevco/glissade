@@ -348,6 +348,9 @@ export type KeyOpts<T> = Partial<Omit<Key<T>, 't' | 'value'>>;
 // @public
 export function lerpColor(from: string, to: string, t: number): string;
 
+// @public
+export function listValueTypes(): string[];
+
 // @public (undocumented)
 export interface Marker {
     // (undocumented)

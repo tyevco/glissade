@@ -72,6 +72,17 @@ export function getValueType<T = unknown>(id: ValueTypeId): ValueType<T> {
 }
 
 /**
+ * The ids of every currently-registered value type, in registration order
+ * (the built-ins first, then any custom `registerValueType` additions). The
+ * introspection seam `describe()` reads to list `valueTypes` from the REAL
+ * registry — so the manifest can't drift from what `evaluate()` can actually
+ * interpolate. Pure read; never touched by evaluate().
+ */
+export function listValueTypes(): string[] {
+  return [...registry.keys()];
+}
+
+/**
  * Resolve a value-type id to its REPRESENTATION (the bind guard's compatibility
  * key, §2.2): a type's `repr` (the built-in it's representationally compatible
  * with), else the id itself. SINGLE-HOP — `repr` is never chained, so a custom

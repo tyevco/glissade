@@ -20,6 +20,10 @@
     "./path": {
       "types": "./dist/path.d.ts",
       "default": "./dist/path.js"
+    },
+    "./describe": {
+      "types": "./dist/describe.d.ts",
+      "default": "./dist/describe.js"
     }
   },
   "files": [

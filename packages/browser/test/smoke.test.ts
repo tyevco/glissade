@@ -54,4 +54,25 @@ describe('@glissade/browser entry surface', () => {
     // A round-trip through the helper builds a Path that constructs (no throw).
     expect(() => new glissade.Path({ data: glissade.pathFromSvg('M0 0 L40 0') })).not.toThrow();
   });
+
+  it('exposes the machine-readable API manifest (describe, from @glissade/scene/describe)', () => {
+    // 0.18: `glissade.describe()` is the discoverability artifact — the design
+    // agent reverse-engineered the API instead of reading it; this guards it's
+    // on the bundle and returns a populated, JSON-serializable manifest.
+    expect(typeof glissade.describe).toBe('function');
+    const m = glissade.describe();
+    expect(typeof m.version).toBe('string');
+    expect(Object.keys(m.nodes).length).toBeGreaterThan(0);
+    expect(m.valueTypes).toContain('vec2');
+    expect(m.easings.length).toBeGreaterThan(0);
+    expect(m.builder.methods.length).toBeGreaterThan(0);
+    // Round-trips through JSON unchanged (the api.json the build commits).
+    expect(JSON.parse(JSON.stringify(m))).toEqual(m);
+    expect(m.nodes.Rect.props.position).toEqual({
+      type: 'vec2',
+      animatable: true,
+      target: '<id>/position',
+      arity: 2,
+    });
+  });
 });

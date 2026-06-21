@@ -250,6 +250,18 @@ export abstract class Node {
     return this.targets.get(path);
   }
 
+  /**
+   * Enumerate this node's registered track-target paths and the value type each
+   * accepts — the introspection seam `describe()` reads to build the API
+   * manifest from the REAL `registerTarget` calls (so it can't drift). Returns
+   * `[path, expects]` pairs in registration order; `expects` is the §2.2 type
+   * stamp (a `ValueTypeId`, an array for a polymorphic prop like `fill`, or
+   * `undefined` for an untagged target).
+   */
+  listTargets(): { path: string; expects: ValueTypeId | readonly ValueTypeId[] | undefined }[] {
+    return [...this.targets].map(([path, sig]) => ({ path, expects: sig.expects }));
+  }
+
   /** Subclass drawing: emit own commands (and children for containers). */
   protected abstract draw(out: DisplayListBuilder, ctx: EvalContext): void;
 

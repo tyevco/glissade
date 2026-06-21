@@ -52,3 +52,14 @@ const gz = gzipSync(raw).length / 1024;
 console.log(
   `\n@glissade/browser  ${gz.toFixed(2)} kB gz  /  ${(raw.length / 1024).toFixed(2)} kB raw  →  ${outfile.slice(root.length)}`,
 );
+
+// Emit the committed machine-readable API manifest alongside the IIFE so a tool
+// can fetch `glissade.api.json` WITHOUT running JS (the same `describe()` the
+// bundle exposes as `window.glissade.describe()`). Imported straight from scene's
+// built dist (DOM-free pure introspection) — not from the IIFE, which would run
+// the <gs-player> registration side effect under Node.
+const { writeFileSync } = await import('node:fs');
+const { describe } = await import(join(root, 'packages', 'scene', 'dist', 'describe.js'));
+const apiFile = join(root, 'packages', 'browser', 'dist', 'glissade.api.json');
+writeFileSync(apiFile, JSON.stringify(describe(), null, 2) + '\n');
+console.log(`@glissade/api.json written  →  ${apiFile.slice(root.length)}`);
