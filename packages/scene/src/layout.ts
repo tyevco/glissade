@@ -193,6 +193,36 @@ export class Layout extends Group {
   }
 }
 
+/**
+ * Stack-ergonomic props — a more DISCOVERABLE surface over {@link LayoutProps}.
+ * Everything `Layout` accepts (id, position, opacity, width/height, gap,
+ * padding, justify, children, …) passes through unchanged; the only difference
+ * from constructing `Layout` directly is the defaulting `Stack()` applies.
+ */
+export interface StackProps extends LayoutProps {}
+
+/**
+ * Thin convenience factory over the Yoga-backed {@link Layout} node — NOT a new
+ * class and NOT new signals, so a `Stack` inherits Layout's memoized, pure,
+ * dependency-tracked resolve verbatim: `Stack(props)` and the equivalent
+ * hand-written `Layout({...})` produce identical child positions.
+ *
+ * Stack-ergonomic defaults (the ONLY divergence from `Layout`):
+ * - `direction` defaults to `'column'` (the common vertical stack; Layout's own
+ *   default is `'row'`).
+ * - `align` defaults to `'start'` — a true left edge for a label column (the
+ *   dogfooding use case). This DIVERGES from `Layout`'s `'center'` default.
+ *
+ * Every other prop passes straight through to `Layout`.
+ */
+export function Stack(props: StackProps = {}): Layout {
+  return new Layout({
+    ...props,
+    direction: props.direction ?? 'column',
+    align: props.align ?? 'start',
+  });
+}
+
 function initProp<T>(sig: BindableSignal<T>, init: PropInit<T> | undefined): BindableSignal<T> {
   if (typeof init === 'function') sig.bindSource(init as () => T);
   else if (init !== undefined) sig.set(init);

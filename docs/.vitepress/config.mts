@@ -23,6 +23,7 @@ export default defineConfig({
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Concepts', link: '/concepts' },
           { text: 'Composing timelines', link: '/timeline' },
+          { text: 'Flexbox layout', link: '/layout' },
           { text: 'Single-file browser bundle', link: '/browser' },
           { text: 'Interactivity (v2)', link: '/interactivity' },
           { text: 'Narration & captions', link: '/narration' },
