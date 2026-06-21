@@ -1,5 +1,16 @@
 # @glissade/element
 
+## 0.17.1-pre.0
+
+### Patch Changes
+
+- 3731dd4: `<gs-player>` now supports ping-pong (yoyo) playback: the `pingpong` attribute (alias `yoyo`) selects the player's alternate loop mode (`loop: { mode: 'alternate' }`), playing the timeline forward then backward. The plain `loop` attribute remains a restart loop; defaults off, so a bare `<gs-player>` is unchanged. The player engine already supported alternate looping — this just exposes it through the element.
+- Updated dependencies [3731dd4]
+  - @glissade/scene@0.17.1-pre.0
+  - @glissade/backend-canvas2d@0.17.1-pre.0
+  - @glissade/player@0.17.1-pre.0
+  - @glissade/core@0.17.1-pre.0
+
 ## 0.17.0
 
 ### Patch Changes
