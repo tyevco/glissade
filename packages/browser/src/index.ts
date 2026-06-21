@@ -41,10 +41,12 @@ export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';
 // helper an AI consumer reached for when it couldn't drive a live <canvas>. It
 // is DX/screenshot TOOLING, so it lives on the tree-shakeable
 // `@glissade/backend-canvas2d/snapshot` subpath — OFF the base embed (the base
-// playback path never needs it). NOTE (0.19): NOT re-exported onto the IIFE —
-// the single-file bundle is at its 46 kB ceiling, and per the zero-budget-bump
-// call the +0.36 kB IIFE exposure of this tooling defers to the browser-budget
-// review (alongside the base-embed creep). Import it via npm
-// (`@glissade/backend-canvas2d/snapshot`); window.glissade.renderToDataURL
-// returns once the IIFE budget is revisited.
+// playback path never needs it). The single-file convenience bundle MUST expose
+// it though: the Claude-Design no-build consumer works ONLY against this IIFE,
+// so a helper absent from window.glissade is unusable to it — and screenshot
+// verification is exactly the no-build AI consumer's need. So re-export it here
+// (`window.glissade.renderToDataURL` / `snapshotCanvas`); the browser budget was
+// raised 46→47 for this +0.36 kB (the convenience bundle, not the base embed).
+// Browser-only (OffscreenCanvas/toDataURL).
+export { renderToDataURL, snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 export * from '@glissade/element';
