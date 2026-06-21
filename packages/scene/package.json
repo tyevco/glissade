@@ -24,6 +24,10 @@
     "./describe": {
       "types": "./dist/describe.d.ts",
       "default": "./dist/describe.js"
+    },
+    "./type": {
+      "types": "./dist/type.d.ts",
+      "default": "./dist/type.js"
     }
   },
   "files": [

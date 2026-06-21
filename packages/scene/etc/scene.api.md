@@ -559,6 +559,21 @@ export function getLayoutEngine(): LayoutEngine | null;
 // @public
 export function glow(color: string, radius?: number, intensity?: number): FilterSpec[];
 
+// @public
+export interface GraphemeBox {
+    // (undocumented)
+    h: number;
+    line: number;
+    // (undocumented)
+    text: string;
+    // (undocumented)
+    w: number;
+    // (undocumented)
+    x: number;
+    // (undocumented)
+    y: number;
+}
+
 // @public (undocumented)
 export class Group extends Node_2 {
     constructor(props?: NodeProps & {
@@ -1282,6 +1297,7 @@ class Text_2 extends Node_2 {
     readonly fontStyle: 'normal' | 'italic';
     // (undocumented)
     readonly fontWeight: number;
+    graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[];
     graphemes(measurer?: TextMeasurer): string[];
     // (undocumented)
     intrinsicSize(measurer: TextMeasurer): {
@@ -1297,6 +1313,7 @@ class Text_2 extends Node_2 {
     };
     // (undocumented)
     readonly reveal: BindableSignal<number>;
+    readonly revealFraction: BindableSignal<number>;
     revealHead(measurer?: TextMeasurer): {
         x: number;
         y: number;
@@ -1374,6 +1391,7 @@ export interface TextProps extends NodeProps {
     fontWeight?: number;
     lineHeight?: number;
     reveal?: PropInit<number>;
+    revealFraction?: PropInit<number>;
     // (undocumented)
     text?: PropInit<string>;
     width?: PropInit<number>;

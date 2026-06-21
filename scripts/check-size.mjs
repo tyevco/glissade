@@ -74,6 +74,7 @@ const BUDGETS = {
   scene: 20, // raised 12→13→14→15→16→17→18→19→20 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp); 0.12 §3 mesh Paint kernel — the shared deterministic Shepard/gaussian IDW rasterizer (meshGradient.ts) + the clip+drawImage blit branch in Raster2D, ~0.8 kB. This is the REAL render path (one CPU kernel both backends run, no SkSL fork), not tree-shakeable; it is the determinism tentpole of the milestone; 18→19 in 0.13 for each() — deterministic parametric instancing (layout arithmetic + seeded mix + id stamping), ~1 kB. The clip runtime it fans is imported TYPE-ONLY, so the @glissade/core/clips bytes stay in the consumer bundle, NOT scene — verified: the scene metafile carries no clip/clipStdlib input; 19→20 in 0.14 for collectLocalizedTextUsages — the FIX 3 (0.14 NO-GO canary) post-localize string-track font-usage collector that the --strict CJK-tofu gate needs; it reuses the existing node-walk + Text instanceof path, ~0.01 kB over the tight 19 budget)
   'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
   'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
+  'scene/type': 5, // 0.19: splitText() — build-time split-text sub-targets (word/line/grapheme → a Group of positioned per-part child Texts). Ships ONLY on this separate entry, never the base scene index — ZERO base-scene cost, mirroring each()/scene/layout/scene/path. The standalone bundle inlines the same-package Text/Group/measurement helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared node-construction path, not splitText's own ~1 kB.
   'backend-canvas2d': 8,
   player: 4,
   element: 5,
@@ -196,6 +197,14 @@ const pathInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\
 const pathOk = pathInBase.length === 0;
 if (!pathOk) failed = true;
 console.log(`${pathOk ? 'ok  ' : 'FAIL'} base scene excludes path parser${pathOk ? '' : ` (leaked: ${pathInBase.join(', ')})`}`);
+
+// 0.19 guard: the base scene bundle must NOT pull in splitText() — it's a
+// separately-budgeted entry (@glissade/scene/type). It's a leaf module index
+// never imports, so assert via the metafile that type.ts stays off the base graph.
+const typeInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\/(src|dist)\/type\./.test(i));
+const typeOk = typeInBase.length === 0;
+if (!typeOk) failed = true;
+console.log(`${typeOk ? 'ok  ' : 'FAIL'} base scene excludes splitText${typeOk ? '' : ` (leaked: ${typeInBase.join(', ')})`}`);
 
 // §3.6 / §4.4 guard: the font INGEST deps (the woff2 decoder + the hb-subset
 // variable-axis instancer) are EXPORT/prepare-path only — they live on the

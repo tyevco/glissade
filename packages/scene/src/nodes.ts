@@ -659,6 +659,22 @@ export interface WordBox {
   h: number;
 }
 
+/**
+ * One grapheme's ink box within a laid-out line, in the Text node's draw space
+ * — the per-grapheme analogue of {@link WordBox}, boxing the SAME grapheme
+ * units `reveal`/`graphemes()` count. Whitespace graphemes advance but have no
+ * box (dropped), exactly as `wordBoxes()` trims whitespace advance.
+ */
+export interface GraphemeBox {
+  text: string;
+  /** laid-out line index (blank lines keep their slot in the numbering) */
+  line: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface TextProps extends NodeProps {
   text?: PropInit<string>;
   fill?: PropInit<string>;
@@ -680,6 +696,18 @@ export interface TextProps extends NodeProps {
    * author a per-keystroke staircase off graphemes() — see revealSchedule().
    */
   reveal?: PropInit<number>;
+  /**
+   * Typewriter reveal expressed as a FRACTION of the grapheme stream, in
+   * [0, 1] — pure count-rounding sugar over {@link reveal}: it resolves against
+   * the SAME laid-out grapheme stream to `count = round(fraction * graphemes)`
+   * and feeds the identical masked-emit path. `1` = fully shown, `0` = hidden,
+   * `0.5` on a 10-grapheme string == `reveal: 5`. When set (the signal is not
+   * NaN) it OVERRIDES `reveal`; left unset (the default) the node is
+   * byte-identical to one without it. Animatable — track target
+   * '<id>/revealFraction'. The sub-grapheme clip-wipe is intentionally out of
+   * scope (the unit stays whole graphemes; no partial-grapheme softness).
+   */
+  revealFraction?: PropInit<number>;
 }
 
 export class Text extends Node {
@@ -693,6 +721,12 @@ export class Text extends Node {
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
   readonly reveal: BindableSignal<number>;
+  /**
+   * Reveal fraction in [0, 1]; NaN (the default) means "unset" so plain `reveal`
+   * is authoritative and the node stays byte-identical to one without it. When
+   * not-NaN it overrides `reveal` via {@link effectiveReveal}.
+   */
+  readonly revealFraction: BindableSignal<number>;
 
   constructor(props: TextProps = {}) {
     super(props);
@@ -706,12 +740,31 @@ export class Text extends Node {
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
     this.reveal = initProp(signal(Number.POSITIVE_INFINITY), props.reveal);
+    // NaN = "unset": plain `reveal` stays authoritative (byte-identical default).
+    this.revealFraction = initProp(signal(Number.NaN), props.revealFraction);
     this.registerTarget('width', this.width, 'number');
     this.registerTarget('text', this.text, 'string');
     // Text fill is a plain color string (no gradients) — color only.
     this.registerTarget('fill', this.fill, 'color');
     this.registerTarget('fontSize', this.fontSize, 'number');
     this.registerTarget('reveal', this.reveal, 'number');
+    this.registerTarget('revealFraction', this.revealFraction, 'number');
+  }
+
+  /**
+   * The grapheme COUNT to reveal this frame — the single source the draw mask,
+   * {@link revealHead}, and the masked emit path all read. When `revealFraction`
+   * is set (not NaN) it wins: `round(clamp(fraction, 0, 1) * graphemeCount)`,
+   * resolved against the SAME laid-out grapheme stream `reveal` counts. Unset
+   * (NaN) it falls straight through to `reveal()`, so a node without
+   * `revealFraction` is byte-identical to before this prop existed.
+   */
+  private effectiveReveal(measurer: TextMeasurer): number {
+    const frac = this.revealFraction();
+    if (Number.isNaN(frac)) return this.reveal();
+    const total = this.graphemes(measurer).length;
+    const clamped = frac <= 0 ? 0 : frac >= 1 ? 1 : frac;
+    return Math.round(clamped * total);
   }
 
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
@@ -839,6 +892,54 @@ export class Text extends Node {
   }
 
   /**
+   * Per-grapheme ink boxes within each laid-out line — the per-grapheme analogue
+   * of {@link wordBoxes}, boxing the SAME grapheme units `reveal`/`graphemes()`
+   * count (`Intl.Segmenter` boundaries via `segmentGraphemes`, so emoji/ZWJ
+   * sequences stay whole). Positioned by cumulative prefix advances so
+   * cross-grapheme kerning is exact and the boxes' advances sum to the line
+   * width — the boundaries MATCH the draw path, so splitText goldens don't
+   * drift. Whitespace graphemes advance but produce no box (dropped), exactly
+   * as `wordBoxes()` trims whitespace advance. The substrate `splitText({ by:
+   * 'grapheme' })` snapshots.
+   */
+  graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[] {
+    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    const text = this.text();
+    if (!text) return [];
+    const font: FontSpec = {
+      family: this.fontFamily,
+      size: this.fontSize(),
+      weight: this.fontWeight,
+      // omit 'normal' so default-style Text stays byte-identical (§3.6)
+      ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    };
+    const maxWidth = this.width();
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
+    const step = quantize(font.size * this.lineHeight);
+    const boxes: GraphemeBox[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const met = m.measureText(line, font);
+      const lineW = quantize(met.width);
+      const lineX = this.align === 'left' ? 0 : this.align === 'center' ? -lineW / 2 : -lineW;
+      const y = i * step - met.ascent;
+      const h = met.ascent + met.descent;
+      let prefix = '';
+      for (const g of segmentGraphemes(line)) {
+        const start = prefix;
+        prefix += g;
+        if (g.trim() === '') continue; // whitespace advances, but has no ink
+        // cumulative prefix advance (kerning-exact), the wordBoxes loop's logic
+        const before = m.measureText(start, font).width;
+        const after = m.measureText(start + g, font).width;
+        boxes.push({ text: g, line: i, x: lineX + before, y, w: after - before, h });
+      }
+    }
+    return boxes;
+  }
+
+  /**
    * The laid-out grapheme stream the typewriter reveal advances over — every
    * grapheme of every wrapped line, in reading order (soft-wrap whitespace is
    * dropped by the breaker, exactly as drawn, so draw/revealHead/revealSchedule
@@ -886,7 +987,7 @@ export class Text extends Node {
     const lines = breakLines(this.text(), font, maxWidth > 0 ? maxWidth : undefined, m);
     const step = quantize(font.size * this.lineHeight);
     const total = lines.reduce((n, l) => n + segmentGraphemes(l).length, 0);
-    const revealRaw = this.reveal();
+    const revealRaw = this.effectiveReveal(m);
     const shown = Math.max(0, Math.min(Number.isFinite(revealRaw) ? Math.floor(revealRaw) : total, total));
     let remaining = shown;
     let last = { x: 0, y: 0, h: 0, line: 0, index: shown };
@@ -930,7 +1031,7 @@ export class Text extends Node {
     // revealed grapheme prefix; a fully-shown line emits identically to the
     // unmasked path, a partial line is positioned by hand so its substring
     // does not recenter under align.
-    const revealRaw = this.reveal();
+    const revealRaw = this.effectiveReveal(ctx.measurer);
     const masked = Number.isFinite(revealRaw);
     let remaining = masked ? Math.max(0, Math.floor(revealRaw)) : 0;
     for (let i = 0; i < lines.length; i++) {

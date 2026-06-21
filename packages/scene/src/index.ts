@@ -55,6 +55,7 @@ export {
   revealSchedule,
   type LineBox,
   type WordBox,
+  type GraphemeBox,
   type RevealMark,
   type ShapeProps,
   type PathProps,
