@@ -25,6 +25,7 @@ export default defineConfig({
           { text: 'Composing timelines', link: '/timeline' },
           { text: 'Flexbox layout', link: '/layout' },
           { text: 'Single-file browser bundle', link: '/browser' },
+          { text: 'Controlled / imperative drive', link: '/controlled-drive' },
           { text: 'Interactivity (v2)', link: '/interactivity' },
           { text: 'Narration & captions', link: '/narration' },
           { text: 'Music & the beat grid', link: '/music' },

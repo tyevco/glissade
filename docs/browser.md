@@ -72,6 +72,11 @@ function frame(tMs) {
 requestAnimationFrame(frame);
 ```
 
+> Want to own the **values** too — drive nodes imperatively with `node.set(...)`
+> and no timeline at all (a physics loop, a game state machine, an imperative
+> port)? Call `G.evaluate(scene)` (the no-timeline overload) per frame. See
+> [Controlled / imperative drive](./controlled-drive).
+
 ### 2. The `<gs-player>` element (auto-registered)
 
 For play/pause/scrubber chrome and a managed loop, assign a scene module to the element — no JS frame loop of your own:

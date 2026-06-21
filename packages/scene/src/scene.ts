@@ -14,6 +14,7 @@ import {
   type CompiledTimeline,
   type Playhead,
   type Timeline,
+  type Track,
 } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
 import { fallbackMeasurer, type TextMeasurer } from './text.js';
@@ -148,11 +149,36 @@ export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
 }
 
 /**
+ * Empty timeline — zero tracks, so binding installs ZERO computed sources and
+ * any imperative `node.set(...)` value survives evaluate untouched. Shared and
+ * frozen so the WeakMap binding cache keys on a single stable document across
+ * the whole controlled-drive loop (one bind, reused every frame).
+ */
+const EMPTY_TIMELINE: Timeline = Object.freeze({ version: 1, tracks: [] as Track[] });
+
+/**
  * The non-negotiable contract (§2.5): same (scene, timeline, t) → identical
  * DisplayList, in any call order. Never awaits; asset readiness is the
  * caller's precondition.
  */
-export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList {
+export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList;
+/**
+ * Controlled / imperative drive (0.19): `evaluate(scene)` with NO timeline —
+ * the host owns the clock. It evaluates against an EMPTY timeline at the
+ * scene's current playhead value (`peek()`, 0 by default), so values set
+ * imperatively via `node.set(...)` between frames survive into the DisplayList
+ * (no track clobbers them). See docs/controlled-drive.md for the loop and the
+ * `.set()`-vs-timeline precedence contract.
+ *
+ * PRECEDENCE: a timeline track ALWAYS overrides `.set()` on the prop it
+ * targets while that track is live — pass the timeline through the 3-arg form
+ * for animated props; reserve this overload for host-owned props.
+ */
+export function evaluate(scene: Scene): DisplayList;
+export function evaluate(scene: Scene, doc?: Timeline, t = 0): DisplayList {
+  // Controlled-drive overload: no timeline ⇒ empty doc at the current playhead,
+  // so imperative node.set(...) values survive (no track binds over them).
+  if (doc === undefined) return evaluate(scene, EMPTY_TIMELINE, scene.playhead.peek());
   bindScene(scene, doc);
   const fps = doc.fps;
   const ctx: EvalContext = {

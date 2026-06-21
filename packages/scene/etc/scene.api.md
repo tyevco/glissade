@@ -457,6 +457,9 @@ export interface EvalContext {
 // @public
 export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList;
 
+// @public
+export function evaluate(scene: Scene): DisplayList;
+
 // @public (undocumented)
 export interface FieldChange {
     // (undocumented)
