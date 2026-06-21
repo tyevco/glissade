@@ -1,5 +1,17 @@
 # @glissade/vite-plugin
 
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [746b3d0]
+- Updated dependencies [0a8967c]
+- Updated dependencies [7f815f9]
+- Updated dependencies [d3d9206]
+- Updated dependencies [35968a1]
+- Updated dependencies [e3a2f6a]
+  - @glissade/core@0.18.0
+
 ## 0.18.0-pre.6
 
 ### Patch Changes

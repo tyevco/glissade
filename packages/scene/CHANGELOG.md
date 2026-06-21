@@ -1,5 +1,138 @@
 # @glissade/scene
 
+## 0.18.0
+
+### Minor Changes
+
+- 746b3d0: feat(core,scene,browser): `glissade.describe()` — a machine-readable API manifest
+
+  `describe()` returns a structured, JSON-serializable manifest of the public API —
+  the structural antidote to discoverability, so an AI consumer reads GROUND TRUTH
+  from the artifact instead of reverse-engineering the surface. It is PURE
+  INTROSPECTION (instantiate each built-in node once, read its registered targets,
+  enumerate the core registries); zero `evaluate()`/determinism impact — every
+  golden is byte-identical.
+
+  The manifest is GENERATED from the live registries it documents, so it can't
+  drift from the real API:
+
+  - `nodes[*].props[*]` — the animatable track targets per node type, each with its
+    value type + arity, read from the REAL `registerTarget` calls via the new
+    `Node.listTargets()` (e.g. `position: { type:'vec2', animatable:true,
+target:'<id>/position', arity:2 }`, `fill: { type:'color|paint' }`,
+    `Text.reveal: { type:'number' }`).
+  - `valueTypes` — from the new `listValueTypes()` over the core ValueType registry.
+  - `easings` — from the core easing registry.
+  - `builder` / `createScene` / `subpaths` — curated, with a test pinning the
+    builder names to the live `TimelineBuilder` surface.
+
+  `describe()` lives on the tree-shakeable `@glissade/scene/describe` subpath (off
+  the base embed — base embed path unchanged), and is re-exported on the
+  `@glissade/browser` bundle as `window.glissade.describe()`. The browser build also
+  emits a committed `dist/glissade.api.json` (= `JSON.stringify(describe())`) so a
+  tool can fetch the manifest without running JS.
+
+- 3dc7adb: feat(scene,browser): `describe()` construction-completeness — construction props + layout nodes + assets map + negative-space guard
+
+  `glissade.describe()` now describes **construction + animation**, not just
+  animation. Two AI-consumer canaries independently converged on the same gap: the
+  pre.5 manifest listed only ANIMATABLE props (those from `registerTarget`), so an
+  AI could not _construct_ a node from it (no `assetId`, no `fontFamily`, no layout
+  nodes). Still PURE INTROSPECTION — every golden is byte-identical, and `describe`
+  stays tree-shaken off the base embed path (base embed UNCHANGED at 38.15 kB gz).
+
+  - **Non-animatable construction props** are now in the manifest, flagged
+    `{ animatable: false }` with NO `target`:
+    - Image/Video `assetId` — `{ type:'string', animatable:false, required:true }`
+      (you cannot construct the node without it; the media URL lives in the
+      Timeline `assets` map, keyed by this id).
+    - Text `fontFamily`/`align`/`anchor` (and `fontWeight`/`fontStyle`/`lineHeight`)
+      — construction-only; `fontSize`/`text`/`fill`/`width`/`reveal` stay animatable
+      targets.
+    - Shape `sketch`/`sketchFill`/`sketchSeed`, Video clip props
+      (`at`/`trimStart`/`playbackRate`/`clipDuration`/`sourceFps`), Group/Layout
+      `children`, and the shared base-`NodeProps` set (`id`/`blend`/`filters`/
+      `anchor`/`cache`).
+  - **Layout family** (`Layout`/`Stack`/`Row`/`Column`) are now first-class
+    `.nodes` entries, each tagged with `subpath: '@glissade/scene/layout'`. Their
+    `width`/`height`/`gap`/`padding` are animatable targets;
+    `direction`/`justify`/`align`/`children` are construction.
+  - **`createScene`** surfaces the asset manifest shape: media is declared on the
+    Timeline document via `timeline({ assets: { <id>: { kind:'image'|'video', url
+} } })`, and an Image/Video node's `assetId` names an entry there.
+  - **`stagger`** signature shows the non-uniform form:
+    `each: number | ((rank, count) => number)`.
+
+  **Negative-space guard** (the manifest's core value — the targets it does NOT
+  list): a `{ animatable:false }` prop is never a real track target. A new test
+  affirmatively confirms that binding a track to a construction-only prop
+  (`<id>/assetId`, `<id>/fontFamily`) is REJECTED by the bind guard, so an
+  accidentally-animatable construction prop is caught. A drift guard constructs
+  each node from exactly the manifest's construction props (the constructor must
+  accept them) and asserts no construction prop name collides with an animatable
+  target.
+
+  The richer manifest pushed the single-file `@glissade/browser` convenience
+  bundle from 44.48 → 45.09 kB gz; its budget moved 45 → 46 kB (the base embed is
+  unaffected — `describe` is not on it).
+
+- 0a8967c: feat(scene): `Row` / `Column` named aliases for `Stack` on `@glissade/scene/layout`
+
+  A named pair reads better than `Stack({ direction })` for the two common cases:
+
+  ```js
+  import { Row, Column } from "@glissade/scene/layout";
+
+  const labels = Column({
+    gap: 8,
+    children: [
+      /* … */
+    ],
+  }); // vertical, left-aligned
+  const toolbar = Row({
+    gap: 12,
+    children: [
+      /* … */
+    ],
+  }); // horizontal
+  ```
+
+  Trivial aliases that pin the direction — `Row(props)` is identical to
+  `Stack({ ...props, direction: 'row' })`, `Column(props)` to `direction: 'column'`.
+  `direction` is omitted from their prop type (it's already fixed). They inherit
+  Stack's `align:'start'` default and Layout's pure, memoized resolve. Only on the
+  `/layout` entry — Yoga stays off the base embed and browser IIFE (same rule as
+  `Stack`).
+
+- 8b88d27: feat(scene): `Stack` — a discoverable factory alias over the Yoga `Layout` node
+
+  `Stack(props)` is a thin convenience on the already-shipped `@glissade/scene/layout`
+  entry that constructs a `Layout` with stack-ergonomic defaults — NOT a new class and
+  NOT new signals, so it inherits Layout's memoized, pure, dependency-tracked resolve
+  verbatim. A `Stack(props)` and the equivalent hand-written `Layout({...})` produce
+  identical child positions.
+
+  Defaults that diverge from `Layout` (everything else passes through):
+
+  - `direction` defaults to `'column'` (the common vertical stack).
+  - `align` defaults to `'start'` — a true left edge for a label column — vs Layout's
+    `'center'`.
+
+  Yoga stays on the separately-budgeted `@glissade/scene/layout` entry; `Stack` adds no
+  bytes to the base embed. New `docs/layout.md` surfaces the layout entry, the
+  `await loadYogaLayoutEngine()` requirement, and a tree-shakeable subpath map
+  (`@glissade/scene/layout`, `@glissade/scene/path`, `@glissade/core/clips`).
+
+### Patch Changes
+
+- Updated dependencies [746b3d0]
+- Updated dependencies [0a8967c]
+- Updated dependencies [7f815f9]
+- Updated dependencies [d3d9206]
+- Updated dependencies [35968a1]
+- Updated dependencies [e3a2f6a]
+  - @glissade/core@0.18.0
+
 ## 0.18.0-pre.6
 
 ### Minor Changes

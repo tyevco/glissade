@@ -1,5 +1,150 @@
 # @glissade/core
 
+## 0.18.0
+
+### Minor Changes
+
+- 746b3d0: feat(core,scene,browser): `glissade.describe()` — a machine-readable API manifest
+
+  `describe()` returns a structured, JSON-serializable manifest of the public API —
+  the structural antidote to discoverability, so an AI consumer reads GROUND TRUTH
+  from the artifact instead of reverse-engineering the surface. It is PURE
+  INTROSPECTION (instantiate each built-in node once, read its registered targets,
+  enumerate the core registries); zero `evaluate()`/determinism impact — every
+  golden is byte-identical.
+
+  The manifest is GENERATED from the live registries it documents, so it can't
+  drift from the real API:
+
+  - `nodes[*].props[*]` — the animatable track targets per node type, each with its
+    value type + arity, read from the REAL `registerTarget` calls via the new
+    `Node.listTargets()` (e.g. `position: { type:'vec2', animatable:true,
+target:'<id>/position', arity:2 }`, `fill: { type:'color|paint' }`,
+    `Text.reveal: { type:'number' }`).
+  - `valueTypes` — from the new `listValueTypes()` over the core ValueType registry.
+  - `easings` — from the core easing registry.
+  - `builder` / `createScene` / `subpaths` — curated, with a test pinning the
+    builder names to the live `TimelineBuilder` surface.
+
+  `describe()` lives on the tree-shakeable `@glissade/scene/describe` subpath (off
+  the base embed — base embed path unchanged), and is re-exported on the
+  `@glissade/browser` bundle as `window.glissade.describe()`. The browser build also
+  emits a committed `dist/glissade.api.json` (= `JSON.stringify(describe())`) so a
+  tool can fetch the manifest without running JS.
+
+- 7f815f9: feat(core): presence inline-literal sugar — terse enter/exit literals over `presence()`
+
+  `presence()`'s `enter`/`exit` now accept an inline `PresenceTransition` literal in
+  addition to a `Clip`, plus a `window:[t0,t1]` alias for `{ show, hide }`:
+
+  ```js
+  presence("card", {
+    window: [1, 5],
+    enter: { opacity: [0, 1], offset: 16, dur: 0.5, ease: "easeOutCubic" },
+    exit: { opacity: [1, 0], offset: 16, dur: 0.4 },
+  });
+  ```
+
+  PURE build-time sugar. A new `transitionToClip(t, dir)` compiles the literal
+  (`{opacity, offset, edge, scale, dur, ease}`) to the SAME `clip({channels})` an
+  author writes by hand — an opacity channel (only when `opacity` is given), a
+  position channel from `offset`+`edge` (clipStdlib `slideIn` convention; default
+  `edge:'bottom'` = slide up from below; scalar `offset` slides that magnitude along
+  the edge; enter goes displaced→origin, exit origin→displaced; explicit `[Vec2,Vec2]`
+  endpoints used verbatim), and a scale channel (scalar pair broadcast to Vec2, popIn
+  convention). `presence()` then runs UNCHANGED on the resulting `Clip`, so the inline
+  spelling is byte-INDISTINGUISHABLE from the hand-built form and the default
+  `presence({show,hide})` bytes are untouched (all 262 goldens stay byte-identical).
+
+  OMITTING `opacity` emits NO opacity channel, relying on `presence()`'s synthesized
+  rise/fall — matching the Clip path exactly. `PresenceTransition` and
+  `transitionToClip` are re-exported from `@glissade/core/clips` (and ride the
+  `@glissade/browser` convenience bundle).
+
+- d3d9206: feat(core): `tl.sequence` + `tl.at` builder methods — compose 0-relative sub-timelines
+
+  Pure build-time sugar over the shipped `add()`:
+
+  - `at(time, sub)` places a 0-relative sub-timeline at an absolute parent time — exactly
+    `add(sub, time)` (a numeric position resolves to itself). The method `at` is distinct
+    from the `at` _field_ in `TweenOpts`/`StaggerOpts`.
+  - `sequence(subs, { gap = 0 })` chains N subs end-to-end: each is `add`ed at the running
+    chain end, with a scalar `gap` (seconds) of slack between consecutive subs — identical
+    to a hand-written `add(a); add(b, '+=gap'); add(c, '+=gap')` chain. Because `add`
+    advances the cursor by each sub's compiled duration, changing one sub's internal length
+    auto-shifts the rest. A negative `gap` overlaps arithmetically (no crossfade is
+    synthesized — that's a deferred design). `gap` is scalar in v1 (per-index gap deferred).
+
+  Both emit ordinary `ChildEntry` rows — serializable, zero runtime, seek ≡ play-through.
+  New opt-in methods, default behavior unchanged; all 262 goldens stay byte-identical.
+
+  Also: `add()` now **forwards a child sub-timeline's `.call()` callbacks** onto the parent
+  document's callback map (rebased markers already surfaced via `compileTimeline`, but their
+  name→fn entries were unreachable through `getTimelineCallbacks(parentDoc)`). A parent's own
+  callback wins a marker-name collision. This makes `.call()` in a sequenced/added sub fire
+  as expected — benefiting both `add` and `sequence`.
+
+- 35968a1: feat(core): stagger `anchor` rename + non-uniform `each` + cursor fixes, and a `.call()` sibling-collision fix
+
+  **stagger API (pre-only, no back-compat):**
+
+  - `StaggerOpts.from` → `StaggerOpts.anchor`. The placement anchor shared the word
+    `from` with `StaggerSpec.from` (the start VALUE that routes a target through
+    `fromTo`) — two different axes, one word. Renamed the placement one to `anchor`
+    (`'start' | 'end' | 'center' | 'edges' | number`).
+  - `each` widened to `number | ((rank, count) => number)`. A number keeps the
+    uniform cascade `d_i = rank_i * each`; a function maps each target's rank +
+    group size to its own delay, completing GSAP parity for accel/decel/eased
+    cascades. Keys stay byte-identical to the hand-authored equivalent.
+
+  **stagger cursor-semantics fixes** (the post-stagger cursor a following
+  `'<'`/`'>'`/`'+='`/default step resolves against):
+
+  - A spring `spec.ease` now contributes its real `spring.duration(ease)` to the
+    group end, not the local `duration ?? 1`.
+  - An empty `targets` list is a true no-op — the cursor is untouched.
+  - The group reports its **true** min/max delay (over all `d_i`, init from `d_0`),
+    so a backward / non-monotonic spread anchors honestly.
+  - A delay that would place a key at `t < 0`, or a non-finite `each`/`anchor`
+    (incl. a function returning NaN/Infinity), throws a `TimelineValidationError`
+    at build time instead of emitting silent negative / NaN keys.
+
+  **`.call()` sibling-collision fix:** auto-named `call:N` markers are namespaced by
+  the sub's position path (`c<index>/…`) when rebased into a parent, and the same
+  prefix is applied when forwarding the sub's callback map. Two sibling subs that
+  each define a `.call()` (both auto-named `call:0`) now land under distinct keys
+  and both fire — previously one callback was dropped and the other double-fired.
+
+- e3a2f6a: feat(core): `tl.stagger` builder method — pure build-time sugar over `to`/`fromTo`
+
+  `stagger(targets, { to, from?, duration?, ease? }, { each, from?, at? })` loops the
+  shipped `to`/`fromTo` key-emission across `targets`, cascading each by a per-rank delay.
+  The emitted keys are byte-identical to N hand-authored offset tweens, so all existing
+  goldens stay byte-identical (new opt-in method, default behavior unchanged).
+
+  The `from` anchor ranks targets over their array index `i` (n = targets.length,
+  c = (n-1)/2), GSAP parity: `'start'` → `i`; `'end'` → `(n-1)-i`; `'center'` →
+  `round(|i-c|)`; `'edges'` → `round(c-|i-c|)`; numeric `k` → `round(|i-k|)`. Delay
+  `d_i = rank_i * each`, inserted at `base + d_i` where `base = resolvePosition(at)`
+  (default = chain end). After the loop the cursor reads the whole group as one block to
+  a following `'<'`/`'>'`/`'+='` step. `each` is number-only in v1. `StaggerSpec` and
+  `StaggerOpts` are re-exported from `@glissade/core`.
+
+### Patch Changes
+
+- 0a8967c: fix(core): presence reconciles non-opacity channels per target (slide-in-hold-slide-out no longer truncates)
+
+  When a `presence()`'s enter AND exit both animated the SAME non-opacity channel
+  (e.g. both slide `position` — a slide-in, hold, slide-out), presence emitted TWO
+  same-target tracks. `compileTimeline`'s `coalesce()` then dropped the enter's
+  settle key and dev-warned — the hold leg of the slide was silently truncated.
+
+  Non-opacity channels are now reconciled per target into ONE track, using the same
+  stable-sort + coincident-`t` later-wins dedup the opacity guard already uses (at a
+  coincident enter-settle / exit-start `t` the exit wins). The enter settle and exit
+  start both survive, so a slide-in-hold-slide-out works. Default opacity-only
+  presence is byte-unchanged (the presence golden is byte-identical).
+
 ## 0.18.0-pre.6
 
 ## 0.18.0-pre.5
