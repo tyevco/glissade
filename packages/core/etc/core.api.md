@@ -779,6 +779,7 @@ export interface TimelineBuilder {
         mode?: 'add' | 'sync';
         timeScale?: number;
     }): TimelineBuilder;
+    at(time: number, sub: Timeline): TimelineBuilder;
     call(fn: () => void, at?: Position): TimelineBuilder;
     cue(at: Position, name: string, data?: Json): TimelineBuilder;
     editable(): TimelineBuilder;
@@ -787,6 +788,9 @@ export interface TimelineBuilder {
     fromTo<T>(target: TweenTarget, from: T, to: T, opts?: TweenOpts<T>): TimelineBuilder;
     // (undocumented)
     label(name: string, at?: Position): TimelineBuilder;
+    sequence(subs: Timeline[], opts?: {
+        gap?: number;
+    }): TimelineBuilder;
     set<T>(target: TweenTarget, value: T, opts?: {
         at?: Position;
     }): TimelineBuilder;

@@ -506,3 +506,101 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     expect(startOf(doc, 'b/x')).toBeCloseTo(2.1);
   });
 });
+
+describe('tl.sequence + tl.at — pure build-time sugar over add()', () => {
+  /** Each child timeline animates one distinct target over [0, dur]. */
+  const sub = (target: string, dur: number) =>
+    timeline({ tracks: [track(target, 'number', [key(0, 0), key(dur, 1)])] });
+
+  /** ChildEntry offset rows on a doc, in insertion order. */
+  const childAts = (doc: ReturnType<typeof timeline>) => (doc.children ?? []).map((c) => c.at);
+
+  it('sequence([a,b,c], {gap}) ≡ a hand-written add(a); add(b,"+=gap"); add(c,"+=gap") chain', () => {
+    const a = sub('a/x', 2);
+    const b = sub('b/x', 3);
+    const c = sub('c/x', 1);
+
+    const seq = timeline((tl) => {
+      tl.sequence([a, b, c], { gap: 0.5 });
+    });
+    const hand = timeline((tl) => {
+      tl.add(a).add(b, '+=0.5').add(c, '+=0.5');
+    });
+
+    // identical ChildEntry rows (timeline ref + resolved offset)
+    expect(seq.children).toEqual(hand.children);
+    // a:0 → b:2+0.5=2.5 → c:2.5+3+0.5=6
+    expect(childAts(seq)).toEqual([0, 2.5, 6]);
+  });
+
+  it('changing sub a’s internal duration auto-shifts b and c (the auto-rebase contract)', () => {
+    const b = sub('b/x', 3);
+    const c = sub('c/x', 1);
+
+    const shortA = timeline((tl) => tl.sequence([sub('a/x', 2), b, c], { gap: 0 }));
+    const longA = timeline((tl) => tl.sequence([sub('a/x', 5), b, c], { gap: 0 }));
+
+    // a 2→5 lengthening pushes b by +3 and c by +3
+    expect(childAts(shortA)).toEqual([0, 2, 5]);
+    expect(childAts(longA)).toEqual([0, 5, 8]);
+  });
+
+  it('gap: 0 (default) is back-to-back; a positive gap inserts slack', () => {
+    const a = sub('a/x', 2);
+    const b = sub('b/x', 2);
+
+    const backToBack = timeline((tl) => tl.sequence([a, b]));
+    const slack = timeline((tl) => tl.sequence([a, b], { gap: 1 }));
+
+    expect(childAts(backToBack)).toEqual([0, 2]);
+    expect(childAts(slack)).toEqual([0, 3]);
+  });
+
+  it('a negative gap overlaps arithmetically (no crossfade synthesized)', () => {
+    const a = sub('a/x', 2);
+    const b = sub('b/x', 2);
+    const overlap = timeline((tl) => tl.sequence([a, b], { gap: -0.5 }));
+    // b starts at 2 - 0.5 = 1.5; the two children simply overlap on the axis
+    expect(childAts(overlap)).toEqual([0, 1.5]);
+  });
+
+  it('at(time, sub) places a sub at the absolute parent time ≡ add(sub, time)', () => {
+    const a = sub('a/x', 2);
+    const placed = timeline((tl) => tl.at(3, a));
+    const hand = timeline((tl) => tl.add(a, 3));
+    expect(placed.children).toEqual(hand.children);
+    expect(childAts(placed)).toEqual([3]);
+  });
+
+  it('a sequenced sub’s .call() callback is forwarded onto the parent doc', () => {
+    const cb = () => {};
+    const child = timeline((tl) => {
+      tl.to(prop('n/x', 0), 1, { duration: 1 }).call(cb);
+    });
+    const childCbName = child.markers![0]!.name;
+
+    const parent = timeline((tl) => {
+      tl.sequence([child]);
+    });
+
+    // the child's name→fn entry resolves via getTimelineCallbacks(parentDoc),
+    // and compileTimeline rebases the child marker into the parent's set so the
+    // player fires it — the two agree by name
+    expect(getTimelineCallbacks(parent).get(childCbName)).toBe(cb);
+    const compiled = compileTimeline(parent);
+    expect(compiled.markers.some((m) => m.name === childCbName)).toBe(true);
+  });
+
+  it('a parent .call() wins a name collision with a forwarded child callback', () => {
+    const childCb = () => {};
+    const parentCb = () => {};
+    // both default to the same name 'call:0' (callCount is per-doc)
+    const child = timeline((tl) => {
+      tl.to(prop('n/x', 0), 1, { duration: 1 }).call(childCb);
+    });
+    const parent = timeline((tl) => {
+      tl.call(parentCb).add(child);
+    });
+    expect(getTimelineCallbacks(parent).get('call:0')).toBe(parentCb);
+  });
+});

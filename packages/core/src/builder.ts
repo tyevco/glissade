@@ -74,6 +74,22 @@ export interface TimelineBuilder {
   set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
   add(child: Timeline, at?: Position, opts?: { mode?: 'add' | 'sync'; timeScale?: number }): TimelineBuilder;
+  /**
+   * Build-time sugar: chain N 0-relative sub-timelines end-to-end. Each sub is
+   * `add()`ed at the running chain end (`prevEnd`); a scalar `gap` inserts slack
+   * between consecutive subs. Because `add()` advances the cursor by each sub's
+   * compiled duration, changing one sub's internal duration auto-shifts the
+   * rest. Emits ordinary ChildEntry rows — byte-identical to a hand-written
+   * `add(a); add(b, '+=gap'); add(c, '+=gap')` chain. (Negative `gap` overlaps
+   * arithmetically; it does NOT synthesize crossfades.)
+   */
+  sequence(subs: Timeline[], opts?: { gap?: number }): TimelineBuilder;
+  /**
+   * Build-time sugar: place a 0-relative sub-timeline at an absolute parent time
+   * — `at(time, sub)` is exactly `add(sub, time)` (a numeric Position resolves to
+   * itself). The `at` here is a builder method, distinct from `TweenOpts.at`.
+   */
+  at(time: number, sub: Timeline): TimelineBuilder;
   /** Compiles to a marker; the callback is Player-registered, never serialized (§4.2). */
   call(fn: () => void, at?: Position): TimelineBuilder;
   /**
@@ -265,10 +281,36 @@ export function buildTimeline(
       };
       if (opts.timeScale !== undefined) entry.timeScale = opts.timeScale;
       children.push(entry);
+      // Forward the child's .call() callbacks onto the parent's map so a
+      // sequenced/added sub-timeline's callbacks still resolve via
+      // getTimelineCallbacks(parentDoc). compileTimeline rebases the child's
+      // MARKERS into the parent (keeping their names), but the name→fn map is
+      // keyed by doc — without this merge the functions are unreachable. Marker
+      // names are global, so a parent's own callback wins a name collision.
+      for (const [name, fn] of getTimelineCallbacks(child)) {
+        if (!callbacks.has(name)) callbacks.set(name, fn);
+      }
       const scale = mode === 'sync' ? (opts.timeScale ?? 1) : 1;
       prevStart = start;
       prevEnd = start + compileTimeline(child).duration / scale;
       return builder;
+    },
+    sequence(subs, opts = {}) {
+      const gap = opts.gap ?? 0;
+      // build a relative Position from the scalar gap; a negative gap must use
+      // the '-=' form (the '+=x' grammar only accepts a non-signed magnitude),
+      // so it overlaps arithmetically — no crossfade is synthesized
+      const rel: Position = gap < 0 ? `-=${-gap}` : `+=${gap}`;
+      for (let i = 0; i < subs.length; i++) {
+        // first sub anchors at the running chain end (prevEnd); each subsequent
+        // sub sits gap seconds after the previous sub's compiled end
+        builder.add(subs[i]!, i === 0 ? undefined : rel);
+      }
+      return builder;
+    },
+    at(time, sub) {
+      // a numeric Position resolves to itself → an absolute-time add()
+      return builder.add(sub, time);
     },
     call(fn, at) {
       const t = at === undefined ? prevEnd : resolvePosition(at);
