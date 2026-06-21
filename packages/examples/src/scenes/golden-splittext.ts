@@ -18,15 +18,31 @@
  */
 
 import { timeline } from '@glissade/core';
-import { Rect, Text, createScene, type SceneModule } from '@glissade/scene';
+import { Rect, Text, createScene, type SceneModule, type TextMeasurer } from '@glissade/scene';
 import { splitText } from '@glissade/scene/type';
 
 const FAMILY = 'DejaVu Sans';
 const W = 640;
 const H = 360;
 
+// splitText snapshots part geometry at BUILD time — BEFORE the harness injects
+// the scene measurer via setTextMeasurer — so the parts must measure with the
+// REAL Skia backend or they fall back to the rough per-character estimate
+// (o_aLYFFPjFDf: the drift two consumers saw). The harness threads its backend
+// in here via setSplitMeasurer(); when unset (e.g. an IR-level test) the chain
+// falls through to the estimate (which now warns).
+let splitMeasurer: TextMeasurer | undefined;
+export function setSplitMeasurer(m: TextMeasurer | undefined): void {
+  splitMeasurer = m;
+}
+
+const measurerOpt = (): { measurer: TextMeasurer } | undefined =>
+  splitMeasurer !== undefined ? { measurer: splitMeasurer } : undefined;
+
 // Build-time pure expansion; call fresh per createScene() AND for the timeline
 // (the each()/splitText convention — both reconstruct the identical id set).
+// The part COUNT/ids are measurer-independent (segmentation, not metrics), so
+// the timeline's id binding is stable whether or not a measurer is set.
 const buildTitle = (): ReturnType<typeof splitText> =>
   splitText(
     new Text({
@@ -38,7 +54,7 @@ const buildTitle = (): ReturnType<typeof splitText> =>
       align: 'center',
       position: [W / 2, 110],
     }),
-    { by: 'word' },
+    { by: 'word', ...measurerOpt() },
   );
 
 const buildTag = (): ReturnType<typeof splitText> =>
@@ -52,7 +68,7 @@ const buildTag = (): ReturnType<typeof splitText> =>
       align: 'center',
       position: [W / 2, 300],
     }),
-    { by: 'grapheme' },
+    { by: 'grapheme', ...measurerOpt() },
   );
 
 const mod: SceneModule = {

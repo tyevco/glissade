@@ -79,6 +79,25 @@ Two authoring semantics worth pinning:
 
 The result also exposes `split.children` (the part nodes in reading order) and `split.parts` (per-part `{ text, node, line, box }` geometry in the source's draw space). Splitting by grapheme uses `Text.graphemeBoxes()` — the per-grapheme analogue of `wordBoxes()`, boxing the same units `reveal`/`graphemes()` count, so a grapheme split lines up with what the unsplit Text draws.
 
+### `splitText` needs the backend text measurer
+
+`splitText` snapshots part geometry **at build time**, so it needs a real text measurer to place each part where the unsplit Text would draw it. The backend (`SkiaBackend` on the CLI/export, `Canvas2DBackend` in the browser) implements the `TextMeasurer` interface — pass it in:
+
+```ts
+import { splitText } from '@glissade/scene/type';
+
+// pass the backend as the measurer for exact part geometry
+const split = splitText(titleProps, { by: 'word', measurer: backend });
+```
+
+If you don't pass one, `splitText` falls back through the source's injected measurer and the process default (`setDefaultMeasurer`). Only when **none** is available does it use a rough per-character estimate whose error accumulates left-to-right — the parts drift out of alignment. You have three ways to get exact layout:
+
+- pass `{ measurer: backend }` to `splitText` (the backend is a `TextMeasurer`), or
+- call `splitText` **after** the scene's `setTextMeasurer()` runs (the source's `measurerSource` then resolves the real measurer), or
+- register a process-wide measurer up front with `setDefaultMeasurer(createMeasurer({ fonts }))` (`@glissade/backend-skia`) — the Node factory-time pattern.
+
+When `splitText` does fall back to the estimate, it emits a one-shot dev-warning (`splitText: no text measurer available …`) so the drift is never silent.
+
 Compose `splitText` with `revealFraction` and `tl.stagger` for richer kinetic typography — e.g. a word-staggered entrance over the top line and a fraction-driven typewriter on the body.
 
 ## The cursor

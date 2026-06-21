@@ -177,7 +177,9 @@ export {
   quantize,
   MEASURE_QUANTUM_PX,
   estimatingMeasurer,
+  isEstimatingMeasurer,
   setDefaultMeasurer,
+  __resetEstimateWarnings,
   type TextMeasurer,
   type TextMetricsLite,
 } from './text.js';

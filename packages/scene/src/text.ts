@@ -6,6 +6,7 @@
  * advance drift between Skia/HarfBuzz versions cannot move whole layouts.
  */
 
+import { emitDevWarning } from '@glissade/core';
 import { type FontSpec } from './displayList.js';
 
 export interface TextMetricsLite {
@@ -65,6 +66,42 @@ export const estimatingMeasurer: TextMeasurer = {
     };
   },
 };
+
+/**
+ * True when `m` is the per-character ESTIMATING fallback (the module singleton)
+ * — i.e. no real backend measurer and no registered `defaultMeasurer` was
+ * available. Identity-compare so a real backend or a `setDefaultMeasurer`-
+ * registered measurer never trips it.
+ */
+export function isEstimatingMeasurer(m: TextMeasurer): boolean {
+  return m === estimatingMeasurer;
+}
+
+const warnedEstimate = new Set<string>();
+
+/**
+ * One-shot dev-warning when a build-time geometry getter resolved its measurer
+ * to the rough per-character estimate (no backend, no `setDefaultMeasurer`).
+ * `site` keys the de-dupe so each distinct caller warns at most once. Silent
+ * when a real measurer is in play — the estimate is the only footgun here.
+ */
+export function warnIfEstimating(m: TextMeasurer, site: string): void {
+  if (!isEstimatingMeasurer(m)) return;
+  if (warnedEstimate.has(site)) return;
+  warnedEstimate.add(site);
+  emitDevWarning(
+    `${site}: no text measurer available — using a rough per-character estimate; ` +
+      'pass { measurer } or call after setTextMeasurer()/setDefaultMeasurer() for exact layout.',
+  );
+}
+
+/**
+ * Test-only: clear the one-shot de-dupe so the estimate warning can re-assert.
+ * @internal
+ */
+export function __resetEstimateWarnings(): void {
+  warnedEstimate.clear();
+}
 
 // Segmentation via Intl.Segmenter when available (correct CJK/emoji word
 // boundaries — the pretext approach); whitespace regex as fallback. ICU

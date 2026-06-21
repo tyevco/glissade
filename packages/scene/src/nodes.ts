@@ -23,6 +23,7 @@ import {
   quantize,
   segmentGraphemes,
   segmentWords,
+  warnIfEstimating,
   type TextMeasurer,
 } from './text.js';
 
@@ -818,6 +819,9 @@ export class Text extends Node {
    */
   lineBoxes(measurer?: TextMeasurer): LineBox[] {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    // only the IMPLICIT fallback is a footgun: an explicit measurer was a
+    // choice (splitText passes one through and warns at its own seam).
+    if (measurer === undefined) warnIfEstimating(m, 'Text.lineBoxes');
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = {
@@ -852,6 +856,7 @@ export class Text extends Node {
    */
   wordBoxes(measurer?: TextMeasurer): WordBox[] {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    if (measurer === undefined) warnIfEstimating(m, 'Text.wordBoxes');
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = {
@@ -904,6 +909,7 @@ export class Text extends Node {
    */
   graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[] {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+    if (measurer === undefined) warnIfEstimating(m, 'Text.graphemeBoxes');
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = {

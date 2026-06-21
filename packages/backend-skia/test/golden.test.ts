@@ -42,7 +42,7 @@ import { ingestFont } from '@glissade/core/font-ingest';
 import goldenMorph from '../../examples/src/scenes/golden-morph.js';
 import goldenPresence from '../../examples/src/scenes/golden-presence.js';
 import goldenEach from '../../examples/src/scenes/golden-each.js';
-import goldenSplitText from '../../examples/src/scenes/golden-splittext.js';
+import goldenSplitText, { setSplitMeasurer } from '../../examples/src/scenes/golden-splittext.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -66,6 +66,13 @@ GlobalFonts.registerFromPath(
 const woff2Path = fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.woff2', import.meta.url));
 const woff2Face = await ingestFont({ family: 'Inconsolata WOFF2', src: woff2Path });
 GlobalFonts.register(Buffer.from(woff2Face.bytes), 'Inconsolata WOFF2');
+
+// o_aLYFFPjFDf: splitText() snapshots part geometry at BUILD time — before the
+// per-scene setTextMeasurer() below — so thread a REAL Skia measurer into the
+// splittext scene's splitText() calls. Without it the parts use the rough
+// per-character estimate (cumulative drift). The fonts above are registered, so
+// a bare SkiaBackend measures with the exact metrics the golden frames draw.
+setSplitMeasurer(new SkiaBackend(8, 8));
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 const UPDATE = process.env['GOLDEN_UPDATE'] === '1';

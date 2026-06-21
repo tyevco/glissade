@@ -4,13 +4,15 @@
  * and `splitText()` (build-time split-text sub-targets on @glissade/scene/type).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Text } from '../src/nodes.js';
 import { Group } from '../src/nodes.js';
 import { splitText, SplitTextError } from '../src/type.js';
 import type { DisplayListBuilder } from '../src/displayList.js';
 import type { EvalContext, Node } from '../src/node.js';
+import { __resetEstimateWarnings, estimatingMeasurer, isEstimatingMeasurer } from '../src/text.js';
 import type { TextMeasurer } from '../src/text.js';
+import { setDevWarning } from '@glissade/core';
 
 /** 10px per char, ascent = font size — predictable geometry. */
 const fixed: TextMeasurer = {
@@ -200,5 +202,39 @@ describe('splitText() (build-time sub-targets, §0.19)', () => {
     const b = splitText({ id: 'x', text: 'one two three', fontSize: 10 }, { measurer: fixed });
     expect(a.children.map((c) => c.id)).toEqual(b.children.map((c) => c.id));
     expect(a.children.map((c) => c.position())).toEqual(b.children.map((c) => c.position()));
+  });
+});
+
+describe('splitText() estimate-fallback dev warning (o_aLYFFPjFDf)', () => {
+  // capture/restore the dev-warn channel + reset the one-shot de-dupe per test
+  let warnings: string[];
+  const restore = () => setDevWarning((m) => (globalThis.console?.warn(m), undefined));
+  beforeEach(() => {
+    warnings = [];
+    __resetEstimateWarnings();
+    setDevWarning((m) => void warnings.push(m));
+  });
+  afterEach(restore);
+
+  it('identity-detects the estimating singleton (and NOT a real measurer)', () => {
+    expect(isEstimatingMeasurer(estimatingMeasurer)).toBe(true);
+    expect(isEstimatingMeasurer(fixed)).toBe(false);
+  });
+
+  it('warns ONCE when splitText falls back to the per-character estimate (no measurer, no scene)', () => {
+    // a bare Text props (no scene injected, no { measurer }, no setDefaultMeasurer)
+    // resolves to estimatingMeasurer → the silent-drift footgun, now told
+    splitText({ id: 'w', text: 'split the text', fontSize: 40 });
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toMatch(/splitText: no text measurer available/);
+    expect(warnings[0]).toMatch(/rough per-character estimate/);
+    // one-shot: a second call does NOT re-warn
+    splitText({ id: 'w2', text: 'again', fontSize: 40 });
+    expect(warnings.length).toBe(1);
+  });
+
+  it('does NOT warn when a real { measurer } is passed (the exact-layout path)', () => {
+    splitText({ id: 'ok', text: 'split the text', fontSize: 40 }, { measurer: fixed });
+    expect(warnings).toEqual([]);
   });
 });

@@ -21,7 +21,7 @@
  */
 
 import { Group, Text, type GraphemeBox, type LineBox, type TextProps, type WordBox } from './nodes.js';
-import { fallbackMeasurer, quantize, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, quantize, warnIfEstimating, type TextMeasurer } from './text.js';
 
 export type SplitBy = 'word' | 'line' | 'grapheme';
 
@@ -102,6 +102,10 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
   }
   const by = opts.by ?? 'word';
   const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
+  // Silent footgun: with no real backend (split before setTextMeasurer, no
+  // { measurer } passed) the part geometry is a rough per-character estimate
+  // whose error accumulates left-to-right. Tell the author exactly why.
+  warnIfEstimating(m, 'splitText');
 
   const font: SplitFont = {
     fontFamily: text.fontFamily,

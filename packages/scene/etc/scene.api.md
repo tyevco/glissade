@@ -27,6 +27,9 @@ import { ValueTypeId } from '@glissade/core';
 import { Vec2 } from '@glissade/core';
 import { Vec2Signal } from '@glissade/core';
 
+// @internal
+export function __resetEstimateWarnings(): void;
+
 // @public
 export const ALL_FILTER_KINDS: ReadonlySet<FilterKind>;
 
@@ -695,6 +698,9 @@ export interface ImageProps extends NodeProps {
 
 // @public
 export function invert(m: Mat2x3): Mat2x3 | null;
+
+// @public
+export function isEstimatingMeasurer(m: TextMeasurer): boolean;
 
 // @public
 export interface LayoutBox {
