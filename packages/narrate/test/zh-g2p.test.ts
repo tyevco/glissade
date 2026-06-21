@@ -79,10 +79,12 @@ describe('misaki-zh g2p seam (Fork B: pinned Python misaki[zh] shell-out)', () =
       stubDirs.push(dir);
       const stub = join(dir, 'python-stub');
       // mimic _check_pins() finding misaki installed=0.9.3 != pinned MISAKI_PIN:
-      // write `<dist>:<installed>:<pinned>` to stderr and exit 96 (the sentinel).
+      // drain stdin (so the parent's input write completes — else spawnSync EPIPEs
+      // under parallel load when the stub exits before reading), write
+      // `<dist>:<installed>:<pinned>` to stderr, and exit 96 (the sentinel).
       writeFileSync(
         stub,
-        `#!/bin/sh\nprintf 'misaki:0.9.3:${MISAKI_PIN}\\n' 1>&2\nexit 96\n`,
+        `#!/bin/sh\ncat >/dev/null 2>&1\nprintf 'misaki:0.9.3:${MISAKI_PIN}\\n' 1>&2\nexit 96\n`,
       );
       chmodSync(stub, 0o755);
       const g = misakiZhG2p({ python: stub });
