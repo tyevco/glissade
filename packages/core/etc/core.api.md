@@ -701,11 +701,11 @@ export function stagger<T>(tracks: readonly Track<T>[], delay: number | ((index:
 // @public
 export interface StaggerOpts {
     // (undocumented)
+    anchor?: 'start' | 'end' | 'center' | 'edges' | number;
+    // (undocumented)
     at?: Position;
     // (undocumented)
-    each: number;
-    // (undocumented)
-    from?: 'start' | 'end' | 'center' | 'edges' | number;
+    each: number | ((rank: number, count: number) => number);
 }
 
 // @public

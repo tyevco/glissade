@@ -2,11 +2,15 @@
  * Bundle-size budgets (DESIGN.md §4.4), enforced in CI: each embed-path
  * package is bundled standalone (esbuild, minified) and its gzipped size
  * checked against the spec budget. Base embed path (core + scene + canvas2d
- * + player) must stay ≤ 38 kB (raised 35→36 in 0.12 for the §3 mesh Paint
+ * + player) must stay ≤ 39 kB (raised 35→36 in 0.12 for the §3 mesh Paint
  * kernel — a real, non-tree-shakeable render path, the milestone's determinism
  * tentpole; 36→37 in 0.13 for scene's each() instancing — see the scene budget
  * note; 37→38 in 0.14 for the §2.2 scalar→vec2 bind-time guard — see the core
- * budget note); element adds ≤ 5 kB.
+ * budget note; 38→39 in 0.18 for the §2.6 builder authoring-ergonomics tier —
+ * tl.stagger (non-uniform each + anchored cascades), tl.sequence/at with the
+ * .call() callback-forwarding + sibling-collision fix, and the stagger cursor
+ * fixes: all non-tree-shakeable builder API every consumer uses. The 35→39
+ * creep is flagged for the deferred 1.0 budget review); element adds ≤ 5 kB.
  */
 
 import { build } from 'esbuild';
@@ -161,9 +165,9 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   }
 }
 
-const baseOk = baseTotal <= 38;
+const baseOk = baseTotal <= 39;
 if (!baseOk) failed = true;
-console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 38 kB)`);
+console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 39 kB)`);
 
 // §3.2 guard: the BASE scene bundle must NOT pull in Yoga — flexbox layout is a
 // separately-budgeted entry (@glissade/scene/layout). A static import would

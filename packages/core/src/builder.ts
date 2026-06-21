@@ -12,8 +12,10 @@
 import { DEFAULT_EASE, type EaseSpec } from './easing.js';
 import { spring as springFactory } from './spring.js';
 import {
+  callMarkerPrefix,
   compileTimeline,
   emitDevWarning,
+  namespaceCallName,
   timeline as makeTimeline,
   TimelineValidationError,
   type ChildEntry,
@@ -46,13 +48,22 @@ export interface StaggerSpec<T = unknown> {
 }
 
 /**
- * Stagger placement. `each` is the per-rank delay (seconds, number-only in v1).
- * `from` picks the anchor the cascade ranks outward from (GSAP parity); `at`
- * places the whole group's base position (defaults to the chain end).
+ * Stagger placement.
+ *
+ * `each` is the per-target delay. A number gives the uniform cascade
+ * `d_i = rank_i * each` (the common case). A function `(rank, count) => seconds`
+ * maps each target's rank (and the group size) to its own delay, so accelerating
+ * / decelerating / eased cascades are author-controlled (GSAP parity). The
+ * function must return a finite number for every target.
+ *
+ * `anchor` picks the placement the cascade ranks outward from — note this is the
+ * placement axis, distinct from `StaggerSpec.from` (the start VALUE that routes a
+ * target through `fromTo`). `at` places the whole group's base position
+ * (defaults to the chain end).
  */
 export interface StaggerOpts {
-  each: number;
-  from?: 'start' | 'end' | 'center' | 'edges' | number;
+  each: number | ((rank: number, count: number) => number);
+  anchor?: 'start' | 'end' | 'center' | 'edges' | number;
   at?: Position;
 }
 
@@ -62,12 +73,15 @@ export interface TimelineBuilder {
   /**
    * Build-time sugar: loop the shipped `to`/`fromTo` emission over `targets`,
    * cascading each by a per-rank delay. Emits keys byte-identical to N
-   * hand-authored offset tweens. The `from` anchor ranks targets over their
-   * array index i (n = targets.length, c = (n-1)/2): `'start'` → i; `'end'` →
+   * hand-authored offset tweens. The `anchor` ranks targets over their array
+   * index i (n = targets.length, c = (n-1)/2): `'start'` → i; `'end'` →
    * (n-1)-i; `'center'` → round(|i-c|); `'edges'` → round(c-|i-c|); numeric k →
-   * round(|i-k|). Delay d_i = rank_i * each, inserted at `base + d_i` where
-   * `base = resolvePosition(opts.at)`. The group reads as one block to a
-   * following `'<'`/`'>'`/`'+='` step.
+   * round(|i-k|). The delay is `d_i = rank_i * each` for a numeric `each`, or
+   * `d_i = each(rank_i, n)` for a function `each` (accel/decel/eased cascades).
+   * Each target is inserted at `base + d_i` where `base = resolvePosition(opts.at)`.
+   * The group reads as one block to a following `'<'`/`'>'`/`'+='` step (its
+   * bounds are the true min/max delay, so a backward/non-uniform spread reports
+   * honestly to the cursor).
    */
   stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
   /** Hold key: the value snaps at the resolved position (§2.6). */
@@ -219,16 +233,28 @@ export function buildTimeline(
       // one group base, resolved once against the live cursor (default chain end)
       const base = resolvePosition(opts.at);
       const c = (n - 1) / 2;
-      const rankOf = (i: number): number => {
-        const f = opts.from ?? 'start';
-        if (f === 'start') return i;
-        if (f === 'end') return n - 1 - i;
-        if (f === 'center') return Math.round(Math.abs(i - c));
-        if (f === 'edges') return Math.round(c - Math.abs(i - c));
-        return Math.round(Math.abs(i - f)); // numeric origin
+      const { anchor = 'start', each } = opts;
+      // A NaN/Infinity slips past validateTrack (NaN compares false), producing
+      // silent NaN samples — reject it loudly at stagger entry instead.
+      const finite = (v: number): number => {
+        if (!Number.isFinite(v)) throw new TimelineValidationError(`stagger: non-finite each/anchor (${String(v)})`);
+        return v;
       };
-      const duration = spec.duration ?? 1;
-      let maxDelay = 0;
+      if (typeof anchor === 'number') finite(anchor);
+      if (typeof each === 'number') finite(each);
+      const rankOf = (i: number): number => {
+        if (anchor === 'start') return i;
+        if (anchor === 'end') return n - 1 - i;
+        if (anchor === 'center') return Math.round(Math.abs(i - c));
+        if (anchor === 'edges') return Math.round(c - Math.abs(i - c));
+        return Math.round(Math.abs(i - anchor)); // numeric origin
+      };
+      const delayOf = (rank: number): number => finite(typeof each === 'function' ? each(rank, n) : rank * each);
+      // §2.7: a spring ease determines its own duration — mirror to()'s rule so a
+      // following '>'/'+='/default step anchors at the TRUE group end.
+      const ease = spec.ease;
+      const isSpring = typeof ease === 'object' && ease !== null && ease.kind === 'spring';
+      const effDur = isSpring ? springFactory.duration(ease) : (spec.duration ?? 1);
       const tweenOpts = (d: number): TweenOpts =>
         // spread-conditionally — exactOptionalPropertyTypes forbids passing undefined
         ({
@@ -236,17 +262,28 @@ export function buildTimeline(
           ...(spec.duration !== undefined ? { duration: spec.duration } : {}),
           ...(spec.ease !== undefined ? { ease: spec.ease } : {}),
         });
+      // True bounds over ALL d_i (init from d_0, not 0) so a backward/non-uniform
+      // spread reports its real min/max to the cursor.
+      let minDelay = 0;
+      let maxDelay = 0;
       for (let i = 0; i < n; i++) {
-        const d = rankOf(i) * opts.each;
-        if (d > maxDelay) maxDelay = d;
+        const d = delayOf(rankOf(i));
+        if (i === 0 || d < minDelay) minDelay = d;
+        if (i === 0 || d > maxDelay) maxDelay = d;
+        const start = base + d;
+        // never silently emit a t<0 key — the document is the source of truth
+        if (start < 0) throw new TimelineValidationError(`stagger: target would land at t=${start} (< 0); shift opts.at`);
         const t = targets[i]!;
         // reuse the shipped emission verbatim → byte-identical to hand-offset tweens
         if (spec.from !== undefined) builder.fromTo(t, spec.from, spec.to, tweenOpts(d));
         else builder.to(t, spec.to, tweenOpts(d));
       }
-      // the whole group reads as ONE block to a following '<'/'>'/'+=' step
-      prevStart = base;
-      prevEnd = base + maxDelay + duration;
+      // an empty stagger is a true no-op — leave the cursor untouched
+      if (n > 0) {
+        // the whole group reads as ONE block to a following '<'/'>'/'+=' step
+        prevStart = base + minDelay;
+        prevEnd = base + maxDelay + effDur;
+      }
       return builder;
     },
     set(target, value, opts = {}) {
@@ -280,15 +317,20 @@ export function buildTimeline(
         _pos: at,
       };
       if (opts.timeScale !== undefined) entry.timeScale = opts.timeScale;
+      const childIndex = children.length;
       children.push(entry);
       // Forward the child's .call() callbacks onto the parent's map so a
       // sequenced/added sub-timeline's callbacks still resolve via
       // getTimelineCallbacks(parentDoc). compileTimeline rebases the child's
-      // MARKERS into the parent (keeping their names), but the name→fn map is
-      // keyed by doc — without this merge the functions are unreachable. Marker
-      // names are global, so a parent's own callback wins a name collision.
+      // call:* MARKERS under a per-child position-path prefix; we apply the SAME
+      // prefix here so the rebased marker name and the registered callback key
+      // agree by construction — distinct prefixes mean two sibling .call()s never
+      // collide (the old first-writer-wins merge dropped one and double-fired the
+      // other). The child's map already carries its own grandchildren's prefixes,
+      // so prefixing once more yields the full c<i>/c<j>/… path.
+      const prefix = callMarkerPrefix(childIndex);
       for (const [name, fn] of getTimelineCallbacks(child)) {
-        if (!callbacks.has(name)) callbacks.set(name, fn);
+        callbacks.set(namespaceCallName(name, prefix), fn);
       }
       const scale = mode === 'sync' ? (opts.timeScale ?? 1) : 1;
       prevStart = start;

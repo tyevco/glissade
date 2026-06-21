@@ -360,10 +360,10 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     expect(staggered.tracks).toEqual(hand.tracks);
   });
 
-  it('from: start ranks i — earliest target at base', () => {
+  it('anchor: start ranks i — earliest target at base', () => {
     const doc = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, from: 'start' });
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 'start' });
       }),
     );
     expect(startOf(doc, 'a/x')).toBeCloseTo(0);
@@ -371,10 +371,10 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     expect(startOf(doc, 'c/x')).toBeCloseTo(0.2);
   });
 
-  it('from: end ranks (n-1)-i', () => {
+  it('anchor: end ranks (n-1)-i', () => {
     const doc = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, from: 'end' });
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 'end' });
       }),
     );
     expect(startOf(doc, 'a/x')).toBeCloseTo(0.2);
@@ -382,11 +382,11 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     expect(startOf(doc, 'c/x')).toBeCloseTo(0);
   });
 
-  it('from: center ranks round(|i-c|) — middle first, tie at even n', () => {
+  it('anchor: center ranks round(|i-c|) — middle first, tie at even n', () => {
     // odd n=5, c=2 → ranks 2,1,0,1,2
     const odd = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, from: 'center' });
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 'center' });
       }),
     );
     expect([startOf(odd, 'a/x'), startOf(odd, 'b/x'), startOf(odd, 'c/x'), startOf(odd, 'd/x'), startOf(odd, 'e/x')]).toEqual(
@@ -395,7 +395,7 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     // even n=4, c=1.5 → round(|i-1.5|) = 2,1,1,2 — two rank-1 middles (no rank-0)
     const even = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, from: 'center' });
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 'center' });
       }),
     );
     expect([startOf(even, 'a/x'), startOf(even, 'b/x'), startOf(even, 'c/x'), startOf(even, 'd/x')]).toEqual(
@@ -403,11 +403,11 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     );
   });
 
-  it('from: edges ranks round(c-|i-c|) — ends first', () => {
+  it('anchor: edges ranks round(c-|i-c|) — ends first', () => {
     // odd n=5, c=2 → 0,1,2,1,0
     const doc = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, from: 'edges' });
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x', 'e/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 'edges' });
       }),
     );
     expect([startOf(doc, 'a/x'), startOf(doc, 'b/x'), startOf(doc, 'c/x'), startOf(doc, 'd/x'), startOf(doc, 'e/x')]).toEqual(
@@ -415,10 +415,10 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     );
   });
 
-  it('from: numeric origin ranks round(|i-k|)', () => {
+  it('anchor: numeric origin ranks round(|i-k|)', () => {
     const doc = compileTimeline(
       timeline((tl) => {
-        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, from: 1 });
+        tl.stagger(['a/x', 'b/x', 'c/x', 'd/x'], { from: 0, to: 1 }, { each: 0.1, anchor: 1 });
       }),
     );
     // |i-1| = 1,0,1,2
@@ -505,6 +505,133 @@ describe('tl.stagger — pure build-time sugar over to()/fromTo()', () => {
     expect(startOf(doc, 'a/x')).toBeCloseTo(2);
     expect(startOf(doc, 'b/x')).toBeCloseTo(2.1);
   });
+
+  it('non-uniform each as a fn ≡ the hand-authored accelerating cascade (byte-identical)', () => {
+    // d_i = each(rank_i, n); anchor 'start' → rank_i = i; accel curve r*r*0.05
+    const accel = (r: number) => r * r * 0.05;
+    const sa = prop('a/opacity', 0);
+    const sb = prop('b/opacity', 0);
+    const sc = prop('c/opacity', 0);
+    const sd = prop('d/opacity', 0);
+    const staggered = timeline((tl) => {
+      tl.stagger([sa, sb, sc, sd], { to: 1 }, { each: accel });
+    });
+
+    const ha = prop('a/opacity', 0);
+    const hb = prop('b/opacity', 0);
+    const hc = prop('c/opacity', 0);
+    const hd = prop('d/opacity', 0);
+    const hand = timeline((tl) => {
+      tl.to(ha, 1, { at: accel(0) }) // 0
+        .to(hb, 1, { at: accel(1) }) // 0.05
+        .to(hc, 1, { at: accel(2) }) // 0.2
+        .to(hd, 1, { at: accel(3) }); // 0.45
+    });
+
+    // key-for-key equality — the deep-equal contract, now for the fn form
+    expect(staggered.tracks).toEqual(hand.tracks);
+  });
+
+  it('non-uniform each receives (rank, count) — count is the group size', () => {
+    const seen: Array<[number, number]> = [];
+    timeline((tl) => {
+      tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1 }, {
+        each: (rank, count) => {
+          seen.push([rank, count]);
+          return rank * 0.1;
+        },
+        anchor: 'end',
+      });
+    });
+    // anchor 'end' → ranks (n-1)-i = 2,1,0; count is always 3
+    expect(seen).toEqual([
+      [2, 3],
+      [1, 3],
+      [0, 3],
+    ]);
+  });
+
+  it('spring-ease stagger: a following > step anchors at the TRUE group end', () => {
+    const cfg = { stiffness: 170, damping: 26, mass: 1 };
+    const next = prop('z/x', 0);
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, ease: spring(cfg) }, { each: 0.1 }).to(next, 1, {
+          duration: 1,
+          at: '>',
+        });
+      }),
+    );
+    // base 0, maxDelay 0.2, effDur = spring.duration(cfg) → group end at 0.2 + dur
+    expect(startOf(doc, 'z/x')).toBeCloseTo(0.2 + spring.duration(cfg));
+  });
+
+  it('an empty stagger is a true no-op — a following step is unmoved', () => {
+    const next = prop('z/x', 0);
+    const doc = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 2 })
+          .stagger([], { from: 0, to: 1, duration: 1 }, { each: 0.1 })
+          .to(next, 1, { duration: 1, at: '>' });
+      }),
+    );
+    // the empty stagger must not advance the cursor: '>' still sits at seed end (2)
+    expect(startOf(doc, 'z/x')).toBeCloseTo(2);
+  });
+
+  it('negative / non-monotonic each reports its true min/max bounds to the cursor', () => {
+    // anchor 'center' on n=3, c=1 → ranks 1,0,1; each negative → delays -0.1,0,-0.1
+    // so the spread runs BACKWARD from base; min/max must reflect that
+    const startNext = prop('s/x', 0);
+    const endNext = prop('e/x', 0);
+    const startDoc = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 5 })
+          .stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, duration: 1 }, { each: -0.1, anchor: 'center' })
+          .to(startNext, 1, { duration: 1, at: '<' });
+      }),
+    );
+    // base = 5; minDelay = -0.1 → prevStart = 4.9
+    expect(startOf(startDoc, 's/x')).toBeCloseTo(4.9);
+
+    const endDoc = compileTimeline(
+      timeline((tl) => {
+        tl.to('seed/x', 1, { duration: 5 })
+          .stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, duration: 1 }, { each: -0.1, anchor: 'center' })
+          .to(endNext, 1, { duration: 1, at: '>' });
+      }),
+    );
+    // base = 5; maxDelay = 0 (rank-0 middle) → prevEnd = 5 + 0 + 1 = 6
+    expect(startOf(endDoc, 'e/x')).toBeCloseTo(6);
+  });
+
+  it('a stagger that would place a key at t<0 throws', () => {
+    expect(() =>
+      timeline((tl) => {
+        // base 0, anchor 'center' n=3 ranks 1,0,1, each -0.5 → d = -0.5 < 0
+        tl.stagger(['a/x', 'b/x', 'c/x'], { from: 0, to: 1, duration: 1 }, { each: -0.5, anchor: 'center', at: 0 });
+      }),
+    ).toThrow(TimelineValidationError);
+  });
+
+  it('a non-finite each or anchor throws at stagger entry', () => {
+    expect(() =>
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x'], { from: 0, to: 1 }, { each: Number.NaN });
+      }),
+    ).toThrow(TimelineValidationError);
+    expect(() =>
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x'], { from: 0, to: 1 }, { each: 0.1, anchor: Number.POSITIVE_INFINITY });
+      }),
+    ).toThrow(TimelineValidationError);
+    // a fn that returns NaN is caught per-target too
+    expect(() =>
+      timeline((tl) => {
+        tl.stagger(['a/x', 'b/x'], { from: 0, to: 1 }, { each: () => Number.NaN });
+      }),
+    ).toThrow(TimelineValidationError);
+  });
 });
 
 describe('tl.sequence + tl.at — pure build-time sugar over add()', () => {
@@ -577,30 +704,70 @@ describe('tl.sequence + tl.at — pure build-time sugar over add()', () => {
     const child = timeline((tl) => {
       tl.to(prop('n/x', 0), 1, { duration: 1 }).call(cb);
     });
+    // the child's own marker is 'call:0'; rebased into the parent it is
+    // namespaced by the child's position path (c0/) so siblings can't collide
     const childCbName = child.markers![0]!.name;
+    const rebasedName = `c0/${childCbName}`;
 
     const parent = timeline((tl) => {
       tl.sequence([child]);
     });
 
-    // the child's name→fn entry resolves via getTimelineCallbacks(parentDoc),
-    // and compileTimeline rebases the child marker into the parent's set so the
-    // player fires it — the two agree by name
-    expect(getTimelineCallbacks(parent).get(childCbName)).toBe(cb);
+    // the child's name→fn entry resolves via getTimelineCallbacks(parentDoc)
+    // under its namespaced key, and compileTimeline rebases the child marker
+    // into the parent's set under the SAME name — the two agree by construction
+    expect(getTimelineCallbacks(parent).get(rebasedName)).toBe(cb);
     const compiled = compileTimeline(parent);
-    expect(compiled.markers.some((m) => m.name === childCbName)).toBe(true);
+    expect(compiled.markers.some((m) => m.name === rebasedName)).toBe(true);
   });
 
-  it('a parent .call() wins a name collision with a forwarded child callback', () => {
+  it('a parent .call() and a forwarded child .call() coexist under distinct keys', () => {
     const childCb = () => {};
     const parentCb = () => {};
-    // both default to the same name 'call:0' (callCount is per-doc)
+    // both auto-name 'call:0' per-doc, but the child's marker is namespaced by
+    // its position path (c0/) on the way up — no collision, no drop
     const child = timeline((tl) => {
       tl.to(prop('n/x', 0), 1, { duration: 1 }).call(childCb);
     });
     const parent = timeline((tl) => {
       tl.call(parentCb).add(child);
     });
-    expect(getTimelineCallbacks(parent).get('call:0')).toBe(parentCb);
+    const cbs = getTimelineCallbacks(parent);
+    expect(cbs.get('call:0')).toBe(parentCb);
+    expect(cbs.get('c0/call:0')).toBe(childCb);
+    // and the rebased child marker carries the SAME namespaced name
+    const compiled = compileTimeline(parent);
+    expect(compiled.markers.find((m) => m.name === 'c0/call:0')).toBeDefined();
+  });
+
+  it('two sibling subs each with a .call() both register and fire (no drop, no double-fire)', () => {
+    const cbA = () => {};
+    const cbB = () => {};
+    // each sub auto-names its callback 'call:0' (callCount resets per-doc); the
+    // old first-writer-wins merge would drop one and double-fire the other
+    const subA = timeline((tl) => {
+      tl.to(prop('a/x', 0), 1, { duration: 1 }).call(cbA, 0.5);
+    });
+    const subB = timeline((tl) => {
+      tl.to(prop('b/x', 0), 1, { duration: 1 }).call(cbB, 0.25);
+    });
+    const parent = timeline((tl) => {
+      tl.sequence([subA, subB]);
+    });
+
+    const cbs = getTimelineCallbacks(parent);
+    // both land under distinct, position-namespaced keys
+    expect(cbs.get('c0/call:0')).toBe(cbA);
+    expect(cbs.get('c1/call:0')).toBe(cbB);
+
+    const compiled = compileTimeline(parent);
+    const mA = compiled.markers.find((m) => m.name === 'c0/call:0')!;
+    const mB = compiled.markers.find((m) => m.name === 'c1/call:0')!;
+    // subA occupies [0,1] → call at 0.5; subB sequenced after at base 1 → call at 1.25
+    expect(mA.t).toBeCloseTo(0.5);
+    expect(mB.t).toBeCloseTo(1.25);
+    // exactly one marker per name — no double-fire
+    expect(compiled.markers.filter((m) => m.name === 'c0/call:0')).toHaveLength(1);
+    expect(compiled.markers.filter((m) => m.name === 'c1/call:0')).toHaveLength(1);
   });
 });

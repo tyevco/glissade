@@ -176,6 +176,27 @@ function rebaseKeys(keys: Key[], at: number, timeScale: number): Key[] {
   return keys.map((k) => ({ ...k, t: at + k.t / timeScale }));
 }
 
+/**
+ * `.call()` markers carry an auto-assigned `call:N` name whose counter resets
+ * per document, so two sibling sub-timelines that each define a `.call()` would
+ * collide on `call:0` when rebased into one parent (one callback dropped, the
+ * other double-firing). We namespace a child's `call:*` markers by the child's
+ * position PATH in the parent (`c<index>/…`), and the builder's `add()` applies
+ * the EXACT same prefix when forwarding the child's name→fn map — so the rebased
+ * marker name and the registered callback key agree by construction. Only
+ * `call:*` names are rewritten; author-named cues keep their names. Both surfaces
+ * call these so the convention lives in one place.
+ */
+export function callMarkerPrefix(childIndex: number): string {
+  return `c${childIndex}/`;
+}
+
+const CALL = /(^|\/)call:\d+$/;
+
+export function namespaceCallName(name: string, prefix: string): string {
+  return prefix !== '' && CALL.test(name) ? prefix + name : name;
+}
+
 interface FlatEntry {
   track: Track;
   /**
@@ -293,15 +314,18 @@ export function compileTimeline(doc: Timeline): CompiledTimeline {
   const markers: Marker[] = [...(doc.markers ?? [])];
   const audio: AudioClip[] = [...(doc.audio ?? [])];
   // Child labels/markers/audio surface rebased; parent wins label-name collisions.
-  const visitChildren = (children: ChildEntry[] | undefined, at: number, scale: number) => {
-    for (const child of children ?? []) {
+  const visitChildren = (children: ChildEntry[] | undefined, at: number, scale: number, prefix: string) => {
+    (children ?? []).forEach((child, index) => {
       const base = at + child.at / scale;
       const childScale = scale * (child.mode === 'sync' ? (child.timeScale ?? 1) : 1);
+      // namespace this child's auto-named call:* markers by its position path so
+      // sibling .call()s land under distinct keys (matches add()'s merge prefix)
+      const childPrefix = prefix + callMarkerPrefix(index);
       for (const [name, t] of Object.entries(child.timeline.labels ?? {})) {
         if (!(name in labels)) labels[name] = base + t / childScale;
       }
       for (const m of child.timeline.markers ?? []) {
-        markers.push({ ...m, t: base + m.t / childScale });
+        markers.push({ ...m, name: namespaceCallName(m.name, childPrefix), t: base + m.t / childScale });
       }
       for (const clip of child.timeline.audio ?? []) {
         // a time-scaled sync child speeds the clip itself up
@@ -311,10 +335,10 @@ export function compileTimeline(doc: Timeline): CompiledTimeline {
           ...(childScale !== 1 ? { playbackRate: (clip.playbackRate ?? 1) * childScale } : {}),
         });
       }
-      visitChildren(child.timeline.children, base, childScale);
-    }
+      visitChildren(child.timeline.children, base, childScale, childPrefix);
+    });
   };
-  visitChildren(doc.children, 0, 1);
+  visitChildren(doc.children, 0, 1, '');
   markers.sort((a, b) => a.t - b.t);
   audio.sort((a, b) => a.at - b.at);
   return { duration: computeDuration(doc), labels, markers, tracks, audio };
