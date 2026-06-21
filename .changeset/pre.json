@@ -26,6 +26,8 @@
   },
   "changesets": [
     "bless-controlled-drive",
-    "builder-sugar-019"
+    "builder-sugar-019",
+    "kinetic-typography-019",
+    "snapshot-data-url-019"
   ]
 }
