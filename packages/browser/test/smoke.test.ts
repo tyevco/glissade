@@ -65,6 +65,13 @@ describe('@glissade/browser entry surface', () => {
     expect(() => new glissade.Path({ data: glissade.pathFromSvg('M0 0 L40 0') })).not.toThrow();
   });
 
+  it('exposes splitText (from @glissade/scene/type) — 0.19 kinetic typography for the no-build consumer', () => {
+    // splitText is tree-shaken off the base scene index (scene budget) but the
+    // no-build consumer that requested it works only against the IIFE, so it's
+    // re-exported onto window.glissade.
+    expect(typeof glissade.splitText).toBe('function');
+  });
+
   it('exposes the machine-readable API manifest (describe, from @glissade/scene/describe)', () => {
     // 0.18: `glissade.describe()` is the discoverability artifact — the design
     // agent reverse-engineered the API instead of reading it; this guards it's

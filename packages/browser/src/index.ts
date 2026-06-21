@@ -29,6 +29,14 @@ export * from '@glissade/scene';
 // `parseSvgPathData` land on `window.glissade` for `new Path({ data:
 // G.pathFromSvg('M0 0 …') })`.
 export * from '@glissade/scene/path';
+// `splitText` (0.19 kinetic typography) lives on the tree-shaken
+// `@glissade/scene/type` subpath (off the base scene index for the scene
+// budget). The no-build consumer that REQUESTED it (explainer-video kinetic
+// typography) works only against this IIFE, so it must reach window.glissade —
+// `G.splitText(props, { by:'word', measurer: backend })`. (Stack/Row/Column stay
+// npm-only: those pull Yoga, which can't ride the bundle; splitText only needs
+// the measurer.) +0.44 kB, within the browser budget.
+export { splitText } from '@glissade/scene/type';
 // The machine-readable API manifest (0.18) lives on the tree-shakeable
 // `@glissade/scene/describe` subpath (off the base scene index). The single-file
 // convenience bundle SHOULD expose it for discoverability, so re-export it here —
