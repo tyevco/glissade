@@ -26,6 +26,7 @@ vdescribe('describe() manifest', () => {
     expect(m.valueTypes.length).toBeGreaterThan(0);
     expect(m.easings.length).toBeGreaterThan(0);
     expect(m.builder.methods.length).toBeGreaterThan(0);
+    expect(m.helpers.length).toBeGreaterThan(0);
     expect(Object.keys(m.subpaths).length).toBeGreaterThan(0);
     expect(typeof m.createScene).toBe('string');
     // round-trips through JSON unchanged (this IS what glissade.api.json commits)
@@ -118,6 +119,61 @@ vdescribe('describe() manifest', () => {
     for (const x of m.builder.methods) {
       expect(live.has(x.name)).toBe(true);
     }
+  });
+});
+
+// The 0.20 HELPERS section: scene can't import player/backend (those live above
+// it in the dep graph), so the curated literal is structurally asserted here; the
+// drift guard that IMPORTS+resolves each name lives in @glissade/browser's smoke
+// test (it imports the whole IIFE surface, above scene).
+vdescribe('describe() helpers section', () => {
+  const m = describe();
+
+  it('exposes a populated helpers array, JSON-round-tripping with name/summary/import/usage', () => {
+    expect(Array.isArray(m.helpers)).toBe(true);
+    expect(m.helpers.length).toBeGreaterThan(0);
+    for (const h of m.helpers) {
+      expect(typeof h.name, 'helper name').toBe('string');
+      expect(h.name.length).toBeGreaterThan(0);
+      expect(typeof h.summary, `${h.name} summary`).toBe('string');
+      expect(h.summary.length).toBeGreaterThan(0);
+      expect(typeof h.import, `${h.name} import`).toBe('string');
+      expect(h.import.startsWith('@glissade/'), `${h.name} import is an npm subpath`).toBe(true);
+      expect(typeof h.usage, `${h.name} usage`).toBe('string');
+      expect(h.usage.length).toBeGreaterThan(0);
+    }
+    // the whole manifest (helpers included) round-trips through JSON unchanged
+    expect(JSON.parse(JSON.stringify(m.helpers))).toEqual(m.helpers);
+  });
+
+  it('covers the documented helper/factory API (createPlayer/mount/motionPath/followPath/clip/clipList/renderToDataURL/snapshotCanvas/splitText)', () => {
+    const names = new Set(m.helpers.map((h) => h.name));
+    for (const expected of [
+      'createPlayer',
+      'mount',
+      'motionPath',
+      'followPath',
+      'clip',
+      'clipList',
+      'renderToDataURL',
+      'snapshotCanvas',
+      'splitText',
+    ]) {
+      expect(names.has(expected), `helpers missing ${expected}`).toBe(true);
+    }
+  });
+
+  it('names the right npm subpath per helper (matching docs/discovery.md)', () => {
+    const byName = new Map(m.helpers.map((h) => [h.name, h]));
+    expect(byName.get('createPlayer')!.import).toBe('@glissade/player');
+    expect(byName.get('mount')!.import).toBe('@glissade/player');
+    expect(byName.get('motionPath')!.import).toBe('@glissade/scene/motion');
+    expect(byName.get('followPath')!.import).toBe('@glissade/scene/motion');
+    expect(byName.get('clip')!.import).toBe('@glissade/core/clips');
+    expect(byName.get('clipList')!.import).toBe('@glissade/core/clips');
+    expect(byName.get('renderToDataURL')!.import).toBe('@glissade/backend-canvas2d/snapshot');
+    expect(byName.get('snapshotCanvas')!.import).toBe('@glissade/backend-canvas2d/snapshot');
+    expect(byName.get('splitText')!.import).toBe('@glissade/scene/type');
   });
 });
 

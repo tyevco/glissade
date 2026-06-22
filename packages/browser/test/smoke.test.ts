@@ -122,4 +122,26 @@ describe('@glissade/browser entry surface', () => {
       arity: 2,
     });
   });
+
+  it('the curated describe().helpers names ALL resolve to real window.glissade.<name> functions (0.20 drift guard)', () => {
+    // CROSS-PACKAGE DRIFT GUARD. describe() lives in `scene`, but several helpers
+    // it documents (createPlayer/mount, renderToDataURL/snapshotCanvas) live ABOVE
+    // scene in the dep graph — scene CANNOT import them, so the helpers section is
+    // a CURATED literal. This test runs in @glissade/browser (which imports the
+    // whole IIFE surface, above scene) and asserts every documented helper name is
+    // a real function on the bundle — the moment the curated name drifts from the
+    // actual export, this fails. (The npm import-path strings are pinned in scene's
+    // describe.test.ts against docs/discovery.md.)
+    const m = glissade.describe();
+    expect(m.helpers.length).toBeGreaterThan(0);
+    const surface = glissade as unknown as Record<string, unknown>;
+    for (const h of m.helpers) {
+      expect(typeof surface[h.name], `helper '${h.name}' is not a function on window.glissade`).toBe('function');
+    }
+    // sanity: the headline helpers we promised are present by name
+    const names = new Set(m.helpers.map((h) => h.name));
+    for (const n of ['createPlayer', 'motionPath', 'clip', 'renderToDataURL', 'splitText']) {
+      expect(names.has(n), `describe().helpers missing ${n}`).toBe(true);
+    }
+  });
 });

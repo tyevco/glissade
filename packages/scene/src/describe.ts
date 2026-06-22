@@ -78,6 +78,26 @@ export interface DescribedBuilderMethod {
   signature: string;
 }
 
+/**
+ * One helper/factory in the manifest — the broader builder API beyond the node
+ * taxonomy and the timeline builder. These are the free functions an AI consumer
+ * reaches for (transport, motion-path, clips, snapshot, text-splitting); several
+ * live ABOVE `scene` in the dep graph (player/backend), so describe() can't
+ * import them — this is a CURATED literal, drift-guarded by a test that runs in a
+ * package above scene (`@glissade/browser`'s smoke test) and asserts every name
+ * resolves to a real `window.glissade.<name>` function.
+ */
+export interface DescribedHelper {
+  /** The exported function name — also the `window.glissade.<name>` global on the IIFE. */
+  name: string;
+  /** One line: what it's for. */
+  summary: string;
+  /** The npm subpath to import it from (e.g. `@glissade/player`). On the IIFE it's `window.glissade.<name>`. */
+  import: string;
+  /** A minimal signature/usage string showing the call shape. */
+  usage: string;
+}
+
 /** The full machine-readable manifest `describe()` returns. */
 export interface ApiManifest {
   version: string;
@@ -85,6 +105,12 @@ export interface ApiManifest {
   valueTypes: string[];
   easings: string[];
   builder: { methods: DescribedBuilderMethod[] };
+  /**
+   * The curated helper/factory surface (0.20) — `createPlayer`/`mount`,
+   * `motionPath`/`followPath`, `clip`/`clipList`, `renderToDataURL`/`snapshotCanvas`,
+   * `splitText`. Every `name` is also a `window.glissade.<name>` global on the IIFE.
+   */
+  helpers: DescribedHelper[];
   createScene: string;
   subpaths: { [entry: string]: string };
 }
@@ -295,6 +321,81 @@ const BUILDER_METHODS: DescribedBuilderMethod[] = [
   { name: 'editableDuration', signature: 'editableDuration(): TimelineBuilder' },
 ];
 
+/**
+ * The curated helper/factory surface (0.20). These are the free functions the
+ * discovery doc surfaces beyond the node taxonomy + timeline builder — transport,
+ * motion-path sampling, motion clips, frame snapshot, text splitting. Several live
+ * ABOVE `scene` in the dep graph (player / backend-canvas2d), so describe() CANNOT
+ * import them — this literal is curated by hand and drift-guarded by a test that
+ * runs in a package above scene (`@glissade/browser`'s smoke test), which asserts
+ * every `name` here resolves to a real `window.glissade.<name>` function on the
+ * IIFE. Copy is kept verbatim from `docs/discovery.md` so docs and manifest agree.
+ */
+const HELPERS: DescribedHelper[] = [
+  {
+    name: 'createPlayer',
+    summary:
+      'Build the transport object (play / pause / seek / rate / loop / marker + cue callbacks) directly — what mount() returns as mounted.player.',
+    import: '@glissade/player',
+    usage:
+      "createPlayer({ playhead: createPlayhead(), duration: 2 }, { loop?: boolean }): Player  —  player.play() → { finished }, player.pause(), player.seek(u), player.rate = 2, player.onMarker(name, cb), player.onCue(kind, cb)",
+  },
+  {
+    name: 'mount',
+    summary:
+      'The one-call embed: builds the player, the backend, the rAF render loop, and font handling for you — start here. Returns { player } among other handles.',
+    import: '@glissade/player',
+    usage: 'mount(scene, timeline, canvas, opts?: { loop?: boolean }): { player: Player, ... }',
+  },
+  {
+    name: 'motionPath',
+    summary:
+      'Build an arc-length sampler over a path — a pure, deterministic table you read points and tangents from by normalized progress (constant speed, not bezier parameter).',
+    import: '@glissade/scene/motion',
+    usage: 'motionPath(path: PathValue): { length, atProgress(u): [x,y], tangentAtProgress(u): [x,y] }',
+  },
+  {
+    name: 'followPath',
+    summary:
+      'A companion node that makes a target ride a path as an animatable — it owns the target position (and rotation with orient) and exposes a progress you drive with a track.',
+    import: '@glissade/scene/motion',
+    usage: "followPath(target: Node, path: Node, opts?: { id?, orient?: boolean }): FollowPath  —  drive '<id>/progress' with a track",
+  },
+  {
+    name: 'clip',
+    summary:
+      'A reusable, target-agnostic motion captured once as a relative-time key schedule, then applied to a node at a wall-clock start time. Build-time sugar: clip.apply() compiles to ordinary Track[].',
+    import: '@glissade/core/clips',
+    usage: "clip({ channels: { <name>: { path, keys: [key(t, value, ease?)] } } }): Clip  —  clip.apply(nodeId, startT) → { tracks, end }",
+  },
+  {
+    name: 'clipList',
+    summary: 'Fan one clip across many targets, staggered, in a single call — returns the combined Track[].',
+    import: '@glissade/core/clips',
+    usage: 'clipList(clip: Clip, targets: string[], startT: number, opts?: { stagger?: number }): { tracks }',
+  },
+  {
+    name: 'renderToDataURL',
+    summary:
+      'Capture a single frame as a PNG/WebP data URL — evaluate → render → data-URL, the no-build screenshot DX helper. Browser-only.',
+    import: '@glissade/backend-canvas2d/snapshot',
+    usage: 'renderToDataURL(scene, timeline, t, opts?): string  (data: URL)',
+  },
+  {
+    name: 'snapshotCanvas',
+    summary: 'Render a single frame onto a canvas you pass in (the lower-level primitive renderToDataURL is built on). Browser-only.',
+    import: '@glissade/backend-canvas2d/snapshot',
+    usage: 'snapshotCanvas(scene, timeline, t, canvas, opts?): void',
+  },
+  {
+    name: 'splitText',
+    summary:
+      'Split a Text node into per-word / per-char parts you can animate individually (kinetic typography). Tree-shaken off the base scene index.',
+    import: '@glissade/scene/type',
+    usage: "splitText(text: Text, opts?: { by?: 'word'|'char' }): Node[]",
+  },
+];
+
 /** One-line "what's there" for each documented tree-shakeable subpath entry. */
 const SUBPATHS: { [entry: string]: string } = {
   '@glissade/core/clips': 'motion clips: clip/clipList + the popIn/slideIn/pulse/driftLoop literals, presence (enter/exit) and morph (box-FLIP) build-time sugar.',
@@ -326,6 +427,10 @@ export function describe(): ApiManifest {
     valueTypes: listValueTypes(),
     easings: Object.keys(easings),
     builder: { methods: BUILDER_METHODS },
+    // The curated helper/factory surface (transport, motion-path, clips,
+    // snapshot, splitText) — several live above scene in the dep graph, so this
+    // is a hand-kept literal, drift-guarded by @glissade/browser's smoke test.
+    helpers: HELPERS,
     // The full construct-a-scene surface: the size + children AND the asset
     // manifest (so Image/Video `assetId` resolves to a real media URL). An
     // `assetId` on a node names an entry in this `assets` map.
