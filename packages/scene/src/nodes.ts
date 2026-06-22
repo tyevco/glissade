@@ -684,6 +684,18 @@ export interface TextProps extends NodeProps {
   fontWeight?: number;
   /** Font style; default 'normal'. Threaded into FontSpec.style (§3.6). */
   fontStyle?: 'normal' | 'italic';
+  /**
+   * Variable-font axis settings in CSS `font-variation-settings` form
+   * (e.g. `'"wght" 700, "opsz" 14'`). **Not yet applied.** Accepted so the
+   * input is discoverable + typed, but as of 0.19 neither rasterizer wires
+   * variation axes through, so setting it emits a dev-warning and is otherwise
+   * a no-op (the value does NOT reach `ctx.font`). Animatable axes (a `wght`
+   * track, `opsz` driven by size, …) are a 0.20 feature. Until then, drive a
+   * weight axis via the discrete `fontWeight` named instances your font ships.
+   * Tracked so a silent drop becomes a loud one — see the splitText measurer
+   * precedent (0.19).
+   */
+  fontVariationSettings?: string;
   /** Horizontal alignment about the node position; default 'left'. */
   align?: 'left' | 'center' | 'right';
   /** Wrap width in px; unset = no wrapping (explicit \n still breaks). */
@@ -718,6 +730,13 @@ export class Text extends Node {
   readonly fontFamily: string;
   readonly fontWeight: number;
   readonly fontStyle: 'normal' | 'italic';
+  /**
+   * Variable-font axis settings as supplied (CSS `font-variation-settings`
+   * form), or undefined. **Not applied** — kept only so the value is
+   * introspectable; it is intentionally NOT threaded into FontSpec/ctx.font in
+   * 0.19 (setting it warns). See {@link TextProps.fontVariationSettings}.
+   */
+  readonly fontVariationSettings: string | undefined;
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
@@ -737,6 +756,7 @@ export class Text extends Node {
     this.fontFamily = props.fontFamily ?? 'sans-serif';
     this.fontWeight = props.fontWeight ?? 400;
     this.fontStyle = props.fontStyle ?? 'normal';
+    this.fontVariationSettings = props.fontVariationSettings;
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
@@ -750,6 +770,15 @@ export class Text extends Node {
     this.registerTarget('fontSize', this.fontSize, 'number');
     this.registerTarget('reveal', this.reveal, 'number');
     this.registerTarget('revealFraction', this.revealFraction, 'number');
+    // Variable-font axes are accepted but NOT YET wired to either rasterizer
+    // (§3.6) — make the drop LOUD rather than silent (the splitText-measurer
+    // precedent). The value never reaches FontSpec/ctx.font, so default Text
+    // stays byte-identical.
+    if (props.fontVariationSettings !== undefined) {
+      emitDevWarning(
+        `${this.id !== undefined ? `'${this.id}': ` : ''}fontVariationSettings (${JSON.stringify(props.fontVariationSettings)}) is not yet applied — variable-font axes (wght/opsz/…) aren't wired to the rasterizer in 0.19, so it's dropped. Use the discrete fontWeight your font's named instances expose; animatable axes are a 0.20 feature.`,
+      );
+    }
   }
 
   /**

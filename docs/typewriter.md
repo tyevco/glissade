@@ -188,6 +188,22 @@ const marks = revealSchedule(title, revealTrack);
 
 For the edit-script case, `typewriter().marks` carries `EditMark = { time, kind: 'insert' | 'delete', grapheme, value }` — so a backspace can take a different sound. Both feed `@glissade/sfx`'s `keystrokeClips(marks, source)`, which places one click per keystroke (`at: mark.time`); whitespace is skipped by default and the raw `grapheme` is carried so the audio layer owns char-class policy. Graphemes a monotonic track never reveals are omitted.
 
+## Variable fonts
+
+A `Text` node selects weight via the discrete `fontWeight` prop (and style via `fontStyle`), which resolve to the **named instances** your font ships — e.g. the `400`/`700` faces of a variable family. That is the supported way to pick a weight today.
+
+Driving a variable font's **axes** directly (`wght`, `opsz`, `slnt`, …) is **not yet wired** to either rasterizer. A `fontVariationSettings` prop exists so the intent is typed and discoverable, but as of 0.19 it is **accepted-and-dropped**: setting it emits a dev-warning and the value never reaches `ctx.font`, so default `Text` stays byte-identical.
+
+```ts
+// 0.19: this WARNS and is otherwise a no-op (axes are not applied yet)
+new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700, "opsz" 14' });
+
+// supported today: pick a named instance via the discrete weight
+new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontWeight: 700 });
+```
+
+The warning is deliberate — a silently-dropped axis is the same footgun class as the splitText estimating-measurer (which 0.19 made loud). **Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are a **0.20 feature**; until then this surface is loud rather than silent.
+
 ## Determinism
 
 `reveal` is a number track and `graphemes()` / `revealHead()` / `revealSchedule()` are pure functions of the text geometry — no clock, no randomness. The same document samples identically at any `t` on both the canvas2d and Skia backends, so the typewriter is covered by the golden-frame corpus like any other pixel.

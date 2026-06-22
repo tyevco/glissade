@@ -1301,6 +1301,7 @@ class Text_2 extends Node_2 {
     readonly fontSize: BindableSignal<number>;
     // (undocumented)
     readonly fontStyle: 'normal' | 'italic';
+    readonly fontVariationSettings: string | undefined;
     // (undocumented)
     readonly fontWeight: number;
     graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[];
@@ -1393,6 +1394,7 @@ export interface TextProps extends NodeProps {
     // (undocumented)
     fontSize?: PropInit<number>;
     fontStyle?: 'normal' | 'italic';
+    fontVariationSettings?: string;
     // (undocumented)
     fontWeight?: number;
     lineHeight?: number;

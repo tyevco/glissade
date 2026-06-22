@@ -247,3 +247,34 @@ describe('fontStyle threads into FontSpec', () => {
     expect(reg.resolveFace('Brand', 400, 'italic')?.url).toBe('ital.ttf');
   });
 });
+
+describe('fontVariationSettings (0.19.1 — loud drop, not silent)', () => {
+  it('warns when set, naming the dropped value and that axes are not yet applied', () => {
+    const warn = vi.fn();
+    setDevWarning(warn);
+    new Text({ id: 'hero', text: 'x', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700, "opsz" 14' });
+    expect(warn).toHaveBeenCalledOnce();
+    const msg = warn.mock.calls[0]![0] as string;
+    expect(msg).toContain('fontVariationSettings');
+    expect(msg).toContain('wght'); // the dropped value is named
+    expect(msg).toContain('0.20'); // points at the future feature
+  });
+
+  it('is introspectable on the node but NEVER reaches the emitted FontSpec', () => {
+    const node = new Text({ text: 'x', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700' });
+    expect(node.fontVariationSettings).toBe('"wght" 700'); // stored for introspection
+    const fonts = emitFonts(node);
+    expect(fonts).toHaveLength(1);
+    // the drop is genuine: no variation field leaks into the IR FontSpec
+    expect('fontVariationSettings' in fonts[0]!).toBe(false);
+    expect('variations' in fonts[0]!).toBe(false);
+  });
+
+  it('default Text (no variations) does NOT warn and stays byte-identical', () => {
+    const warn = vi.fn();
+    setDevWarning(warn);
+    const node = new Text({ text: 'x', fontFamily: 'Fraunces' });
+    expect(warn).not.toHaveBeenCalled();
+    expect(node.fontVariationSettings).toBeUndefined();
+  });
+});
