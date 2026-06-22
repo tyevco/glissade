@@ -192,17 +192,17 @@ For the edit-script case, `typewriter().marks` carries `EditMark = { time, kind:
 
 A `Text` node selects weight via the discrete `fontWeight` prop (and style via `fontStyle`), which resolve to the **named instances** your font ships — e.g. the `400`/`700` faces of a variable family. That is the supported way to pick a weight today.
 
-Driving a variable font's **axes** directly (`wght`, `opsz`, `slnt`, …) is **not yet wired** to either rasterizer. A `fontVariationSettings` prop exists so the intent is typed and discoverable, but as of 0.19 it is **accepted-and-dropped**: setting it emits a dev-warning and the value never reaches `ctx.font`, so default `Text` stays byte-identical.
+Driving a variable font's **axes** directly (`wght`, `opsz`, `slnt`, …) is **not yet wired** to either rasterizer. A `fontVariationSettings` prop exists so the intent is **typed and discoverable** (autocomplete + this doc), but as of 0.19.x it is **accepted-and-dropped** — the value never reaches `ctx.font`, so default `Text` stays byte-identical.
 
 ```ts
-// 0.19: this WARNS and is otherwise a no-op (axes are not applied yet)
+// 0.19.x: accepted (typed) but a no-op — axes are not applied yet
 new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700, "opsz" 14' });
 
 // supported today: pick a named instance via the discrete weight
 new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontWeight: 700 });
 ```
 
-The warning is deliberate — a silently-dropped axis is the same footgun class as the splitText estimating-measurer (which 0.19 made loud). **Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are a **0.20 feature**; until then this surface is loud rather than silent.
+**Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are a **0.20 feature** (wired to both rasterizers, with a loud drop-warning for the silent case). Until then, the typed prop keeps the gap discoverable; use the discrete `fontWeight` named instances for weight.
 
 ## Determinism
 

@@ -762,13 +762,12 @@ export class Text extends Node {
     this.registerTarget('fontSize', this.fontSize, 'number');
     this.registerTarget('reveal', this.reveal, 'number');
     this.registerTarget('revealFraction', this.revealFraction, 'number');
-    // Variable-font axes are accepted but NOT YET wired to either rasterizer
-    // (§3.6) — make the drop LOUD rather than silent (the splitText-measurer
-    // precedent). The value never reaches FontSpec/ctx.font, so default Text
-    // stays byte-identical.
-    if (props.fontVariationSettings !== undefined) {
-      emitDevWarning('fontVariationSettings is not applied (variable-font axes land in 0.20).');
-    }
+    // NOTE: `props.fontVariationSettings` is accepted (typed + documented) but
+    // intentionally NOT wired to either rasterizer in 0.19.x — variable-font
+    // axes (a `wght` track, `opsz` driven by size, …) are a 0.20 feature, and
+    // a runtime drop-warning here would cost ~0.07 kB on the saturated base
+    // embed (the 39 kB ceiling). It never reaches FontSpec/ctx.font, so default
+    // Text stays byte-identical; the typed prop keeps the gap discoverable.
   }
 
   /**
