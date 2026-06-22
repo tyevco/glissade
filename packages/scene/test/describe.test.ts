@@ -175,6 +175,16 @@ vdescribe('describe() helpers section', () => {
     expect(byName.get('snapshotCanvas')!.import).toBe('@glissade/backend-canvas2d/snapshot');
     expect(byName.get('splitText')!.import).toBe('@glissade/scene/type');
   });
+
+  it('lists Grid + the Stack/Row/Column layout factories on their tree-shaken subpaths (0.20)', () => {
+    const byName = new Map(m.helpers.map((h) => [h.name, h]));
+    expect(byName.get('Grid'), 'Grid missing from helpers').toBeDefined();
+    expect(byName.get('Grid')!.import).toBe('@glissade/scene/grid');
+    for (const n of ['Stack', 'Row', 'Column']) {
+      expect(byName.get(n), `${n} missing from helpers`).toBeDefined();
+      expect(byName.get(n)!.import).toBe('@glissade/scene/layout');
+    }
+  });
 });
 
 vdescribe('describe() docs-honesty', () => {
@@ -228,8 +238,13 @@ vdescribe('describe() construction props', () => {
     }
   });
 
+  it('flags Text.fontVariationSettings as a construction-only string (0.20 variable-font axes)', () => {
+    expect(m.nodes.Text!.props.fontVariationSettings).toEqual({ type: 'string', animatable: false });
+    expect(m.nodes.Text!.props.fontVariationSettings!.target).toBeUndefined();
+  });
+
   it('exposes Text fontFamily/align/anchor as construction-only (animatable:false, no target)', () => {
-    for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight']) {
+    for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight', 'fontVariationSettings']) {
       const prop = m.nodes.Text!.props[p];
       expect(prop, `Text.${p} missing`).toBeDefined();
       expect(prop!.animatable, `Text.${p} must be construction-only`).toBe(false);
@@ -404,6 +419,29 @@ vdescribe('describe() negative space: construction props are not bindable', () =
   it("rejects binding a track on Text 'fontFamily' (construction-only)", () => {
     expect(m.nodes.Text!.props.fontFamily!.target).toBeUndefined();
     expect(bindingRejected(new Text({ id: 'n', fontFamily: 'serif' }), 'fontFamily')).toBe(true);
+  });
+
+  it("rejects binding a track on Text 'fontVariationSettings' with the construction-prop-SPECIFIC message", () => {
+    expect(m.nodes.Text!.props.fontVariationSettings!.target).toBeUndefined();
+    const node = new Text({ id: 'n', fontVariationSettings: "'wght' 700" });
+    const scene = createScene({ size: { w: 10, h: 10 }, children: [node] });
+    const doc = timeline({
+      tracks: [
+        {
+          target: 'n/fontVariationSettings',
+          type: 'string',
+          keys: [
+            { t: 0, value: "'wght' 100" },
+            { t: 1, value: "'wght' 900" },
+          ],
+        } as never,
+      ],
+    });
+    // The bind guard recognizes it as a construction prop and throws the SPECIFIC
+    // message ("...is a construction prop... set it at construction"), NOT the
+    // generic UnboundTargetError.
+    expect(() => bindScene(scene, doc)).toThrow(/construction prop/);
+    expect(() => bindScene(scene, doc)).toThrow(/set it at construction/);
   });
 
   it('confirms every construction-only prop in the manifest has no target', () => {

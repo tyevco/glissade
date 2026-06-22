@@ -109,7 +109,8 @@ export interface ApiManifest {
   /**
    * The curated helper/factory surface (0.20) — `createPlayer`/`mount`,
    * `motionPath`/`followPath`, `clip`/`clipList`, `renderToDataURL`/`snapshotCanvas`,
-   * `splitText`. Every `name` is also a `window.glissade.<name>` global on the IIFE.
+   * `splitText`, `Grid`, and the `Stack`/`Row`/`Column` layout factories. Every
+   * `name` is also a `window.glissade.<name>` global on the IIFE.
    */
   helpers: DescribedHelper[];
   createScene: string;
@@ -184,6 +185,11 @@ const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: Constructi
     fontStyle: { type: "'normal'|'italic'" },
     align: { type: "'left'|'center'|'right'" },
     lineHeight: { type: 'number' },
+    // 0.20 variable-font axes (e.g. "'wght' 700, 'wdth' 80"): an OpenType
+    // fontVariationSettings string threaded to the rasterizer. Set at
+    // construction — a string of axis tuples isn't lerp-able, so it is NOT a
+    // track target (binding it is rejected by the bind guard).
+    fontVariationSettings: { type: 'string' },
   },
   Image: {
     // REQUIRED: an Image references a Timeline asset by id — you cannot
@@ -407,6 +413,35 @@ const HELPERS: DescribedHelper[] = [
       'Split a Text node into per-word / per-char parts you can animate individually (kinetic typography). Tree-shaken off the base scene index.',
     import: '@glissade/scene/type',
     usage: "splitText(text: Text, opts?: { by?: 'word'|'char' }): Node[]",
+  },
+  {
+    name: 'Grid',
+    summary:
+      'Build-time CSS-grid-style track resolver: position plain children into a column grid (fr/px tracks + gaps), returning a Group. Pure fan-out (no Yoga, no new target) — the goldens hold by construction. Tree-shaken off the base scene index.',
+    import: '@glissade/scene/grid',
+    usage:
+      'Grid({ columns: number | (number | { fr })[], children: Node[], gap?, columnGap?, rowGap?, cellHeight?, width? }): Group  —  child[i] → row floor(i/cols), col i%cols',
+  },
+  {
+    name: 'Stack',
+    summary:
+      'Yoga-flexbox layout factory (column by default) — a Layout subclass that stacks children with gap/padding/justify/align. Needs loadYogaLayoutEngine() before mount/render. On the @glissade/scene/layout subpath.',
+    import: '@glissade/scene/layout',
+    usage: "Stack({ children, direction?: 'row'|'column', gap?, padding?, justify?, align? }): Layout",
+  },
+  {
+    name: 'Row',
+    summary:
+      'Yoga-flexbox layout factory pinned to direction:"row" — children laid out horizontally. Needs loadYogaLayoutEngine() before mount/render. On the @glissade/scene/layout subpath.',
+    import: '@glissade/scene/layout',
+    usage: 'Row({ children, gap?, padding?, justify?, align? }): Layout',
+  },
+  {
+    name: 'Column',
+    summary:
+      'Yoga-flexbox layout factory pinned to direction:"column" — children laid out vertically. Needs loadYogaLayoutEngine() before mount/render. On the @glissade/scene/layout subpath.',
+    import: '@glissade/scene/layout',
+    usage: 'Column({ children, gap?, padding?, justify?, align? }): Layout',
   },
 ];
 
