@@ -1,5 +1,50 @@
 # @glissade/browser
 
+## 0.19.0
+
+### Minor Changes
+
+- e9495a6: 0.19: snapshot a rendered frame as a data URL — on a tree-shakeable subpath. A
+  new `@glissade/backend-canvas2d/snapshot` entry exports `snapshotCanvas(canvas |
+Canvas2DBackend, type?, quality?)` — `async`, captures the canvas as a
+  `data:image/png;base64,…` string via `OffscreenCanvas.convertToBlob` (falling
+  back to `HTMLCanvasElement.toDataURL`) — and a top-level `renderToDataURL(scene,
+timeline, t)` convenience that allocates an offscreen target sized to the scene,
+  runs `evaluate → render → snapshotCanvas`, and returns the data URL in one call.
+  It mirrors the `evaluate` overload pair: pass a timeline + time, or omit both
+  for the controlled-drive form (`renderToDataURL(scene)` at the scene's current
+  playhead). An optional `{ type, quality }` bag picks the encoding (default
+  `image/png`).
+
+  This is the "screenshot a frame" DX seam an AI consumer hit (`can't screenshot
+a live canvas`). It is DX/screenshot TOOLING — a no-build playback embed never
+  needs it — so it lives on a SEPARATE subpath (mirroring `@glissade/scene/path`),
+  fully tree-shaken off the base `@glissade/backend-canvas2d` index and thus the
+  base embed budget; a check:size guard asserts the base index excludes the
+  data-URL/encode code. Browser-only by design — `OffscreenCanvas`/`toDataURL`;
+  the headless byte-exact path stays the Skia backend / `gs render` CLI. Importing
+  the subpath in a headless Node env never throws; the browser-only constraint is
+  enforced at call time. `renderToDataURL` (+ `snapshotCanvas`) is re-exported
+  from `@glissade/browser` so it lands on `window.glissade.renderToDataURL` for
+  no-build use.
+
+- e60d55e: Expose `renderToDataURL` / `snapshotCanvas` on the `@glissade/browser` IIFE (`window.glissade.renderToDataURL`). The no-build consumer works only against the single-file bundle, so the screenshot DX helper must be on it to be usable. Browser budget raised 46→47 for the +0.36 kB (the convenience bundle; the base embed stays lean at 38.6/39).
+- 67014b8: Expose `splitText` on the `@glissade/browser` IIFE (`window.glissade.splitText`). The no-build consumer that requested kinetic typography works only against the single-file bundle, so its own feature must be on `window.glissade` (mirrors `pathFromSvg`). +0.44 kB, within the 47 kB browser budget. (Stack/Row/Column stay npm-only — they pull Yoga.)
+
+### Patch Changes
+
+- Updated dependencies [6124d7f]
+- Updated dependencies [bf0d4e8]
+- Updated dependencies [56eb184]
+- Updated dependencies [e9495a6]
+- Updated dependencies [fc58403]
+- Updated dependencies [02968bd]
+  - @glissade/scene@0.19.0
+  - @glissade/core@0.19.0
+  - @glissade/backend-canvas2d@0.19.0
+  - @glissade/element@0.19.0
+  - @glissade/player@0.19.0
+
 ## 0.19.0-pre.5
 
 ### Patch Changes

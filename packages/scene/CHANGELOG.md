@@ -1,5 +1,75 @@
 # @glissade/scene
 
+## 0.19.0
+
+### Minor Changes
+
+- 6124d7f: 0.19: bless controlled/imperative drive mode. Add an `evaluate(scene)` overload
+  (no timeline argument) as the first-class entry point for a host that owns the
+  clock and the values — drive nodes imperatively with `node.set(...)` between
+  frames and render, with no timeline to compile. It evaluates against an empty
+  timeline at the scene's current playhead, so imperative sets survive untouched
+  into the DisplayList.
+
+  The precedence contract is now documented and regression-tested: a live timeline
+  track always overrides `set(...)` on the property it targets (last writer wins),
+  per property — so a timeline can own the animated props while the host drives
+  the rest by hand. See the new `docs/controlled-drive.md` recipe.
+
+- bf0d4e8: 0.19 builder sugar — three additive, pure build-time slices that compile to the serializable Timeline document (goldens stay byte-identical):
+
+  - **Unknown builder options now throw** (`k-g1zn`). `to` / `fromTo` / `set` / `stagger` validate their options object against a known-key allow-list and throw a `TimelineValidationError` naming the offending key(s) and the method, instead of silently swallowing it. Known keys: `to`/`fromTo` → `duration`, `ease`, `at`, `from`; `set` → `at`; `stagger` spec → `to`, `from`, `duration`, `ease`; `stagger` opts → `each`, `anchor`, `at`. **Mildly breaking:** stray keys that were previously ignored now fail loudly at build time.
+  - **Per-target `stagger` spec values** (`ppCUmU`). `StaggerSpec.to` and `.from` now accept a function `(index, count) => value` resolved per target (a runtime `typeof` branch, consistent with `each` and scene `each()`), so a per-target-destination cascade is expressible. A plain value still fans uniformly. Emits N ordinary tweens, byte-identical to hand-authored.
+  - **`tl.tracks(tracks)`** (`Isuo8Gxn`) — a fluent bridge for the clip tier. Inject the pre-built `Track[]` returned by `presence`/`clip`/`each`/`morph` straight into the document; they land as ordinary absolute-time track rows via the same finalize→coalesce path `add()` uses for child tracks. Scoped to raw absolute-time tracks (no cursor-offset/rebasing wrapper).
+
+  `@glissade/scene`'s `describe()` manifest is updated in lockstep: the new `tracks` builder method is listed and the `stagger` signature reflects the `to`/`from` function form.
+
+- 56eb184: 0.19: kinetic typography — `Text.revealFraction` + `splitText` sub-targets (scJv, x-YTLQ).
+
+  - **`Text.revealFraction`** (0..1): pure count-rounding sugar over the shipped
+    `reveal` grapheme count — `count = round(fraction * graphemeCount)`, resolved
+    against the SAME grapheme stream and feeding the identical masked-emit path.
+    Animatable (`'<id>/revealFraction'`), overrides `reveal` when set; unset (the
+    default) is byte-identical to a Text without it, so every existing golden is
+    unchanged. Whole-grapheme only — the sub-grapheme clip-wipe/softness is out of
+    scope.
+
+  - **`splitText(text, { by: 'word' | 'line' | 'grapheme' })`** on a NEW
+    tree-shaken `@glissade/scene/type` subpath: a pure build-time expansion (like
+    `each()`) of a Text into a `Group` of positioned, independently addressable
+    per-part child Texts (ids `${id}/[i]`) — stagger a word-by-word reveal,
+    scatter graphemes, etc. STATIC snapshot of the source's laid-out geometry and
+    REPLACE-the-source semantics. Backed by a new `Text.graphemeBoxes()` (the
+    per-grapheme analogue of `wordBoxes()`, boundaries matching the draw path).
+    ZERO base-embed cost.
+
+- 02968bd: 0.19 pre.5 — splitText part-handle ergonomics + a forgiving `tl.tracks` (no render change; the 262 goldens stay byte-identical — this is API shape + docs):
+
+  - **`SplitPart.id`** (`@glissade/scene/type`). Each part now carries `id` — the child node's registered `${id}/${i}` (the SAME string the child `Text` was constructed with). The advertised kinetic-typography recipe `parts.map((p) => `${p.id}/revealFraction`)` now works verbatim instead of yielding `undefined/revealFraction` (the part shape was previously `{ text, node, line, box }` with no `id`, so the headline split→stagger recipe couldn't bind).
+  - **`SplitTextResult.targets(prop)`** — returns the bind-ready ids `[`${id}/0/${prop}`, `${id}/1/${prop}`, …]` in reading order, so the recipe is one line: `tl.stagger(split.targets('revealFraction'), { from: 0, to: 1 }, { each: 0.1 })`.
+  - **`tl.tracks` accepts a clip-tier RESULT object** (`@glissade/core`). `tl.tracks(presence(...))` previously threw "{} is not iterable" — you had to pass `.tracks`. It now accepts both a raw `Track[]` and a `{ tracks: Track[] }` result (presence/clip/each/morph all return the object), unwrapping `.tracks` for you.
+  - **Docs:** `docs/typewriter.md` shows the `split.targets('revealFraction')` + `part.id` recipe and that `{ measurer }` is required for exact layout; `docs/browser.md` states `renderToDataURL` returns a `Promise<string>` (await it).
+
+### Patch Changes
+
+- fc58403: 0.19: fix `splitText()` part drift when no real text measurer is available
+  (o_aLYFFPjFDf). `splitText` snapshots part geometry at build time; with no
+  backend measurer injected (split before `setTextMeasurer`, no `{ measurer }`
+  passed) it fell back to a rough per-character estimate whose error accumulates
+  left-to-right — so a consumer who split before wiring the backend got visibly
+  drifted parts, silently.
+
+  `splitText` (and the `Text.wordBoxes`/`graphemeBoxes`/`lineBoxes` it builds on)
+  now emit a one-shot dev-warning when they resolve to the estimating fallback,
+  naming the fix: pass `{ measurer: backend }` or split after `setTextMeasurer()`/
+  `setDefaultMeasurer()`. The estimate is no longer silent. No behavior change when
+  a real measurer is in play — exact layout was always available, this surfaces the
+  footgun and documents the contract.
+
+- Updated dependencies [bf0d4e8]
+- Updated dependencies [02968bd]
+  - @glissade/core@0.19.0
+
 ## 0.19.0-pre.5
 
 ### Minor Changes
