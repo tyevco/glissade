@@ -22,6 +22,7 @@ export default defineConfig({
       '@glissade/scene/describe': src('scene').replace('index.ts', 'describe.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),
       '@glissade/scene/diagnostics': src('scene').replace('index.ts', 'diagnostics.ts'),
+      '@glissade/scene/tokens': src('scene').replace('index.ts', 'tokens.ts'),
       '@glissade/scene/motion': src('scene').replace('index.ts', 'motion.ts'),
       '@glissade/backend-canvas2d/snapshot': src('backend-canvas2d').replace('index.ts', 'snapshot.ts'),
       '@glissade/core': src('core'),

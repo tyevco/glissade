@@ -61,6 +61,16 @@ export { Grid } from '@glissade/scene/grid';
 // single-file convenience bundle MUST re-export it here so it lands on
 // window.glissade — mirroring pathFromSvg / splitText.
 export { followPath, motionPath, pointAtLength, pathLength, FollowPath } from '@glissade/scene/motion';
+// `tokenHighlight` (the PRODUCTION token-highlight render component — visible
+// sub-line token tell-tags) lives on the tree-shakeable `@glissade/scene/tokens`
+// subpath (off the base scene index for the scene budget; the ai-training finding
+// split it OUT of /diagnostics so visible-UI rendering no longer reads as a debug
+// import). It is a USER-FACING render component, so it WOULD be a natural
+// window.glissade.* citizen alongside splitText / Grid / motionPath — but
+// re-exporting it here measured +1.16 kB gz (47.47 → 48.63), busting the 48 kB
+// IIFE ceiling. So tokenHighlight is npm-subpath-only (`@glissade/scene/tokens`)
+// and is NOT on the convenience bundle; a no-build author reaches it via an npm
+// import. (If the IIFE budget is later raised, this is the place to add it.)
 // The machine-readable API manifest (0.18) lives on the tree-shakeable
 // `@glissade/scene/describe` subpath (off the base scene index). The single-file
 // convenience bundle SHOULD expose it for discoverability, so re-export it here —

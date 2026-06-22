@@ -16,6 +16,7 @@ export default defineConfig({
     'src/describe.ts',
     'src/type.ts',
     'src/diagnostics.ts',
+    'src/tokens.ts',
     'src/motion.ts',
     'src/identity.ts',
   ],

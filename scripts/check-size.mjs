@@ -109,7 +109,8 @@ const BUDGETS = {
   'scene/layoutCtors': 4, // 0.20 no-build layout split (npm subpath `@glissade/scene/layout-ctors`; the budget key matches the dist filename layoutCtors.js): the Yoga-FREE node ctors (Layout/Stack/Row/Column) — they touch the LayoutEngine seam (requireLayoutEngine/setLayoutEngine) only at COMPUTE time, never `import('yoga-layout/load')` at construction. Split off the loader so the @glissade/browser IIFE can expose Stack/Row/Column WITHOUT inlining Yoga's wasm. Standalone bundle inlines the same-package node/displayList helpers it computes through (the @glissade/* external only catches CROSS-package deps); the ctors' own surface is ~1 kB. The "browser IIFE excludes yoga binding" guard verifies the no-inline.
   'scene/grid': 4, // 0.20 Grid (Fork B: scene-side track resolver): a build-time fan-out like each()/splitText — resolves uniform fr/fixed column tracks + gaps into cell positions and emits a Group of ordinary positioned children (stamps NO id, changes NO golden). NOT a Yoga feature — zero layout-engine dep. Ships ONLY on this separate entry, never the base scene index. Standalone bundle inlines the same-package Group/node helpers it constructs through; Grid's own arithmetic surface is ~0.6 kB.
   'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
-  'scene/diagnostics': 7, // 0.20: the §3.3 DEV/CLI determinism-diagnostic surface — diffDisplayLists / formatDisplayDiff / serializeDisplayList / parseDisplaySnapshot, auditCacheCold, and tokenHighlight. Side-effect-free, NEVER reached by evaluate(); relocated off the base scene index in the 0.20 budget review onto this tree-shakeable subpath. (`collapseReplacer` — the byte-preserving §3.5 cacheKey replacer — is the one piece on the render path; it stays in collapseReplacer.ts on the base index and is re-exported here.) The standalone bundle inlines the same-package displayList/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.4 kB is mostly that shared path; base scene stays diagnostics-free (asserted by the metafile guard below).
+  'scene/diagnostics': 7, // 0.20: the §3.3 DEV/CLI determinism-diagnostic surface — diffDisplayLists / formatDisplayDiff / serializeDisplayList / parseDisplaySnapshot, auditCacheCold. Side-effect-free, NEVER reached by evaluate(); relocated off the base scene index in the 0.20 budget review onto this tree-shakeable subpath. DEBUG-ONLY (tokenHighlight, a PRODUCTION render component, was split back out onto scene/tokens by the ai-training finding — it no longer rides this debug subpath). (`collapseReplacer` — the byte-preserving §3.5 cacheKey replacer — is the one piece on the render path; it stays in collapseReplacer.ts on the base index and is re-exported here.) The standalone bundle inlines the same-package displayList/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared path; base scene stays diagnostics-free (asserted by the metafile guard below).
+  'scene/tokens': 7, // 0.20 (ai-training finding): tokenHighlight / TokenHighlight — the PRODUCTION token-highlight render component (visible sub-line token tell-tags in real episodes: four-color category passes, per-token flips). It was MIS-grouped onto scene/diagnostics by the budget review (reading as a debug import for visible UI); split back out onto this OWN production subpath. Still OFF the base scene index (opt-in production UI only token-highlight scenes import — base embed unchanged). npm-subpath-only: re-exporting it onto the @glissade/browser IIFE measured +1.16 kB gz (47.47 → 48.63), busting the 48 kB ceiling, so it is NOT on the convenience bundle (a no-build author imports the npm subpath). The standalone bundle inlines the same-package Text/node/roundedRect helpers it draws through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared render-construction path, not tokenHighlight's own surface; base scene stays tokens-free (asserted by the metafile guard below).
   'scene/motion': 7, // 0.20: the §3 motion-path follow helper — followPath / motionPath / pointAtLength / pathLength. A USER-FACING opt-in (the design agent reaches for window.glissade.motionPath), but NOT on the base evaluate/render path — only path-following scenes import it. Relocated off the base scene index onto this tree-shakeable subpath in the 0.20 budget review, and re-exported onto the @glissade/browser IIFE so window.glissade.motionPath survives. The standalone bundle inlines the same-package Path/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.3 kB is mostly that shared node-construction path, not motionPath's own surface; base scene stays motion-free (asserted by the metafile guard below).
   'scene/identity': 7, // 0.20 S1 (DOM-backend readiness): the OUT-OF-BAND node-identity producer — emitWithIds() + the instrumented DisplayListBuilder that records a positional NodeIdStream ALONGSIDE the DisplayList (docs/design/dom-backend.md "Seam 1"). OPT-IN and OFF by default: the normal evaluate/render never touches it, and Node.emit's enterNode/exitNode calls are guarded no-ops on createDisplayListBuilder, so every DrawCommand stays byte-identical. Ships ONLY on this separate entry (@glissade/scene/identity), never the base scene index — ZERO base-scene cost, mirroring diagnostics/motion/grid. The standalone bundle inlines the same-package scene/displayList/node helpers it evaluates through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared evaluate path, not emitWithIds's own ~0.5 kB. base scene stays identity-free (asserted by the metafile guard below).
   'scene/type': 5, // 0.19: splitText() — build-time split-text sub-targets (word/line/grapheme → a Group of positioned per-part child Texts). Ships ONLY on this separate entry, never the base scene index — ZERO base-scene cost, mirroring each()/scene/layout/scene/path. The standalone bundle inlines the same-package Text/Group/measurement helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared node-construction path, not splitText's own ~1 kB.
@@ -246,19 +247,34 @@ if (!typeOk) failed = true;
 console.log(`${typeOk ? 'ok  ' : 'FAIL'} base scene excludes splitText${typeOk ? '' : ` (leaked: ${typeInBase.join(', ')})`}`);
 
 // 0.20 guard: the base scene bundle must NOT pull in the DEV/CLI diagnostic
-// cluster — diffDisplayLists/serializeDisplayList (displayDiff.ts), auditCacheCold
-// (cacheColdAudit.ts), or tokenHighlight (tokenHighlight.ts) — it's the
-// separately-budgeted @glissade/scene/diagnostics entry. None is reached by
-// evaluate(); a stray re-import onto the base index would silently re-bloat the
-// embed (that's exactly how the base crept to 38.79). `collapseReplacer.ts` (the
-// §3.5 cacheKey replacer) is the ONE render-path member and is EXEMPT — it stays
-// on the base index by design. Assert the rest stay off via the metafile.
+// cluster — diffDisplayLists/serializeDisplayList (displayDiff.ts) or
+// auditCacheCold (cacheColdAudit.ts) — it's the separately-budgeted
+// @glissade/scene/diagnostics entry. None is reached by evaluate(); a stray
+// re-import onto the base index would silently re-bloat the embed (that's exactly
+// how the base crept to 38.79). `collapseReplacer.ts` (the §3.5 cacheKey replacer)
+// is the ONE render-path member and is EXEMPT — it stays on the base index by
+// design. Assert the rest stay off via the metafile.
 const diagInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) =>
-  /scene\/(src|dist)\/(displayDiff|cacheColdAudit|tokenHighlight|diagnostics)\./.test(i),
+  /scene\/(src|dist)\/(displayDiff|cacheColdAudit|diagnostics)\./.test(i),
 );
 const diagOk = diagInBase.length === 0;
 if (!diagOk) failed = true;
 console.log(`${diagOk ? 'ok  ' : 'FAIL'} base scene excludes diagnostics${diagOk ? '' : ` (leaked: ${diagInBase.join(', ')})`}`);
+
+// 0.20 guard (ai-training finding): the base scene bundle must NOT pull in the
+// PRODUCTION token-highlight render component (tokenHighlight.ts) — it's the
+// separately-budgeted @glissade/scene/tokens entry (opt-in production UI,
+// re-exported onto the browser IIFE). It was split back out of /diagnostics so a
+// visible-UI render component no longer reads as a debug import. The base index
+// never imports it, so assert via the metafile that tokenHighlight.ts (and its
+// tokens.ts barrel) stay off the base graph — the diagnostics/motion/grid
+// exclusion shape. A stray re-import would silently re-bloat the embed.
+const tokensInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) =>
+  /scene\/(src|dist)\/(tokenHighlight|tokens)\./.test(i),
+);
+const tokensOk = tokensInBase.length === 0;
+if (!tokensOk) failed = true;
+console.log(`${tokensOk ? 'ok  ' : 'FAIL'} base scene excludes tokens${tokensOk ? '' : ` (leaked: ${tokensInBase.join(', ')})`}`);
 
 // 0.20 guard: the base scene bundle must NOT pull in the motion-path follow
 // helper (motionPath.ts / motion.ts) — it's the separately-budgeted

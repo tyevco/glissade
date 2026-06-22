@@ -104,10 +104,12 @@ export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from
 // `collapseReplacer` — the byte-preserving §3.5 cacheKey serializer — lives on
 // the render path (displayList.ts) so it stays on the base index. The heavier
 // DEV/CLI diagnostic surface that used to ride alongside it (diffDisplayLists /
-// serializeDisplayList / auditCacheCold / tokenHighlight) moved to the
-// tree-shakeable `@glissade/scene/diagnostics` subpath in the 0.20 budget review,
-// off the base-embed budget. See scripts/check-size.mjs guard
-// `base scene excludes diagnostics`.
+// serializeDisplayList / auditCacheCold) moved to the tree-shakeable
+// `@glissade/scene/diagnostics` subpath in the 0.20 budget review, off the
+// base-embed budget. The PRODUCTION token-highlight render component
+// (`tokenHighlight`) is its OWN subpath `@glissade/scene/tokens` (the ai-training
+// finding — it draws visible UI, not a debug surface). See scripts/check-size.mjs
+// guards `base scene excludes diagnostics` / `base scene excludes tokens`.
 export { collapseReplacer } from './collapseReplacer.js';
 export {
   ALL_FILTER_KINDS,
