@@ -1,6 +1,6 @@
 {
   "name": "@glissade/player",
-  "version": "0.20.0-pre.5",
+  "version": "0.20.0-pre.6",
   "description": "glissade embed runtime: Player, Drivers (clock, scroll), mount().",
   "license": "Apache-2.0",
   "engines": {
