@@ -5,14 +5,19 @@
  */
 
 import { buildFontRegistry, compileTimeline, type Timeline } from '@glissade/core';
-import { evaluate, validateSceneFonts, type Scene } from '@glissade/scene';
+import { evaluate, validateSceneFonts, type RenderBackend, type Scene } from '@glissade/scene';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { createPlayer, type Player, type PlayerOptions } from './player.js';
 import { planReducedMotion, mediaPrefersReducedMotion } from './reducedMotion.js';
 
 export interface Mounted {
   player: Player;
-  backend: Canvas2DBackend;
+  /**
+   * The live render backend. `Canvas2DBackend` by default; the abstract
+   * `RenderBackend` contract when an `opts.backend` factory was injected
+   * (dom-backend memo, Seam 2).
+   */
+  backend: RenderBackend;
   /** Force a synchronous render of the current playhead time. */
   render(): void;
   /**
@@ -38,7 +43,12 @@ export function mount(
   let scene = initialScene;
   let doc = initialDoc;
   const compiled = compileTimeline(doc);
-  const backend = new Canvas2DBackend(canvas);
+  // Backend-injection seam (dom-backend memo, Seam 2): construct via the
+  // injected factory when supplied, else default to Canvas2DBackend — keeping
+  // every existing call site and player's static deps unchanged. This is the
+  // single explicit point a future @glissade/backend-dom plugs into without
+  // forking the mount body.
+  const backend: RenderBackend = opts.backend ? opts.backend(canvas) : new Canvas2DBackend(canvas);
   scene.setTextMeasurer(backend); // §3.2: break lines with the drawing rasterizer
   const playhead = scene.playhead;
   const player = createPlayer(

@@ -6,6 +6,7 @@
  */
 
 import { signal, type Marker, type Playhead, type ReadonlySignal } from '@glissade/core';
+import type { RenderBackend } from '@glissade/scene';
 import { clockDriver, type Driver } from './driver.js';
 import type { ReducedMotionMode } from './reducedMotion.js';
 
@@ -38,6 +39,16 @@ export interface PlayerOptions {
   strictFonts?: boolean;
   /** OS-installed families to treat as registered for strict mode. */
   osFonts?: ReadonlySet<string>;
+  /**
+   * Backend-injection seam (dom-backend memo, Seam 2 — the S3 foundation). A
+   * factory that builds the `RenderBackend` mount() drives, given the render
+   * target. Defaults to `Canvas2DBackend`, so EVERY existing call site is
+   * byte-for-byte unchanged and the static `player → backend-canvas2d`
+   * dependency stands. The caller ABOVE player (element/react/an app) injects
+   * an alternative target (e.g. a future `@glissade/backend-dom`) here without
+   * forking the mount body — player itself gains no new static backend dep.
+   */
+  backend?: (target: HTMLCanvasElement | OffscreenCanvas) => RenderBackend;
 }
 
 export interface PlayHandle {

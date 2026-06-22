@@ -4,10 +4,10 @@
 
 ```ts
 
-import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { Marker } from '@glissade/core';
 import { Playhead } from '@glissade/core';
 import { ReadonlySignal } from '@glissade/core';
+import { RenderBackend } from '@glissade/scene';
 import { Scene } from '@glissade/scene';
 import { Timeline } from '@glissade/core';
 
@@ -56,8 +56,7 @@ export function mount(initialScene: Scene, initialDoc: Timeline, canvas: HTMLCan
 
 // @public (undocumented)
 export interface Mounted {
-    // (undocumented)
-    backend: Canvas2DBackend;
+    backend: RenderBackend;
     // (undocumented)
     dispose(): void;
     // (undocumented)
@@ -120,6 +119,7 @@ export interface PlayerInit {
 export interface PlayerOptions {
     // (undocumented)
     autoplay?: boolean;
+    backend?: (target: HTMLCanvasElement | OffscreenCanvas) => RenderBackend;
     background?: 'pause' | 'run';
     // (undocumented)
     loop?: LoopMode;

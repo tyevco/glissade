@@ -13,6 +13,20 @@ const { player } = mount(scene, doc, canvas, { loop: true, autoplay: true });
 player.seek(1.5); // pure: identical to having played there
 ```
 
+### Custom render backend
+
+`mount()` rasterizes through `Canvas2DBackend` by default. To drive a different
+`RenderBackend` (e.g. a future `@glissade/backend-dom` preview renderer), pass a
+factory as `opts.backend` — it receives the mount target and returns the backend:
+
+```ts
+mount(scene, doc, canvas, { backend: (target) => new MyBackend(target) });
+```
+
+Omit it and the default `Canvas2DBackend` is used, so every existing call site is
+unchanged. This is the single injection seam: `@glissade/player` never statically
+imports a non-default backend — the caller above it supplies the alternative.
+
 ## Part of glissade
 
 *(glide & slide)* — programmatic motion graphics for TypeScript: realtime-first in any web page, deterministic headless video export from the same code, a visual studio over the same document. No generator functions.

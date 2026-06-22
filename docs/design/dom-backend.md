@@ -163,6 +163,17 @@ deps, preserving the "embed path never transitively imports a non-default backen
 promise. The one real change is the new map entry for the backend package itself.
 No refactor lands in this memo; this records the direction.
 
+**Status update (0.20).** The injection param itself has now shipped as the S3
+*foundation*: `PlayerOptions.backend?: (target) => RenderBackend` is live in
+`@glissade/player` (`mount.ts` constructs `opts.backend(canvas)` when supplied,
+else `new Canvas2DBackend(canvas)`), and `Mounted.backend` widened to the
+abstract `RenderBackend`. The default is byte-for-byte unchanged — all 262
+goldens stay byte-identical, `check-deps` is unchanged (player added no static
+backend import; the param's type is the abstract contract, not any DOM backend),
+and the base embed budget is unchanged. What remains for S3 is the *caller* (the
+real `@glissade/backend-dom` package + the cross-frame reconciler); the seam they
+plug into now exists.
+
 ## Seam 3 — parity: PREVIEW / NON-PARITY
 
 There is no canvas in a DOM/SVG renderer, so **both** parity guarantees are moot:
@@ -200,7 +211,7 @@ suites, but that is "looks plausible", never "matches Skia".
 | **S0 — this memo + spike** | Resolve the three seams; prove out-of-band identity stamping with a throwaway read-only renderer over a fixed DisplayList | Memo merged; jsdom spike test green; zero golden/embed impact |
 | **S1 — the identity stream** | Add the opt-in instrumented-emit producer of `NodeIdStream` in `scene` (off by default; canvas/export untouched), with a determinism test that the stream is stable across re-emits | DisplayList bytes unchanged (goldens frozen); id stream stable + positional |
 | **S2 — `@glissade/backend-dom` (forward render)** | A real package implementing `RenderBackend` (incl. `measureText` via DOM measurement) for the full op set (clip, strokePath, drawImage, pushGroup/popGroup → nested SVG groups/`<foreignObject>`); new §7.1 map entry `backend-dom: ['core','scene']` | A scene renders to a correct DOM tree; structural test suite green |
-| **S3 — injection + reconciliation** | The `mount({ backend })` param (Seam 2); a cross-frame retained-DOM reconciler keyed on `(data-node-id, op)` consuming the S1 stream | A scene mounts with the DOM backend and scrubs by patching, not rebuilding; `check-deps` green with player's allow-list unchanged |
+| **S3 — injection + reconciliation** | The `mount({ backend })` param (Seam 2) — **landed in 0.20**, `Canvas2DBackend` default unchanged; remaining: a cross-frame retained-DOM reconciler keyed on `(data-node-id, op)` consuming the S1 stream | A scene mounts with the DOM backend and scrubs by patching, not rebuilding; `check-deps` green with player's allow-list unchanged |
 | **S4 — a11y + CSS-native polish** | Selectable text, focus order, CSS-variable theming of fills/strokes; real-browser visual-smoke gate | a11y smoke passes; documented as preview/non-parity |
 
 ## Open questions that remain
