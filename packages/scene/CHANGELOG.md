@@ -1,5 +1,72 @@
 # @glissade/scene
 
+## 0.20.0-pre.1
+
+### Minor Changes
+
+- 0f5b066: 0.20: `describe()` helpers section (createPlayer/motionPath/clip/renderToDataURL/splitText)
+
+  `glissade.describe()` already surfaced nodes, props, value types, easings, the
+  timeline builder, `createScene`, and the tree-shakeable subpaths — but NOT the
+  broader helper/factory API. An AI/agent consumer that discovers the surface by
+  introspecting the manifest (not the website) would never find `createPlayer`,
+  `motionPath`/`followPath`, `clip`/`clipList`, `renderToDataURL`/`snapshotCanvas`,
+  or `splitText`, even though all of them work.
+
+  The manifest now carries a curated **`helpers`** array (`ApiManifest.helpers:
+DescribedHelper[]`), one entry per helper with a `name` (also the
+  `window.glissade.<name>` global on the IIFE), a one-line `summary`, the npm
+  `import` subpath, and a minimal `usage` string. Copy is kept verbatim with
+  `docs/discovery.md`.
+
+  `scene` can't import `player`/`backend-canvas2d` (they live above it in the dep
+  graph), so this is a hand-kept literal — drift-guarded two ways: scene's
+  `describe.test.ts` pins the structure + the npm import paths, and
+  `@glissade/browser`'s smoke test (above scene, importing the whole IIFE surface)
+  asserts every `describe().helpers[*].name` resolves to a real
+  `window.glissade.<name>` function.
+
+  `describe` stays on the tree-shaken `@glissade/scene/describe` subpath, so the
+  base embed is unchanged (34.93 kB gz). The committed `glissade.api.json` is
+  regenerated to include the new section.
+
+- 1bd4507: 0.20: no-build layout split (Stack/Row/Column on the IIFE, Yoga stays async) + Grid (Fork B: scene/grid track resolver)
+
+  Two layout slices, both build-time / off-render (the 262 goldens stay byte-identical).
+
+  **No-build layout split.** The Yoga-free layout node ctors (`Layout`/`Stack`/
+  `Row`/`Column`) moved onto a new tree-shakeable `@glissade/scene/layout-ctors`
+  subpath, split off the Yoga loader (`loadYogaLayoutEngine`, now in its own
+  module). The ctors only touch the LayoutEngine seam at _compute_ time, never
+  `import('yoga-layout/load')` at construction, so the single-file
+  `@glissade/browser` IIFE can now expose `glissade.Stack`/`Row`/`Column`/`Layout`
+  **without inlining Yoga's wasm** (the loader's dynamic import is externalized in
+  the IIFE build, keeping the bundle at ~45.3 kB gz instead of ~99). A no-build
+  page must still `await glissade.loadYogaLayoutEngine()` (with a module resolver
+  for `yoga-layout/load`) before evaluating a layout scene, else the first compute
+  throws `LayoutEngineMissingError`.
+
+  `@glissade/scene/layout` is **unchanged for existing importers** — it now
+  re-exports the ctors plus the loader, so `import { Stack, loadYogaLayoutEngine }
+from '@glissade/scene/layout'` keeps working exactly as before.
+
+  **Grid.** New `Grid({ columns, gap, … })` on a tree-shakeable
+  `@glissade/scene/grid` subpath (and `glissade.Grid` on the IIFE). A pure
+  build-time fan-out — like `each()`/`splitText()`, **not** a Yoga feature: it
+  resolves uniform `fr` / fixed-px column tracks + gaps into cell positions, moves
+  each child to its cell center via the ordinary `position` signal, and wraps them
+  in a `Group`. No layout engine, no id stamping, nothing at play time — so it
+  works in a bare no-build page and composes with the goldens by construction.
+  Position-only in v1 (cell `stretch` / sizing deferred); `fr` columns need an
+  explicit `width`, multi-row grids need a `cellHeight` row pitch.
+
+  Both stay off the base embed (still 34.93 kB gz); the IIFE budget is unchanged
+  at 47 kB. See `docs/layout.md` for the no-build and Grid recipes.
+
+### Patch Changes
+
+- @glissade/core@0.20.0-pre.1
+
 ## 0.20.0-pre.0
 
 ### Minor Changes
