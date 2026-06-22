@@ -31,6 +31,7 @@
     "0_20-mount-backend-injection",
     "0_20-no-build-layout-split-and-grid",
     "0_20-node-id-stream-identity-producer",
+    "0_20-tokenhighlight-tokens-subpath",
     "0_20-variable-font-passthrough",
     "construction-prop-bind-error"
   ]
