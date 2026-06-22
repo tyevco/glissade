@@ -212,14 +212,18 @@ export function getTimelineCallbacks(doc: Timeline): ReadonlyMap<string, () => v
 
 export function buildTimeline(
   build: (tl: TimelineBuilder) => void,
-  init: Omit<TimelineInit, 'tracks' | 'children' | 'markers'> = {},
+  init: Omit<TimelineInit, 'children' | 'markers'> = {},
 ): Timeline {
   const insertions: Insertion[] = [];
-  // Pre-built tracks injected via tl.tracks() (the clip-tier bridge, Isuo8Gxn).
-  // They carry absolute keyframe times; they land as ordinary track rows after
-  // the finalize-emitted builder tracks, so compileTimeline's coalesce() merges
-  // same-target rows later-wins (the same path add()'s child tracks take).
-  const injectedTracks: Track[] = [];
+  // Pre-built tracks injected via tl.tracks() (the clip-tier bridge, Isuo8Gxn)
+  // OR via init.tracks (KMu5GL1DvFms — was a silent no-op, now honored). Both
+  // carry absolute keyframe times; they land as ordinary track rows AFTER the
+  // finalize-emitted builder tracks, so compileTimeline's coalesce() merges
+  // same-target rows later-wins (the same path add()'s child tracks take). Seed
+  // from init.tracks first so a builder-method tl.tracks() row at a shared target
+  // still coalesces later-wins over it (the explicit builder call is the "later"
+  // word). A spread copy keeps the caller's array unmutated.
+  const injectedTracks: Track[] = init.tracks !== undefined ? [...init.tracks] : [];
   const labels: Record<string, number> = { ...init.labels };
   const children: (ChildEntry & { _pos: Position | undefined })[] = [];
   const markers: Marker[] = [];
@@ -551,11 +555,11 @@ export function buildTimeline(
 export function timeline(init: TimelineInit): Timeline;
 export function timeline(
   build: (tl: TimelineBuilder) => void,
-  init?: Omit<TimelineInit, 'tracks' | 'children' | 'markers'>,
+  init?: Omit<TimelineInit, 'children' | 'markers'>,
 ): Timeline;
 export function timeline(
   arg: TimelineInit | ((tl: TimelineBuilder) => void),
-  init?: Omit<TimelineInit, 'tracks' | 'children' | 'markers'>,
+  init?: Omit<TimelineInit, 'children' | 'markers'>,
 ): Timeline {
   return typeof arg === 'function' ? buildTimeline(arg, init) : makeTimeline(arg);
 }

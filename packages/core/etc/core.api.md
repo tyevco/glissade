@@ -114,7 +114,7 @@ export interface BoundTimeline {
 export function buildFontRegistry(assets?: Record<string, AssetRef> | undefined): FontRegistry;
 
 // @public (undocumented)
-export function buildTimeline(build: (tl: TimelineBuilder) => void, init?: Omit<TimelineInit, 'tracks' | 'children' | 'markers'>): Timeline;
+export function buildTimeline(build: (tl: TimelineBuilder) => void, init?: Omit<TimelineInit, 'children' | 'markers'>): Timeline;
 
 // @public (undocumented)
 export interface CheckpointedBakeConfig<W, S = W> extends BakeConfig<W> {
@@ -688,7 +688,7 @@ export interface Timeline {
 export function timeline(init: TimelineInit): Timeline;
 
 // @public (undocumented)
-export function timeline(build: (tl: TimelineBuilder) => void, init?: Omit<TimelineInit, 'tracks' | 'children' | 'markers'>): Timeline;
+export function timeline(build: (tl: TimelineBuilder) => void, init?: Omit<TimelineInit, 'children' | 'markers'>): Timeline;
 
 // @public (undocumented)
 export interface TimelineBuilder {

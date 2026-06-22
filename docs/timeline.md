@@ -125,6 +125,19 @@ The injected tracks carry their **own absolute keyframe times** — `tl.tracks` 
 
 > **In the no-build `@glissade/browser` IIFE:** `presence`/`clip`/`each`/`morph` are on `window.glissade`, and `tl.tracks(...)` is available on the fluent builder there too — or compose `.tracks` into a Timeline-document literal as shown above. This is the same "compose at build time" boundary as `@glissade/scene/layout` — the functions run, you assemble the document.
 
+You can also seed the same pre-built tracks through the builder's **second argument** — `timeline(fn, { tracks })` injects them exactly where `tl.tracks(...)` does (same finalize→coalesce path, no cursor move):
+
+```ts
+timeline(
+  (tl) => {
+    tl.to('box/x', 1, { duration: 1 });
+  },
+  { tracks: presence('card', { window: [1, 3], enter: { opacity: [0, 1] } }).tracks },
+);
+```
+
+`init.tracks` lands first; a `tl.tracks(...)` call inside the body coalesces later-wins over it at a shared target. (The object/document form `timeline({ tracks, fps, duration })` carries its tracks the same way.)
+
 ## Why this is data, not code
 
 Every composition method emits plain `ChildEntry` rows (or, for the clip tier, plain `Track` rows) you compose into the document. There are no generators and no promise-chained sequencing: the result is the same JSON you could have written by hand, so seek behaves identically to play-through and the whole timeline stays serializable, diffable, and editable in the studio.

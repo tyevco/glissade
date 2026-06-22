@@ -919,3 +919,49 @@ describe('Isuo8Gxn: tl.tracks(tracks) — the clip-tier bridge', () => {
     expect(byResult.tracks).toEqual(byArray.tracks);
   });
 });
+
+describe('KMu5GL1DvFms: builder-form init.tracks is applied, not silently dropped', () => {
+  it('applies init.tracks passed via timeline(fn, { tracks }) — no longer a silent no-op', () => {
+    const t = track('cap/opacity', 'number', [key(0, 0), key(1, 1)]);
+    const doc = timeline(() => {}, { tracks: [t] });
+    expect(doc.tracks.find((x) => x.target === 'cap/opacity')).toEqual(t);
+  });
+
+  it('an init.tracks doc deep-equals a tl.tracks([t]) doc (both injection paths agree)', () => {
+    const t = track('cap/opacity', 'number', [key(0, 0), key(1, 1)]);
+    const viaInit = timeline(() => {}, { tracks: [t] });
+    const viaBuilder = timeline((tl) => {
+      tl.tracks([t]);
+    });
+    expect(viaInit).toEqual(viaBuilder);
+  });
+
+  it('init.tracks composes alongside builder-emitted tracks in the same call', () => {
+    const t = track('cap/opacity', 'number', [key(0, 0), key(1, 1)]);
+    const doc = timeline(
+      (tl) => {
+        tl.to('box/x', 1, { duration: 1 });
+      },
+      { tracks: [t] },
+    );
+    // builder's own emitted track survives
+    expect(doc.tracks.find((x) => x.target === 'box/x')).toBeDefined();
+    // and the init-injected track lands verbatim
+    expect(doc.tracks.find((x) => x.target === 'cap/opacity')).toEqual(t);
+  });
+
+  it('regression: the object/document form timeline({ tracks }) still works (untouched)', () => {
+    const t = track('cap/opacity', 'number', [key(0, 0), key(1, 1)]);
+    const doc = timeline({ tracks: [t] });
+    expect(doc.tracks).toEqual([t]);
+  });
+
+  it('does not mutate the caller-supplied init.tracks array', () => {
+    const t = track('cap/opacity', 'number', [key(0, 0), key(1, 1)]);
+    const arr = [t];
+    timeline((tl) => {
+      tl.tracks([track('box/x', 'number', [key(0, 0)])]);
+    }, { tracks: arr });
+    expect(arr).toEqual([t]);
+  });
+});
