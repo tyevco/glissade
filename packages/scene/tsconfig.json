@@ -3,5 +3,10 @@
   "compilerOptions": {
     "lib": ["ES2022"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // The 0.20 backend-dom SPIKE (throwaway, not shipped) needs DOM lib types,
+  // which `scene` deliberately does NOT carry on its base tsconfig (the IR is
+  // DOM-free by design). It typechecks under its own `spike/tsconfig.json`
+  // instead, so the base package stays DOM-free.
+  "exclude": ["spike", "test/dom-backend-spike.test.ts"]
 }

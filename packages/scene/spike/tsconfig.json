@@ -1,0 +1,12 @@
+{
+  // SPIKE — throwaway, not a shipped backend (0.20 backend-dom memo).
+  // A DOM-enabled tsconfig JUST for the throwaway spike + its test, so the base
+  // scene package stays DOM-free (lib: ["ES2022"]) while the spike (which
+  // renders to a DOM tree) still typechecks.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": ["dom-backend-spike.ts", "../test/dom-backend-spike.test.ts"]
+}
