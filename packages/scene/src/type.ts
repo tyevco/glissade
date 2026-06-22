@@ -44,6 +44,12 @@ export interface SplitTextOpts {
 
 /** One part of a split, in the source Text's draw space (group-local coords). */
 export interface SplitPart {
+  /**
+   * The part's registered node id — `${id}/${i}`, the SAME string the child
+   * Text was constructed with. Bind a track straight against it:
+   * `parts.map((p) => p.id + '/revealFraction')` (or use `result.targets(prop)`).
+   */
+  id: string;
   /** The part's text (a word, a full line, or a single grapheme). */
   text: string;
   /** The generated child node (a left-aligned Text positioned at the part). */
@@ -61,6 +67,12 @@ export interface SplitTextResult {
   children: Text[];
   /** Per-part geometry + node, in reading order. */
   parts: SplitPart[];
+  /**
+   * Ready-to-bind track targets — `[`${id}/0/${prop}`, `${id}/1/${prop}`, …]`
+   * in reading order. The blessed kinetic-typography recipe is one line:
+   * `tl.stagger(result.targets('revealFraction'), { from: 0, to: 1 }, { each: 0.1 })`.
+   */
+  targets(prop: string): string[];
 }
 
 export class SplitTextError extends Error {
@@ -85,12 +97,14 @@ interface SplitFont {
  * Texts — one per word / line / grapheme. PURE build-time expansion to ordinary
  * nodes; the part geometry is a STATIC snapshot of the source's current layout.
  *
- *   const split = splitText(title, { by: 'word', id: 'title' });
+ *   const split = splitText(title, { by: 'word', id: 'title', measurer });
  *   // scene children: [split.node]  (REPLACES the original title)
- *   // animate each word: split.children[i] / track('title/0/opacity', …)
+ *   // animate each word: split.targets('revealFraction') === ['title/0/revealFraction', …]
+ *   tl.stagger(split.targets('revealFraction'), { from: 0, to: 1 }, { each: 0.1 });
  *
- * Stagger a word-by-word reveal by fanning a clip across `split.children`, or
- * compose with `tl.stagger` over the `${id}/${i}` ids.
+ * Bind tracks against `split.targets(prop)` (ready ids, reading order) or
+ * `parts[i].id` / `parts[i].node` directly. `{ measurer }` is required for exact
+ * part geometry — see the dev-warning footgun below.
  */
 export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): SplitTextResult {
   const text = source instanceof Text ? source : new Text(source);
@@ -134,8 +148,9 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
     // Each part is a left-aligned Text whose baseline-left sits at the part's
     // draw-space (x, baseline) — fillText emits at local y=0, so position == the
     // line baseline (b.line * step), matching the source's own emit row.
+    const partId = `${id}/${i}`;
     const node = new Text({
-      id: `${id}/${i}`,
+      id: partId,
       text: b.text,
       fill: font.fill,
       fontFamily: font.fontFamily,
@@ -147,7 +162,7 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
       position: [b.x, b.line * step],
     });
     children.push(node);
-    parts.push({ text: b.text, node, line: b.line, box: { x: b.x, y: b.y, w: b.w, h: b.h } });
+    parts.push({ id: partId, text: b.text, node, line: b.line, box: { x: b.x, y: b.y, w: b.w, h: b.h } });
   }
 
   // The group sits where the source sat — a STATIC snapshot of position(), so
@@ -156,7 +171,12 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
   const [px, py] = text.position();
   const node = new Group({ id, children, position: [px, py] });
 
-  return { node, children, parts };
+  // Ready-to-bind targets in reading order — `${id}/${i}/${prop}` — so the
+  // headline recipe is `tl.stagger(result.targets('revealFraction'), …)`. The
+  // ids match parts[i].id (the child node's registered id) by construction.
+  const targets = (prop: string): string[] => parts.map((p) => `${p.id}/${prop}`);
+
+  return { node, children, parts, targets };
 }
 
 // re-export the unit-box types so consumers of this entry can name part geometry

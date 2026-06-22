@@ -57,27 +57,34 @@ import { timeline } from '@glissade/core';
 
 const split = splitText(
   new Text({ id: 'title', text: 'split the text', fontSize: 40, align: 'center', position: [320, 110] }),
-  { by: 'word' }, // 'word' | 'line' | 'grapheme' (default 'word')
+  { by: 'word', measurer: backend }, // 'word' | 'line' | 'grapheme' (default 'word'); { measurer } = exact layout
 );
 
 createScene({ children: [split.node] }); // REPLACES the source — don't also add it
 
-// each word pops in, cascaded with tl.stagger over the ${id}/${i} ids
+// each word pops in, cascaded — split.targets(prop) hands you the bind-ready ids
 timeline((tl) => {
   tl.stagger(
-    split.children.map((c) => `${c.id}/opacity`),
+    split.targets('opacity'), // === ['title/0/opacity', 'title/1/opacity', …] in reading order
     { from: 0, to: 1, duration: 0.4, ease: 'easeOutCubic' },
     { each: 0.18 },
   );
 });
+
+// a word-by-word typewriter: stagger revealFraction 0→1 across the parts
+timeline((tl) => {
+  tl.stagger(split.targets('revealFraction'), { from: 0, to: 1 }, { each: 0.1 });
+});
 ```
+
+`split.targets(prop)` returns `[`${id}/0/${prop}`, `${id}/1/${prop}`, …]` in reading order — the one-line path. If you need the ids individually, each part carries its own: `split.parts[i].id` (the child node's registered id, e.g. `'title/0'`) — so `split.parts.map((p) => `${p.id}/revealFraction`)` is equivalent. For imperative drive, `split.parts[i].node` is the settable `Text` handle (`split.parts[i].node.revealFraction.set(0.5)`).
 
 Two authoring semantics worth pinning:
 
 - **Static snapshot.** Part boxes are captured at build time from the source's measurer. Animating the *source's* `width`/`fontSize` afterward will **not** reflow the parts — the same tradeoff `each()` makes. Re-`splitText()` if you need a different layout. (Each part is a normal `Text`, so the *parts* still animate position/scale/opacity/etc. freely.)
 - **Replace the source.** `splitText` returns the `Group` (`split.node`) to draw *instead of* the original Text — add only the group, or the original double-draws.
 
-The result also exposes `split.children` (the part nodes in reading order) and `split.parts` (per-part `{ text, node, line, box }` geometry in the source's draw space). Splitting by grapheme uses `Text.graphemeBoxes()` — the per-grapheme analogue of `wordBoxes()`, boxing the same units `reveal`/`graphemes()` count, so a grapheme split lines up with what the unsplit Text draws.
+The result also exposes `split.children` (the part nodes in reading order) and `split.parts` (per-part `{ id, text, node, line, box }` — `id` is the child node's registered `${id}/${i}`, `node` the settable `Text` handle, `box` its geometry in the source's draw space). Splitting by grapheme uses `Text.graphemeBoxes()` — the per-grapheme analogue of `wordBoxes()`, boxing the same units `reveal`/`graphemes()` count, so a grapheme split lines up with what the unsplit Text draws.
 
 ### `splitText` needs the backend text measurer
 

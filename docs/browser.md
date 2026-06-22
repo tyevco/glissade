@@ -129,7 +129,7 @@ document.fonts.ready.then(() => {
 
 ## Snapshot a frame as a data URL
 
-Need to *capture* a rendered frame — a thumbnail, a test fixture, or a screenshot a tool can read — rather than just paint it to a live canvas? `renderToDataURL` evaluates a frame, renders it on an offscreen canvas, and returns a `data:image/png;base64,…` string in one call (`G.renderToDataURL` on the bundle):
+Need to *capture* a rendered frame — a thumbnail, a test fixture, or a screenshot a tool can read — rather than just paint it to a live canvas? `renderToDataURL` evaluates a frame, renders it on an offscreen canvas, and returns a `data:image/png;base64,…` string in one call (`G.renderToDataURL` on the bundle). It returns a **`Promise<string>` — `await` it** (offscreen serialization is async); logging the call without awaiting yields `[object Promise]`, not the URL:
 
 ```js
 const url = await G.renderToDataURL(scene, timeline, 0.5); // frame at t=0.5s

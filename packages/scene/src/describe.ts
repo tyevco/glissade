@@ -282,7 +282,7 @@ const BUILDER_METHODS: DescribedBuilderMethod[] = [
   { name: 'to', signature: 'to<T>(target, value, opts?: { duration?, ease?, at?, from? }): TimelineBuilder' },
   { name: 'fromTo', signature: 'fromTo<T>(target, from, to, opts?: { duration?, ease?, at? }): TimelineBuilder' },
   { name: 'stagger', signature: 'stagger<T>(targets, { to: T | ((index, count) => T), from?: T | ((index, count) => T), duration?, ease? }, { each: number | ((rank, count) => number), anchor?, at? }): TimelineBuilder' },
-  { name: 'tracks', signature: 'tracks(tracks: Track[]): TimelineBuilder' },
+  { name: 'tracks', signature: 'tracks(tracks: Track[] | { tracks: Track[] }): TimelineBuilder' },
   { name: 'set', signature: 'set<T>(target, value, opts?: { at? }): TimelineBuilder' },
   { name: 'label', signature: 'label(name, at?): TimelineBuilder' },
   { name: 'add', signature: "add(child, at?, opts?: { mode?: 'add'|'sync', timeScale? }): TimelineBuilder" },

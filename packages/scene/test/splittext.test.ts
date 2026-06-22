@@ -12,7 +12,8 @@ import type { DisplayListBuilder } from '../src/displayList.js';
 import type { EvalContext, Node } from '../src/node.js';
 import { __resetEstimateWarnings, estimatingMeasurer, isEstimatingMeasurer } from '../src/text.js';
 import type { TextMeasurer } from '../src/text.js';
-import { setDevWarning } from '@glissade/core';
+import { setDevWarning, timeline } from '@glissade/core';
+import { createScene, evaluate } from '../src/index.js';
 
 /** 10px per char, ascent = font size — predictable geometry. */
 const fixed: TextMeasurer = {
@@ -195,6 +196,68 @@ describe('splitText() (build-time sub-targets, §0.19)', () => {
   it('empty text yields an empty split (no parts)', () => {
     const split = splitText({ id: 'e', text: '', fontSize: 10 }, { measurer: fixed });
     expect(split.children).toEqual([]);
+  });
+
+  it('parts carry the child node id (parts[i].id === `${id}/${i}`)', () => {
+    const split = splitText({ id: 'h', text: 'one two three', fontSize: 10 }, { by: 'word', measurer: fixed });
+    expect(split.parts.map((p) => p.id)).toEqual(['h/0', 'h/1', 'h/2']);
+    // the advertised recipe works verbatim — no more "undefined/revealFraction"
+    expect(split.parts.map((p) => `${p.id}/revealFraction`)).toEqual([
+      'h/0/revealFraction',
+      'h/1/revealFraction',
+      'h/2/revealFraction',
+    ]);
+    // and parts[i].id === the child node's registered id
+    expect(split.parts.map((p) => p.id)).toEqual(split.children.map((c) => c.id));
+    expect(split.parts.map((p) => p.node.id)).toEqual(['h/0', 'h/1', 'h/2']);
+  });
+
+  it('targets(prop) returns ready-to-bind ids in reading order', () => {
+    const split = splitText({ id: 'h', text: 'one two', fontSize: 10 }, { by: 'word', measurer: fixed });
+    expect(split.targets('revealFraction')).toEqual(['h/0/revealFraction', 'h/1/revealFraction']);
+    expect(split.targets('opacity')).toEqual(['h/0/opacity', 'h/1/opacity']);
+  });
+
+  it('the full kinetic-typography recipe binds (no "no property signal resolves" throw)', () => {
+    const split = splitText({ id: 'h', text: 'one two three', fontSize: 10 }, { by: 'word', measurer: fixed });
+    const scene = createScene({ size: { w: 200, h: 50 }, children: [split.node] });
+    // the blessed one-liner — must not throw at build OR at evaluate (bind)
+    const doc = timeline((tl) => {
+      tl.stagger(split.targets('revealFraction'), { to: 1, from: 0 }, { each: 0.1 });
+    });
+    expect(() => evaluate(scene, doc, 0)).not.toThrow();
+
+    // per-word revealed grapheme count over time, in reading order. A word's
+    // revealFraction rises 0→1 over [d_i, d_i+1]; with each=0.1 the words start
+    // staggered, so the reveal sweeps word-by-word (monotonic per word).
+    const revealedFor = (t: number): number[] => {
+      const list = evaluate(scene, doc, t);
+      // group fillText texts back into the 3 words by reading order
+      const drawn = (list.commands as { op: string; text?: string }[])
+        .filter((c) => c.op === 'fillText')
+        .map((c) => c.text ?? '');
+      // map drawn texts onto the 3 source words ['one','two','three']
+      const words = ['one', 'two', 'three'];
+      return words.map((w) => {
+        const hit = drawn.find((d) => w.startsWith(d) && d.length > 0);
+        return hit ? hit.length : 0;
+      });
+    };
+
+    // sample a sweep — each word's revealed length is non-decreasing in t
+    const samples = [0, 0.25, 0.5, 0.75, 1, 1.25].map(revealedFor);
+    for (let w = 0; w < 3; w++) {
+      for (let s = 1; s < samples.length; s++) {
+        expect(samples[s]![w]!).toBeGreaterThanOrEqual(samples[s - 1]![w]!);
+      }
+    }
+    // word 0 leads word 2: at the moment word 0 is full, word 2 is not yet ahead
+    const last = samples[samples.length - 1]!;
+    expect(last[0]).toBe(3); // 'one' fully revealed by the end
+    expect(last[2]).toBe(5); // 'three' fully revealed by the end
+    // staggered start: word 0 reveals before word 2 (it leads)
+    const early = revealedFor(0.35);
+    expect(early[0]!).toBeGreaterThanOrEqual(early[2]!);
   });
 
   it('is a pure build-time expansion — two calls reconstruct the identical id set', () => {

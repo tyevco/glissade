@@ -98,13 +98,16 @@ export interface TimelineBuilder {
   /**
    * Build-time bridge for the CLIP tier (Isuo8Gxn): inject pre-built `Track[]`
    * (the `{ tracks }` returned by `presence`/`clip`/`each`/`morph` on
-   * `@glissade/core/clips`) straight into the document. The tracks carry their
-   * OWN absolute keyframe times — they land as ordinary track rows through the
-   * same finalize→coalesce path `add()` uses for child tracks (same-target rows
-   * coalesce, later wins). Scoped to raw absolute-time tracks: no cursor-offset
-   * or rebasing wrapper (deferred). Does NOT move the cursor.
+   * `@glissade/core/clips`) straight into the document. Accepts EITHER a raw
+   * `Track[]` OR a clip-tier result object (`{ tracks: Track[] }`) — so
+   * `tl.tracks(presence(...))` works without reaching for `.tracks` yourself
+   * (the common footgun: a bare result threw "{} is not iterable"). The tracks
+   * carry their OWN absolute keyframe times — they land as ordinary track rows
+   * through the same finalize→coalesce path `add()` uses for child tracks
+   * (same-target rows coalesce, later wins). Scoped to raw absolute-time tracks:
+   * no cursor-offset or rebasing wrapper (deferred). Does NOT move the cursor.
    */
-  tracks(tracks: Track[]): TimelineBuilder;
+  tracks(tracks: Track[] | { tracks: Track[] }): TimelineBuilder;
   /** Hold key: the value snaps at the resolved position (§2.6). */
   set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
@@ -369,10 +372,14 @@ export function buildTimeline(
       return builder;
     },
     tracks(tracks) {
+      // Forgiving arg: accept a raw Track[] OR a clip-tier result `{ tracks }`
+      // (presence/clip/each/morph all return the object) — unwrap to the array
+      // so `tl.tracks(presence(...))` doesn't throw "{} is not iterable".
+      const rows = Array.isArray(tracks) ? tracks : tracks.tracks;
       // Inject pre-built absolute-time tracks verbatim — no rebasing, no cursor
       // move (deferred). They land as ordinary rows alongside the builder's own
       // finalize-emitted tracks and coalesce in compileTimeline().
-      for (const tr of tracks) injectedTracks.push(tr);
+      for (const tr of rows) injectedTracks.push(tr);
       return builder;
     },
     label(name, at) {

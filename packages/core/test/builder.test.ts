@@ -897,4 +897,25 @@ describe('Isuo8Gxn: tl.tracks(tracks) — the clip-tier bridge', () => {
     const presOpacity = pres.tracks.find((t) => t.target === 'card/opacity')!;
     expect(doc.tracks.find((t) => t.target === 'card/opacity')).toEqual(presOpacity);
   });
+
+  it('accepts a clip-tier RESULT object (tl.tracks(presence(...))) and the raw array equivalently', async () => {
+    const { presence } = await import('../src/presence.js');
+    const mkPres = () => presence('card', { window: [1, 3], enter: { opacity: [0, 1] }, exit: { opacity: [1, 0] } });
+
+    // (a) pass the result object directly — no more "{} is not iterable"
+    const byResult = timeline((tl) => {
+      tl.tracks(mkPres());
+    });
+    // (b) pass the .tracks array
+    const pres = mkPres();
+    const byArray = timeline((tl) => {
+      tl.tracks(pres.tracks);
+    });
+
+    // both forms produce the identical injected track
+    const presOpacity = pres.tracks.find((t) => t.target === 'card/opacity')!;
+    expect(byResult.tracks.find((t) => t.target === 'card/opacity')).toEqual(presOpacity);
+    expect(byArray.tracks.find((t) => t.target === 'card/opacity')).toEqual(presOpacity);
+    expect(byResult.tracks).toEqual(byArray.tracks);
+  });
 });

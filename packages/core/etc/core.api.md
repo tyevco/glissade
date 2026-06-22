@@ -799,7 +799,9 @@ export interface TimelineBuilder {
     stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
     // (undocumented)
     to<T>(target: TweenTarget, value: T, opts?: TweenOpts<T>): TimelineBuilder;
-    tracks(tracks: Track[]): TimelineBuilder;
+    tracks(tracks: Track[] | {
+        tracks: Track[];
+    }): TimelineBuilder;
 }
 
 // @public (undocumented)
