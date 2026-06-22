@@ -730,13 +730,6 @@ export class Text extends Node {
   readonly fontFamily: string;
   readonly fontWeight: number;
   readonly fontStyle: 'normal' | 'italic';
-  /**
-   * Variable-font axis settings as supplied (CSS `font-variation-settings`
-   * form), or undefined. **Not applied** — kept only so the value is
-   * introspectable; it is intentionally NOT threaded into FontSpec/ctx.font in
-   * 0.19 (setting it warns). See {@link TextProps.fontVariationSettings}.
-   */
-  readonly fontVariationSettings: string | undefined;
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
@@ -756,7 +749,6 @@ export class Text extends Node {
     this.fontFamily = props.fontFamily ?? 'sans-serif';
     this.fontWeight = props.fontWeight ?? 400;
     this.fontStyle = props.fontStyle ?? 'normal';
-    this.fontVariationSettings = props.fontVariationSettings;
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
@@ -775,9 +767,7 @@ export class Text extends Node {
     // precedent). The value never reaches FontSpec/ctx.font, so default Text
     // stays byte-identical.
     if (props.fontVariationSettings !== undefined) {
-      emitDevWarning(
-        `${this.id !== undefined ? `'${this.id}': ` : ''}fontVariationSettings (${JSON.stringify(props.fontVariationSettings)}) is not yet applied — variable-font axes (wght/opsz/…) aren't wired to the rasterizer in 0.19, so it's dropped. Use the discrete fontWeight your font's named instances expose; animatable axes are a 0.20 feature.`,
-      );
+      emitDevWarning('fontVariationSettings is not applied (variable-font axes land in 0.20).');
     }
   }
 
