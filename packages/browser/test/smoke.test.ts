@@ -46,6 +46,24 @@ describe('@glissade/browser entry surface', () => {
     expect(customElements.get('gs-player')).toBeDefined();
   });
 
+  it('the <gs-player> define is idempotent — re-evaluating the IIFE never throws (0.19.1)', () => {
+    // Design-agent finding: re-evaluating @glissade/browser in a realm that
+    // already loaded it threw at customElements.define('gs-player', …) (already
+    // defined) and ABORTED before the `window.glissade = …` reassign — so the
+    // page silently kept the OLD bundle (also bites a double <script> include).
+    // The element's `defineGsPlayer` guards the register, so re-running the
+    // element define path (the IIFE's only customElements.define) is a clean
+    // no-op. Guard it here against regressions: the surface exposes the named
+    // exporter, and calling it again — exactly what the module-load side-effect
+    // did once — never throws.
+    expect(typeof glissade.defineGsPlayer).toBe('function');
+    expect(customElements.get('gs-player')).toBeDefined();
+    expect(() => glissade.defineGsPlayer()).not.toThrow();
+    expect(() => glissade.defineGsPlayer()).not.toThrow();
+    // The original registration object survives — the re-call didn't redefine it.
+    expect(customElements.get('gs-player')).toBe(glissade.GsPlayerElement);
+  });
+
   it('exposes renderToDataURL on the IIFE — the no-build screenshot DX helper (browser budget 47)', () => {
     // The Claude-Design no-build consumer works ONLY against window.glissade, so
     // the frame-screenshot helper (evaluate→render→data-URL) MUST be on the IIFE

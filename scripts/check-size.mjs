@@ -319,6 +319,28 @@ for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
     console.log(
       `${ok ? 'ok  ' : 'FAIL'} ${'browser'.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB, ${(raw.length / 1024).toFixed(2)} kB raw)`,
     );
+
+    // §3.2 / §4.4 guard: Yoga's wasm MUST stay OUT of the single-file IIFE. The
+    // layout ctors + loadYogaLayoutEngine live in @glissade/scene/layout, whose
+    // dynamic import('yoga-layout/load') esbuild CANNOT keep async in an IIFE
+    // (no code-splitting in format:'iife') — it would inline the wasm-base64
+    // binding statically and balloon the bundle ~46.6→~99 kB gz. Mirror the
+    // "base scene excludes yoga-layout" metafile guard with a token scan of the
+    // prebuilt artifact: `calculateLayout`/`setFlexDirection` are distinctive
+    // yoga-binding identifiers, present ONLY when Yoga got inlined. If layout
+    // ctors are ever re-exported onto the IIFE, this fails loudly (the 0.20
+    // refactor must split the ctors from the engine import first).
+    const browserOut = new TextDecoder().decode(raw);
+    const yogaTokens = ['calculateLayout', 'setFlexDirection', 'yoga-wasm'].filter((t) =>
+      browserOut.includes(t),
+    );
+    const yogaOut = yogaTokens.length === 0;
+    if (!yogaOut) failed = true;
+    console.log(
+      `${yogaOut ? 'ok  ' : 'FAIL'} browser IIFE excludes yoga binding${
+        yogaOut ? '' : ` (inlined: ${yogaTokens.map((t) => `token:${t}`).join(', ')})`
+      }`,
+    );
   }
 }
 
