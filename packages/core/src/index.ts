@@ -190,22 +190,10 @@ export {
   type CheckpointedSim,
 } from './bake.js';
 
-export {
-  mergeSidecar,
-  mergeSidecarDetailed,
-  migrateSidecar,
-  setSidecarTrack,
-  deleteSidecarTrack,
-  hashKeys,
-  assignKeyIds,
-  emptySidecar,
-  normalizeEditedKeys,
-  SidecarVersionError,
-  type SidecarDoc,
-  type SidecarDocV1,
-  type SidecarTimelineEntry,
-  type SidecarTrackEntry,
-  type SidecarOrphan,
-  type OrphanReason,
-  type MergeResult,
-} from './sidecar.js';
+// The editor sidecar (§6.2) is STUDIO-only — it never appears on the
+// evaluate/embed path. 0.20 budget review relocated it OFF the base index onto
+// the tree-shakeable `@glissade/core/sidecar` subpath so its ~15.6 kB raw
+// (merge/migrate/orphan machinery) can't sit in the base-embed budget. Studio,
+// vite-plugin, and the studio-host entry import from `@glissade/core/sidecar`
+// (or the package-internal `./sidecar.js`); see scripts/check-size.mjs metafile
+// guard `base core excludes sidecar`.

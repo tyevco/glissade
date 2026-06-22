@@ -28,6 +28,14 @@
     "./type": {
       "types": "./dist/type.d.ts",
       "default": "./dist/type.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "default": "./dist/diagnostics.js"
+    },
+    "./motion": {
+      "types": "./dist/motion.d.ts",
+      "default": "./dist/motion.js"
     }
   },
   "files": [

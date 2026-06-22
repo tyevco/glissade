@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { emptySidecar, key, spring } from '../src/index.js';
+import { key, spring } from '../src/index.js';
+import { emptySidecar } from '../src/sidecar.js';
 import { applyPatch, isEditableNodeId, type TimelinePatch } from '../src/studioHost.js';
 
 describe('clone-safety of the patch protocol (§6.4)', () => {

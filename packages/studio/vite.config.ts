@@ -28,10 +28,12 @@ export default defineConfig({
     alias: {
       '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
       '@glissade/core/studio-host': src('core').replace('index.ts', 'studioHost.ts'),
-      '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
+      '@glissade/core/sidecar': src('core').replace('index.ts', 'sidecar.ts'),
       '@glissade/core': src('core'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),
+      '@glissade/scene/diagnostics': src('scene').replace('index.ts', 'diagnostics.ts'),
+      '@glissade/scene/motion': src('scene').replace('index.ts', 'motion.ts'),
       '@glissade/scene': src('scene'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/player': src('player'),

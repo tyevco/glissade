@@ -6,7 +6,10 @@
  * can't construct an invalid track.
  */
 
-import { getValueType, key, normalizeEditedKeys, sampleTrack, type EaseSpec, type Key, type Track } from '@glissade/core';
+import { getValueType, key, sampleTrack, type EaseSpec, type Key, type Track } from '@glissade/core';
+// `normalizeEditedKeys` ships on the studio-only `@glissade/core/sidecar` subpath
+// (0.20 budget review) — off the base embed.
+import { normalizeEditedKeys } from '@glissade/core/sidecar';
 
 export interface KeyRef {
   target: string;

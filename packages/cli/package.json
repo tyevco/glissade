@@ -34,7 +34,7 @@
     "@glissade/scene": "workspace:*",
     "@glissade/sfx": "workspace:*",
     "@napi-rs/canvas": "^0.1.65",
-    "esbuild": "^0.28.0",
+    "esbuild": "0.28.0",
     "jiti": "^2.4.2"
   },
   "repository": {

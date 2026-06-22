@@ -5,7 +5,10 @@
  */
 
 import { type Mat2x3 } from './matrix.js';
-import { collapseReplacer } from './displayDiff.js';
+// The byte-preserving cacheKey replacer lives in its own tiny module so the heavy
+// diff/snapshot diagnostic surface (`displayDiff.ts` → `@glissade/scene/diagnostics`)
+// stays OFF the base render graph (0.20 budget review).
+import { collapseReplacer } from './collapseReplacer.js';
 
 export type ResourceId = number;
 

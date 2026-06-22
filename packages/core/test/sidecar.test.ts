@@ -1,23 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assignKeyIds,
   compileTimeline,
-  deleteSidecarTrack,
-  emptySidecar,
   isEditableNodeId,
   key,
+  sampleTrack,
+  setDevWarning,
+  timeline,
+  track,
+} from '../src/index.js';
+// Sidecar moved to the `@glissade/core/sidecar` subpath in the 0.20 budget review.
+import {
+  assignKeyIds,
+  deleteSidecarTrack,
+  emptySidecar,
   mergeSidecar,
   mergeSidecarDetailed,
   migrateSidecar,
-  sampleTrack,
-  setDevWarning,
+  normalizeEditedKeys,
   setSidecarTrack,
-  timeline,
-  track,
   SidecarVersionError,
   type SidecarDoc,
   type SidecarDocV1,
-} from '../src/index.js';
+} from '../src/sidecar.js';
 
 const code = () =>
   timeline({
@@ -199,7 +203,7 @@ describe('normalizeEditedKeys (§2.7 under editing)', () => {
   const cfg = { stiffness: 170, damping: 14, mass: 1 };
 
   it('re-pins a dragged spring key to prev.t + spring.duration', async () => {
-    const { spring, normalizeEditedKeys } = await import('../src/index.js');
+    const { spring } = await import('../src/index.js');
     const d = spring.duration(cfg);
     const keys = [key(0, 0), key(0.78, 300, spring(cfg))]; // dragged off-grid
     const fixed = normalizeEditedKeys(keys);
@@ -207,7 +211,7 @@ describe('normalizeEditedKeys (§2.7 under editing)', () => {
   });
 
   it('retiming the predecessor carries the spring key along', async () => {
-    const { spring, normalizeEditedKeys } = await import('../src/index.js');
+    const { spring } = await import('../src/index.js');
     const d = spring.duration(cfg);
     const keys = [key(0.5, 0), key(d, 300, spring(cfg))]; // prev moved to 0.5
     const fixed = normalizeEditedKeys(keys);
@@ -215,7 +219,7 @@ describe('normalizeEditedKeys (§2.7 under editing)', () => {
   });
 
   it('sorts retimed keys and the result passes document validation', async () => {
-    const { spring, normalizeEditedKeys, compileTimeline, timeline } = await import('../src/index.js');
+    const { spring, compileTimeline, timeline } = await import('../src/index.js');
     const keys = normalizeEditedKeys([key(2, 1), key(0.3, 0), key(2.5, 5, spring(cfg))]);
     expect(keys.map((k) => k.t)).toEqual([...keys.map((k) => k.t)].sort((a, b) => a - b));
     const doc = timeline({ tracks: [{ target: 'a/x', type: 'number', keys }] });
@@ -225,8 +229,7 @@ describe('normalizeEditedKeys (§2.7 under editing)', () => {
 
 describe('normalizeEditedKeys: collisions nudge, never delete', () => {
   it('a key dragged onto another keeps both (1ms nudge)', async () => {
-    const { normalizeEditedKeys } = await import('../src/index.js');
-    const fixed = normalizeEditedKeys([key(1.5, -1), key(1.5, 1, { interp: 'hold' })]);
+        const fixed = normalizeEditedKeys([key(1.5, -1), key(1.5, 1, { interp: 'hold' })]);
     expect(fixed).toHaveLength(2);
     expect(fixed[1]!.t).toBeCloseTo(1.501, 9);
     expect(fixed.map((k) => k.value)).toEqual([-1, 1]);

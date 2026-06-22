@@ -43,9 +43,6 @@ export function applyToPoint(m: Mat2x3, p: Vec2): Vec2;
 export function arcLength(poly: Polyline): number;
 
 // @public
-export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: number): CacheColdResult;
-
-// @public
 export interface BackendCaps {
     readonly filters: ReadonlySet<FilterKind>;
     readonly maxTextureSize: number;
@@ -71,14 +68,6 @@ export type BlendMode = 'source-over' | 'multiply' | 'screen' | 'overlay' | 'dar
 
 // @public
 export function breakLines(text: string, font: FontSpec, maxWidth: number | undefined, measurer: TextMeasurer): string[];
-
-// @public (undocumented)
-export interface CacheColdResult {
-    delta?: CommandDelta;
-    node?: string;
-    // (undocumented)
-    ok: boolean;
-}
 
 // @public (undocumented)
 export interface CanvasLike {
@@ -127,15 +116,6 @@ export function collectLocalizedTextUsages(scene: Scene, doc: Timeline): FontUsa
 
 // @public
 export function collectTextUsages(scene: Scene): FontUsage[];
-
-// @public
-export interface CommandDelta {
-    fields: FieldChange[];
-    index: number;
-    kind: 'change' | 'add' | 'remove';
-    opA?: DrawCommand['op'];
-    opB?: DrawCommand['op'];
-}
 
 // @public (undocumented)
 export function createDisplayListBuilder(size: {
@@ -227,19 +207,6 @@ export class DeterminismViolationError extends Error {
     constructor(api: string);
 }
 
-// @public
-export function diffDisplayLists(a: DisplayList, b: DisplayList): DisplayDiff;
-
-// @public (undocumented)
-export interface DisplayDiff {
-    deltas: CommandDelta[];
-    equal: boolean;
-    size?: {
-        from: DisplayList['size'];
-        to: DisplayList['size'];
-    };
-}
-
 // @public (undocumented)
 export interface DisplayList {
     // (undocumented)
@@ -262,25 +229,6 @@ export interface DisplayListBuilder {
     push(cmd: DrawCommand): void;
     // (undocumented)
     resource(res: Resource): ResourceId;
-}
-
-// @public
-export const DL_SNAPSHOT_VERSION: 1;
-
-// @public (undocumented)
-export interface DlSnapshot {
-    // (undocumented)
-    commands: DrawCommand[];
-    dlSnapshotVersion: typeof DL_SNAPSHOT_VERSION;
-    // (undocumented)
-    resources: Resource[];
-    // (undocumented)
-    size: DisplayList['size'];
-}
-
-// @public (undocumented)
-export class DlSnapshotError extends Error {
-    constructor(message: string);
 }
 
 // @public (undocumented)
@@ -463,15 +411,6 @@ export function evaluate(scene: Scene, doc: Timeline, t: number): DisplayList;
 // @public
 export function evaluate(scene: Scene): DisplayList;
 
-// @public (undocumented)
-export interface FieldChange {
-    // (undocumented)
-    from: unknown;
-    path: string;
-    // (undocumented)
-    to: unknown;
-}
-
 // @public
 export type FilterKind = FilterSpec['kind'];
 
@@ -508,31 +447,6 @@ export class FilterValidationError extends Error {
 export function flatten(segs: readonly PathSeg[], steps?: number): Polyline[];
 
 // @public
-export class FollowPath extends Node_2 {
-    constructor(props: FollowPathProps);
-    // (undocumented)
-    protected draw(): void;
-    // (undocumented)
-    readonly progress: BindableSignal<number>;
-    // (undocumented)
-    readonly target: Node_2;
-}
-
-// @public
-export function followPath(target: Node_2, path: PathValue | Path, props?: Omit<FollowPathProps, 'target' | 'path'>): FollowPath;
-
-// @public (undocumented)
-export interface FollowPathProps extends NodeProps {
-    orient?: boolean;
-    orientOffset?: number;
-    path: PathValue | Path;
-    progress?: PropInit<number>;
-    // (undocumented)
-    samplesPerSegment?: number;
-    target: Node_2;
-}
-
-// @public
 export type FontByteLoader = (url: string) => Promise<ArrayBuffer | undefined>;
 
 // @public (undocumented)
@@ -549,9 +463,6 @@ export interface FontSpec {
 
 // @public (undocumented)
 export function fontString(font: FontSpec): string;
-
-// @public
-export function formatDisplayDiff(diff: DisplayDiff): string;
 
 // @public
 export function fromTRS(position: Vec2, rotationDeg: number, scale: Vec2): Mat2x3;
@@ -771,9 +682,6 @@ export interface LineBox {
 // @public (undocumented)
 export type Mat2x3 = readonly [number, number, number, number, number, number];
 
-// @public
-export function matchTokenRun(boxes: WordBox[], token: string, occurrence?: number): [number, number];
-
 // @public (undocumented)
 export function matEquals(a: Mat2x3, b: Mat2x3): boolean;
 
@@ -800,11 +708,6 @@ export function meshRasterSize(bw: number, bh: number): {
     w: number;
     h: number;
 };
-
-// @public
-export function motionPath(path: PathValue, opts?: {
-    samplesPerSegment?: number;
-}): PathSampler;
 
 // @public (undocumented)
 export function multiply(m1: Mat2x3, m2: Mat2x3): Mat2x3;
@@ -903,9 +806,6 @@ export type NodeTypeName = (typeof NODE_TAXONOMY)[number];
 export { Paint }
 
 // @public
-export function parseDisplaySnapshot(json: string): DisplayList;
-
-// @public
 export class Path extends Shape {
     constructor(props?: PathProps);
     bounds(): {
@@ -933,9 +833,6 @@ export class Path extends Shape {
 export function pathFromSegs(segs: readonly PathSeg[]): PathValue;
 
 // @public
-export function pathLength(path: PathValue): number;
-
-// @public
 export interface PathLike {
     // (undocumented)
     bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void;
@@ -957,22 +854,10 @@ export interface PathProps extends ShapeProps {
 }
 
 // @public
-export interface PathSampler {
-    at(s: number): Vec2;
-    atProgress(u: number): Vec2;
-    readonly length: number;
-    tangentAt(s: number): Vec2;
-    tangentAtProgress(u: number): Vec2;
-}
-
-// @public
 export type PathSeg = ['M', number, number] | ['L', number, number] | ['C', number, number, number, number, number, number] | ['Q', number, number, number, number] | ['E', number, number, number, number, number, number, number] | ['Z'];
 
 // @public
 export type Place = readonly [number, number];
-
-// @public
-export function pointAtLength(path: PathValue, s: number): Vec2;
 
 // @public (undocumented)
 export interface Polyline {
@@ -1171,9 +1056,6 @@ export function segmentGraphemes(text: string): string[];
 
 // @public
 export function segmentWords(text: string): string[];
-
-// @public
-export function serializeDisplayList(dl: DisplayList): string;
 
 // @public
 export function setDefaultMeasurer(m: TextMeasurer | null): void;
@@ -1402,54 +1284,6 @@ export interface TextProps extends NodeProps {
     // (undocumented)
     text?: PropInit<string>;
     width?: PropInit<number>;
-}
-
-// @public (undocumented)
-export class TokenHighlight extends Node_2 {
-    constructor(props: TokenHighlightProps);
-    // (undocumented)
-    readonly cornerRadius: number;
-    // (undocumented)
-    protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
-    // (undocumented)
-    readonly padding: [number, number];
-    // (undocumented)
-    readonly rematch: boolean;
-    // (undocumented)
-    readonly target: Text_2;
-}
-
-// @public
-export function tokenHighlight(text: Text_2, props: Omit<TokenHighlightProps, 'text'>): TokenHighlight;
-
-// @public (undocumented)
-export interface TokenHighlightProps extends NodeProps {
-    // (undocumented)
-    cornerRadius?: number;
-    padding?: [number, number];
-    // (undocumented)
-    ranges: TokenRange[];
-    rematch?: boolean;
-    text: Text_2;
-}
-
-// @public (undocumented)
-export class TokenMatchError extends Error {
-    constructor(message: string);
-}
-
-// @public (undocumented)
-export interface TokenRange {
-    // (undocumented)
-    fill?: PropInit<string>;
-    id?: string;
-    match: string | readonly [number, number];
-    occurrence?: number;
-    offset?: PropInit<Vec2>;
-    // (undocumented)
-    opacity?: PropInit<number>;
-    progress?: PropInit<number>;
-    scale?: PropInit<number>;
 }
 
 // @public

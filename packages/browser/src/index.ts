@@ -37,6 +37,13 @@ export * from '@glissade/scene/path';
 // npm-only: those pull Yoga, which can't ride the bundle; splitText only needs
 // the measurer.) +0.44 kB, within the browser budget.
 export { splitText } from '@glissade/scene/type';
+// `motionPath` / `followPath` (the §3 motion-path follow helper) moved to the
+// tree-shakeable `@glissade/scene/motion` subpath in the 0.20 budget review (off
+// the base scene index, off the base-embed budget). It is a USER-FACING helper
+// the no-build design agent reaches for as `window.glissade.motionPath`, so the
+// single-file convenience bundle MUST re-export it here so it lands on
+// window.glissade — mirroring pathFromSvg / splitText.
+export { followPath, motionPath, pointAtLength, pathLength, FollowPath } from '@glissade/scene/motion';
 // The machine-readable API manifest (0.18) lives on the tree-shakeable
 // `@glissade/scene/describe` subpath (off the base scene index). The single-file
 // convenience bundle SHOULD expose it for discoverability, so re-export it here —

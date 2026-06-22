@@ -7,7 +7,8 @@
  */
 
 import { key, timeline, track, type PathValue } from '@glissade/core';
-import { Path, Rect, followPath, createScene, type SceneModule } from '@glissade/scene';
+import { Path, Rect, createScene, type SceneModule } from '@glissade/scene';
+import { followPath } from '@glissade/scene/motion';
 
 // same topology (3 anchors) so the path lerps cleanly: flat → arch
 const flat: PathValue = [

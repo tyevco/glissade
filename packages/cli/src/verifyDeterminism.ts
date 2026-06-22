@@ -23,15 +23,15 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   createDisplayListBuilder,
-  diffDisplayLists,
   evaluate,
-  formatDisplayDiff,
-  serializeDisplayList,
   withDeterminismGuards,
   type DisplayList,
   type Scene,
   type SceneModule,
 } from '@glissade/scene';
+// Diff/snapshot diagnostics moved to the `@glissade/scene/diagnostics` subpath
+// (0.20 budget review, off the base embed).
+import { diffDisplayLists, formatDisplayDiff, serializeDisplayList } from '@glissade/scene/diagnostics';
 import type { EvalContext, Node } from '@glissade/scene';
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';

@@ -15,9 +15,6 @@ export interface AssetRef {
 }
 
 // @public
-export function assignKeyIds(keys: readonly Key[]): Key[];
-
-// @public
 export interface AudioClip {
     // (undocumented)
     asset: AssetRef;
@@ -205,9 +202,6 @@ export interface CurveSampler {
 export const DEFAULT_EASE = "easeInOutCubic";
 
 // @public
-export function deleteSidecarTrack(doc: SidecarDoc, timelineId: string, target: string): SidecarDoc;
-
-// @public
 export type DevWarning = (message: string) => void;
 
 // @public (undocumented)
@@ -232,9 +226,6 @@ export const easings: Record<string, EasingFn>;
 
 // @public
 export function emitDevWarning(message: string): void;
-
-// @public (undocumented)
-export function emptySidecar(): SidecarDoc;
 
 // @public (undocumented)
 export function endReadPhase(): void;
@@ -303,9 +294,6 @@ export type GradientInterpolation = 'linear' | 'smooth' | 'gaussian';
 export type HandoffKind = 'cut' | 'decay' | 'spring' | 'blend-from-frozen';
 
 // @public
-export function hashKeys(keys: readonly Key[]): string;
-
-// @public
 export function inferValueType(value: unknown): ValueTypeId;
 
 // @public (undocumented)
@@ -361,20 +349,6 @@ export interface Marker {
     t: number;
 }
 
-// @public (undocumented)
-export interface MergeResult {
-    drift: string[];
-    orphans: Record<string, SidecarOrphan>;
-    // (undocumented)
-    timeline: Timeline;
-}
-
-// @public
-export function mergeSidecar(code: Timeline, sidecar: SidecarDoc | SidecarDocV1 | null | undefined): Timeline;
-
-// @public
-export function mergeSidecarDetailed(code: Timeline, sidecar: SidecarDoc | SidecarDocV1 | null | undefined): MergeResult;
-
 // @public
 export type MeshInterpolation = 'smooth' | 'gaussian' | 'oklab';
 
@@ -397,9 +371,6 @@ export interface MeshPoint {
     pos: [number, number];
 }
 
-// @public
-export function migrateSidecar(doc: SidecarDoc | SidecarDocV1 | null | undefined): SidecarDoc | null;
-
 // @public (undocumented)
 export interface MissingGlyphs {
     codePoints: number[];
@@ -409,9 +380,6 @@ export interface MissingGlyphs {
 
 // @public (undocumented)
 export function namedEasing(name: string): EasingFn;
-
-// @public
-export function normalizeEditedKeys(keys: Key[]): Key[];
 
 // @public (undocumented)
 export const numberType: ValueType<number>;
@@ -430,9 +398,6 @@ export interface OkLab {
 
 // @public (undocumented)
 export function oklabToRgba(c: OkLab): Rgba;
-
-// @public (undocumented)
-export type OrphanReason = 'node-missing' | 'prop-missing' | 'type-changed';
 
 // @public
 export type Paint = {
@@ -568,56 +533,6 @@ export function setDevWarning(fn: DevWarning): void;
 
 // @public
 export function setScheduler(next?: Scheduler): Scheduler;
-
-// @public
-export function setSidecarTrack(doc: SidecarDoc, timelineId: string, target: string, type: ValueTypeId, keys: Key[], codeBaselineKeys: readonly Key[] | null): SidecarDoc;
-
-// @public (undocumented)
-export interface SidecarDoc {
-    // (undocumented)
-    sidecarVersion: 2;
-    timelines: Record<string, SidecarTimelineEntry>;
-}
-
-// @public
-export interface SidecarDocV1 {
-    // (undocumented)
-    labels?: Record<string, number>;
-    // (undocumented)
-    sidecarVersion: 1;
-    // (undocumented)
-    tracks: Track[];
-}
-
-// @public (undocumented)
-export interface SidecarOrphan {
-    // (undocumented)
-    keys: Key[];
-    // (undocumented)
-    reason: OrphanReason;
-    // (undocumented)
-    type: ValueTypeId;
-}
-
-// @public (undocumented)
-export interface SidecarTimelineEntry {
-    labels?: Record<string, number>;
-    orphans?: Record<string, SidecarOrphan>;
-    tracks: Record<string, SidecarTrackEntry>;
-}
-
-// @public (undocumented)
-export interface SidecarTrackEntry {
-    baseHash: string | null;
-    // (undocumented)
-    keys: Key[];
-    type: ValueTypeId;
-}
-
-// @public (undocumented)
-export class SidecarVersionError extends Error {
-    constructor(version: unknown);
-}
 
 // @public (undocumented)
 export interface Signal<T> extends ReadonlySignal<T> {

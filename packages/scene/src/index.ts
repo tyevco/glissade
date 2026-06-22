@@ -100,46 +100,21 @@ export {
 } from './each.js';
 export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from './drawOn.js';
 export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
-export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
 
-// DEV / CLI diagnostic — DisplayList diff + serializable IR snapshots (§3.3).
-// Side-effect-free, never reached by evaluate(); tree-shakes out of the embed.
-export {
-  diffDisplayLists,
-  formatDisplayDiff,
-  serializeDisplayList,
-  parseDisplaySnapshot,
-  collapseReplacer,
-  DL_SNAPSHOT_VERSION,
-  DlSnapshotError,
-  type DisplayDiff,
-  type CommandDelta,
-  type FieldChange,
-  type DlSnapshot,
-} from './displayDiff.js';
+// `collapseReplacer` — the byte-preserving §3.5 cacheKey serializer — lives on
+// the render path (displayList.ts) so it stays on the base index. The heavier
+// DEV/CLI diagnostic surface that used to ride alongside it (diffDisplayLists /
+// serializeDisplayList / auditCacheCold / tokenHighlight) moved to the
+// tree-shakeable `@glissade/scene/diagnostics` subpath in the 0.20 budget review,
+// off the base-embed budget. See scripts/check-size.mjs guard
+// `base scene excludes diagnostics`.
+export { collapseReplacer } from './collapseReplacer.js';
 export {
   ALL_FILTER_KINDS,
   type RenderBackend,
   type BackendCaps,
   type FilterKind,
 } from './renderBackend.js';
-export {
-  FollowPath,
-  followPath,
-  motionPath,
-  pointAtLength,
-  pathLength,
-  type FollowPathProps,
-  type PathSampler,
-} from './motionPath.js';
-export {
-  TokenHighlight,
-  tokenHighlight,
-  matchTokenRun,
-  TokenMatchError,
-  type TokenHighlightProps,
-  type TokenRange,
-} from './tokenHighlight.js';
 
 export {
   collectTextUsages,

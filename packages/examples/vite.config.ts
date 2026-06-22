@@ -23,6 +23,8 @@ export default defineConfig({
       '@glissade/core': src('core'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),
+      '@glissade/scene/diagnostics': src('scene').replace('index.ts', 'diagnostics.ts'),
+      '@glissade/scene/motion': src('scene').replace('index.ts', 'motion.ts'),
       '@glissade/scene': src('scene'),
       '@glissade/backend-canvas2d': src('backend-canvas2d'),
       '@glissade/export-web': src('export-web'),

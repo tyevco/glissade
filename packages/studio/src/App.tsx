@@ -8,19 +8,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   compileTimeline,
-  emptySidecar,
-  hashKeys,
   isEditableNodeId,
-  mergeSidecar,
-  migrateSidecar,
   sampleTrack,
-  setSidecarTrack,
   type CompiledTimeline,
   type EaseSpec,
   type Key,
-  type SidecarDoc,
   type Track,
 } from '@glissade/core';
+// The sidecar API (§6.2) moved to the tree-shakeable `@glissade/core/sidecar`
+// subpath in the 0.20 budget review (off the base embed). Studio is its primary
+// consumer.
+import {
+  emptySidecar,
+  hashKeys,
+  mergeSidecar,
+  migrateSidecar,
+  setSidecarTrack,
+  type SidecarDoc,
+} from '@glissade/core/sidecar';
 import { type TimelinePatch } from '@glissade/core/studio-host';
 import { createInProcessHost, type InProcessHost, type ScrubSession } from './inProcessHost.js';
 import {

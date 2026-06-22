@@ -6,8 +6,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { createDisplayListBuilder, type DisplayList, type DrawCommand, type Resource } from '../src/index.js';
+// Diff/snapshot diagnostics moved to the `@glissade/scene/diagnostics` subpath
+// (0.20 budget review); `collapseReplacer` stays render-path (re-exported by both).
 import {
-  createDisplayListBuilder,
   diffDisplayLists,
   formatDisplayDiff,
   serializeDisplayList,
@@ -15,10 +17,7 @@ import {
   collapseReplacer,
   DL_SNAPSHOT_VERSION,
   DlSnapshotError,
-  type DisplayList,
-  type DrawCommand,
-  type Resource,
-} from '../src/index.js';
+} from '../src/diagnostics.js';
 
 function dl(commands: DrawCommand[], resources: Resource[] = [], size = { w: 100, h: 50 }): DisplayList {
   return { commands, resources, size };

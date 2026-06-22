@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { emptySidecar, key, spring, type SidecarDoc } from '../src/index.js';
+import { key, spring } from '../src/index.js';
+import { emptySidecar, type SidecarDoc } from '../src/sidecar.js';
 import { applyPatch, applyPatches, type BaselineLookup, type TimelinePatch } from '../src/timelinePatch.js';
 
 const T = 'main';

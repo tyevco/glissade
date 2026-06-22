@@ -5,7 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
-import { auditCacheCold, createScene, Rect } from '../src/index.js';
+import { createScene, Rect } from '../src/index.js';
+import { auditCacheCold } from '../src/diagnostics.js';
 
 const doc = timeline({ fps: 60, duration: 1, tracks: [] });
 

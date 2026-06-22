@@ -13,7 +13,10 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { evaluate, diffDisplayLists, formatDisplayDiff, parseDisplaySnapshot, serializeDisplayList, type DisplayList } from '@glissade/scene';
+import { evaluate, type DisplayList } from '@glissade/scene';
+// The diff/snapshot diagnostic surface moved to the `@glissade/scene/diagnostics`
+// subpath in the 0.20 budget review (off the base embed). `gs diff` is its consumer.
+import { diffDisplayLists, formatDisplayDiff, parseDisplaySnapshot, serializeDisplayList } from '@glissade/scene/diagnostics';
 import { loadSceneModule } from './render.js';
 
 export interface DiffOptions {

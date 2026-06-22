@@ -12,7 +12,8 @@
 
 import type { Timeline } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
-import { collapseReplacer, diffDisplayLists, type CommandDelta } from './displayDiff.js';
+import { collapseReplacer } from './collapseReplacer.js';
+import { diffDisplayLists, type CommandDelta } from './displayDiff.js';
 import type { EvalContext } from './node.js';
 import { Group } from './nodes.js';
 import { evaluate, type Scene } from './scene.js';

@@ -21,44 +21,13 @@
  */
 
 import type { DisplayList, DrawCommand, Resource } from './displayList.js';
-
-/**
- * The collapse-replacer shared by the cacheKey serializer
- * (`createDisplayListBuilder().cacheKey`), `cacheColdAudit.hashDisplayList`,
- * and `serializeDisplayList` here. CRITICAL: this is BYTE-PRESERVING — the
- * cacheKey it backs stamps into pushGroup and keys the §3.5 raster cache, so
- * its output must not move. The three call sites previously DUPLICATED this
- * byte-for-byte; it lives here once.
- *
- *  - ArrayBuffer / typed-array views collapse to a `ab:<len>` / `view:<len>`
- *    length marker (opaque binary never belongs in a structural key).
- *  - Functions drop (JSON would already drop them; explicit for parity).
- *  - Non-finite numbers (`NaN`/`Infinity`/`-Infinity`) collapse to DISTINCT
- *    string sentinels. `JSON.stringify` natively serializes all three to the
- *    SAME token (`null`), which would collide the cacheKey of two DisplayLists
- *    that differ only in WHICH non-finite value reaches a draw field — a stale
- *    raster + an `auditCacheCold` false-OK. The distinct sentinels keep them
- *    apart. This does NOT touch FINITE numbers (the common path): only the
- *    three non-finite inputs change, so the §3.5 cacheKey bytes for every real
- *    (finite) list are byte-identical — pinned by the regression guard.
- *
- * NOTE: `-0` is intentionally NOT normalized here. The matrix layer
- * (`matrix.ts`) already normalizes `-0 → 0` at the source, and adding a `-0`
- * pass to THIS replacer would change the cacheKey bytes for any list that ever
- * carried a raw `-0` — silently invalidating the cache cluster-wide. (`-0` is
- * finite, so the non-finite branch never touches it.) Byte preservation wins;
- * the regression guard pins the exact key.
- */
-export function collapseReplacer(_key: string, value: unknown): unknown {
-  if (value instanceof ArrayBuffer) return `ab:${value.byteLength}`;
-  if (ArrayBuffer.isView(value)) return `view:${(value as ArrayBufferView).byteLength}`;
-  if (typeof value === 'function') return undefined;
-  if (typeof value === 'number' && !Number.isFinite(value)) {
-    if (Number.isNaN(value)) return 'NaN';
-    return value > 0 ? 'Infinity' : '-Infinity';
-  }
-  return value;
-}
+// `collapseReplacer` is the byte-preserving cacheKey replacer — it lives on the
+// render path (`displayList.ts`) and was split into its own tiny module in the
+// 0.20 budget review so THIS diff/snapshot diagnostic surface can move to the
+// `@glissade/scene/diagnostics` subpath without dragging it off the base graph.
+// Re-exported here for back-compat (and the diagnostics barrel).
+export { collapseReplacer } from './collapseReplacer.js';
+import { collapseReplacer } from './collapseReplacer.js';
 
 /**
  * One index-aligned, positional delta between two DisplayList command streams.

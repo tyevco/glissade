@@ -6,18 +6,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  compileTimeline,
-  emptySidecar,
-  key,
-  mergeSidecar,
-  mergeSidecarDetailed,
-  sampleTrack,
-  setDevWarning,
-  setSidecarTrack,
-  timeline,
-  track,
-} from '@glissade/core';
+import { compileTimeline, key, sampleTrack, setDevWarning, timeline, track } from '@glissade/core';
+// Sidecar API moved to the `@glissade/core/sidecar` subpath (0.20 budget review).
+import { emptySidecar, mergeSidecar, mergeSidecarDetailed, setSidecarTrack } from '@glissade/core/sidecar';
 
 const T0 = () => timeline({ tracks: [track('title/opacity', 'number', [key(0, 0), key(1, 1)])] });
 // T1: the code baseline changed beneath the edit (same target, different keys)

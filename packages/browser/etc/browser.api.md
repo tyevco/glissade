@@ -5,12 +5,27 @@
 ```ts
 
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { FollowPath } from '@glissade/scene/motion';
+import { followPath } from '@glissade/scene/motion';
+import { motionPath } from '@glissade/scene/motion';
+import { pathLength } from '@glissade/scene/motion';
+import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { splitText } from '@glissade/scene/type';
 
 export { Canvas2DBackend }
+
+export { FollowPath }
+
+export { followPath }
+
+export { motionPath }
+
+export { pathLength }
+
+export { pointAtLength }
 
 export { renderToDataURL }
 

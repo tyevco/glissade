@@ -90,6 +90,18 @@ describe('@glissade/browser entry surface', () => {
     expect(typeof glissade.splitText).toBe('function');
   });
 
+  it('exposes the motion-path follow helper (from @glissade/scene/motion) — 0.20 budget review', () => {
+    // motionPath / followPath moved off the base scene index onto the tree-shaken
+    // @glissade/scene/motion subpath in the 0.20 budget review. The design agent
+    // reaches for `window.glissade.motionPath`, and works only against the IIFE,
+    // so the convenience bundle MUST re-export the whole follow surface.
+    expect(typeof glissade.motionPath).toBe('function');
+    expect(typeof glissade.followPath).toBe('function');
+    expect(typeof glissade.pointAtLength).toBe('function');
+    expect(typeof glissade.pathLength).toBe('function');
+    expect(typeof glissade.FollowPath).toBe('function');
+  });
+
   it('exposes the machine-readable API manifest (describe, from @glissade/scene/describe)', () => {
     // 0.18: `glissade.describe()` is the discoverability artifact — the design
     // agent reverse-engineered the API instead of reading it; this guards it's

@@ -7,7 +7,8 @@
  * deep-derive plain data — never live Node/Signal refs.
  */
 
-import { mergeSidecarDetailed, type SidecarDoc, type Timeline, type Track } from '@glissade/core';
+import { type Timeline, type Track } from '@glissade/core';
+import { mergeSidecarDetailed, type SidecarDoc } from '@glissade/core/sidecar';
 import {
   applyPatches,
   isEditableNodeId,
