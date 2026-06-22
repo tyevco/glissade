@@ -1,6 +1,6 @@
 {
   "name": "@glissade/narrate",
-  "version": "0.20.0-pre.2",
+  "version": "0.20.0-pre.3",
   "description": "glissade narration + captions: TTS at prepare time (gs narrate), deterministic caching, narration-anchored timeline beats, and captions as plain tracks. Render stays offline.",
   "license": "Apache-2.0",
   "engines": {
