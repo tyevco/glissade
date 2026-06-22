@@ -23,6 +23,7 @@ import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
 import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
 import goldenCaptionsLong from '../../examples/src/scenes/golden-captions-long.js';
 import goldenCaptionsSplit from '../../examples/src/scenes/golden-captions-split.js';
+import goldenCaption from '../../examples/src/scenes/golden-caption.js';
 import goldenMarker from '../../examples/src/scenes/golden-marker.js';
 import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
@@ -137,6 +138,12 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'captions-long', mod: goldenCaptionsLong },
   // caption split-cues: a long segment splits into timed sub-cues
   { name: 'captions-split', mod: goldenCaptionsSplit },
+  // CAPTION corpus coverage (lVqWHip5CpfO): glissade's OWN caption layer —
+  // the DEFAULT landscape captionNode + a captionTrack with ONE long multi-line
+  // segment wrapping to ~2 lines, bottom-anchored in the safe-area band. The
+  // other goldens are caption-FREE, so this is the regression guard for the
+  // @glissade/narrate caption render. Converges with video-canary (39af4d1c).
+  { name: 'caption', mod: goldenCaption },
   // anchors (placement + pivot) and the marker highlight sweep
   { name: 'marker', mod: goldenMarker },
   // typewriter reveal + caret (partial-line masking, wrap, cursor blink)
