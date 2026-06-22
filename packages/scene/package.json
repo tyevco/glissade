@@ -44,6 +44,10 @@
     "./motion": {
       "types": "./dist/motion.d.ts",
       "default": "./dist/motion.js"
+    },
+    "./identity": {
+      "types": "./dist/identity.d.ts",
+      "default": "./dist/identity.js"
     }
   },
   "files": [

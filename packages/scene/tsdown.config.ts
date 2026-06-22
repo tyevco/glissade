@@ -17,6 +17,7 @@ export default defineConfig({
     'src/type.ts',
     'src/diagnostics.ts',
     'src/motion.ts',
+    'src/identity.ts',
   ],
   format: 'esm',
   dts: true,

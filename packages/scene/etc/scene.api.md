@@ -224,6 +224,9 @@ export interface DisplayList {
 // @public (undocumented)
 export interface DisplayListBuilder {
     cacheKey?(start: number, end: number): string | undefined;
+    enterNode?(id: string | undefined): void;
+    // (undocumented)
+    exitNode?(): void;
     mark?(): number;
     patchCacheKey?(i: number, key: string): void;
     // (undocumented)

@@ -111,6 +111,7 @@ const BUDGETS = {
   'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
   'scene/diagnostics': 7, // 0.20: the §3.3 DEV/CLI determinism-diagnostic surface — diffDisplayLists / formatDisplayDiff / serializeDisplayList / parseDisplaySnapshot, auditCacheCold, and tokenHighlight. Side-effect-free, NEVER reached by evaluate(); relocated off the base scene index in the 0.20 budget review onto this tree-shakeable subpath. (`collapseReplacer` — the byte-preserving §3.5 cacheKey replacer — is the one piece on the render path; it stays in collapseReplacer.ts on the base index and is re-exported here.) The standalone bundle inlines the same-package displayList/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.4 kB is mostly that shared path; base scene stays diagnostics-free (asserted by the metafile guard below).
   'scene/motion': 7, // 0.20: the §3 motion-path follow helper — followPath / motionPath / pointAtLength / pathLength. A USER-FACING opt-in (the design agent reaches for window.glissade.motionPath), but NOT on the base evaluate/render path — only path-following scenes import it. Relocated off the base scene index onto this tree-shakeable subpath in the 0.20 budget review, and re-exported onto the @glissade/browser IIFE so window.glissade.motionPath survives. The standalone bundle inlines the same-package Path/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.3 kB is mostly that shared node-construction path, not motionPath's own surface; base scene stays motion-free (asserted by the metafile guard below).
+  'scene/identity': 7, // 0.20 S1 (DOM-backend readiness): the OUT-OF-BAND node-identity producer — emitWithIds() + the instrumented DisplayListBuilder that records a positional NodeIdStream ALONGSIDE the DisplayList (docs/design/dom-backend.md "Seam 1"). OPT-IN and OFF by default: the normal evaluate/render never touches it, and Node.emit's enterNode/exitNode calls are guarded no-ops on createDisplayListBuilder, so every DrawCommand stays byte-identical. Ships ONLY on this separate entry (@glissade/scene/identity), never the base scene index — ZERO base-scene cost, mirroring diagnostics/motion/grid. The standalone bundle inlines the same-package scene/displayList/node helpers it evaluates through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared evaluate path, not emitWithIds's own ~0.5 kB. base scene stays identity-free (asserted by the metafile guard below).
   'scene/type': 5, // 0.19: splitText() — build-time split-text sub-targets (word/line/grapheme → a Group of positioned per-part child Texts). Ships ONLY on this separate entry, never the base scene index — ZERO base-scene cost, mirroring each()/scene/layout/scene/path. The standalone bundle inlines the same-package Text/Group/measurement helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared node-construction path, not splitText's own ~1 kB.
   'backend-canvas2d': 8,
   'backend-canvas2d/snapshot': 3, // 0.19: the `renderToDataURL` / `snapshotCanvas` data-URL DX seam (Blob→data: encode + the evaluate→render→snapshot one-shot) ships ONLY on this separate entry, never the base backend-canvas2d index — a no-build playback embed never needs to screenshot. Keeping it off the base index returned the base embed to ~38.44 (it had crept to 38.84 when the snapshot code lived on the index). Standalone bundle inlines the same-package backend index it renders through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared backend path, not the encode helper.
@@ -279,6 +280,20 @@ const gridInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\
 const gridOk = gridInBase.length === 0;
 if (!gridOk) failed = true;
 console.log(`${gridOk ? 'ok  ' : 'FAIL'} base scene excludes grid${gridOk ? '' : ` (leaked: ${gridInBase.join(', ')})`}`);
+
+// 0.20 guard: the base scene bundle must NOT pull in the S1 node-identity
+// producer (identity.ts) — it's the separately-budgeted @glissade/scene/identity
+// entry (the DOM-backend readiness prerequisite, OPT-IN/off by default). The base
+// index never imports it, so assert via the metafile that it stays off the base
+// graph — the diagnostics/motion/grid exclusion shape. A stray re-import would
+// silently re-bloat the embed AND would mean the off-by-default identity seam is
+// no longer free on the render path.
+const identityInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) =>
+  /scene\/(src|dist)\/identity\./.test(i),
+);
+const identityOk = identityInBase.length === 0;
+if (!identityOk) failed = true;
+console.log(`${identityOk ? 'ok  ' : 'FAIL'} base scene excludes identity${identityOk ? '' : ` (leaked: ${identityInBase.join(', ')})`}`);
 
 // 0.20 guard: the base scene bundle must NOT pull in the layout ctors
 // (layoutCtors.ts) either — those are the @glissade/scene/layout-ctors entry

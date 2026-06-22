@@ -85,6 +85,42 @@ forward render; cross-frame diffing is the real backend's job. The positional
 producer + `(id, op)` key is the committed *shape*; tuning the move/reorder
 heuristic is build-time work.
 
+### S1 is BUILT — the `emitWithIds` producer (0.20, off by default)
+
+The Seam-1 producer now ships as the opt-in **`@glissade/scene/identity`** subpath:
+
+```ts
+import { emitWithIds, type NodeIdStream } from '@glissade/scene/identity';
+
+const { displayList, ids } = emitWithIds(scene, timeline, t);
+// ids.length === displayList.commands.length;
+// ids[i] is the stable explicit id of the node that emitted command i,
+// or `undefined` for a node without one.
+```
+
+`emitWithIds` runs the **same pure emit** `evaluate()` runs, but through an
+**instrumented `DisplayListBuilder`** that records, positionally by command
+index, the emitting node's id — a `NodeIdStream = (string | undefined)[]`
+emitted *alongside* the DisplayList, never inside it. The mechanism is a tiny
+out-of-band seam on the builder interface: `Node.emit` brackets each node's whole
+`save…restore` slice with `out.enterNode?.(this.id)` / `out.exitNode?.()`, and the
+instrumented builder keeps a LIFO id stack, tagging every `push` with the stack
+top. Because the emit walk is already stable + deterministic (the §3.3 positional
+discipline `diffDisplayLists` relies on), the stream is stable across re-emits of
+an unchanged graph at a given `t`.
+
+**Off-by-default guarantee (the load-bearing proof).** The default
+`createDisplayListBuilder` does NOT implement `enterNode`/`exitNode`, so those
+guarded calls in `Node.emit` are no-ops on every normal `evaluate()` /
+`emit()` / `render()` — **every DrawCommand stays byte-identical** and the 262
+goldens are frozen. The DisplayList produced by `emitWithIds` is byte/deep-equal
+to `evaluate()`'s; only the side `ids` stream is new. The subpath is
+tree-shakeable and never imported by the base scene index (a `check:size`
+metafile guard asserts it), so the base embed budget is unchanged (~35.55 gz);
+it is npm-subpath-only (NOT re-exported onto the `@glissade/browser` IIFE — zero
+IIFE delta). The DOM backend (S2+) consumes `ids` to stamp `data-node-id` and key
+its retained-DOM reconciler; canvas/Skia/export never see it.
+
 ## Seam 2 — backend injection: a `mount` factory param (target)
 
 **The pin today.** `packages/player/src/mount.ts` (~line 41) hardcodes

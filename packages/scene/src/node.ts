@@ -365,6 +365,11 @@ export abstract class Node {
     // non-cache emits (and the lightweight mock builders in tests) never touch
     // them — preserving byte-identity and back-compat for every other node.
     const wantsKey = this.cache && out.mark !== undefined;
+    // S1 out-of-band identity (off by default): announce the emitting node so an
+    // instrumented builder can attribute every `push` below to `this`. A no-op
+    // on the normal path — `createDisplayListBuilder` omits enterNode/exitNode,
+    // so every DrawCommand stays byte-identical. See displayList.ts "Seam 1".
+    out.enterNode?.(this.id);
     out.push({ op: 'save' });
     if (!isIdentity) out.push({ op: 'transform', m: local });
     // Mark BEFORE pushGroup so the cacheKey covers exactly the draw() slice
@@ -392,5 +397,6 @@ export abstract class Node {
       out.push({ op: 'popGroup' });
     }
     out.push({ op: 'restore' });
+    out.exitNode?.();
   }
 }

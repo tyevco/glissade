@@ -225,6 +225,21 @@ export interface DisplayListBuilder {
   cacheKey?(start: number, end: number): string | undefined;
   /** Stamp a cacheKey onto the pushGroup already emitted at index `i`. */
   patchCacheKey?(i: number, key: string): void;
+  /**
+   * OUT-OF-BAND node-identity seam (S1, the DOM-backend readiness prerequisite —
+   * see docs/design/dom-backend.md "Seam 1"). `Node.emit` announces the node it
+   * is about to emit (`enterNode(this.id)`) and announces completion
+   * (`exitNode()`) — a strictly LIFO pair around the whole save…restore slice,
+   * so the instrumented builder can attribute each `push` to the emitting node
+   * and produce a positional `NodeIdStream` ALONGSIDE the DisplayList, never
+   * inside it. Both are OPTIONAL: the default `createDisplayListBuilder` does NOT
+   * implement them, so `Node.emit`'s guarded `out.enterNode?.()` /
+   * `out.exitNode?.()` calls are no-ops on the normal evaluate/render path and
+   * every DrawCommand stays byte-identical (the 262-golden contract). Only the
+   * opt-in `emitWithIds` builder (`@glissade/scene/identity`) supplies them.
+   */
+  enterNode?(id: string | undefined): void;
+  exitNode?(): void;
 }
 
 /**
