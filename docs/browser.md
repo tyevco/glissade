@@ -152,6 +152,94 @@ If you already hold a `Canvas2DBackend` over a live canvas, `await snapshotCanva
 
 > **Browser-only.** `renderToDataURL` / `snapshotCanvas` rely on the browser canvas (`OffscreenCanvas` / `toDataURL`); they are not for Node. The headless, byte-exact path is the Skia backend / `gs render` CLI — see the export docs.
 
+## Exporting video / capturing frames
+
+The bundle is the **realtime** surface, but it can still produce files. Two
+levels, depending on what you need:
+
+### Stills — `renderToDataURL` (covered above)
+
+For a single frame as a PNG/WebP (a thumbnail, a poster, a test fixture), use
+[`renderToDataURL`](#snapshot-a-frame-as-a-data-url) — `await G.renderToDataURL(scene, timeline, t)`.
+
+### A `.webm` clip — own-rAF render loop → `MediaRecorder`
+
+For an in-browser **video** there is no special export API: drive your own frame
+loop into a live `<canvas>` (the [own-rAF path](#_1-the-lean-own-raf-path)), grab
+its `MediaStream` with `canvas.captureStream()`, and record that stream with the
+platform [`MediaRecorder`](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder).
+glissade's `evaluate` is a pure function of time, so the loop is just
+"evaluate → render → repeat" while the recorder captures whatever the canvas shows:
+
+```js
+const G = window.glissade;
+const canvasEl = document.querySelector('canvas');
+const backend = new G.Canvas2DBackend(canvasEl);
+
+const scene = G.createScene({
+  size: { w: 640, h: 360 },
+  children: [new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa' })],
+});
+scene.setTextMeasurer(backend);
+
+const DURATION = 2; // seconds
+const timeline = G.timeline((tl) => {
+  tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.cubicInOut });
+});
+
+async function recordWebm() {
+  // 30 fps stream off the live canvas; webm is the broadly-supported codec in-browser
+  const stream = canvasEl.captureStream(30);
+  const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+
+  const done = new Promise((resolve) => { rec.onstop = resolve; });
+  rec.start();
+
+  // Own the clock: render frame-by-frame for exactly DURATION, then stop.
+  const t0 = performance.now();
+  await new Promise((resolve) => {
+    function frame(now) {
+      const t = (now - t0) / 1000;
+      if (t >= DURATION) return resolve();
+      backend.render(G.evaluate(scene, timeline, t)); // evaluate = pure fn of time → render
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+
+  rec.stop();
+  await done;
+
+  // Assemble the Blob and offer it as a download.
+  const blob = new Blob(chunks, { type: 'video/webm' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'glissade.webm';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+```
+
+`MediaRecorder` captures the canvas **as it paints in real time** — it is wall-clock,
+not frame-exact, so a stutter on the page becomes a stutter in the file. It is the
+right tool for a quick share-able clip, a screen-grab, or a preview. It is **not**
+deterministic.
+
+> **In-browser gives you webm; a deterministic MP4 needs the offline path.**
+> For frame-exact, byte-reproducible video (every render identical, sharded across
+> workers, encoded with ffmpeg), use the headless Skia / CLI path: `gs render`.
+> That route renders the *same scene code* off the real clock, one frame at a time,
+> with no dropped-frame drift — see the export docs. The browser bundle deliberately
+> excludes it (see [What is NOT in this bundle](#what-is-not-in-this-bundle)).
+
+> **`bake()` is not an encoder.** A common confusion: `bake()` (on `window.glissade`)
+> pre-computes stateful simulation — physics, a spring chain — into ordinary
+> frame-indexed *tracks/values* so `evaluate` stays a pure function of time. It bakes
+> *animation data*, not pixels, and produces no video. The encode step is
+> `MediaRecorder` (webm, here) or `gs render` (mp4, offline).
+
 ## What is NOT in this bundle
 
 This is the **realtime** surface only. It deliberately excludes:
