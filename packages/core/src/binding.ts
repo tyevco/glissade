@@ -17,8 +17,14 @@ export function createPlayhead(initial = 0): Playhead {
 }
 
 export class UnboundTargetError extends Error {
-  constructor(target: string) {
-    super(`timeline targets '${target}' but no property signal resolves to it`);
+  /**
+   * `message` overrides the default generic text — the seam a layer with more
+   * context (e.g. `scene`, which knows the node's construction-prop schema) uses
+   * to throw a friendlier, more specific reason while keeping the same error
+   * type (so existing `instanceof UnboundTargetError` catches still fire).
+   */
+  constructor(target: string, message?: string) {
+    super(message ?? `timeline targets '${target}' but no property signal resolves to it`);
     this.name = 'UnboundTargetError';
   }
 }
@@ -84,6 +90,20 @@ export interface BoundTimeline {
 }
 
 /**
+ * Optional knobs for {@link bindTimeline}.
+ */
+export interface BindOptions {
+  /**
+   * Asked for a friendlier message when a target fails to resolve. `core` knows
+   * nothing about node types or construction props; a caller with that context
+   * (e.g. `scene`) can return a more-specific reason string — used verbatim as
+   * the {@link UnboundTargetError} message — or `undefined` to fall through to
+   * the generic "no property signal resolves to it".
+   */
+  unboundMessage?: (target: string) => string | undefined;
+}
+
+/**
  * Bind a compiled timeline's tracks to property signals. `resolve` returns
  * the signal for a target path, or undefined — which is a compile-time-style
  * error (§2.2: unbound tracks are build errors, not silent no-ops).
@@ -92,12 +112,13 @@ export function bindTimeline(
   compiled: CompiledTimeline,
   resolve: (target: string) => BindTarget | undefined,
   playhead: Playhead = createPlayhead(),
+  options: BindOptions = {},
 ): BoundTimeline {
   const bound: BindTarget[] = [];
   const samplers = new Map<string, CurveSampler>();
   for (const [target, tr] of compiled.tracks) {
     const sig = resolve(target);
-    if (!sig) throw new UnboundTargetError(target);
+    if (!sig) throw new UnboundTargetError(target, options.unboundMessage?.(target));
     const got = (tr as Track).type;
     const expects = sig.expects;
     // An UNtagged target (expects === undefined) skips the guard — back-compat

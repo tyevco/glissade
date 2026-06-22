@@ -175,6 +175,7 @@ export {
   BindTypeMismatchError,
   type Playhead,
   type BindTarget,
+  type BindOptions,
   type BoundTimeline,
   type CurveSampler,
 } from './binding.js';

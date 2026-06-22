@@ -23,6 +23,7 @@
 import { easings, listValueTypes } from '@glissade/core';
 import { Group, Rect, Circle, Path, Text, ImageNode, Video } from './nodes.js';
 import { type Node } from './node.js';
+import { BASE_CONSTRUCTION_PROP_NAMES, NODE_CONSTRUCTION_PROP_NAMES } from './constructionProps.js';
 
 // Lockstep `0.x` versioning bumps every @glissade package together, so scene's
 // own version IS the glissade version. The `__GLISSADE_VERSION__` sentinel below
@@ -146,15 +147,18 @@ interface ConstructionProp {
 }
 
 /**
- * Construction-only props by node type — the difference between a node's Props
- * interface and its `registerTarget` set (its animatable props). These are set
- * once at `new Node({...})` and can never be animated.
+ * Per-prop construction metadata (value type + `required`) for the manifest.
+ * The NAME sets themselves are owned by the slim `./constructionProps` module
+ * (which BOTH this file and the embed-path bind guard import); this map only
+ * layers the richer per-prop type info on top of those names. `describeNode`
+ * iterates the slim names and looks each one up here, so a name that exists in
+ * one place but not the other is a build-time-visible bug, not silent drift.
  *
  * Base `NodeProps` construction props (`id`, `blend`, `filters`, `anchor`,
  * `cache`) are shared by EVERY node and merged in separately, so this map holds
  * only each node's OWN construction surface.
  */
-const CONSTRUCTION_PROPS: { [typeName: string]: { [prop: string]: ConstructionProp } } = {
+const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: ConstructionProp } } = {
   Group: {
     children: { type: 'Node[]' },
   },
@@ -198,10 +202,12 @@ const CONSTRUCTION_PROPS: { [typeName: string]: { [prop: string]: ConstructionPr
 };
 
 /**
- * Base-`NodeProps` construction props shared by every node — set at
- * construction, never animatable (none is a registered target).
+ * Per-prop type metadata for the shared base `NodeProps` construction props —
+ * set at construction, never animatable. The NAME set lives in the slim
+ * `./constructionProps` module (`BASE_CONSTRUCTION_PROP_NAMES`); this just maps
+ * each shared name to its manifest value type.
  */
-const BASE_CONSTRUCTION_PROPS: { [prop: string]: ConstructionProp } = {
+const BASE_CONSTRUCTION_PROP_META: { [prop: string]: ConstructionProp } = {
   id: { type: 'string' },
   blend: { type: 'BlendMode' },
   filters: { type: 'FilterSpec[]' },
@@ -227,8 +233,13 @@ function describeNode(node: Node, typeName: string): DescribedNode {
   }
   // Construction-only props: base NodeProps + this node's own. No `target`:
   // these are never bindable, and the bind guard rejects any track on them.
-  const construction = { ...BASE_CONSTRUCTION_PROPS, ...(CONSTRUCTION_PROPS[typeName] ?? {}) };
-  for (const [prop, spec] of Object.entries(construction)) {
+  // Iterate the slim NAME sets (the shared source of truth) and look each name's
+  // value type up in the metadata map; a missing entry is a wiring bug.
+  const ownNames = NODE_CONSTRUCTION_PROP_NAMES[typeName] ?? [];
+  const meta = { ...BASE_CONSTRUCTION_PROP_META, ...(CONSTRUCTION_PROP_META[typeName] ?? {}) };
+  for (const prop of [...BASE_CONSTRUCTION_PROP_NAMES, ...ownNames]) {
+    const spec = meta[prop];
+    if (spec === undefined) throw new Error(`describe(): construction prop '${typeName}/${prop}' has no type metadata`);
     props[prop] = {
       type: spec.type,
       animatable: false,
@@ -257,7 +268,9 @@ const LAYOUT_ANIMATABLE: { [prop: string]: { type: string } } = {
   gap: { type: 'number' },
   padding: { type: 'number' },
 };
-const LAYOUT_CONSTRUCTION: { [prop: string]: ConstructionProp } = {
+// Type metadata for the Layout construction props; the NAME set is the slim
+// module's `Layout` entry, kept in lockstep by describe.test.ts.
+const LAYOUT_CONSTRUCTION_META: { [prop: string]: ConstructionProp } = {
   direction: { type: "'row'|'column'" },
   justify: { type: "'start'|'center'|'end'|'space-between'|'space-around'" },
   align: { type: "'start'|'center'|'end'|'stretch'" },
@@ -278,8 +291,9 @@ function describeLayoutNode(): DescribedNode {
     const arity = arityOf(spec.type);
     props[prop] = { type: spec.type, animatable: true, target: `<id>/${prop}`, ...(arity !== undefined ? { arity } : {}) };
   }
-  const construction = LAYOUT_CONSTRUCTION;
-  for (const [prop, spec] of Object.entries(construction)) {
+  for (const prop of NODE_CONSTRUCTION_PROP_NAMES.Layout ?? []) {
+    const spec = LAYOUT_CONSTRUCTION_META[prop];
+    if (spec === undefined) throw new Error(`describe(): Layout construction prop '${prop}' has no type metadata`);
     props[prop] = { type: spec.type, animatable: false, ...(spec.required ? { required: true } : {}) };
   }
   return { props, subpath: LAYOUT_SUBPATH };

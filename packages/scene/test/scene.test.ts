@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { key, timeline, track, signal, BindTypeMismatchError, type Paint, type Vec2, type PathValue } from '@glissade/core';
+import {
+  key,
+  timeline,
+  track,
+  signal,
+  BindTypeMismatchError,
+  UnboundTargetError,
+  type Paint,
+  type Vec2,
+  type PathValue,
+} from '@glissade/core';
 import {
   applyToPoint,
   bindScene,
@@ -10,11 +20,13 @@ import {
   evaluate,
   fromTRS,
   Group,
+  ImageNode,
   multiply,
   Path,
   Rect,
   ReservedNodeIdError,
   Text,
+  Video,
   type DisplayList,
 } from '../src/index.js';
 
@@ -331,5 +343,100 @@ describe('bind-time type guard (§2.2, 0.14)', () => {
     expect(() => bindScene(scene, doc)).not.toThrow();
     evaluate(scene, doc, 0.5);
     expect(scene.nodes.get('p')!.localMatrix().every((v) => Number.isFinite(v))).toBe(true);
+  });
+});
+
+// 0.20 (M9qXdWCu): a track aimed at a CONSTRUCTION prop (animatable:false — e.g.
+// Image/Video `assetId`, Text `fontFamily`) is already correctly rejected; this
+// only makes the message say WHY ("set it at construction") instead of the
+// generic "no property signal resolves to it". A genuinely-unknown prop still
+// gets the generic UnboundTargetError.
+describe('construction-prop bind error (0.20)', () => {
+  it('binding Image `assetId` (a required construction prop) throws the SPECIFIC message', () => {
+    const scene = createScene({
+      size: { w: 200, h: 100 },
+      children: [new ImageNode({ id: 'bg', assetId: 'hero', width: 200, height: 100 })],
+    });
+    const doc = timeline({ tracks: [track('bg/assetId', 'number', [key(0, 0), key(1, 1)])] });
+    let err: unknown;
+    try {
+      bindScene(scene, doc);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UnboundTargetError);
+    const m = (err as Error).message;
+    expect(m).toContain('bg/assetId');
+    expect(m).toContain('construction prop');
+    expect(m).toContain('animatable:false');
+    expect(m).toContain('not an animatable target');
+    expect(m).toContain('new Image('); // ImageNode reports its taxonomy name `Image`
+    // NOT the generic wording
+    expect(m).not.toContain('no property signal resolves to it');
+  });
+
+  it('fromTo-ing Text `fontFamily` (a construction prop) throws the specific message', () => {
+    const scene = createScene({
+      size: { w: 200, h: 100 },
+      children: [new Text({ id: 'label', text: 'hi', fontFamily: 'serif' })],
+    });
+    const doc = timeline((tl) => tl.fromTo('label/fontFamily', 'serif', 'mono', { duration: 1 }));
+    let err: unknown;
+    try {
+      bindScene(scene, doc);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UnboundTargetError);
+    const m = (err as Error).message;
+    expect(m).toContain('label/fontFamily');
+    expect(m).toContain('construction prop');
+    expect(m).toContain('not an animatable target');
+    expect(m).toContain('new Text(');
+  });
+
+  it('Video clip construction props (trimStart/at) also report the specific message', () => {
+    const scene = createScene({
+      size: { w: 200, h: 100 },
+      children: [new Video({ id: 'clip', assetId: 'reel' })],
+    });
+    const doc = timeline({ tracks: [track('clip/trimStart', 'number', [key(0, 0), key(1, 1)])] });
+    expect(() => bindScene(scene, doc)).toThrow(/construction prop/);
+    expect(() => bindScene(scene, doc)).toThrow(/clip\/trimStart/);
+  });
+
+  it('a genuinely-unknown prop still throws the GENERIC UnboundTargetError', () => {
+    const scene = createScene({
+      size: { w: 200, h: 100 },
+      children: [new Rect({ id: 'card', width: 40, height: 40 })],
+    });
+    const doc = timeline({ tracks: [track('card/bogus', 'number', [key(0, 0), key(1, 1)])] });
+    let err: unknown;
+    try {
+      bindScene(scene, doc);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UnboundTargetError);
+    const m = (err as Error).message;
+    expect(m).toContain('card/bogus');
+    expect(m).toContain('no property signal resolves to it'); // generic wording
+    expect(m).not.toContain('construction prop');
+  });
+
+  it('an unknown NODE ID (not just an unknown prop) stays generic', () => {
+    const scene = createScene({
+      size: { w: 200, h: 100 },
+      children: [new Rect({ id: 'card', width: 40, height: 40 })],
+    });
+    const doc = timeline({ tracks: [track('ghost/assetId', 'number', [key(0, 0), key(1, 1)])] });
+    let err: unknown;
+    try {
+      bindScene(scene, doc);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(UnboundTargetError);
+    expect((err as Error).message).toContain('no property signal resolves to it');
   });
 });

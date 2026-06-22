@@ -583,6 +583,7 @@ class ImageNode extends Node_2 {
     // (undocumented)
     readonly assetId: string;
     static readonly assetKind: "image";
+    get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder): void;
     // (undocumented)
@@ -720,6 +721,7 @@ abstract class Node_2 {
     // (undocumented)
     readonly blend: BindableSignal<BlendMode>;
     readonly cache: boolean;
+    get describeType(): string;
     protected abstract draw(out: DisplayListBuilder, ctx: EvalContext): void;
     drawOffset(measurer?: TextMeasurer): {
         x: number;

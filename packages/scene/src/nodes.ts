@@ -540,6 +540,10 @@ export interface ImageProps extends NodeProps {
 export class ImageNode extends Node {
   /** Marks this node as referencing a kind 'image' timeline asset (§2.3). */
   static readonly assetKind = 'image' as const;
+  /** Public taxonomy name is `Image` (the class is `ImageNode`). */
+  override get describeType(): string {
+    return 'Image';
+  }
   readonly assetId: string;
   readonly width: BindableSignal<number>;
   readonly height: BindableSignal<number>;

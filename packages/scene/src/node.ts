@@ -251,6 +251,17 @@ export abstract class Node {
   }
 
   /**
+   * This node's DESCRIBE type name (e.g. `Image`, `Rect`) — the key the
+   * construction-prop schema and `describe()` manifest use. Defaults to the
+   * class name; `ImageNode` overrides it (its class name is `ImageNode`, but
+   * the public taxonomy name is `Image`). Used by the bind guard to turn a
+   * generic unbound-target error into a friendlier construction-prop message.
+   */
+  get describeType(): string {
+    return this.constructor.name;
+  }
+
+  /**
    * Enumerate this node's registered track-target paths and the value type each
    * accepts — the introspection seam `describe()` reads to build the API
    * manifest from the REAL `registerTarget` calls (so it can't drift). Returns

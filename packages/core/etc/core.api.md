@@ -72,6 +72,11 @@ export interface BindableSignal<T> extends Signal<T> {
     unbindSource(): void;
 }
 
+// @public
+export interface BindOptions {
+    unboundMessage?: (target: string) => string | undefined;
+}
+
 // @public (undocumented)
 export interface BindTarget {
     // (undocumented)
@@ -82,7 +87,7 @@ export interface BindTarget {
 }
 
 // @public
-export function bindTimeline(compiled: CompiledTimeline, resolve: (target: string) => BindTarget | undefined, playhead?: Playhead): BoundTimeline;
+export function bindTimeline(compiled: CompiledTimeline, resolve: (target: string) => BindTarget | undefined, playhead?: Playhead, options?: BindOptions): BoundTimeline;
 
 // @public
 export class BindTypeMismatchError extends Error {
@@ -783,7 +788,7 @@ export type TweenTarget = string | object;
 
 // @public (undocumented)
 export class UnboundTargetError extends Error {
-    constructor(target: string);
+    constructor(target: string, message?: string);
 }
 
 // @public (undocumented)

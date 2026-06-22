@@ -20,6 +20,7 @@ import { createDisplayListBuilder, type DisplayList } from './displayList.js';
 import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import { type BindablePropTarget, type EvalContext, Node } from './node.js';
 import { Group } from './nodes.js';
+import { isConstructionProp } from './constructionProps.js';
 
 export interface Scene {
   readonly root: Group;
@@ -132,6 +133,30 @@ interface BindingCacheEntry {
 // semantics-invisible; the dev harness re-runs cache-cold.
 const bindings = new WeakMap<Scene, WeakMap<Timeline, BindingCacheEntry>>();
 
+/**
+ * When a target fails to resolve, return a friendlier reason IF it names a
+ * known CONSTRUCTION prop (animatable: false — e.g. `assetId`, `fontFamily`):
+ * the target IS correctly rejected, but "no signal resolves to it" hides WHY.
+ * Resolves the node by the same longest-registered-id-prefix walk as
+ * `resolveTarget`, then checks the node's construction-prop schema. Returns
+ * undefined (⇒ the generic message) for a genuinely-unknown prop or unknown id.
+ */
+function constructionPropMessage(nodes: ReadonlyMap<string, Node>, target: string): string | undefined {
+  for (let slash = target.lastIndexOf('/'); slash > 0; slash = target.lastIndexOf('/', slash - 1)) {
+    const node = nodes.get(target.slice(0, slash));
+    if (!node) continue;
+    const prop = target.slice(slash + 1);
+    if (isConstructionProp(node.describeType, prop)) {
+      return (
+        `'${target}' is a construction prop (animatable:false) — set it at construction ` +
+        `(new ${node.describeType}({ ${prop} })); it is not an animatable target.`
+      );
+    }
+    return undefined; // node found, prop is not a construction prop ⇒ generic
+  }
+  return undefined;
+}
+
 export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
   let perScene = bindings.get(scene);
   if (!perScene) {
@@ -141,7 +166,9 @@ export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
   let entry = perScene.get(doc);
   if (!entry) {
     const compiled = compileTimeline(doc);
-    const bound = bindTimeline(compiled, scene.resolveTarget, scene.playhead);
+    const bound = bindTimeline(compiled, scene.resolveTarget, scene.playhead, {
+      unboundMessage: (target) => constructionPropMessage(scene.nodes, target),
+    });
     entry = { compiled, bound };
     perScene.set(doc, entry);
   }
