@@ -30,7 +30,17 @@ const result = await build({
   platform: 'browser',
   target: 'es2017',
   // INLINE every @glissade/* dep — the whole point of the single-file bundle.
-  external: [],
+  // EXCEPT `yoga-layout/load`: the 0.20 no-build layout split puts the Yoga-free
+  // node ctors (Layout/Stack/Row/Column) on the IIFE, but `loadYogaLayoutEngine`
+  // (re-exported for window.glissade.loadYogaLayoutEngine) carries the dynamic
+  // `import('yoga-layout/load')`. esbuild's IIFE format has no code-splitting, so
+  // inlining that import would statically pull Yoga's wasm-base64 binding into the
+  // bundle (~47→~99 kB gz — the 0.19.1 finding). Externalize the specifier so it
+  // stays a RUNTIME `import()` (the loader is a no-op in a bare <script src> page
+  // without a resolver — npm/bundler/import-map consumers get the real engine; the
+  // ctors compute once an engine is registered). The `@glissade/* leaked` guard
+  // below is unaffected — it only flags surviving `@glissade/*` specifiers.
+  external: ['yoga-layout/load'],
   define: { 'process.env.NODE_ENV': '"production"' },
   sourcemap: true,
   write: true,

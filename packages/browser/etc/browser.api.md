@@ -5,21 +5,35 @@
 ```ts
 
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { Column } from '@glissade/scene/layout-ctors';
 import { FollowPath } from '@glissade/scene/motion';
 import { followPath } from '@glissade/scene/motion';
+import { Grid } from '@glissade/scene/grid';
+import { Layout } from '@glissade/scene/layout-ctors';
+import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 import { motionPath } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
+import { Row } from '@glissade/scene/layout-ctors';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { splitText } from '@glissade/scene/type';
+import { Stack } from '@glissade/scene/layout-ctors';
 
 export { Canvas2DBackend }
+
+export { Column }
 
 export { FollowPath }
 
 export { followPath }
+
+export { Grid }
+
+export { Layout }
+
+export { loadYogaLayoutEngine }
 
 export { motionPath }
 
@@ -29,11 +43,15 @@ export { pointAtLength }
 
 export { renderToDataURL }
 
+export { Row }
+
 export { setShaderRunner }
 
 export { snapshotCanvas }
 
 export { splitText }
+
+export { Stack }
 
 
 export * from "@glissade/core";

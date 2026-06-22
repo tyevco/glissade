@@ -105,7 +105,9 @@ const BUDGETS = {
   'core/sidecar': 6, // 0.20: the §6.2 editor sidecar (merge/migrate/orphan/key-id machinery) — STUDIO-only, never on the evaluate/embed path. Relocated off the base core index in the 0.20 budget review onto this tree-shakeable subpath (~1 kB gz recovered on base core). The standalone bundle inlines the same-package track/spring/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5 kB is mostly that shared path, not the sidecar's own surface; base core stays sidecar-free (asserted by the metafile guard below).
   'core/i18n': 2, // 0.14 localization core: requireParity (pure id-set diff) + localize (pure doc→doc resolver) + t() (ambient-table build-time sugar). Tree-shakeable sub-path off the base index — the resolver bytes never touch the embed budget. timeline/track are TYPE-only imports, so the standalone bundle is essentially just these three functions.
   scene: 20, // raised 12→13→14→15→16→17→18→19→20 (0.5.x authoring features; 0.7 determinism: render-mode guards + cache-cold audit; 0.10 §3.5 cross-frame raster cache: cacheKey serializer + FNV-1a + the bitmap LRU in the shared Raster2D; 0.10.1 gradient Paint raster — linear/radial fill resolution + the smooth/gaussian stop densifier (oklab-eased ramp); 0.12 §3 mesh Paint kernel — the shared deterministic Shepard/gaussian IDW rasterizer (meshGradient.ts) + the clip+drawImage blit branch in Raster2D, ~0.8 kB. This is the REAL render path (one CPU kernel both backends run, no SkSL fork), not tree-shakeable; it is the determinism tentpole of the milestone; 18→19 in 0.13 for each() — deterministic parametric instancing (layout arithmetic + seeded mix + id stamping), ~1 kB. The clip runtime it fans is imported TYPE-ONLY, so the @glissade/core/clips bytes stay in the consumer bundle, NOT scene — verified: the scene metafile carries no clip/clipStdlib input; 19→20 in 0.14 for collectLocalizedTextUsages — the FIX 3 (0.14 NO-GO canary) post-localize string-track font-usage collector that the --strict CJK-tofu gate needs; it reuses the existing node-walk + Text instanceof path, ~0.01 kB over the tight 19 budget)
-  'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle
+  'scene/layout': 55, // §3.2: Yoga (wasm-base64 + bindings) ships ONLY in this separate entry, never the base scene bundle. 0.20: this entry now re-exports the Yoga-free ctors from layoutCtors.ts PLUS loadYogaLayoutEngine from layoutEngineYoga.ts (the dynamic `import('yoga-layout/load')`), so it STILL inlines Yoga in the standalone bundle — budget unchanged.
+  'scene/layoutCtors': 4, // 0.20 no-build layout split (npm subpath `@glissade/scene/layout-ctors`; the budget key matches the dist filename layoutCtors.js): the Yoga-FREE node ctors (Layout/Stack/Row/Column) — they touch the LayoutEngine seam (requireLayoutEngine/setLayoutEngine) only at COMPUTE time, never `import('yoga-layout/load')` at construction. Split off the loader so the @glissade/browser IIFE can expose Stack/Row/Column WITHOUT inlining Yoga's wasm. Standalone bundle inlines the same-package node/displayList helpers it computes through (the @glissade/* external only catches CROSS-package deps); the ctors' own surface is ~1 kB. The "browser IIFE excludes yoga binding" guard verifies the no-inline.
+  'scene/grid': 4, // 0.20 Grid (Fork B: scene-side track resolver): a build-time fan-out like each()/splitText — resolves uniform fr/fixed column tracks + gaps into cell positions and emits a Group of ordinary positioned children (stamps NO id, changes NO golden). NOT a Yoga feature — zero layout-engine dep. Ships ONLY on this separate entry, never the base scene index. Standalone bundle inlines the same-package Group/node helpers it constructs through; Grid's own arithmetic surface is ~0.6 kB.
   'scene/path': 3, // 0.17.1: the SVG `d`-string parser (parseSvgPathData + pathFromSvg) ships ONLY on this separate entry, never the base scene index — `Path({ data })` on a bare string throws pointing here. Keeping it off the base dropped the embed back under the 38 line.
   'scene/diagnostics': 7, // 0.20: the §3.3 DEV/CLI determinism-diagnostic surface — diffDisplayLists / formatDisplayDiff / serializeDisplayList / parseDisplaySnapshot, auditCacheCold, and tokenHighlight. Side-effect-free, NEVER reached by evaluate(); relocated off the base scene index in the 0.20 budget review onto this tree-shakeable subpath. (`collapseReplacer` — the byte-preserving §3.5 cacheKey replacer — is the one piece on the render path; it stays in collapseReplacer.ts on the base index and is re-exported here.) The standalone bundle inlines the same-package displayList/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.4 kB is mostly that shared path; base scene stays diagnostics-free (asserted by the metafile guard below).
   'scene/motion': 7, // 0.20: the §3 motion-path follow helper — followPath / motionPath / pointAtLength / pathLength. A USER-FACING opt-in (the design agent reaches for window.glissade.motionPath), but NOT on the base evaluate/render path — only path-following scenes import it. Relocated off the base scene index onto this tree-shakeable subpath in the 0.20 budget review, and re-exported onto the @glissade/browser IIFE so window.glissade.motionPath survives. The standalone bundle inlines the same-package Path/node helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5.3 kB is mostly that shared node-construction path, not motionPath's own surface; base scene stays motion-free (asserted by the metafile guard below).
@@ -269,6 +271,27 @@ const motionOk = motionInBase.length === 0;
 if (!motionOk) failed = true;
 console.log(`${motionOk ? 'ok  ' : 'FAIL'} base scene excludes motion${motionOk ? '' : ` (leaked: ${motionInBase.join(', ')})`}`);
 
+// 0.20 guard: the base scene bundle must NOT pull in Grid (grid.ts) — it's the
+// separately-budgeted @glissade/scene/grid entry (a build-time track resolver,
+// re-exported onto the browser IIFE). Index never imports it, so assert via the
+// metafile that grid.ts stays off the base graph — the splitText/motion shape.
+const gridInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) => /scene\/(src|dist)\/grid\./.test(i));
+const gridOk = gridInBase.length === 0;
+if (!gridOk) failed = true;
+console.log(`${gridOk ? 'ok  ' : 'FAIL'} base scene excludes grid${gridOk ? '' : ` (leaked: ${gridInBase.join(', ')})`}`);
+
+// 0.20 guard: the base scene bundle must NOT pull in the layout ctors
+// (layoutCtors.ts) either — those are the @glissade/scene/layout-ctors entry
+// (split off the loader for the IIFE). Index never imports them.
+const layoutCtorsInBase = Object.keys(sceneIndex.metafile.inputs).filter((i) =>
+  /scene\/(src|dist)\/layoutCtors\./.test(i),
+);
+const layoutCtorsOk = layoutCtorsInBase.length === 0;
+if (!layoutCtorsOk) failed = true;
+console.log(
+  `${layoutCtorsOk ? 'ok  ' : 'FAIL'} base scene excludes layout ctors${layoutCtorsOk ? '' : ` (leaked: ${layoutCtorsInBase.join(', ')})`}`,
+);
+
 // 0.20 guard: the base CORE index must NOT pull in the §6.2 editor sidecar
 // (sidecar.ts) — it's the separately-budgeted @glissade/core/sidecar entry,
 // STUDIO-only and never on the evaluate/embed path. A stray re-import would
@@ -404,25 +427,33 @@ for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
       `${ok ? 'ok  ' : 'FAIL'} ${'browser'.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB, ${(raw.length / 1024).toFixed(2)} kB raw)`,
     );
 
-    // §3.2 / §4.4 guard: Yoga's wasm MUST stay OUT of the single-file IIFE. The
-    // layout ctors + loadYogaLayoutEngine live in @glissade/scene/layout, whose
-    // dynamic import('yoga-layout/load') esbuild CANNOT keep async in an IIFE
-    // (no code-splitting in format:'iife') — it would inline the wasm-base64
-    // binding statically and balloon the bundle ~46.6→~99 kB gz. Mirror the
-    // "base scene excludes yoga-layout" metafile guard with a token scan of the
-    // prebuilt artifact: `calculateLayout`/`setFlexDirection` are distinctive
-    // yoga-binding identifiers, present ONLY when Yoga got inlined. If layout
-    // ctors are ever re-exported onto the IIFE, this fails loudly (the 0.20
-    // refactor must split the ctors from the engine import first).
+    // §3.2 / §4.4 guard: Yoga's WASM must stay OUT of the single-file IIFE. The
+    // 0.20 no-build layout split puts the Yoga-free ctors (Layout/Stack/Row/Column,
+    // @glissade/scene/layout-ctors) ON the IIFE and re-exports `loadYogaLayoutEngine`
+    // for window.glissade. The loader carries `import('yoga-layout/load')`; under
+    // esbuild's IIFE format (no code-splitting) inlining it would statically pull
+    // Yoga's wasm-base64 binding into the bundle (~46.6→~99 kB gz, the 0.19.1
+    // finding). build-browser.mjs EXTERNALIZES `yoga-layout/load` so the dynamic
+    // import stays a RUNTIME `import()` and the wasm never inlines.
+    //
+    // NB: the loader's JS calling code (root.calculateLayout/setFlexDirection) now
+    // rides the IIFE (~1.5 kB glue) — so those identifiers are NO LONGER a valid
+    // "inlined" signal. The real signature of inlined wasm is the base64 wasm blob
+    // (`AGFzbQ` == the `\0asm` magic) — present ONLY when Yoga's binary embeds.
+    // We ALSO assert `yoga-layout/load` survives as a runtime `import(` specifier:
+    // its presence proves esbuild kept it external (didn't inline it).
     const browserOut = new TextDecoder().decode(raw);
-    const yogaTokens = ['calculateLayout', 'setFlexDirection', 'yoga-wasm'].filter((t) =>
-      browserOut.includes(t),
-    );
-    const yogaOut = yogaTokens.length === 0;
+    const wasmInlined = browserOut.includes('AGFzbQ'); // base64 of the wasm magic header
+    const loaderExternal = /import\(\s*["']yoga-layout\/load["']\s*\)/.test(browserOut);
+    const yogaOut = !wasmInlined && loaderExternal;
     if (!yogaOut) failed = true;
     console.log(
       `${yogaOut ? 'ok  ' : 'FAIL'} browser IIFE excludes yoga binding${
-        yogaOut ? '' : ` (inlined: ${yogaTokens.map((t) => `token:${t}`).join(', ')})`
+        yogaOut
+          ? ''
+          : ` (${wasmInlined ? 'wasm blob inlined (AGFzbQ present)' : ''}${
+              !loaderExternal ? `${wasmInlined ? '; ' : ''}yoga-layout/load not kept as a runtime import` : ''
+            })`
       }`,
     );
   }

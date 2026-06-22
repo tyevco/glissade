@@ -17,6 +17,14 @@
       "types": "./dist/layout.d.ts",
       "default": "./dist/layout.js"
     },
+    "./layout-ctors": {
+      "types": "./dist/layoutCtors.d.ts",
+      "default": "./dist/layoutCtors.js"
+    },
+    "./grid": {
+      "types": "./dist/grid.d.ts",
+      "default": "./dist/grid.js"
+    },
     "./path": {
       "types": "./dist/path.d.ts",
       "default": "./dist/path.js"

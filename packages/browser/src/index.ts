@@ -33,10 +33,27 @@ export * from '@glissade/scene/path';
 // `@glissade/scene/type` subpath (off the base scene index for the scene
 // budget). The no-build consumer that REQUESTED it (explainer-video kinetic
 // typography) works only against this IIFE, so it must reach window.glissade —
-// `G.splitText(props, { by:'word', measurer: backend })`. (Stack/Row/Column stay
-// npm-only: those pull Yoga, which can't ride the bundle; splitText only needs
-// the measurer.) +0.44 kB, within the browser budget.
+// `G.splitText(props, { by:'word', measurer: backend })`. +0.44 kB, within the
+// browser budget.
 export { splitText } from '@glissade/scene/type';
+// 0.20 no-build layout split: the Yoga-FREE node ctors (Layout/Stack/Row/Column)
+// live on `@glissade/scene/layout-ctors` — they touch the LayoutEngine seam only
+// at compute time, never `import('yoga-layout/load')` at construction. So they
+// ride the IIFE cleanly (the loader, which inlines Yoga's wasm under esbuild's
+// IIFE format, does NOT). The no-build consumer must call
+// `await glissade.loadYogaLayoutEngine()` ONCE before evaluating a Layout scene,
+// else the first compute throws LayoutEngineMissingError. Yoga is NOT inlined —
+// `loadYogaLayoutEngine` keeps its dynamic `import('yoga-layout/load')` as a
+// RUNTIME import (scripts/build-browser.mjs externalizes `yoga-layout/load`).
+// (setLayoutEngine/getLayoutEngine already reach window.glissade via the seam on
+// `export * from '@glissade/scene'`; only the loader is new here.)
+export { Layout, Stack, Row, Column } from '@glissade/scene/layout-ctors';
+export { loadYogaLayoutEngine } from '@glissade/scene/layout';
+// 0.20 Grid (Fork B: scene-side track resolver) — a build-time fan-out (like
+// each()/splitText), NOT a Yoga feature. Lives on the tree-shakeable
+// `@glissade/scene/grid` subpath, off the base embed. Re-exported here so
+// `window.glissade.Grid` survives for the no-build consumer.
+export { Grid } from '@glissade/scene/grid';
 // `motionPath` / `followPath` (the §3 motion-path follow helper) moved to the
 // tree-shakeable `@glissade/scene/motion` subpath in the 0.20 budget review (off
 // the base scene index, off the base-embed budget). It is a USER-FACING helper

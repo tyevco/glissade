@@ -10,6 +10,8 @@ export default defineConfig({
   entry: [
     'src/index.ts',
     'src/layout.ts',
+    'src/layoutCtors.ts',
+    'src/grid.ts',
     'src/path.ts',
     'src/describe.ts',
     'src/type.ts',

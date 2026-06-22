@@ -104,6 +104,56 @@ const rowOfColumns = Stack({
 });
 ```
 
+## No-build (`<script src>`) layout
+
+The single-file `@glissade/browser` IIFE (`window.glissade.*`, for no-build `<script src>` pages) exposes the layout node ctors — `glissade.Stack`, `glissade.Row`, `glissade.Column`, `glissade.Layout` — **without** bundling Yoga's wasm. The ctors only touch the layout engine at *compute* time, so they ride the convenience bundle for free.
+
+Because Yoga is loaded lazily (and can't be inlined into the single-file IIFE), a no-build page must register the engine before evaluating a layout scene. `glissade.loadYogaLayoutEngine` is present on the bundle, but its dynamic `import('yoga-layout/load')` needs a module resolver (a bundler step or an import map) to fetch Yoga — a bare `<script src>` page without one will throw `LayoutEngineMissingError` when the first layout node computes.
+
+```html
+<script src="https://unpkg.com/@glissade/browser/dist/glissade.browser.js"></script>
+<script type="module">
+  // With an import map (or a bundler) that can resolve 'yoga-layout/load':
+  await glissade.loadYogaLayoutEngine();
+  const panel = glissade.Stack({ gap: 16, width: 'auto', height: 'auto', children: [/* … */] });
+</script>
+```
+
+If you can't load Yoga in a no-build page, reach for [`Grid`](#grid-build-time-track-layout) below — it is a pure build-time layout with **no engine dependency at all**.
+
+## `Grid` — build-time track layout
+
+`Grid` lays children out into a column grid — but unlike `Stack`/`Layout` it is **not** a Yoga feature. It is a pure *build-time fan-out* (like `each()` or `splitText()`): it resolves the column tracks and gaps into cell positions once, moves each child to its cell center via the child's ordinary `position`, and wraps them in a `Group`. Nothing runs at play time, no layout engine is needed, and it stamps no ids — so it composes with the goldens by construction and works in a bare no-build page.
+
+It lives on the tree-shakeable `@glissade/scene/grid` subpath (and `glissade.Grid` on the IIFE).
+
+```ts
+import { Grid } from '@glissade/scene/grid';
+import { Rect } from '@glissade/scene';
+
+const board = Grid({
+  columns: 3,        // sugar for three equal `fr` columns
+  gap: 16,           // gap between columns AND rows
+  width: 600,        // total content width the `fr` tracks divide
+  cellHeight: 80,    // row pitch (required when children span >1 row)
+  children: cards,   // row-major: child[i] → row floor(i/3), col i%3
+});
+// scene children: [board]
+```
+
+Columns can mix fixed-px and flexible `fr` tracks via the array form, exactly like CSS grid's `grid-template-columns`:
+
+```ts
+Grid({
+  columns: [80, { fr: 1 }, { fr: 1 }], // an 80px sidebar + two equal flexible columns
+  gap: 12,
+  width: 640,
+  children: [sidebar, main, aside],
+});
+```
+
+`Grid` is **position-only** in v1: it places each child at the center of its cell but does not resize children to fill their cells (cell `stretch` / sizing is deferred). Children keep their own intrinsic size. A grid with `fr` columns needs an explicit `width` to resolve fractions against; a grid spanning more than one row needs `cellHeight` (the row pitch).
+
 ## Tree-shakeable subpaths
 
 glissade keeps byte-heavy capabilities off the base embed budget by shipping them on dedicated entry points. Import from these subpaths to pull in only what you use:
@@ -112,6 +162,8 @@ glissade keeps byte-heavy capabilities off the base embed budget by shipping the
 | -------------------------- | ------------------------------------------------------------------------------------------------- |
 | `@glissade/scene`          | The base scene graph: `Group`, `Rect`, `Circle`, `Path`, `Text`, `Image`, `Video`, `createScene`. |
 | `@glissade/scene/layout`   | Flexbox layout: `Stack`, `Layout`, `loadYogaLayoutEngine` (Yoga wasm — a separate budget).         |
+| `@glissade/scene/layout-ctors` | The Yoga-FREE layout node ctors (`Stack`/`Row`/`Column`/`Layout`) alone — what the no-build IIFE re-exports so the ctors ride the bundle without inlining Yoga. Most code imports `@glissade/scene/layout` (which re-exports these plus the loader); reach here only to avoid the loader entirely. |
+| `@glissade/scene/grid`     | `Grid` — build-time column-track layout (no Yoga; pure positioning, like `each()`).                |
 | `@glissade/scene/path`     | The SVG `d`-string parser for `Path({ data: 'M0 0 L…' })` (`parseSvgPathData`, `pathFromSvg`).      |
 | `@glissade/core/clips`     | Reusable motion clips: `clip`, `clipList`, `popIn`, `slideIn`, … (keyframe literals off the embed). |
 

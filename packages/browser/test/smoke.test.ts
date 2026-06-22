@@ -102,6 +102,44 @@ describe('@glissade/browser entry surface', () => {
     expect(typeof glissade.FollowPath).toBe('function');
   });
 
+  it('exposes the Yoga-free layout ctors + the engine loader (0.20 no-build layout split)', () => {
+    // 0.20: the Yoga-free node ctors (Layout/Stack/Row/Column) live on
+    // @glissade/scene/layout-ctors — split off loadYogaLayoutEngine so they ride
+    // the IIFE WITHOUT inlining Yoga's wasm (the "browser IIFE excludes yoga
+    // binding" check-size guard verifies the no-inline). The loader is also
+    // re-exported (window.glissade.loadYogaLayoutEngine) so a bundler/import-map
+    // consumer can register the engine; in a bare <script src> page it's a no-op
+    // (the dynamic import('yoga-layout/load') can't resolve without a loader).
+    expect(typeof glissade.Layout).toBe('function');
+    expect(typeof glissade.Stack).toBe('function');
+    expect(typeof glissade.Row).toBe('function');
+    expect(typeof glissade.Column).toBe('function');
+    expect(typeof glissade.loadYogaLayoutEngine).toBe('function');
+    // The seam (set/getLayoutEngine) reaches window.glissade via export * scene.
+    expect(typeof glissade.setLayoutEngine).toBe('function');
+    expect(typeof glissade.getLayoutEngine).toBe('function');
+    // Constructing a Stack never touches Yoga (no engine registered) — it only
+    // resolves at compute time, so the ctor is safe pre-load.
+    expect(() => new glissade.Stack({ children: [] })).not.toThrow();
+  });
+
+  it('exposes Grid (from @glissade/scene/grid) — 0.20 build-time track resolver', () => {
+    // Grid is a build-time fan-out (like each/splitText), NOT a Yoga feature, on
+    // the tree-shaken @glissade/scene/grid subpath. The no-build consumer reaches
+    // for window.glissade.Grid, so the convenience bundle re-exports it.
+    expect(typeof glissade.Grid).toBe('function');
+    // It positions plain children into a column grid and returns a Group (no
+    // engine needed — pure arithmetic).
+    const g = glissade.Grid({
+      columns: 2,
+      gap: 10,
+      cellHeight: 20,
+      width: 100,
+      children: [new glissade.Rect({ width: 10, height: 10 }), new glissade.Rect({ width: 10, height: 10 })],
+    });
+    expect(g.children.length).toBe(2);
+  });
+
   it('exposes the machine-readable API manifest (describe, from @glissade/scene/describe)', () => {
     // 0.18: `glissade.describe()` is the discoverability artifact — the design
     // agent reverse-engineered the API instead of reading it; this guards it's
