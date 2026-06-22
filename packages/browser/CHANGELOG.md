@@ -1,5 +1,19 @@
 # @glissade/browser
 
+## 0.19.0-pre.4
+
+### Minor Changes
+
+- 67014b8: Expose `splitText` on the `@glissade/browser` IIFE (`window.glissade.splitText`). The no-build consumer that requested kinetic typography works only against the single-file bundle, so its own feature must be on `window.glissade` (mirrors `pathFromSvg`). +0.44 kB, within the 47 kB browser budget. (Stack/Row/Column stay npm-only — they pull Yoga.)
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.19.0-pre.4
+- @glissade/core@0.19.0-pre.4
+- @glissade/element@0.19.0-pre.4
+- @glissade/player@0.19.0-pre.4
+- @glissade/scene@0.19.0-pre.4
+
 ## 0.19.0-pre.3
 
 ### Patch Changes
