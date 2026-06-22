@@ -192,17 +192,22 @@ For the edit-script case, `typewriter().marks` carries `EditMark = { time, kind:
 
 A `Text` node selects weight via the discrete `fontWeight` prop (and style via `fontStyle`), which resolve to the **named instances** your font ships — e.g. the `400`/`700` faces of a variable family. That is the supported way to pick a weight today.
 
-Driving a variable font's **axes** directly (`wght`, `opsz`, `slnt`, …) is **not yet wired** to either rasterizer. A `fontVariationSettings` prop exists so the intent is **typed and discoverable** (autocomplete + this doc), but as of 0.19.x it is **accepted-and-dropped** — the value never reaches `ctx.font`, so default `Text` stays byte-identical.
+Driving a variable font's **axes** directly (`wght`, `opsz`, `slnt`, …) is supported as **static passthrough** as of **0.20**. The `fontVariationSettings` prop (CSS `font-variation-settings` form) is threaded through to the rasterizer: it lands on the headless **Skia / export path** (`@napi-rs/canvas` exposes a settable `ctx.fontVariationSettings`), so the axes reach the glyphs and a heavier `wght` renders distinctly. It is **best-effort in the browser** — the DOM 2D canvas has no `fontVariationSettings` property, so axes are a guarded no-op there (never a throw); a one-time dev-warning notes the value wasn't applied. The variable-font golden (`golden-variable-font`) pins three weights of one face rendering distinctly, which is the proof the axis is applied and not dropped.
 
 ```ts
-// 0.19.x: accepted (typed) but a no-op — axes are not applied yet
+// 0.20: a STATIC axis, applied on the Skia/export path (best-effort in browser)
 new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700, "opsz" 14' });
 
-// supported today: pick a named instance via the discrete weight
+// a mid weight no discrete named instance reaches — the variable-axis win
+new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 550' });
+
+// also supported: pick a named instance via the discrete weight
 new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontWeight: 700 });
 ```
 
-**Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are a **0.20 feature** (wired to both rasterizers, with a loud drop-warning for the silent case). Until then, the typed prop keeps the gap discoverable; use the discrete `fontWeight` named instances for weight.
+Axes are **static only** in 0.20 — the value is fixed for the node's lifetime. **Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are deferred to **1.0** (an opaque CSS string isn't interpolatable). `fontVariationSettings` is not a bindable target, so a timeline track on `<id>/fontVariationSettings` hard-throws `UnboundTargetError` rather than silently dropping. For a weight that changes over time, animate between discrete `fontWeight` named instances, or wait for the 1.0 axis tracks.
+
+For perfect cross-backend (browser↔Skia) parity, instance the variable face to a static sfnt at a fixed axis tuple at ingest time (the `font-instanced` golden) — that renders byte-identically everywhere, where live axis passthrough is a Skia/export-path feature.
 
 ## Determinism
 

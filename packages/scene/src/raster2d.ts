@@ -89,6 +89,15 @@ export interface Ctx2DLike<TPath, TDrawable> {
   lineCap: string;
   lineJoin: string;
   font: string;
+  /**
+   * Variable-font axes (CSS `font-variation-settings` form). PRESENT on
+   * `@napi-rs/canvas` (a settable context property — the Skia/export path
+   * renders the axes) and ABSENT on the browser DOM 2D context (the optional
+   * `?` makes it a guarded no-op there, never a throw). The `fillText` case
+   * writes it only when a FontSpec carries axes, then resets to `'normal'`, so
+   * default Text never touches it (byte-identical FontSpec / pixels).
+   */
+  fontVariationSettings?: string;
   textBaseline: string;
   textAlign: string;
   globalAlpha: number;
@@ -316,6 +325,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
   private readonly images = new Map<string, TDrawable>();
   private readonly videos = new Map<string, VideoFrameSource>();
   private warnedShaders = false;
+  private warnedFontVariation = false;
   /**
    * §3.5 bitmap LRU: device-transform-qualified cacheKey → rasterized layer.
    * A Map preserves insertion order, so the oldest key is `keys().next()` —
@@ -659,10 +669,31 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
         case 'fillText': {
           const ctx = ctxOf();
           ctx.font = fontString(cmd.font);
+          // §3.6 STATIC variable-font passthrough: write the axes only when the
+          // FontSpec carries them, so default Text never touches the (sticky)
+          // property — byte-identical pixels. Applied where the context exposes
+          // it (the Skia/export path: @napi-rs/canvas); the browser DOM 2D
+          // context has no such property, so it's best-effort there (a one-time
+          // dev-warn, never a throw). Reset to 'normal' after the draw so the
+          // axes don't leak onto a later un-axed fillText in the same frame.
+          const axes = cmd.font.fontVariationSettings;
+          if (axes !== undefined) {
+            if ('fontVariationSettings' in ctx) {
+              ctx.fontVariationSettings = axes;
+            } else if (!this.warnedFontVariation) {
+              this.warnedFontVariation = true;
+              emitDevWarning(
+                "fontVariationSettings ('" + axes + "') is not applied here: this 2D context has no " +
+                  'fontVariationSettings property (the browser DOM canvas) — variable-font axes render on ' +
+                  'the Skia/export path; use the discrete fontWeight named instances for a browser weight (§3.6)',
+              );
+            }
+          }
           ctx.fillStyle = resolveFill(ctx, cmd.paint, null);
           ctx.textBaseline = 'alphabetic';
           ctx.textAlign = cmd.align ?? 'left';
           ctx.fillText(cmd.text, cmd.x, cmd.y);
+          if (axes !== undefined && 'fontVariationSettings' in ctx) ctx.fontVariationSettings = 'normal';
           try {
             const width = ctx.measureText(cmd.text).width;
             const align = cmd.align ?? 'left';

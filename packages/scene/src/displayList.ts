@@ -59,6 +59,18 @@ export interface FontSpec {
   size: number;
   weight?: number;
   style?: 'normal' | 'italic';
+  /**
+   * Variable-font axis settings in CSS `font-variation-settings` form
+   * (e.g. `'"wght" 700, "opsz" 14'`). 0.20 STATIC passthrough: applied on the
+   * Skia/export path (`@napi-rs/canvas` exposes `ctx.fontVariationSettings`),
+   * best-effort in the browser (the DOM 2D context has no such property — a
+   * guarded no-op there). OMITTED for default Text, so a node without axes
+   * emits a byte-identical FontSpec (the golden corpus depends on this).
+   * Animatable axes (a `wght` track) are deferred to 1.0 — the string isn't
+   * lerp-able, and a track targeting `<id>/fontVariationSettings` already
+   * hard-throws `UnboundTargetError` (no signal resolves to it).
+   */
+  fontVariationSettings?: string;
 }
 
 /**

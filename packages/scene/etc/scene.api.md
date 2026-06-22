@@ -155,6 +155,7 @@ export interface Ctx2DLike<TPath, TDrawable> {
     filter: string;
     // (undocumented)
     font: string;
+    fontVariationSettings?: string;
     // (undocumented)
     getTransform(): unknown;
     // (undocumented)
@@ -453,6 +454,7 @@ export type FontByteLoader = (url: string) => Promise<ArrayBuffer | undefined>;
 export interface FontSpec {
     // (undocumented)
     family: string;
+    fontVariationSettings?: string;
     // (undocumented)
     size: number;
     // (undocumented)
@@ -1185,6 +1187,7 @@ class Text_2 extends Node_2 {
     readonly fontSize: BindableSignal<number>;
     // (undocumented)
     readonly fontStyle: 'normal' | 'italic';
+    readonly fontVariationSettings: string | undefined;
     // (undocumented)
     readonly fontWeight: number;
     graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[];

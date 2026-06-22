@@ -76,6 +76,12 @@ export class SkiaBackend implements RenderBackend {
     const ctx = this.canvas.getContext('2d');
     ctx.save();
     ctx.font = fontString(font);
+    // STATIC variable-font passthrough (§3.6): measure with the same axes the
+    // draw applies, so a heavier `wght` widens line-breaking/box metrics to
+    // match. save()/restore() scopes it; @napi-rs/canvas exposes the property.
+    if (font.fontVariationSettings !== undefined) {
+      (ctx as unknown as { fontVariationSettings: string }).fontVariationSettings = font.fontVariationSettings;
+    }
     const m = ctx.measureText(text);
     ctx.restore();
     return { width: m.width, ascent: m.actualBoundingBoxAscent, descent: m.actualBoundingBoxDescent };

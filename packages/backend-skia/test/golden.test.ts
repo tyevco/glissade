@@ -38,6 +38,7 @@ import goldenGradient from '../../examples/src/scenes/golden-gradient.js';
 import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smooth.js';
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
+import goldenVariableFont from '../../examples/src/scenes/golden-variable-font.js';
 import goldenWoff2 from '../../examples/src/scenes/golden-woff2.js';
 import { ingestFont } from '@glissade/core/font-ingest';
 import goldenMorph from '../../examples/src/scenes/golden-morph.js';
@@ -59,6 +60,13 @@ GlobalFonts.registerFromPath(
 GlobalFonts.registerFromPath(
   fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-wght600.ttf', import.meta.url)),
   'Inconsolata Semibold',
+);
+// 0.20 LIVE variable face (§3.6): the REAL Inconsolata-Variable.ttf, registered
+// un-instanced so the golden-variable-font scene drives its `wght` axis at
+// raster time via `fontVariationSettings` (Skia/@napi-rs/canvas applies it).
+GlobalFonts.registerFromPath(
+  fileURLToPath(new URL('../../examples/assets/fonts/Inconsolata-Variable.ttf', import.meta.url)),
+  'Inconsolata Variable',
 );
 // 0.13 woff2-decoded face (§3.6, DsW-aD_OUMoV item 1): the committed woff2 is
 // DECODED ONCE at ingest time (sniff woff2 → fontverter → static sfnt) by the
@@ -164,6 +172,12 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // 0.12 §3.6 instanced variable font: a wght:600-pinned static sfnt rendered
   // byte-exactly on Skia — proves variable-font support is the static-parity case
   { name: 'font-instanced', mod: goldenFontInstanced },
+  // 0.20 §3.6 LIVE variable-font axis passthrough: three rows of ONE variable
+  // face at the same size, differing only by static `fontVariationSettings`
+  // (default/100, "wght" 900, "wght" 500) — the axes reach the glyphs at raster
+  // time on Skia, so the rows render distinctly. Byte-exact on the pinned
+  // toolchain; the proof the axis is applied, not dropped.
+  { name: 'variable-font', mod: goldenVariableFont },
   // 0.13 §3.6 woff2-decoded face (DsW-aD_OUMoV item 1): the committed woff2 is
   // decoded ONCE at ingest to a static sfnt, then rendered byte-exactly on Skia —
   // proves the woff2-decode path is byte-stable through the rasterizer

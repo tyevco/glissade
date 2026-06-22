@@ -248,22 +248,34 @@ describe('fontStyle threads into FontSpec', () => {
   });
 });
 
-describe('fontVariationSettings (0.19.1 — loud drop, not silent)', () => {
-  it('accepts the typed prop (no throw) — discoverable, but a no-op in 0.19.x', () => {
-    // The prop is typed + documented so the gap is discoverable; the runtime
-    // drop-warning is deferred to 0.20 with the actual axis support (a warn on
-    // the saturated base embed would breach the 39 kB ceiling).
+describe('fontVariationSettings (0.20 — STATIC passthrough)', () => {
+  it('accepts the typed prop (no throw)', () => {
     expect(
       () => new Text({ id: 'hero', text: 'x', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700, "opsz" 14' }),
     ).not.toThrow();
   });
 
-  it('the drop is genuine — fontVariationSettings NEVER reaches the FontSpec', () => {
+  it('the axes THREAD into the FontSpec the fillText carries', () => {
     const node = new Text({ text: 'x', fontFamily: 'Fraunces', fontVariationSettings: '"wght" 700' });
     const fonts = emitFonts(node);
     expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.fontVariationSettings).toBe('"wght" 700');
+  });
+
+  it('default Text OMITS the field — byte-identical FontSpec (the golden corpus depends on it)', () => {
+    const fonts = emitFonts(new Text({ text: 'x', fontFamily: 'Fraunces' }));
+    expect(fonts).toHaveLength(1);
     // no variation field leaks into the IR FontSpec → default Text byte-identical
     expect('fontVariationSettings' in fonts[0]!).toBe(false);
-    expect('variations' in fonts[0]!).toBe(false);
+    // also exposed as a node-level readonly for measurer/highlight call sites
+    expect(new Text({ text: 'x' }).fontVariationSettings).toBeUndefined();
+  });
+
+  it('animatable axes are deferred — a track on /fontVariationSettings has no target', () => {
+    // 0.20 applies STATIC axes only; an opaque CSS string is not lerp-able, so a
+    // timeline track targeting the axis resolves to NO property signal. That is
+    // the (loud) deferred-animation signal — bindScene throws UnboundTargetError.
+    const node = new Text({ id: 'hero', text: 'x', fontVariationSettings: '"wght" 700' });
+    expect(node.resolveTarget('fontVariationSettings')).toBeUndefined();
   });
 });

@@ -99,6 +99,13 @@ export class Canvas2DBackend implements RenderBackend {
     const ctx = this.context(this.target);
     ctx.save();
     ctx.font = fontString(font);
+    // STATIC variable-font passthrough (§3.6): best-effort only — the DOM 2D
+    // context has no `fontVariationSettings` property, so this is a guarded
+    // no-op in the browser (axes render on the Skia/export path). Kept for the
+    // @napi-rs/canvas-shaped contexts a host might inject here.
+    if (font.fontVariationSettings !== undefined && 'fontVariationSettings' in ctx) {
+      (ctx as unknown as { fontVariationSettings: string }).fontVariationSettings = font.fontVariationSettings;
+    }
     const m = ctx.measureText(text);
     ctx.restore();
     return {
