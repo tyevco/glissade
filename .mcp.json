@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "crosstalk": {
+      "type": "stdio",
+      "command": "crosstalk",
+      "args": [],
+      "env": {
+        "NATS_URL": "nats://10.0.1.102:14222",
+        "CROSSTALK_HISTORY": "on"
+      }
+    }
+  }
+}

@@ -24,5 +24,7 @@
     "glissade": "0.19.1",
     "@glissade/vite-plugin": "0.19.1"
   },
-  "changesets": []
+  "changesets": [
+    "0_20-base-embed-budget-review"
+  ]
 }
