@@ -27,6 +27,8 @@
   "changesets": [
     "0_20-base-embed-budget-review",
     "0_20-describe-helpers",
-    "0_20-no-build-layout-split-and-grid"
+    "0_20-no-build-layout-split-and-grid",
+    "0_20-variable-font-passthrough",
+    "construction-prop-bind-error"
   ]
 }
