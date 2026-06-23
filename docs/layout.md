@@ -108,18 +108,35 @@ const rowOfColumns = Stack({
 
 The single-file `@glissade/browser` IIFE (`window.glissade.*`, for no-build `<script src>` pages) exposes the layout node ctors — `glissade.Stack`, `glissade.Row`, `glissade.Column`, `glissade.Layout` — **without** bundling Yoga's wasm. The ctors only touch the layout engine at *compute* time, so they ride the convenience bundle for free.
 
-Because Yoga is loaded lazily (and can't be inlined into the single-file IIFE), a no-build page must register the engine before evaluating a layout scene. `glissade.loadYogaLayoutEngine` is present on the bundle, but its dynamic `import('yoga-layout/load')` needs a module resolver (a bundler step or an import map) to fetch Yoga — a bare `<script src>` page without one will throw `LayoutEngineMissingError` when the first layout node computes.
+Because Yoga is loaded lazily (and can't be inlined into the single-file IIFE), a no-build page must register the engine before evaluating a layout scene. `glissade.loadYogaLayoutEngine` is present on the bundle, but Yoga itself isn't — the loader has to `import()` it at runtime. With **no bundler and no import map**, the loader's default bare specifier can't be resolved by the browser, and `await glissade.loadYogaLayoutEngine()` rejects with *"Module name, 'yoga-layout/load' does not resolve to a valid URL."* You have two ways to give it a real URL — pick either:
+
+**Option A — pass the CDN URL directly (no import map):**
 
 ```html
 <script src="https://unpkg.com/@glissade/browser/dist/glissade.browser.js"></script>
 <script type="module">
-  // With an import map (or a bundler) that can resolve 'yoga-layout/load':
-  await glissade.loadYogaLayoutEngine();
+  // Point the loader at a CDN ESM build of yoga-layout (pin the version):
+  await glissade.loadYogaLayoutEngine({ url: 'https://esm.sh/yoga-layout@3.2.1/load' });
   const panel = glissade.Stack({ gap: 16, width: 'auto', height: 'auto', children: [/* … */] });
 </script>
 ```
 
-If you can't load Yoga in a no-build page, reach for [`Grid`](#grid-build-time-track-layout) below — it is a pure build-time layout with **no engine dependency at all**.
+**Option B — register an import map, then call with no argument:**
+
+```html
+<script type="importmap">
+  { "imports": { "yoga-layout/load": "https://esm.sh/yoga-layout@3.2.1/load" } }
+</script>
+<script src="https://unpkg.com/@glissade/browser/dist/glissade.browser.js"></script>
+<script type="module">
+  await glissade.loadYogaLayoutEngine(); // the import map resolves the bare specifier
+  const panel = glissade.Stack({ gap: 16, width: 'auto', height: 'auto', children: [/* … */] });
+</script>
+```
+
+Use the version of `yoga-layout` glissade is built against (`3.2.x`). Under a bundler (or in npm code), neither is needed — the bare `loadYogaLayoutEngine()` resolves `yoga-layout` from `node_modules` as usual.
+
+If you'd rather not load Yoga in a no-build page at all, reach for [`Grid`](#grid-build-time-track-layout) below — it is a pure build-time layout with **no engine dependency at all**.
 
 ## `Grid` — build-time track layout
 

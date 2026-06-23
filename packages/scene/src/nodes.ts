@@ -59,6 +59,19 @@ export function roundedRectSegs(x: number, y: number, w: number, h: number, r: n
 }
 
 export class Group extends Node {
+  /**
+   * Taxonomy name pinned as a STRING LITERAL (not the inherited
+   * `constructor.name`): the minified `@glissade/browser` IIFE mangles class
+   * names, so the base `Node.describeType` getter returns a garbled name in the
+   * bundle — which silently breaks the bind-guard's construction-prop message
+   * (`scene.ts` keys `isConstructionProp(node.describeType, …)` on it, so a
+   * mangled name falls through to the generic "no signal resolves" error).
+   * Every built-in node pins it literally; `ImageNode` already did. Render-neutral
+   * (describeType is read only on the error path + by `describe()`).
+   */
+  override get describeType(): string {
+    return 'Group';
+  }
   readonly children: Node[];
   /** Version bumped on structural child mutation, so a dependency-tracked memo
    * (e.g. Layout's computed) re-runs when the child SET changes — not only when
@@ -369,6 +382,10 @@ export function pathFromSegs(segs: readonly PathSeg[]): PathValue {
 }
 
 export class Rect extends Shape {
+  /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
+  override get describeType(): string {
+    return 'Rect';
+  }
   readonly width: BindableSignal<number>;
   readonly height: BindableSignal<number>;
   /** Corner radius; clamped to half the smaller dimension. radius = h/2 makes a pill. */
@@ -404,6 +421,10 @@ export class Rect extends Shape {
 }
 
 export class Circle extends Shape {
+  /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
+  override get describeType(): string {
+    return 'Circle';
+  }
   readonly radius: BindableSignal<number>;
 
   constructor(props: ShapeProps & { radius?: PropInit<number> } = {}) {
@@ -441,6 +462,10 @@ export interface PathProps extends ShapeProps {
  * wherever the author put 0,0); flow placement uses the control-point bounds.
  */
 export class Path extends Shape {
+  /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
+  override get describeType(): string {
+    return 'Path';
+  }
   readonly data: BindableSignal<PathValue>;
 
   constructor(props: PathProps = {}) {
@@ -598,6 +623,10 @@ export interface VideoProps extends NodeProps {
 export class Video extends Node {
   /** Marks this node as referencing a kind 'video' timeline asset (§3.8). */
   static readonly assetKind = 'video' as const;
+  /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
+  override get describeType(): string {
+    return 'Video';
+  }
   readonly assetId: string;
   readonly at: number;
   readonly trimStart: number;
@@ -732,6 +761,10 @@ export interface TextProps extends NodeProps {
 }
 
 export class Text extends Node {
+  /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
+  override get describeType(): string {
+    return 'Text';
+  }
   readonly text: BindableSignal<string>;
   readonly fill: BindableSignal<string>;
   readonly fontSize: BindableSignal<number>;

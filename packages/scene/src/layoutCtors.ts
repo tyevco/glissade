@@ -54,6 +54,15 @@ export interface LayoutProps extends NodeProps {
 export class Layout extends Group {
   /** CLI/host detection marker — avoids importing this entry just to instanceof. */
   static readonly isLayoutNode = true;
+  /**
+   * Taxonomy name pinned literally (survives IIFE minification — see {@link Group}).
+   * Overrides Group's `'Group'`; `Stack`/`Row`/`Column` are factories returning a
+   * `Layout`, so they inherit `'Layout'` and the bind-guard names their construction
+   * props (`direction`/`justify`/`align`/`children`) correctly in the minified bundle.
+   */
+  override get describeType(): string {
+    return 'Layout';
+  }
   readonly width: BindableSignal<number>;
   readonly height: BindableSignal<number>;
   readonly gap: BindableSignal<number>;

@@ -84,6 +84,7 @@ export class Circle extends Shape {
     constructor(props?: ShapeProps & {
         radius?: PropInit<number>;
     });
+    get describeType(): string;
     // (undocumented)
     intrinsicSize(): {
         w: number;
@@ -502,6 +503,7 @@ export class Group extends Node_2 {
     add(child: Node_2): this;
     // (undocumented)
     readonly children: Node_2[];
+    get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
     remove(child: Node_2): this;
@@ -823,6 +825,7 @@ export class Path extends Shape {
     };
     // (undocumented)
     readonly data: BindableSignal<PathValue>;
+    get describeType(): string;
     drawOffset(): {
         x: number;
         y: number;
@@ -913,6 +916,7 @@ export class Rect extends Shape {
         cornerRadius?: PropInit<number>;
     });
     readonly cornerRadius: BindableSignal<number>;
+    get describeType(): string;
     // (undocumented)
     readonly height: BindableSignal<number>;
     // (undocumented)
@@ -1176,6 +1180,7 @@ class Text_2 extends Node_2 {
     constructor(props?: TextProps);
     // (undocumented)
     readonly align: 'left' | 'center' | 'right';
+    get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
     drawOffset(measurer?: TextMeasurer): {
@@ -1347,6 +1352,7 @@ export class Video extends Node_2 {
     readonly at: number;
     // (undocumented)
     readonly clipDuration: number | undefined;
+    get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
     // (undocumented)

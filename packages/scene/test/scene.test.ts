@@ -29,6 +29,7 @@ import {
   Video,
   type DisplayList,
 } from '../src/index.js';
+import { Layout, Stack } from '@glissade/scene/layout-ctors';
 
 const demoScene = () =>
   createScene({
@@ -438,5 +439,29 @@ describe('construction-prop bind error (0.20)', () => {
     }
     expect(err).toBeInstanceOf(UnboundTargetError);
     expect((err as Error).message).toContain('no property signal resolves to it');
+  });
+
+  // REGRESSION GUARD (pre.7, design-agent finding on the minified IIFE): the
+  // construction-prop message keys on `node.describeType`. That MUST be a string
+  // LITERAL per node — NOT the inherited `constructor.name`, which the minified
+  // `@glissade/browser` bundle mangles, so the specific message silently fell
+  // back to the generic one for every node but `Image` (its pre-existing
+  // override). This locks the literal taxonomy name on every built-in node.
+  // (Unminified, a missing override coincidentally returns the same class name,
+  // so this can't reproduce the bundle bug itself — the design agent re-validates
+  // on the real minified IIFE — but it pins the VALUES and documents the contract
+  // so nobody "simplifies" the overrides back to `constructor.name`.)
+  it('every built-in node pins describeType as its literal taxonomy name (IIFE-minification-safe)', () => {
+    expect(new Group().describeType).toBe('Group');
+    expect(new Rect().describeType).toBe('Rect');
+    expect(new Circle().describeType).toBe('Circle');
+    expect(new Path().describeType).toBe('Path');
+    expect(new Text().describeType).toBe('Text');
+    expect(new Video({ assetId: '~' }).describeType).toBe('Video');
+    expect(new ImageNode({ assetId: '~' }).describeType).toBe('Image');
+    expect(new Layout().describeType).toBe('Layout');
+    // Stack/Row/Column are factories returning Layout — they inherit 'Layout',
+    // so the bind guard names their construction props in the bundle too.
+    expect(Stack().describeType).toBe('Layout');
   });
 });

@@ -107,9 +107,10 @@ describe('@glissade/browser entry surface', () => {
     // @glissade/scene/layout-ctors — split off loadYogaLayoutEngine so they ride
     // the IIFE WITHOUT inlining Yoga's wasm (the "browser IIFE excludes yoga
     // binding" check-size guard verifies the no-inline). The loader is also
-    // re-exported (window.glissade.loadYogaLayoutEngine) so a bundler/import-map
-    // consumer can register the engine; in a bare <script src> page it's a no-op
-    // (the dynamic import('yoga-layout/load') can't resolve without a loader).
+    // re-exported (window.glissade.loadYogaLayoutEngine) so a no-build consumer
+    // can register the engine: pass a CDN URL — loadYogaLayoutEngine({ url }) —
+    // or an import map resolves the default bare 'yoga-layout/load' specifier
+    // (the bare form alone can't resolve in a no-build page; see docs/layout.md).
     expect(typeof glissade.Layout).toBe('function');
     expect(typeof glissade.Stack).toBe('function');
     expect(typeof glissade.Row).toBe('function');
