@@ -1,5 +1,82 @@
 # @glissade/core
 
+## 0.20.0
+
+### Minor Changes
+
+- c629b51: 0.20 pre.0: base-embed budget review — relocate sidecar/diagnostics/motion to subpaths + CI-faithful check:size
+
+  The base embed (core + scene + canvas2d + player) had crept to 38.79/39 kB gz —
+  FULL, blocking every embed-touching 0.20 feature. This recovers headroom the
+  proven way (mirroring the yoga/path/type/snapshot splits): code that is NOT on
+  the `evaluate()`/render path moves off the base barrels onto tree-shakeable
+  subpaths. **Base embed: 38.79 → 34.93 kB gz.** The 39 ceiling is unchanged — the
+  recovered headroom is the 0.20 feature budget.
+
+  **Public-API relocation** (these symbols now import from a subpath, not the
+  package root):
+
+  - **`@glissade/core/sidecar`** — the §6.2 editor sidecar
+    (`mergeSidecar`/`mergeSidecarDetailed`/`migrateSidecar`/`setSidecarTrack`/
+    `deleteSidecarTrack`/`emptySidecar`/`hashKeys`/`assignKeyIds`/
+    `normalizeEditedKeys`/`SidecarVersionError` + the `SidecarDoc`/`SidecarOrphan`/…
+    types). Studio-only; never on the embed path.
+  - **`@glissade/scene/diagnostics`** — the §3.3 DEV/CLI determinism substrate
+    (`diffDisplayLists`/`formatDisplayDiff`/`serializeDisplayList`/
+    `parseDisplaySnapshot`/`DL_SNAPSHOT_VERSION`/`DlSnapshotError`), plus
+    `auditCacheCold` and `tokenHighlight`. (`collapseReplacer` — the §3.5 cacheKey
+    replacer, the one render-path member — stays on the `@glissade/scene` root.)
+  - **`@glissade/scene/motion`** — the §3 motion-path follow helper
+    (`followPath`/`motionPath`/`pointAtLength`/`pathLength`/`FollowPath`). A
+    user-facing opt-in, re-exported onto the `@glissade/browser` IIFE so
+    `window.glissade.motionPath` still works for the no-build consumer.
+
+  **CI-faithful `check:size`**: the historical fail-then-fix CI delta (CI measured
+  the base embed ~0.16 kB heavier than local and red-failed a 0.19.1 release) was
+  caused by `esbuild` (the minifier `check-size.mjs` measures with) being pinned
+  with a caret — a patch float between local and CI shifted the gz. `esbuild` and
+  `tsdown` are now pinned EXACT in root + cli, so local == CI byte-for-byte.
+
+  All 262 goldens stay byte-identical (pure module-graph moves, no render change).
+
+- 4a2117f: 0.20: `timeline(fn, { tracks })` no longer silently drops the tracks (KMu5GL1DvFms)
+
+  The builder form's second argument advertised a `tracks` field (via `TimelineInit`)
+  but **silently ignored it** — `timeline(tl => {}, { tracks: [t] })` produced an empty
+  document with no error or warning, costing a consumer a debug cycle (a near-empty PNG:
+  a correct caption group whose `popGroup` carried no glyphs). It was long-standing
+  (no-op on 0.18 / 0.19 / 0.20-pre.5, not a regression).
+
+  The builder-form `init.tracks` is now **applied** — composed into the built document
+  at the same place and in the same shape `tl.tracks(...)` injects them (the
+  finalize→coalesce path; raw absolute-time rows, no cursor move). `init.tracks` lands
+  first, so a `tl.tracks(...)` call inside the body coalesces later-wins over it at a
+  shared target. The builder form's `init` type no longer `Omit`s `tracks`, so the field
+  type-checks where it now functions.
+
+  Unchanged: the object/document form `timeline({ tracks, fps, duration })` already
+  honored its tracks (untouched); `tl.tracks(...)` still works. No render-path change —
+  all 262 goldens stay byte-identical.
+
+- be35b11: 0.20: friendlier construction-prop bind error. When a timeline targets
+  `<id>/<prop>` and the bind guard can't resolve it, a `<prop>` that is a KNOWN
+  construction prop (`animatable: false` in the `describe()` schema — e.g.
+  Image/Video `assetId`, Text `fontFamily`/`align`) now throws a specific message
+  ("'bg/assetId' is a construction prop (animatable:false) — set it at
+  construction (new Image({ assetId })); it is not an animatable target.")
+  instead of the generic "no property signal resolves to it". A genuinely-unknown
+  prop still gets the generic `UnboundTargetError`.
+
+  The target was already correctly rejected — this only improves the message, so
+  determinism and goldens are untouched. The construction-prop NAME set is
+  factored into a slim shared `@glissade/scene` module that both `describe()` and
+  the bind guard import (the bind path imports only the tiny name lookup, never
+  the rich manifest), keeping the base embed within budget.
+
+  `@glissade/core`: `bindTimeline` gains an optional `BindOptions.unboundMessage`
+  hook (additive) so a layer with node-type context can supply the specific
+  reason; `UnboundTargetError` accepts an optional override message.
+
 ## 0.20.0-pre.7
 
 ## 0.20.0-pre.6

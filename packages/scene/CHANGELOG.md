@@ -1,5 +1,256 @@
 # @glissade/scene
 
+## 0.20.0
+
+### Minor Changes
+
+- c629b51: 0.20 pre.0: base-embed budget review — relocate sidecar/diagnostics/motion to subpaths + CI-faithful check:size
+
+  The base embed (core + scene + canvas2d + player) had crept to 38.79/39 kB gz —
+  FULL, blocking every embed-touching 0.20 feature. This recovers headroom the
+  proven way (mirroring the yoga/path/type/snapshot splits): code that is NOT on
+  the `evaluate()`/render path moves off the base barrels onto tree-shakeable
+  subpaths. **Base embed: 38.79 → 34.93 kB gz.** The 39 ceiling is unchanged — the
+  recovered headroom is the 0.20 feature budget.
+
+  **Public-API relocation** (these symbols now import from a subpath, not the
+  package root):
+
+  - **`@glissade/core/sidecar`** — the §6.2 editor sidecar
+    (`mergeSidecar`/`mergeSidecarDetailed`/`migrateSidecar`/`setSidecarTrack`/
+    `deleteSidecarTrack`/`emptySidecar`/`hashKeys`/`assignKeyIds`/
+    `normalizeEditedKeys`/`SidecarVersionError` + the `SidecarDoc`/`SidecarOrphan`/…
+    types). Studio-only; never on the embed path.
+  - **`@glissade/scene/diagnostics`** — the §3.3 DEV/CLI determinism substrate
+    (`diffDisplayLists`/`formatDisplayDiff`/`serializeDisplayList`/
+    `parseDisplaySnapshot`/`DL_SNAPSHOT_VERSION`/`DlSnapshotError`), plus
+    `auditCacheCold` and `tokenHighlight`. (`collapseReplacer` — the §3.5 cacheKey
+    replacer, the one render-path member — stays on the `@glissade/scene` root.)
+  - **`@glissade/scene/motion`** — the §3 motion-path follow helper
+    (`followPath`/`motionPath`/`pointAtLength`/`pathLength`/`FollowPath`). A
+    user-facing opt-in, re-exported onto the `@glissade/browser` IIFE so
+    `window.glissade.motionPath` still works for the no-build consumer.
+
+  **CI-faithful `check:size`**: the historical fail-then-fix CI delta (CI measured
+  the base embed ~0.16 kB heavier than local and red-failed a 0.19.1 release) was
+  caused by `esbuild` (the minifier `check-size.mjs` measures with) being pinned
+  with a caret — a patch float between local and CI shifted the gz. `esbuild` and
+  `tsdown` are now pinned EXACT in root + cli, so local == CI byte-for-byte.
+
+  All 262 goldens stay byte-identical (pure module-graph moves, no render change).
+
+- 0f5b066: 0.20: `describe()` helpers section (createPlayer/motionPath/clip/renderToDataURL/splitText)
+
+  `glissade.describe()` already surfaced nodes, props, value types, easings, the
+  timeline builder, `createScene`, and the tree-shakeable subpaths — but NOT the
+  broader helper/factory API. An AI/agent consumer that discovers the surface by
+  introspecting the manifest (not the website) would never find `createPlayer`,
+  `motionPath`/`followPath`, `clip`/`clipList`, `renderToDataURL`/`snapshotCanvas`,
+  or `splitText`, even though all of them work.
+
+  The manifest now carries a curated **`helpers`** array (`ApiManifest.helpers:
+DescribedHelper[]`), one entry per helper with a `name` (also the
+  `window.glissade.<name>` global on the IIFE), a one-line `summary`, the npm
+  `import` subpath, and a minimal `usage` string. Copy is kept verbatim with
+  `docs/discovery.md`.
+
+  `scene` can't import `player`/`backend-canvas2d` (they live above it in the dep
+  graph), so this is a hand-kept literal — drift-guarded two ways: scene's
+  `describe.test.ts` pins the structure + the npm import paths, and
+  `@glissade/browser`'s smoke test (above scene, importing the whole IIFE surface)
+  asserts every `describe().helpers[*].name` resolves to a real
+  `window.glissade.<name>` function.
+
+  `describe` stays on the tree-shaken `@glissade/scene/describe` subpath, so the
+  base embed is unchanged (34.93 kB gz). The committed `glissade.api.json` is
+  regenerated to include the new section.
+
+- 1bd4507: 0.20: no-build layout split (Stack/Row/Column on the IIFE, Yoga stays async) + Grid (Fork B: scene/grid track resolver)
+
+  Two layout slices, both build-time / off-render (the 262 goldens stay byte-identical).
+
+  **No-build layout split.** The Yoga-free layout node ctors (`Layout`/`Stack`/
+  `Row`/`Column`) moved onto a new tree-shakeable `@glissade/scene/layout-ctors`
+  subpath, split off the Yoga loader (`loadYogaLayoutEngine`, now in its own
+  module). The ctors only touch the LayoutEngine seam at _compute_ time, never
+  `import('yoga-layout/load')` at construction, so the single-file
+  `@glissade/browser` IIFE can now expose `glissade.Stack`/`Row`/`Column`/`Layout`
+  **without inlining Yoga's wasm** (the loader's dynamic import is externalized in
+  the IIFE build, keeping the bundle at ~45.3 kB gz instead of ~99). A no-build
+  page must still `await glissade.loadYogaLayoutEngine()` (with a module resolver
+  for `yoga-layout/load`) before evaluating a layout scene, else the first compute
+  throws `LayoutEngineMissingError`.
+
+  `@glissade/scene/layout` is **unchanged for existing importers** — it now
+  re-exports the ctors plus the loader, so `import { Stack, loadYogaLayoutEngine }
+from '@glissade/scene/layout'` keeps working exactly as before.
+
+  **Grid.** New `Grid({ columns, gap, … })` on a tree-shakeable
+  `@glissade/scene/grid` subpath (and `glissade.Grid` on the IIFE). A pure
+  build-time fan-out — like `each()`/`splitText()`, **not** a Yoga feature: it
+  resolves uniform `fr` / fixed-px column tracks + gaps into cell positions, moves
+  each child to its cell center via the ordinary `position` signal, and wraps them
+  in a `Group`. No layout engine, no id stamping, nothing at play time — so it
+  works in a bare no-build page and composes with the goldens by construction.
+  Position-only in v1 (cell `stretch` / sizing deferred); `fr` columns need an
+  explicit `width`, multi-row grids need a `cellHeight` row pitch.
+
+  Both stay off the base embed (still 34.93 kB gz); the IIFE budget is unchanged
+  at 47 kB. See `docs/layout.md` for the no-build and Grid recipes.
+
+- 2a30be9: 0.20: S1 NodeIdStream identity-stream producer (`emitWithIds`, opt-in, off-by-default — DOM-backend readiness)
+
+  The Seam-1 producer from the `backend-dom` design memo (docs/design/dom-backend.md
+  "Seam 1 — node identity: OUT-OF-BAND") now ships as a new tree-shakeable subpath
+  **`@glissade/scene/identity`**:
+
+  ```ts
+  import { emitWithIds, type NodeIdStream } from "@glissade/scene/identity";
+
+  const { displayList, ids } = emitWithIds(scene, timeline, t);
+  // ids.length === displayList.commands.length;
+  // ids[i] = the stable explicit id of the node that emitted command i (or undefined).
+  ```
+
+  `emitWithIds` runs the **same pure emit** as `evaluate()`, but through an
+  instrumented `DisplayListBuilder` that records, positionally by command index, the
+  emitting node's stable explicit id — a `NodeIdStream = (string | undefined)[]`
+  emitted _alongside_ the DisplayList, **never inside it**. A node with no explicit
+  id contributes `undefined`. Because the emit walk is already stable +
+  deterministic, the stream is stable across re-emits of an unchanged graph at a
+  given `t`. The DOM backend (a future milestone) consumes this to stamp
+  `data-node-id` and key a retained-DOM reconciler.
+
+  **Off by default — byte-identical normal path.** The mechanism is an out-of-band
+  seam: `Node.emit` brackets each node's `save…restore` slice with guarded
+  `out.enterNode?.(this.id)` / `out.exitNode?.()` calls. The default
+  `createDisplayListBuilder` does NOT implement them, so they are no-ops on every
+  normal `evaluate()` / `emit()` / `render()` — **every DrawCommand stays
+  byte-identical** (the 262 goldens are frozen) and `emitWithIds`'s DisplayList is
+  byte/deep-equal to `evaluate()`'s. The subpath is never imported by the base scene
+  index (a `check:size` metafile guard asserts it), so the **base embed budget is
+  unchanged** (~35.55 kB gz); it is npm-subpath-only and is NOT re-exported onto the
+  `@glissade/browser` IIFE (zero IIFE delta). The only new symbols on the base scene
+  index are the optional `enterNode`/`exitNode` methods on the `DisplayListBuilder`
+  interface.
+
+- 3760b47: 0.20: variable-font passthrough (`fontVariationSettings` → Skia rasterizer) + animation-deferred
+
+  The 0.19.1 typed `Text.fontVariationSettings` prop was accepted-and-DROPPED (no
+  rasterizer wiring). 0.20 WIRES it as **static passthrough**: the axis string
+  threads `Text → FontSpec.fontVariationSettings → ctx.fontVariationSettings` and
+  is applied by the rasterizer where the 2D context supports it.
+
+  - **Skia / export path** (`@napi-rs/canvas`) exposes a settable
+    `ctx.fontVariationSettings`, so the axes reach the glyphs — a heavier `"wght"`
+    renders distinctly, and a mid weight no discrete named instance can reach (e.g.
+    `"wght" 550`) is now expressible. The new `golden-variable-font` corpus pins
+    three weights of one variable face rendering distinctly — the byte-exact proof
+    the axis is applied, not dropped. The measurer applies the same axes, so
+    line-breaking/box metrics match the draw.
+  - **Browser** (DOM 2D canvas) has no `fontVariationSettings` property, so axes
+    are **best-effort** there — a guarded no-op (never a throw), with a one-time
+    dev-warning that the value wasn't applied. For perfect cross-backend parity,
+    instance the face to a static sfnt at ingest (the `font-instanced` golden).
+
+  **Default Text is byte-identical:** the axis key is OMITTED from the FontSpec
+  when unset (all measure/layout/draw sites route through one `Text.fontSpec()`
+  that spreads it conditionally), so the 262 pre-existing goldens stay
+  byte-for-byte unchanged.
+
+  **Animatable axes stay deferred to 1.0** (an opaque CSS string isn't
+  interpolatable). `fontVariationSettings` is not a bindable target, so a timeline
+  track on `<id>/fontVariationSettings` hard-throws `UnboundTargetError` — the
+  loud signal for the deferred-animation case, not a silent drop. Use discrete
+  `fontWeight` named instances for a weight that changes over time.
+
+- be35b11: 0.20: friendlier construction-prop bind error. When a timeline targets
+  `<id>/<prop>` and the bind guard can't resolve it, a `<prop>` that is a KNOWN
+  construction prop (`animatable: false` in the `describe()` schema — e.g.
+  Image/Video `assetId`, Text `fontFamily`/`align`) now throws a specific message
+  ("'bg/assetId' is a construction prop (animatable:false) — set it at
+  construction (new Image({ assetId })); it is not an animatable target.")
+  instead of the generic "no property signal resolves to it". A genuinely-unknown
+  prop still gets the generic `UnboundTargetError`.
+
+  The target was already correctly rejected — this only improves the message, so
+  determinism and goldens are untouched. The construction-prop NAME set is
+  factored into a slim shared `@glissade/scene` module that both `describe()` and
+  the bind guard import (the bind path imports only the tiny name lookup, never
+  the rich manifest), keeping the base embed within budget.
+
+  `@glissade/core`: `bindTimeline` gains an optional `BindOptions.unboundMessage`
+  hook (additive) so a layer with node-type context can supply the specific
+  reason; `UnboundTargetError` accepts an optional override message.
+
+### Patch Changes
+
+- 519e1f8: 0.20: `describe()` completeness — `Text.fontVariationSettings` (construction prop → discoverable + specific bind error) + `Grid` in the manifest (HNar9da3oDXb)
+
+  A video-canary review found three gaps where the 0.20 surface rendered but was
+  invisible to `glissade.describe()` (the machine-readable manifest an AI/agent
+  consumer reads as ground truth). One name fix closes two of them:
+
+  - **`Text.fontVariationSettings`** — the 0.20 headline variable-font prop was
+    ABSENT from the manifest (`Text.props` listed `fontWeight`/`fontStyle`/
+    `lineHeight` but not it) and binding a track to `<id>/fontVariationSettings`
+    fell through to the generic `UnboundTargetError`. Adding it to the Text
+    CONSTRUCTION-prop NAME set in `constructionProps.ts` (the single source both
+    `describe()` and the bind guard read) makes it appear in the manifest as
+    `{ type: 'string', animatable: false }` AND makes binding it throw the
+    construction-prop-SPECIFIC message ("…is a construction prop… set it at
+    construction") instead of the generic resolver error.
+  - **`Grid`** (the `@glissade/scene/grid` build-time track resolver) — now listed
+    in `describe().helpers` with its `@glissade/scene/grid` import and usage, so
+    the no-build consumer discovers `window.glissade.Grid`. The `Stack`/`Row`/
+    `Column` layout factories (`@glissade/scene/layout`) join it in the helpers
+    section (they were already in `.nodes`, now also surfaced as the call-shaped
+    factories an agent reaches for). The cross-package browser drift guard still
+    passes (every `helpers[*].name` resolves to a real `window.glissade.<name>`).
+
+  Pure manifest data + a name-set addition — no render change. All 262 goldens
+  stay byte-identical; the committed `glissade.api.json` is regenerated.
+
+- fffa420: 0.20: two no-build (IIFE) fixes the design-agent canary found on `0.20.0-pre.6`
+
+  - **`loadYogaLayoutEngine()` couldn't self-load in the no-build bundle.** Its dynamic `import('yoga-layout/load')` is a bare specifier a browser can't resolve with no bundler/import map, so the headline no-build layout feature (`Stack`/`Row`/`Column`) threw _"Module name, 'yoga-layout/load' does not resolve to a valid URL."_ It now accepts an optional `{ url }` to point the loader at a CDN ESM build — `loadYogaLayoutEngine({ url: 'https://esm.sh/yoga-layout@3.2.1/load' })` — resolving it without an import map. The default (bare specifier) is unchanged and still byte-identical under npm/a bundler; `docs/layout.md` documents both the `{ url }` arg and the import-map approach.
+
+  - **The construction-prop bind error fell back to the generic message in the minified IIFE.** `node.describeType` defaulted to `constructor.name`, which the bundle mangles, so `isConstructionProp(describeType, …)` missed for every node but `Image` — binding `card/fontFamily` looked identical to a typo. Every built-in node (Group/Rect/Circle/Path/Text/Video/Layout) now pins its taxonomy name as a string literal, so the specific _"'X' is a construction prop — set it at construction"_ message fires in the bundle too. Render-neutral: all 262 goldens byte-identical.
+
+- fd12bb8: 0.20: move `tokenHighlight` (production render UI) off `/diagnostics` onto `@glissade/scene/tokens` (ai-training finding)
+
+  `tokenHighlight` / `TokenHighlight` draw VISIBLE sub-line token tell-tags in real
+  episodes — they are a PRODUCTION rendering component, not a DEV/CLI diagnostic.
+  The 0.20 base-embed budget review wrongly grouped them onto
+  `@glissade/scene/diagnostics` (alongside the diff/snapshot/audit DEBUG tools), so
+  `import … from '@glissade/scene/diagnostics'` read as a debug import for visible
+  UI. This splits the whole token-highlight surface back out onto its OWN
+  PRODUCTION subpath **`@glissade/scene/tokens`**; the genuine diagnostics
+  (`diffDisplayLists` / `formatDisplayDiff` / `serializeDisplayList` /
+  `parseDisplaySnapshot` / `auditCacheCold`) stay on `/diagnostics`, which is now
+  debug-only.
+
+  **BREAKING import change** (these symbols now import from the new subpath, not
+  `/diagnostics`):
+
+  - **`@glissade/scene/tokens`** — `tokenHighlight`, `TokenHighlight`,
+    `matchTokenRun`, `TokenMatchError`, `TokenHighlightProps`, `TokenRange`.
+
+  This is a SECOND move for `tokenHighlight` in 0.20 (it went base index →
+  `/diagnostics` in the budget review; now `/diagnostics` → `/tokens`, its
+  production home). It stays OFF the base scene index (opt-in production UI — the
+  base embed is unchanged at ~35.59 kB gz). It is npm-subpath-only: re-exporting it
+  onto the `@glissade/browser` IIFE measured +1.16 kB gz (47.47 → 48.63), busting
+  the 48 kB convenience-bundle ceiling, so a no-build author reaches it via the npm
+  subpath rather than `window.glissade.*`.
+
+  Pure module-graph relocation — all goldens stay byte-identical.
+
+- Updated dependencies [c629b51]
+- Updated dependencies [4a2117f]
+- Updated dependencies [be35b11]
+  - @glissade/core@0.20.0
+
 ## 0.20.0-pre.7
 
 ### Patch Changes
