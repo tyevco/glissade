@@ -106,6 +106,12 @@ export class Canvas2DBackend implements RenderBackend {
     if (font.fontVariationSettings !== undefined && 'fontVariationSettings' in ctx) {
       (ctx as unknown as { fontVariationSettings: string }).fontVariationSettings = font.fontVariationSettings;
     }
+    // Letter-spacing folds into measureText (canvas/Skia honor it), so wrapping
+    // measures the same tracking the draw paints. save()/restore() above scopes
+    // it — no leak. Set only when present, keeping default Text byte-identical.
+    if (font.letterSpacing !== undefined && 'letterSpacing' in ctx) {
+      (ctx as unknown as { letterSpacing: string }).letterSpacing = `${font.letterSpacing}px`;
+    }
     const m = ctx.measureText(text);
     ctx.restore();
     return {

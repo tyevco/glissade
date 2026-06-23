@@ -395,6 +395,8 @@ export class DomBackend implements RenderBackend {
           this.#setStyle(o, div, 'fontStyle', cmd.font.style !== undefined ? cmd.font.style : undefined);
           this.#setStyle(o, div, 'fontVariationSettings',
             cmd.font.fontVariationSettings !== undefined ? cmd.font.fontVariationSettings : undefined);
+          this.#setStyle(o, div, 'letterSpacing',
+            cmd.font.letterSpacing !== undefined ? `${cmd.font.letterSpacing}px` : undefined);
           this.#setStyle(o, div, 'color', this.#solid(cmd.paint));
           // A non-solid text fill (gradient/mesh) has no CSS text analogue here —
           // flag the approximation so an editor can badge it (design-agent ask).
@@ -489,6 +491,7 @@ export class DomBackend implements RenderBackend {
     const span = this.#ensureMeasureSpan();
     span.style.font = fontString(font);
     span.style.fontVariationSettings = font.fontVariationSettings ?? 'normal';
+    span.style.letterSpacing = font.letterSpacing !== undefined ? `${font.letterSpacing}px` : 'normal';
     span.textContent = text;
     const width = span.getBoundingClientRect().width;
     if (width === 0 && text.length > 0) {

@@ -71,6 +71,16 @@ export interface FontSpec {
    * hard-throws `UnboundTargetError` (no signal resolves to it).
    */
   fontVariationSettings?: string;
+  /**
+   * Letter-spacing (tracking) in **px**, applied between glyphs. Maps 1:1 to
+   * `ctx.letterSpacing` on the canvas/Skia path (both `@napi-rs/canvas` and the
+   * modern browser 2D context honor it — and it affects `measureText`, so
+   * wrapping stays correct) and to CSS `letter-spacing` on the DOM backend.
+   * OMITTED for default Text, so a node without tracking emits a byte-identical
+   * FontSpec (the golden corpus depends on this). For em-relative tracking pass
+   * `em * fontSize` (px is the engine's unit everywhere else).
+   */
+  letterSpacing?: number;
 }
 
 /**

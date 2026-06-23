@@ -279,3 +279,28 @@ describe('fontVariationSettings (0.20 — STATIC passthrough)', () => {
     expect(node.resolveTarget('fontVariationSettings')).toBeUndefined();
   });
 });
+
+describe('letterSpacing (0.21 — STATIC tracking passthrough)', () => {
+  it('accepts the typed prop (no throw), positive and negative', () => {
+    expect(() => new Text({ id: 'hero', text: 'x', letterSpacing: 12 })).not.toThrow();
+    expect(() => new Text({ id: 'tight', text: 'x', letterSpacing: -2 })).not.toThrow();
+  });
+
+  it('the tracking THREADS into the FontSpec the fillText carries', () => {
+    const fonts = emitFonts(new Text({ text: 'x', letterSpacing: 8 }));
+    expect(fonts).toHaveLength(1);
+    expect(fonts[0]!.letterSpacing).toBe(8);
+  });
+
+  it('default Text OMITS the field — byte-identical FontSpec (the golden corpus depends on it)', () => {
+    const fonts = emitFonts(new Text({ text: 'x' }));
+    expect(fonts).toHaveLength(1);
+    expect('letterSpacing' in fonts[0]!).toBe(false);
+    expect(new Text({ text: 'x' }).letterSpacing).toBeUndefined();
+  });
+
+  it('animatable tracking is deferred — a track on /letterSpacing has no target', () => {
+    const node = new Text({ id: 'hero', text: 'x', letterSpacing: 8 });
+    expect(node.resolveTarget('letterSpacing')).toBeUndefined();
+  });
+});

@@ -40,6 +40,7 @@ import goldenGradientSmooth from '../../examples/src/scenes/golden-gradient-smoo
 import goldenMesh from '../../examples/src/scenes/golden-mesh.js';
 import goldenFontInstanced from '../../examples/src/scenes/golden-font-instanced.js';
 import goldenVariableFont from '../../examples/src/scenes/golden-variable-font.js';
+import goldenLetterSpacing from '../../examples/src/scenes/golden-letter-spacing.js';
 import goldenWoff2 from '../../examples/src/scenes/golden-woff2.js';
 import { ingestFont } from '@glissade/core/font-ingest';
 import goldenMorph from '../../examples/src/scenes/golden-morph.js';
@@ -185,6 +186,12 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // time on Skia, so the rows render distinctly. Byte-exact on the pinned
   // toolchain; the proof the axis is applied, not dropped.
   { name: 'variable-font', mod: goldenVariableFont },
+  // 0.21 STATIC letter-spacing (tracking) passthrough: three rows of ONE face at
+  // the same size, differing only by static `letterSpacing` (none / 14 / -3) —
+  // the tracking reaches the glyphs at raster time on Skia (which honors
+  // ctx.letterSpacing in render AND measure), so the rows render at distinct
+  // widths. Byte-exact on the pinned toolchain; the proof tracking is applied.
+  { name: 'letter-spacing', mod: goldenLetterSpacing },
   // 0.13 §3.6 woff2-decoded face (DsW-aD_OUMoV item 1): the committed woff2 is
   // decoded ONCE at ingest to a static sfnt, then rendered byte-exactly on Skia —
   // proves the woff2-decode path is byte-stable through the rasterizer

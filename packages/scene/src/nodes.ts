@@ -757,6 +757,15 @@ export interface TextProps extends NodeProps {
   /** Line height as a multiple of fontSize; default 1.25. */
   lineHeight?: number;
   /**
+   * Letter-spacing (tracking) in **px** between glyphs; unset = none (0). STATIC
+   * passthrough threaded into the FontSpec — applied 1:1 by every backend
+   * (`ctx.letterSpacing` on canvas/Skia, CSS `letter-spacing` on DOM) and it
+   * affects measurement, so wrapping stays correct. Not a registered target (no
+   * animatable tracking in 0.21); when unset the FontSpec omits it, so default
+   * Text stays byte-identical. For em-relative tracking pass `em * fontSize`.
+   */
+  letterSpacing?: number;
+  /**
    * Typewriter reveal: how many graphemes of the laid-out text are shown,
    * left-to-right. Default Infinity = fully shown (byte-identical to no
    * reveal, so existing goldens never shift). Track target '<id>/reveal';
@@ -793,6 +802,8 @@ export class Text extends Node {
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
+  /** Static letter-spacing (tracking) in px; undefined = none. */
+  readonly letterSpacing: number | undefined;
   readonly reveal: BindableSignal<number>;
   /**
    * Reveal fraction in [0, 1]; NaN (the default) means "unset" so plain `reveal`
@@ -813,6 +824,7 @@ export class Text extends Node {
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
+    this.letterSpacing = props.letterSpacing;
     this.reveal = initProp(signal(Number.POSITIVE_INFINITY), props.reveal);
     // NaN = "unset": plain `reveal` stays authoritative (byte-identical default).
     this.revealFraction = initProp(signal(Number.NaN), props.revealFraction);
@@ -846,6 +858,7 @@ export class Text extends Node {
       weight: this.fontWeight,
       ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
       ...(this.fontVariationSettings !== undefined ? { fontVariationSettings: this.fontVariationSettings } : {}),
+      ...(this.letterSpacing !== undefined ? { letterSpacing: this.letterSpacing } : {}),
     };
   }
 

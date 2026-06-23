@@ -185,6 +185,9 @@ const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: Constructi
     fontStyle: { type: "'normal'|'italic'" },
     align: { type: "'left'|'center'|'right'" },
     lineHeight: { type: 'number' },
+    // Letter-spacing (tracking) in px, threaded to every backend. Set at
+    // construction (static — not a track target in 0.21).
+    letterSpacing: { type: 'number' },
     // 0.20 variable-font axes (e.g. "'wght' 700, 'wdth' 80"): an OpenType
     // fontVariationSettings string threaded to the rasterizer. Set at
     // construction — a string of axis tuples isn't lerp-able, so it is NOT a

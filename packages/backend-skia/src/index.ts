@@ -82,6 +82,11 @@ export class SkiaBackend implements RenderBackend {
     if (font.fontVariationSettings !== undefined) {
       (ctx as unknown as { fontVariationSettings: string }).fontVariationSettings = font.fontVariationSettings;
     }
+    // Letter-spacing folds into measureText so wrapping matches the painted
+    // tracking; save()/restore() scopes it. @napi-rs/canvas honors it.
+    if (font.letterSpacing !== undefined) {
+      (ctx as unknown as { letterSpacing: string }).letterSpacing = `${font.letterSpacing}px`;
+    }
     const m = ctx.measureText(text);
     ctx.restore();
     return { width: m.width, ascent: m.actualBoundingBoxAscent, descent: m.actualBoundingBoxDescent };

@@ -669,6 +669,14 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
         case 'fillText': {
           const ctx = ctxOf();
           ctx.font = fontString(cmd.font);
+          // Letter-spacing (tracking): write only when the FontSpec carries it,
+          // so default Text never touches the (sticky) property — byte-identical
+          // pixels. `ctx.letterSpacing` is honored on both the Skia/export path
+          // (@napi-rs/canvas) and the modern browser 2D context, and it folds
+          // into measureText below so the accumulated bbox tracks it. Reset to
+          // '0px' after the draw so it can't leak onto a later un-tracked draw.
+          const ls = cmd.font.letterSpacing;
+          if (ls !== undefined && 'letterSpacing' in ctx) ctx.letterSpacing = `${ls}px`;
           // §3.6 STATIC variable-font passthrough: write the axes only when the
           // FontSpec carries them, so default Text never touches the (sticky)
           // property — byte-identical pixels. Applied where the context exposes
@@ -704,6 +712,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
           } catch {
             top().unbounded = true;
           }
+          if (ls !== undefined && 'letterSpacing' in ctx) ctx.letterSpacing = '0px';
           break;
         }
         case 'drawImage': {

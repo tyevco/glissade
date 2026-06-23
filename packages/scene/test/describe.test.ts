@@ -261,8 +261,13 @@ vdescribe('describe() construction props', () => {
     expect(m.nodes.Text!.props.fontVariationSettings!.target).toBeUndefined();
   });
 
+  it('flags Text.letterSpacing as a construction-only number (0.21 tracking)', () => {
+    expect(m.nodes.Text!.props.letterSpacing).toEqual({ type: 'number', animatable: false });
+    expect(m.nodes.Text!.props.letterSpacing!.target).toBeUndefined();
+  });
+
   it('exposes Text fontFamily/align/anchor as construction-only (animatable:false, no target)', () => {
-    for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight', 'fontVariationSettings']) {
+    for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight', 'fontVariationSettings', 'letterSpacing']) {
       const prop = m.nodes.Text!.props[p];
       expect(prop, `Text.${p} missing`).toBeDefined();
       expect(prop!.animatable, `Text.${p} must be construction-only`).toBe(false);

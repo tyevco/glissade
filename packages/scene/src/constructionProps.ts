@@ -35,7 +35,7 @@ export const NODE_CONSTRUCTION_PROP_NAMES: { readonly [typeName: string]: readon
   Rect: SKETCH,
   Circle: SKETCH,
   Path: SKETCH,
-  Text: ['fontFamily', 'fontWeight', 'fontStyle', 'align', 'lineHeight', 'fontVariationSettings'],
+  Text: ['fontFamily', 'fontWeight', 'fontStyle', 'align', 'lineHeight', 'fontVariationSettings', 'letterSpacing'],
   Image: ['assetId'],
   Video: ['assetId', 'at', 'trimStart', 'playbackRate', 'clipDuration', 'sourceFps'],
   Layout: LAYOUT,

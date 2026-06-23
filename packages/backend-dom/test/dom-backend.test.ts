@@ -190,6 +190,19 @@ describe('DomBackend — text, clip, image, groups', () => {
     expect(div.style.lineHeight).toBe('1');
   });
 
+  it('fillText letterSpacing → CSS letter-spacing when present, untouched when absent', () => {
+    const spaced = renderTo(
+      list([{ op: 'fillText', text: 'hi', font: { family: 'X', size: 20, letterSpacing: 6 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 20 }]),
+    );
+    const sdiv = Array.from(spaced.querySelectorAll('div')).find((d) => d.textContent === 'hi') as HTMLElement;
+    expect(sdiv.style.letterSpacing).toBe('6px');
+    const plain = renderTo(
+      list([{ op: 'fillText', text: 'hi', font: { family: 'X', size: 20 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 20 }]),
+    );
+    const pdiv = Array.from(plain.querySelectorAll('div')).find((d) => d.textContent === 'hi') as HTMLElement;
+    expect(pdiv.style.letterSpacing).toBe('');
+  });
+
   it('fillText alignment → the correct translateX per align (left 0 / center −50% / right −100%)', () => {
     const t = (align?: 'left' | 'center' | 'right'): string => {
       const root = renderTo(

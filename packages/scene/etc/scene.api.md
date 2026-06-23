@@ -459,6 +459,7 @@ export interface FontSpec {
     // (undocumented)
     family: string;
     fontVariationSettings?: string;
+    letterSpacing?: number;
     // (undocumented)
     size: number;
     // (undocumented)
@@ -1211,6 +1212,7 @@ class Text_2 extends Node_2 {
         w: number;
         h: number;
     };
+    readonly letterSpacing: number | undefined;
     lineBoxes(measurer?: TextMeasurer): LineBox[];
     // (undocumented)
     readonly lineHeight: number;
@@ -1297,6 +1299,7 @@ export interface TextProps extends NodeProps {
     fontVariationSettings?: string;
     // (undocumented)
     fontWeight?: number;
+    letterSpacing?: number;
     lineHeight?: number;
     reveal?: PropInit<number>;
     revealFraction?: PropInit<number>;

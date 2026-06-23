@@ -90,6 +90,7 @@ interface SplitFont {
   fontStyle: 'normal' | 'italic';
   fill: string;
   lineHeight: number;
+  letterSpacing: number | undefined;
 }
 
 /**
@@ -137,6 +138,7 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
     fontStyle: text.fontStyle,
     fill: text.fill(),
     lineHeight: text.lineHeight,
+    letterSpacing: text.letterSpacing,
   };
   // The layout baseline of line i in draw space — the same grid Text.draw emits
   // fillText on (y: i*step). Independent of glyph ascent, so a part Text drawn
@@ -167,6 +169,7 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
       fontWeight: font.fontWeight,
       ...(font.fontStyle === 'italic' ? { fontStyle: 'italic' as const } : {}),
       lineHeight: font.lineHeight,
+      ...(font.letterSpacing !== undefined ? { letterSpacing: font.letterSpacing } : {}),
       align: 'left',
       position: [b.x, b.line * step],
     });
