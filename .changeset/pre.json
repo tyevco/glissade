@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.21.0"
   },
   "changesets": [
+    "dom-shape-sized-svg",
     "text-letter-spacing"
   ]
 }
