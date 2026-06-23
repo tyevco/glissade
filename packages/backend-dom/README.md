@@ -110,15 +110,22 @@ base bundle is absent or a different version (never a cryptic `undefined`).
 
 - **Text line-breaking** is the browser's layout engine, **not** the canvas/Skia
   rasterizer — so line breaks can differ from `gs render`. Intended.
-- **`measureText`** measures via a hidden DOM element (so it matches what this
-  backend draws). With no layout engine (e.g. jsdom) it falls back to an estimate
-  and warns once.
+- **Text line-breaking** uses the browser's layout engine, so it can differ from
+  the canvas/Skia rasterizer; the measuring span is mounted in the live document
+  so wrapping reflects the real font (a detached host would measure 0).
+- **`measureText`** measures `width` via a hidden DOM element (matching what this
+  backend draws). `ascent`/`descent` are **estimates** (`0.8`/`0.2 × fontSize`),
+  not real font metrics — fine for layout composition, not for exact vertical
+  metrics. With no layout engine (e.g. jsdom) `width` also falls back to an
+  estimate and warns once.
 - **Mesh paints, gaussian/smooth gradient interpolation, and exact blend
   isolation** have no CSS/SVG analogue — they **degrade to a best-effort solid /
   linear** and the element is stamped **`data-approx="true"`** so an editor can
   badge it. Shader (`pushGroup.shader`) passes are ignored (`caps.shaders=false`).
-- **`readPixels()` throws** — there is no pixel buffer; use canvas2d/skia for
-  readback.
+- **`readPixels()` rejects** (it is `async` — there is no pixel buffer). It
+  returns a `Promise` per the `RenderBackend` contract, so **`await` it or use
+  `.catch()`** — a bare synchronous `try/catch` will not see the rejection. Use
+  canvas2d/skia for real pixel readback.
 
 The backend only ever manages its **own root** subtree — your overlay/foreign DOM
 in the host element is left untouched.

@@ -266,6 +266,22 @@ vdescribe('describe() construction props', () => {
     expect(m.nodes.Text!.props.letterSpacing!.target).toBeUndefined();
   });
 
+  it('surfaces each node positionAnchor + enumerates the anchor presets (Rect-center vs Text-baseline discoverability)', () => {
+    // the default origin per node — so a consumer aligning a card + label stops
+    // pixel-measuring the shape-vs-Text mismatch (UhOVUlewfVz7)
+    expect(m.nodes.Rect!.positionAnchor).toBe('center');
+    expect(m.nodes.Circle!.positionAnchor).toBe('center');
+    expect(m.nodes.Image!.positionAnchor).toBe('center');
+    expect(m.nodes.Text!.positionAnchor).toBe('baseline-left');
+    expect(m.nodes.Path!.positionAnchor).toBe('author-coords');
+    // the `anchor` prop lists its presets (not the opaque 'AnchorSpec') so
+    // `anchor:'top-left'` is discoverable as the fix
+    const anchorType = m.nodes.Rect!.props.anchor!.type;
+    expect(anchorType).toContain("'top-left'");
+    expect(anchorType).toContain("'center'");
+    expect(anchorType).toContain('[ax,ay]');
+  });
+
   it('exposes Text fontFamily/align/anchor as construction-only (animatable:false, no target)', () => {
     for (const p of ['fontFamily', 'align', 'anchor', 'fontWeight', 'fontStyle', 'lineHeight', 'fontVariationSettings', 'letterSpacing']) {
       const prop = m.nodes.Text!.props[p];
@@ -319,7 +335,7 @@ vdescribe('describe() construction props', () => {
       'Node[]': [],
       'BlendMode': 'source-over',
       'FilterSpec[]': [],
-      'AnchorSpec': 'center',
+      "'center'|'top-left'|'top'|'top-right'|'left'|'right'|'bottom-left'|'bottom'|'bottom-right'|[ax,ay]": 'center',
       'SketchStyle': { kind: 'pencil' },
       'HachureSpec': { gap: 4 },
       "'normal'|'italic'": 'normal',

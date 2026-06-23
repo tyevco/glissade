@@ -67,6 +67,13 @@ export interface DescribedProp {
 export interface DescribedNode {
   props: { [prop: string]: DescribedProp };
   /**
+   * What this node's `position` points at WITHOUT an explicit `anchor` (its
+   * legacy origin): 'center' for shapes, 'baseline-left' for Text, etc. Override
+   * with the base `anchor` prop. Surfaced so consumers stop discovering the
+   * shape-vs-Text anchor mismatch by pixel-measuring.
+   */
+  positionAnchor: string;
+  /**
    * The tree-shakeable subpath this node is imported from, when not the base
    * `@glissade/scene` index (e.g. the Layout family lives on
    * `@glissade/scene/layout`). Omitted for base-index nodes.
@@ -220,8 +227,29 @@ const BASE_CONSTRUCTION_PROP_META: { [prop: string]: ConstructionProp } = {
   id: { type: 'string' },
   blend: { type: 'BlendMode' },
   filters: { type: 'FilterSpec[]' },
-  anchor: { type: 'AnchorSpec' },
+  // The position anchor + rotation/scale pivot. Presets enumerated (not the
+  // opaque `AnchorSpec` name) so the fix for the Rect-center/Text-top-left
+  // mismatch is discoverable: set `anchor:'top-left'` and `position` means the
+  // box's top-left on every node. Each node's DEFAULT (no anchor) is in
+  // `nodes.<T>.positionAnchor`.
+  anchor: { type: "'center'|'top-left'|'top'|'top-right'|'left'|'right'|'bottom-left'|'bottom'|'bottom-right'|[ax,ay]" },
   cache: { type: 'boolean' },
+};
+
+/**
+ * What an unanchored node's `position` POINTS AT (its legacy origin). Shapes are
+ * box-centered; Text sits at the baseline-left; Path uses the author's path
+ * coords. Surfaced per node so a consumer aligning a card + its label stops
+ * pixel-measuring the mismatch — and knows `anchor` (above) overrides it.
+ */
+const POSITION_ANCHOR: { [typeName: string]: string } = {
+  Rect: 'center',
+  Circle: 'center',
+  Image: 'center',
+  Video: 'center',
+  Text: 'baseline-left',
+  Path: 'author-coords',
+  Group: 'none (no intrinsic box — anchor warns and is ignored)',
 };
 
 /** Introspect one freshly-instantiated node into its prop manifest: the
@@ -255,7 +283,7 @@ function describeNode(node: Node, typeName: string): DescribedNode {
       ...(spec.required ? { required: true } : {}),
     };
   }
-  return { props };
+  return { props, positionAnchor: POSITION_ANCHOR[typeName] ?? 'center' };
 }
 
 /**
@@ -305,7 +333,7 @@ function describeLayoutNode(): DescribedNode {
     if (spec === undefined) throw new Error(`describe(): Layout construction prop '${prop}' has no type metadata`);
     props[prop] = { type: spec.type, animatable: false, ...(spec.required ? { required: true } : {}) };
   }
-  return { props, subpath: LAYOUT_SUBPATH };
+  return { props, positionAnchor: 'top-left', subpath: LAYOUT_SUBPATH };
 }
 
 // The built-in node taxonomy members that have a concrete class on the base scene
