@@ -21,6 +21,7 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Getting started', link: '/getting-started' },
+          { text: 'For AI agents', link: '/for-agents' },
           { text: 'Concepts', link: '/concepts' },
           { text: 'Composing timelines', link: '/timeline' },
           { text: 'Flexbox layout', link: '/layout' },

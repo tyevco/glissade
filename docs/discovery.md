@@ -12,6 +12,10 @@ as `G.<name>` (where `const G = window.glissade`) and is identical to the scoped
 > build, import the same names from their packages (noted per-section) instead of
 > reaching for the global.
 
+> **Working as an AI agent?** Start with [glissade for AI agents](./for-agents) —
+> the cold-start guide: call `describe()` first, read the fail-loud errors, and
+> verify pixels (not canvas screenshots). Then come back here for the name map.
+
 ## Transport: `createPlayer()` (play / pause / seek / rate / loop / markers / cues)
 
 `mount(scene, timeline, canvas)` is the one-call embed (it builds the player, the
