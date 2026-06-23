@@ -1,12 +1,12 @@
 // @glissade/backend-dom — a DOM/SVG RenderBackend (DESIGN.md §3.4; the
-// docs/design/dom-backend.md memo, Stage S2 "forward render").
+// docs/design/dom-backend.md memo, Stage S3 "retained-DOM reconciler").
 //
 // Consumes the IDENTICAL DisplayList IR the canvas2d/skia backends consume, but
 // emits HTML/SVG ELEMENTS instead of pixels. It is explicitly PREVIEW /
 // NON-PARITY: there is no canvas, so neither Skia byte-exactness nor browser↔Skia
 // SSIM applies — it is never on the `gs render` path. Its value is elsewhere:
 // accessibility + selectable text, CSS-native embedding, and a zero-raster
-// structural preview of a scene.
+// structural preview of a scene that hosts a click-to-edit editor.
 //
 // Element strategy: ONE HTML `<div>` root; HTML divs carry structure / transform
 // / group / text; inline `<svg>` islands carry path / gradient / clip / image
@@ -16,6 +16,17 @@
 // Node identity rides OUT-OF-BAND: `render()` stamps `data-node-id` from an id
 // stream set via `setIds()` (the `@glissade/scene/identity` `emitWithIds` stream);
 // the DrawCommands themselves stay identity-less, exactly as shipped.
+//
+// === S3: RETAINED-DOM RECONCILER ===
+// Each `render()` REUSES + PATCHES a tree retained across frames instead of
+// rebuilding it, so inline-edit state (caret/focus/selection), host overlays,
+// event listeners, and CSS transitions survive a re-render. The forward walk
+// (cursor + stack discipline, per-op element construction) is preserved
+// verbatim; every `appendChild` is routed through `matchOrCreate` and every
+// style/attr/text write through a compare-then-write helper. Ownership is
+// defined by membership in per-cursor `children` Maps stored in a WeakMap keyed
+// off the owning cursor element — the reconciler creates / moves / removes /
+// mutates ONLY those nodes, so foreign DOM the host injects is never touched.
 
 import { emitDevWarning } from '@glissade/core';
 import {
@@ -122,11 +133,58 @@ function segsToD(segs: readonly PathSeg[]): string {
   return parts.join(' ');
 }
 
+/** Short, stable FNV-1a hash (hex) over a string — for deterministic def ids
+ * that survive reorder (same scope+key → same id across frames). */
+function hashKey(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/**
+ * Per-cursor reconciliation record. Stored in a WeakMap keyed off the cursor
+ * element (so the record dies with its element). `children` is the SOLE
+ * definition of reconciler ownership: a key → the owned OUTER element placed
+ * directly under this cursor. `occ`/`seen`/`frame`/`anchor` are per-render
+ * scratch reset exactly once when a reused cursor is re-entered this frame.
+ */
+interface CursorRecon {
+  children: Map<string, Element>;
+  /** Every DOM node the reconciler owns directly under this cursor — keyed outer
+   * elements PLUS clip aux islands. Drives the foreign-step in placement. */
+  owns: Set<Node>;
+  occ: Map<string, number>;
+  seen: Set<string>;
+  frame: number;
+  anchor: Node | null;
+}
+
+/**
+ * Per-owned-element record. `el` is the keyed outer element; `aux` the clip
+ * `<svg>` island that travels with its wrapper; `path` the inner `<path>` for
+ * fill/stroke/clip; `defId` the deterministic clip/gradient def id; `gradKey`
+ * the last-applied gradient signature (skip a `<defs>` rebuild when unchanged);
+ * `props` the last-applied value cache that drives compare-then-write.
+ */
+interface Owned {
+  op: string;
+  el: Element;
+  aux?: Element;
+  path?: SVGPathElement;
+  defId?: string;
+  gradKey?: string;
+  props: Record<string, string | undefined>;
+}
+
 /**
  * A DOM/SVG `RenderBackend`. Construct with a host element (renders into it) or a
  * bare `Document` (builds a detached `root` you read off `backend.root`). Each
- * `render()` rebuilds the tree (forward render; the cross-frame retained-DOM
- * reconciler is Stage S3). Preview / non-parity — see the module header.
+ * `render()` REUSES + PATCHES a retained tree keyed on `data-node-id` (Stage S3),
+ * so inline-edit state, host overlays, listeners, and CSS transitions survive a
+ * re-render. Preview / non-parity — see the module header.
  */
 export class DomBackend implements RenderBackend {
   readonly root: HTMLElement;
@@ -135,13 +193,18 @@ export class DomBackend implements RenderBackend {
   readonly #images = new Map<string, unknown>();
   readonly #videos = new Map<string, VideoFrameSource>();
 
+  // Retained reconciliation state.
+  #frame = 0;
+  readonly #recon = new WeakMap<Element, CursorRecon>();
+  readonly #owned = new WeakMap<Element, Owned>();
+
   #ids: NodeIdStream = [];
-  #defCounter = 0;
   #measureSpan: HTMLElement | null = null;
   #warnedMeasure = false;
   #warnedMesh = false;
   #warnedGradientInterp = false;
   #warnedShader = false;
+  #warnedUnbalanced = false;
 
   constructor(target: HTMLElement | Document) {
     const isDoc = target.nodeType === 9; // Node.DOCUMENT_NODE
@@ -171,19 +234,24 @@ export class DomBackend implements RenderBackend {
   render(list: DisplayList): void {
     const doc = this.#doc;
     const ids = this.#ids;
-    this.#defCounter = 0;
-    // Forward render: clear and rebuild (S3 adds cross-frame patching).
-    this.root.replaceChildren();
-    this.root.style.width = `${list.size.w}px`;
-    this.root.style.height = `${list.size.h}px`;
+    this.#frame++;
+    // Retained render: REUSE + PATCH (no replaceChildren). The root is sized via
+    // compare-then-write; foreign children the host added to the root survive.
+    this.#enterCursor(this.root, '');
+    {
+      const w = `${list.size.w}px`;
+      const h = `${list.size.h}px`;
+      if (this.root.style.width !== w) this.root.style.width = w;
+      if (this.root.style.height !== h) this.root.style.height = h;
+    }
 
     let cursor: HTMLElement = this.root;
     const stack: HTMLElement[] = [];
+    // Scope path: chain of owner keys threaded as we descend, for globally-unique
+    // def ids though per-cursor keys are scope-local. Parallels `stack`.
+    let scope = '';
+    const scopeStack: string[] = [];
 
-    const stamp = (el: Element, i: number): void => {
-      const id = ids[i];
-      if (id !== undefined) el.setAttribute('data-node-id', id);
-    };
     const pathSegs = (id: number): readonly PathSeg[] => {
       const res: Resource | undefined = list.resources[id];
       return res && res.kind === 'path' ? res.segs : [];
@@ -201,141 +269,201 @@ export class DomBackend implements RenderBackend {
     };
 
     list.commands.forEach((cmd, i) => {
+      const id = ids[i];
       switch (cmd.op) {
         case 'save': {
           stack.push(cursor);
+          scopeStack.push(scope);
           break;
         }
         case 'restore': {
+          // Prune the (possibly no-push) transform/clip cursor being unwound.
+          this.#pruneCursor(cursor);
           cursor = stack.pop() ?? this.root;
+          scope = scopeStack.pop() ?? '';
           break;
         }
         case 'transform': {
-          const wrap = doc.createElement('div');
-          wrap.style.position = 'absolute';
-          wrap.style.transformOrigin = '0 0';
-          wrap.style.transform = cssMatrix(cmd.m);
-          stamp(wrap, i);
-          cursor.appendChild(wrap);
-          cursor = wrap; // unwound by the enclosing `restore` (no push)
+          const key = this.#keyFor(cursor, id, 'transform');
+          const o = this.#matchOrCreate(cursor, key, 'transform', () => {
+            const wrap = doc.createElement('div');
+            wrap.style.position = 'absolute';
+            wrap.style.transformOrigin = '0 0';
+            return { op: 'transform', el: wrap, props: {} };
+          });
+          this.#setStyle(o, o.el as HTMLElement, 'transform', cssMatrix(cmd.m));
+          this.#stamp(o, o.el, id);
+          cursor = o.el as HTMLElement; // unwound by the enclosing `restore` (no push)
+          scope = scope + '/' + key;
+          this.#enterCursor(cursor, scope);
           break;
         }
         case 'clip': {
-          const id = `gsclip${this.#defCounter++}`;
-          const svg = island();
-          const defs = doc.createElementNS(SVG_NS, 'defs');
-          const cp = doc.createElementNS(SVG_NS, 'clipPath');
-          cp.setAttribute('id', id);
-          cp.setAttribute('clipPathUnits', 'userSpaceOnUse');
-          const p = doc.createElementNS(SVG_NS, 'path');
-          p.setAttribute('d', segsToD(pathSegs(cmd.path)));
-          p.setAttribute('clip-rule', cmd.rule ?? 'nonzero');
-          cp.appendChild(p);
-          defs.appendChild(cp);
-          svg.appendChild(defs);
-          cursor.appendChild(svg);
-          // open a clip wrapper subsequent draws nest under (unwound by restore)
-          const wrap = doc.createElement('div');
-          wrap.style.position = 'absolute';
-          wrap.style.left = '0';
-          wrap.style.top = '0';
-          wrap.style.clipPath = `url(#${id})`;
-          stamp(wrap, i);
-          cursor.appendChild(wrap);
-          cursor = wrap;
+          const key = this.#keyFor(cursor, id, 'clip');
+          const defId = 'gsclip_' + hashKey(scope + ' ' + key);
+          const o = this.#matchOrCreate(cursor, key, 'clip', () => {
+            const svg = island();
+            const defs = doc.createElementNS(SVG_NS, 'defs');
+            const cp = doc.createElementNS(SVG_NS, 'clipPath');
+            cp.setAttribute('clipPathUnits', 'userSpaceOnUse');
+            const p = doc.createElementNS(SVG_NS, 'path') as SVGPathElement;
+            cp.appendChild(p);
+            defs.appendChild(cp);
+            svg.appendChild(defs);
+            const wrap = doc.createElement('div');
+            wrap.style.position = 'absolute';
+            wrap.style.left = '0';
+            wrap.style.top = '0';
+            return { op: 'clip', el: wrap, aux: svg, path: p, props: {} };
+          });
+          o.defId = defId;
+          const p = o.path!;
+          const cp = (o.aux as SVGSVGElement).querySelector('clipPath')!;
+          this.#setAttr(p, o, 'd', 'd', segsToD(pathSegs(cmd.path)));
+          this.#setAttr(p, o, 'clipRule', 'clip-rule', cmd.rule ?? 'nonzero');
+          this.#setAttr(cp, o, 'cpId', 'id', defId);
+          this.#setStyle(o, o.el as HTMLElement, 'clipPath', `url(#${defId})`);
+          this.#stamp(o, o.el, id);
+          cursor = o.el as HTMLElement;
+          scope = scope + '/' + key;
+          this.#enterCursor(cursor, scope);
           break;
         }
         case 'fillPath': {
-          const svg = island();
-          const path = doc.createElementNS(SVG_NS, 'path');
-          path.setAttribute('d', segsToD(pathSegs(cmd.path)));
-          path.setAttribute('fill', this.#resolvePaint(cmd.paint, svg, path));
-          stamp(path, i);
-          svg.appendChild(path);
-          cursor.appendChild(svg);
+          const key = this.#keyFor(cursor, id, 'fillPath');
+          const o = this.#matchOrCreate(cursor, key, 'fillPath', () => {
+            const svg = island();
+            const path = doc.createElementNS(SVG_NS, 'path') as SVGPathElement;
+            svg.appendChild(path);
+            return { op: 'fillPath', el: svg, path, props: {} };
+          });
+          const path = o.path!;
+          this.#setAttr(path, o, 'd', 'd', segsToD(pathSegs(cmd.path)));
+          this.#setAttr(path, o, 'fill', 'fill', this.#resolvePaint(cmd.paint, o, scope, key));
+          this.#stamp(o, path, id);
           break;
         }
         case 'strokePath': {
-          const svg = island();
-          const path = doc.createElementNS(SVG_NS, 'path');
-          path.setAttribute('d', segsToD(pathSegs(cmd.path)));
-          path.setAttribute('fill', 'none');
-          path.setAttribute('stroke', this.#resolvePaint(cmd.paint, svg, path));
-          applyStroke(path, cmd.stroke);
-          stamp(path, i);
-          svg.appendChild(path);
-          cursor.appendChild(svg);
+          const key = this.#keyFor(cursor, id, 'strokePath');
+          const o = this.#matchOrCreate(cursor, key, 'strokePath', () => {
+            const svg = island();
+            const path = doc.createElementNS(SVG_NS, 'path') as SVGPathElement;
+            svg.appendChild(path);
+            return { op: 'strokePath', el: svg, path, props: {} };
+          });
+          const path = o.path!;
+          this.#setAttr(path, o, 'd', 'd', segsToD(pathSegs(cmd.path)));
+          this.#setAttr(path, o, 'fill', 'fill', 'none');
+          this.#setAttr(path, o, 'stroke', 'stroke', this.#resolvePaint(cmd.paint, o, scope, key));
+          this.#applyStroke(path, o, cmd.stroke);
+          this.#stamp(o, path, id);
           break;
         }
         case 'fillText': {
-          const div = doc.createElement('div');
-          div.style.position = 'absolute';
-          div.style.left = `${cmd.x}px`;
-          // canvas `y` is a BASELINE; CSS `top` is the box top — lift by ~1em so
-          // the text box sits near the baseline. Non-parity: an approximation.
-          div.style.top = `${cmd.y}px`;
-          div.style.transform = 'translateY(-0.8em)';
-          div.style.whiteSpace = 'pre';
-          div.style.font = fontString(cmd.font);
-          if (cmd.font.fontVariationSettings !== undefined) {
-            div.style.fontVariationSettings = cmd.font.fontVariationSettings;
-          }
-          div.style.color = this.#solid(cmd.paint);
+          const key = this.#keyFor(cursor, id, 'fillText');
+          const o = this.#matchOrCreate(cursor, key, 'fillText', () => {
+            const div = doc.createElement('div');
+            div.style.position = 'absolute';
+            div.style.transform = 'translateY(-0.8em)';
+            div.style.whiteSpace = 'pre';
+            return { op: 'fillText', el: div, props: {} };
+          });
+          const div = o.el as HTMLElement;
+          this.#setStyle(o, div, 'left', `${cmd.x}px`);
+          // canvas `y` is a BASELINE; CSS `top` is the box top — the translateY
+          // lift (set once at create) sits the text box near the baseline.
+          this.#setStyle(o, div, 'top', `${cmd.y}px`);
+          this.#setStyle(o, div, 'font', fontString(cmd.font));
+          this.#setStyle(o, div, 'fontVariationSettings',
+            cmd.font.fontVariationSettings !== undefined ? cmd.font.fontVariationSettings : undefined);
+          this.#setStyle(o, div, 'color', this.#solid(cmd.paint));
           // A non-solid text fill (gradient/mesh) has no CSS text analogue here —
           // flag the approximation so an editor can badge it (design-agent ask).
-          if (cmd.paint.kind !== 'color') div.setAttribute('data-approx', 'true');
-          if (cmd.align) div.style.textAlign = cmd.align;
-          div.textContent = cmd.text;
-          stamp(div, i);
-          cursor.appendChild(div);
+          this.#setAttr(div, o, 'dataApprox', 'data-approx', cmd.paint.kind !== 'color' ? 'true' : undefined);
+          this.#setStyle(o, div, 'textAlign', cmd.align !== undefined ? cmd.align : undefined);
+          this.#setText(div, o, cmd.text);
+          this.#stamp(o, div, id);
           break;
         }
         case 'drawImage': {
           const res: Resource | undefined = list.resources[cmd.image];
           const assetId = res && (res.kind === 'image' || res.kind === 'videoFrame') ? res.assetId : undefined;
-          const img = doc.createElement('img');
-          img.style.position = 'absolute';
-          img.style.left = `${cmd.dst.x}px`;
-          img.style.top = `${cmd.dst.y}px`;
-          img.style.width = `${cmd.dst.w}px`;
-          img.style.height = `${cmd.dst.h}px`;
-          img.style.objectFit = 'fill';
-          if (cmd.smoothing === false) img.style.imageRendering = 'pixelated';
-          if (assetId !== undefined) {
-            img.setAttribute('data-asset-id', assetId);
-            const src = this.#imageSrc(assetId);
-            if (src !== undefined) img.src = src;
+          const key = this.#keyFor(cursor, id, 'drawImage');
+          const o = this.#matchOrCreate(cursor, key, 'drawImage', () => {
+            const img = doc.createElement('img');
+            img.style.position = 'absolute';
+            img.style.objectFit = 'fill';
+            return { op: 'drawImage', el: img, props: {} };
+          });
+          const img = o.el as HTMLImageElement;
+          this.#setStyle(o, img, 'left', `${cmd.dst.x}px`);
+          this.#setStyle(o, img, 'top', `${cmd.dst.y}px`);
+          this.#setStyle(o, img, 'width', `${cmd.dst.w}px`);
+          this.#setStyle(o, img, 'height', `${cmd.dst.h}px`);
+          this.#setStyle(o, img, 'imageRendering', cmd.smoothing === false ? 'pixelated' : undefined);
+          this.#setAttr(img, o, 'dataAssetId', 'data-asset-id', assetId);
+          const src = assetId !== undefined ? this.#imageSrc(assetId) : undefined;
+          if (src !== undefined && o.props['src'] !== src) {
+            img.src = src;
+            o.props['src'] = src;
           }
-          stamp(img, i);
-          cursor.appendChild(img);
+          this.#stamp(o, img, id);
           break;
         }
         case 'pushGroup': {
-          const wrap = doc.createElement('div');
-          wrap.style.position = 'absolute';
-          wrap.style.left = '0';
-          wrap.style.top = '0';
-          if (cmd.opacity !== 1) wrap.style.opacity = String(cmd.opacity);
+          const key = this.#keyFor(cursor, id, 'pushGroup');
+          const o = this.#matchOrCreate(cursor, key, 'pushGroup', () => {
+            const wrap = doc.createElement('div');
+            wrap.style.position = 'absolute';
+            wrap.style.left = '0';
+            wrap.style.top = '0';
+            return { op: 'pushGroup', el: wrap, props: {} };
+          });
+          const wrap = o.el as HTMLElement;
+          this.#setStyle(o, wrap, 'opacity', cmd.opacity !== 1 ? String(cmd.opacity) : undefined);
           const blend = blendToCss(cmd.blend);
-          if (blend !== 'normal') wrap.style.mixBlendMode = blend;
-          if (cmd.filters.length > 0) wrap.style.filter = filtersToCanvasFilter(cmd.filters);
+          this.#setStyle(o, wrap, 'mixBlendMode', blend !== 'normal' ? blend : undefined);
+          this.#setStyle(o, wrap, 'filter', cmd.filters.length > 0 ? filtersToCanvasFilter(cmd.filters) : undefined);
           // cacheKey is IGNORED (no raster cache in a DOM tree — just render).
           if (cmd.shader !== undefined && !this.#warnedShader) {
             emitDevWarning('@glissade/backend-dom: a ShaderEffect (pushGroup.shader) has no DOM analogue — ignored (caps.shaders=false).');
             this.#warnedShader = true;
           }
-          stamp(wrap, i);
-          cursor.appendChild(wrap);
+          this.#stamp(o, wrap, id);
           stack.push(cursor);
+          scopeStack.push(scope);
           cursor = wrap;
+          scope = scope + '/' + key;
+          this.#enterCursor(cursor, scope);
           break;
         }
         case 'popGroup': {
+          this.#pruneCursor(cursor);
           cursor = stack.pop() ?? this.root;
+          scope = scopeStack.pop() ?? '';
           break;
         }
       }
     });
+
+    // Balanced input (every emitWithIds transform/clip is save/restore-bracketed)
+    // ends with cursor === root. A MALFORMED stream (a top-level transform/clip
+    // with no enclosing save/restore — never produced by emitWithIds) would leave
+    // an open cursor unpruned; drain it (and warn once) so a stale-node leak is a
+    // loud signal, not silent. The prune contract assumes emitter bracketing.
+    if (cursor !== this.root) {
+      if (!this.#warnedUnbalanced) {
+        emitDevWarning(
+          '@glissade/backend-dom: render() ended with an unbalanced cursor (a transform/clip with no enclosing save/restore) — the DisplayList is malformed; draining open cursors.',
+        );
+        this.#warnedUnbalanced = true;
+      }
+      while (cursor !== this.root) {
+        this.#pruneCursor(cursor);
+        cursor = stack.pop() ?? this.root;
+      }
+    }
+    this.#pruneCursor(this.root);
   }
 
   measureText(text: string, font: FontSpec): TextMetricsLite {
@@ -374,6 +502,7 @@ export class DomBackend implements RenderBackend {
   }
 
   dispose(): void {
+    // Intentional full teardown (NOT the retained patch path).
     this.root.replaceChildren();
     if (this.#host && this.root.parentNode === this.#host) this.#host.removeChild(this.root);
     this.#measureSpan?.remove();
@@ -382,7 +511,193 @@ export class DomBackend implements RenderBackend {
     this.#videos.clear();
   }
 
-  // ---- internals -----------------------------------------------------------
+  // ---- reconciler internals ------------------------------------------------
+
+  /** Get-or-create this cursor's recon record; reset per-render scratch once per
+   * frame (the first time a reused cursor is entered this render). */
+  #enterCursor(cursor: Element, _scope: string): CursorRecon {
+    let rec = this.#recon.get(cursor);
+    if (!rec) {
+      rec = { children: new Map(), owns: new Set(), occ: new Map(), seen: new Set(), frame: -1, anchor: null };
+      this.#recon.set(cursor, rec);
+    }
+    if (rec.frame !== this.#frame) {
+      rec.frame = this.#frame;
+      rec.occ.clear();
+      rec.seen.clear();
+      // Anchor at the first OWNED child, SKIPPING leading foreign nodes: an
+      // unchanged re-render with a foreign node (host overlay) before an owned,
+      // focused element must NOT judge that owned element "out of place" — which
+      // would relocate (and blur) it. Ordering is decided among owned siblings.
+      rec.anchor = cursor.firstChild;
+      while (rec.anchor && !rec.owns.has(rec.anchor)) rec.anchor = rec.anchor.nextSibling;
+    }
+    return rec;
+  }
+
+  /** Sibling-scoped key under one cursor: `(id|∅) op occ`. occ disambiguates a
+   * node that emits the same op twice and id-less nodes positionally. */
+  #keyFor(cursor: Element, id: string | undefined, op: string): string {
+    const rec = this.#recon.get(cursor)!;
+    const base = (id ?? '∅') + ' ' + op;
+    const n = rec.occ.get(base) ?? 0;
+    rec.occ.set(base, n + 1);
+    return base + ' ' + n;
+  }
+
+  /** Reuse the owned element for `key` under `cursor`, or create it via the
+   * factory. Place it (move-on-reorder, foreign-safe). The SOLE creation site. */
+  #matchOrCreate(cursor: Element, key: string, op: string, create: () => Owned): Owned {
+    const rec = this.#recon.get(cursor)!;
+    rec.seen.add(key);
+    let el = rec.children.get(key);
+    let o: Owned;
+    if (!el) {
+      o = create();
+      el = o.el;
+      rec.children.set(key, el);
+      rec.owns.add(el);
+      if (o.aux) rec.owns.add(o.aux);
+      this.#owned.set(el, o);
+    } else {
+      o = this.#owned.get(el)!;
+      if (o.op !== op) {
+        // op-shape change under a stable key (rare; editable text targets keep a
+        // stable op) — rebuild rather than mis-patch.
+        if (o.aux) rec.owns.delete(o.aux);
+        rec.owns.delete(el);
+        o.aux?.remove();
+        el.remove();
+        rec.children.delete(key);
+        this.#owned.delete(el);
+        o = create();
+        el = o.el;
+        rec.children.set(key, el);
+        rec.owns.add(el);
+        if (o.aux) rec.owns.add(o.aux);
+        this.#owned.set(el, o);
+      }
+    }
+    // PLACEMENT — foreign-safe move-on-reorder. clip's aux island precedes its
+    // wrapper as a unit; both step the anchor forward over foreign siblings.
+    if (o.aux) this.#place(cursor, rec, o.aux);
+    this.#place(cursor, rec, el);
+    return o;
+  }
+
+  /** Place `node` at the running anchor, moving it only if out of place; then
+   * advance the anchor past it and over any interleaved FOREIGN siblings. */
+  #place(cursor: Element, rec: CursorRecon, node: Node): void {
+    if (node !== rec.anchor) {
+      // Belt-and-suspenders: never relocate the node holding focus/caret —
+      // re-inserting a connected node blurs it (collapsing an in-progress edit).
+      // Leave it; correct sibling order resumes once it is no longer focused.
+      // (The anchor skips foreign nodes, so a stable node on an unchanged
+      // re-render never reaches here — this guards only a genuine reorder of the
+      // focused node, where preserving the edit beats perfect z-order.)
+      const ae = this.#doc.activeElement;
+      if (ae === null || (node !== ae && !node.contains(ae))) {
+        cursor.insertBefore(node, rec.anchor); // moves an existing node or inserts a new one
+      }
+    }
+    rec.anchor = node.nextSibling;
+    // Step over foreign nodes (never an insert target, never moved).
+    while (rec.anchor && !rec.owns.has(rec.anchor)) {
+      rec.anchor = rec.anchor.nextSibling;
+    }
+  }
+
+  /** Remove owned children of `cursor` not seen this frame. Iterates the
+   * children Map ONLY — foreign nodes are not keys, so they are unreachable. */
+  #pruneCursor(cursor: Element): void {
+    const rec = this.#recon.get(cursor);
+    if (!rec) return;
+    for (const [k, el] of rec.children) {
+      if (!rec.seen.has(k)) {
+        const o = this.#owned.get(el);
+        if (o?.aux) rec.owns.delete(o.aux);
+        rec.owns.delete(el);
+        o?.aux?.remove();
+        el.remove();
+        rec.children.delete(k);
+        this.#owned.delete(el);
+      }
+    }
+  }
+
+  // ---- compare-then-write helpers ------------------------------------------
+
+  /** Write a style prop only when it changed; clear (to default) on undefined. */
+  #setStyle(o: Owned, target: HTMLElement | SVGElement, prop: string, value: string | undefined): void {
+    if (o.props[prop] === value) return;
+    const style = target.style as unknown as Record<string, string>;
+    style[prop] = value ?? '';
+    o.props[prop] = value;
+  }
+
+  /** Write an attribute only when its cached slot changed; remove on undefined. */
+  #setAttr(target: Element, o: Owned, slot: string, name: string, value: string | undefined): void {
+    if (o.props[slot] === value) return;
+    if (value === undefined) target.removeAttribute(name);
+    else target.setAttribute(name, value);
+    o.props[slot] = value;
+  }
+
+  /** Stamp `data-node-id` (guarded) on the element S2 stamped per op. */
+  #stamp(o: Owned, el: Element, id: string | undefined): void {
+    if (id === undefined) return;
+    this.#setAttr(el, o, 'nodeId', 'data-node-id', id);
+  }
+
+  /**
+   * Caret-preserving text write. RULE B (freeze): never touch the text while the
+   * div (or a descendant) is the focused contentEditable. RULE A (patch-only):
+   * write nothing when unchanged; otherwise mutate the SAME Text node's `.data`
+   * (least-destructive — never `textContent=` on a retained subtree, which would
+   * collapse the caret / drop a selection).
+   */
+  #setText(div: HTMLElement, o: Owned, text: string): void {
+    if (this.#isEditing(div)) return;
+    if (o.props['text'] === text) return;
+    // Find the MANAGED Text node (not necessarily firstChild — the host may have
+    // injected a foreign node before it) and mutate its `.data` in place. NEVER
+    // `textContent=` — it wipes the whole subtree, including a foreign sibling.
+    let tn: Text | null = null;
+    for (let n = div.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3) {
+        tn = n as Text;
+        break;
+      }
+    }
+    if (tn) tn.data = text;
+    else div.appendChild(this.#doc.createTextNode(text)); // first build — append, don't replace
+    o.props['text'] = text;
+  }
+
+  /** The div (or a descendant) is the focused contentEditable host. Uses the
+   * computed `isContentEditable` (real browsers) with an attribute fallback
+   * (jsdom and other environments that don't compute it). */
+  #isEditing(div: HTMLElement): boolean {
+    const editable = div.isContentEditable || div.getAttribute('contenteditable') === 'true';
+    if (!editable) return false;
+    const active = this.#doc.activeElement;
+    return active === div || (active !== null && active !== this.#doc.body && div.contains(active));
+  }
+
+  /** Map a `StrokeStyle` onto an SVG `<path>`'s stroke-* attributes (guarded). */
+  #applyStroke(path: SVGPathElement, o: Owned, stroke: StrokeStyle): void {
+    this.#setAttr(path, o, 'strokeWidth', 'stroke-width', String(stroke.width));
+    this.#setAttr(path, o, 'strokeCap', 'stroke-linecap', stroke.cap);
+    this.#setAttr(path, o, 'strokeJoin', 'stroke-linejoin', stroke.join);
+    this.#setAttr(path, o, 'strokeMiter', 'stroke-miterlimit',
+      stroke.miterLimit !== undefined ? String(stroke.miterLimit) : undefined);
+    this.#setAttr(path, o, 'strokeDash', 'stroke-dasharray',
+      stroke.dash && stroke.dash.length > 0 ? stroke.dash.join(' ') : undefined);
+    this.#setAttr(path, o, 'strokeDashOff', 'stroke-dashoffset',
+      stroke.dashOffset !== undefined ? String(stroke.dashOffset) : undefined);
+  }
+
+  // ---- other internals -----------------------------------------------------
 
   #ensureMeasureSpan(): HTMLElement {
     if (this.#measureSpan) return this.#measureSpan;
@@ -416,14 +731,28 @@ export class DomBackend implements RenderBackend {
     return paint.stops[0]?.color ?? '#000';
   }
 
-  /** Resolve a `Paint` to an SVG fill/stroke value, appending any gradient def to
-   * `svg`'s `<defs>`. `mesh` degrades to a solid (CSS/SVG has no mesh gradient);
-   * a degraded paint stamps `data-approx="true"` on `el` so an editor can badge
-   * the approximation (design-agent consumer ask). */
-  #resolvePaint(paint: Paint, svg: SVGSVGElement, el: Element): string {
-    if (paint.kind === 'color') return paint.color;
+  /** A signature of the gradient paint — a `<defs>` subtree is rebuilt only when
+   * this changes (kind / coords / stops), avoiding per-frame churn. */
+  #gradKey(paint: Extract<Paint, { kind: 'linear' | 'radial' }>): string {
+    const coords = paint.kind === 'linear'
+      ? `L|${paint.from ?? ''}|${paint.to ?? ''}`
+      : `R|${paint.center ?? ''}|${paint.radius ?? ''}`;
+    const stops = paint.stops.map((s) => `${s.offset}:${s.color}`).join(',');
+    return `${coords}|${stops}`;
+  }
+
+  /** Resolve a `Paint` to an SVG fill/stroke value, building/refreshing the
+   * gradient `<defs>` on the owned svg (`o.el`) keyed by a deterministic def id.
+   * `mesh` degrades to a solid; a degraded paint stamps `data-approx="true"`. */
+  #resolvePaint(paint: Paint, o: Owned, scope: string, key: string): string {
+    if (paint.kind === 'color') {
+      this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', undefined);
+      // A prior gradient def (if the paint changed kind) is left in defs but
+      // unreferenced; harmless in this preview tier.
+      return paint.color;
+    }
     if (paint.kind === 'mesh') {
-      el.setAttribute('data-approx', 'true');
+      this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', 'true');
       if (!this.#warnedMesh) {
         emitDevWarning('@glissade/backend-dom: mesh-gradient paint has no SVG analogue — degraded to a solid fill.');
         this.#warnedMesh = true;
@@ -431,23 +760,41 @@ export class DomBackend implements RenderBackend {
       return this.#solid(paint);
     }
     if (paint.interpolation !== undefined && paint.interpolation !== 'linear') {
-      el.setAttribute('data-approx', 'true');
+      this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', 'true');
       if (!this.#warnedGradientInterp) {
         emitDevWarning(
           `@glissade/backend-dom: gradient interpolation '${paint.interpolation}' has no SVG analogue — degraded to linear stops.`,
         );
         this.#warnedGradientInterp = true;
       }
+    } else {
+      this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', undefined);
     }
+    const svg = o.el as SVGSVGElement;
+    const defId = o.defId ?? (o.defId = 'gsgrad_' + hashKey(scope + ' ' + key));
+    const sig = this.#gradKey(paint);
+    if (o.gradKey !== sig) {
+      o.gradKey = sig;
+      this.#buildGradient(svg, defId, paint);
+    }
+    return `url(#${defId})`;
+  }
+
+  /** (Re)build the gradient `<defs>` subtree for `defId` on `svg`. */
+  #buildGradient(svg: SVGSVGElement, defId: string, paint: Extract<Paint, { kind: 'linear' | 'radial' }>): void {
     const doc = this.#doc;
-    const id = `gsgrad${this.#defCounter++}`;
     let defs = svg.querySelector('defs');
     if (!defs) {
       defs = doc.createElementNS(SVG_NS, 'defs');
       svg.insertBefore(defs, svg.firstChild);
     }
+    // Replace just this gradient (by our deterministic, CSS-safe id), leaving any
+    // other defs untouched. (defId is `gs(grad|clip)_<base36 hash>` — no escape.)
+    for (const g of Array.from(defs.children)) {
+      if (g.getAttribute('id') === defId) g.remove();
+    }
     const grad = doc.createElementNS(SVG_NS, paint.kind === 'radial' ? 'radialGradient' : 'linearGradient');
-    grad.setAttribute('id', id);
+    grad.setAttribute('id', defId);
     if (paint.kind === 'linear') {
       if (paint.from && paint.to) {
         grad.setAttribute('gradientUnits', 'userSpaceOnUse');
@@ -471,16 +818,5 @@ export class DomBackend implements RenderBackend {
       grad.appendChild(s);
     }
     defs.appendChild(grad);
-    return `url(#${id})`;
   }
-}
-
-/** Map a `StrokeStyle` onto an SVG `<path>`'s stroke-* attributes 1:1. */
-function applyStroke(path: SVGPathElement, stroke: StrokeStyle): void {
-  path.setAttribute('stroke-width', String(stroke.width));
-  if (stroke.cap) path.setAttribute('stroke-linecap', stroke.cap);
-  if (stroke.join) path.setAttribute('stroke-linejoin', stroke.join);
-  if (stroke.miterLimit !== undefined) path.setAttribute('stroke-miterlimit', String(stroke.miterLimit));
-  if (stroke.dash && stroke.dash.length > 0) path.setAttribute('stroke-dasharray', stroke.dash.join(' '));
-  if (stroke.dashOffset !== undefined) path.setAttribute('stroke-dashoffset', String(stroke.dashOffset));
 }

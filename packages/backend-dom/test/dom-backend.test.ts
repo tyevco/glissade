@@ -274,11 +274,393 @@ describe('DomBackend — identity, caps, readPixels', () => {
     await expect(b.readPixels()).rejects.toThrow(/no pixel buffer/);
   });
 
-  it('re-rendering rebuilds (forward render — no stale nodes)', () => {
+  it('re-rendering PATCHES in place (retained — element reused, stale text replaced)', () => {
     const b = new DomBackend(document);
     b.render(list([{ op: 'fillText', text: 'a', font: { family: 'X', size: 10 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 0 }]));
+    const div = b.root.querySelector('div');
     b.render(list([{ op: 'fillText', text: 'b', font: { family: 'X', size: 10 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 0 }]));
-    const texts = Array.from(b.root.querySelectorAll('div')).map((d) => d.textContent);
-    expect(texts).toEqual(['b']); // the 'a' render was cleared
+    expect(b.root.querySelectorAll('div').length).toBe(1); // no leftover 'a' div
+    expect(b.root.querySelector('div')).toBe(div); // SAME element object reused
+    expect(b.root.querySelector('div')!.textContent).toBe('b'); // text patched
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S3 retained reconciler — the design-agent Q4 breakage list (priority order):
+//   #1 inline-edit state (caret/focus/selection) survives a re-render
+//   #2 foreign / overlay DOM the host injected is never touched
+//   #3 focus on the selected element
+//   #4 text selection the user made across nodes
+//   #5 event listeners the host attached
+//   #6 CSS transitions/classes the host attached
+// plus keying/structure regression guards for the retained tree.
+// ---------------------------------------------------------------------------
+
+/** Re-render the SAME backend with the same (or new) ids — the cross-frame form. */
+function renderTwice(b: DomBackend, dl: DisplayList, ids?: readonly (string | undefined)[]): void {
+  if (ids) b.setIds(ids);
+  b.render(dl);
+  if (ids) b.setIds(ids);
+  b.render(dl);
+}
+
+const triangle: Resource = { kind: 'path', segs: [['M', 0, 0], ['L', 10, 0], ['L', 5, 10], ['Z']] };
+const fillCmd = (): DrawCommand => ({ op: 'fillPath', path: 0, paint: { kind: 'color', color: '#000' } });
+const textCmd = (text: string): DrawCommand => ({ op: 'fillText', text, font: { family: 'X', size: 10 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 0 });
+
+describe('DomBackend — S3 retention / Q4', () => {
+  it('Q4#1 reference identity: same list twice reuses the SAME elements (idempotent)', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }, fillCmd()], [triangle]);
+    b.setIds(['x', 'x']);
+    b.render(dl);
+    const el = b.root.querySelector('[data-node-id="x"]');
+    const count = b.root.querySelectorAll('*').length;
+    expect(el).toBeTruthy();
+    b.setIds(['x', 'x']);
+    b.render(dl);
+    expect(b.root.querySelector('[data-node-id="x"]')).toBe(el); // SAME object
+    expect(b.root.querySelectorAll('*').length).toBe(count); // no new nodes
+  });
+
+  it('Q4#1 text NOT rewritten when unchanged; the Text node is mutated, not replaced, when it does change', () => {
+    const b = new DomBackend(document);
+    b.render(list([textCmd('hi')]));
+    const div = b.root.querySelector('div')!;
+    const tn = div.firstChild;
+    expect(tn).toBeTruthy();
+    b.render(list([textCmd('hi')])); // unchanged
+    expect(div.firstChild).toBe(tn); // same Text object, never touched
+    b.render(list([textCmd('ho')])); // changed
+    expect(div.firstChild).toBe(tn); // still the SAME Text node (.data patched)
+    expect(div.textContent).toBe('ho');
+  });
+
+  it('Q4#1 no mutation on unchanged: a host attr on the wrapper survives + same object', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 2, 3] }], []);
+    b.setIds(['t']);
+    b.render(dl);
+    const wrap = b.root.querySelector('[data-node-id="t"]') as HTMLElement;
+    wrap.dataset['host'] = 'kept';
+    b.setIds(['t']);
+    b.render(dl);
+    expect(b.root.querySelector('[data-node-id="t"]')).toBe(wrap);
+    expect(wrap.dataset['host']).toBe('kept');
+  });
+
+  it('Q4#1 a changed prop mutates ONLY that attr; siblings are not recreated', () => {
+    const b = new DomBackend(document);
+    const dl1 = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }, fillCmd()], [triangle]);
+    b.setIds(['g', 's']);
+    b.render(dl1);
+    const wrap = b.root.querySelector('[data-node-id="g"]') as HTMLElement;
+    const svg = b.root.querySelector('[data-node-id="s"]')!.closest('svg');
+    const dl2 = list([{ op: 'transform', m: [2, 0, 0, 2, 4, 6] }, fillCmd()], [triangle]);
+    b.setIds(['g', 's']);
+    b.render(dl2);
+    expect(wrap.style.transform).toBe('matrix(2, 0, 0, 2, 4, 6)'); // updated
+    expect(b.root.querySelector('[data-node-id="g"]')).toBe(wrap); // same object
+    expect(b.root.querySelector('[data-node-id="s"]')!.closest('svg')).toBe(svg); // sibling untouched
+  });
+
+  it('Q4#1 inline-edit survival (rank #1): focus on a contentEditable survives a re-render', () => {
+    const b = new DomBackend(document);
+    document.body.appendChild(b.root); // focus needs a connected tree
+    try {
+      b.setIds(['edit']);
+      b.render(list([textCmd('hi')]));
+      const div = b.root.querySelector('[data-node-id="edit"]') as HTMLElement;
+      // jsdom: set the ATTR (it reflects isContentEditable in real browsers but
+      // the IDL setter doesn't reflect in jsdom) + tabIndex so .focus() takes.
+      div.setAttribute('contenteditable', 'true');
+      div.tabIndex = 0;
+      div.focus();
+      expect(document.activeElement).toBe(div);
+      const tn = div.firstChild;
+      b.setIds(['edit']);
+      b.render(list([textCmd('hi')]));
+      expect(document.activeElement).toBe(div); // focus preserved
+      expect(div.firstChild).toBe(tn); // Text node preserved (caret intact)
+    } finally {
+      b.root.remove();
+      b.dispose();
+    }
+  });
+
+  it('Q4#1 isEditing freeze: a model text change under a live caret is frozen, then applies on blur', () => {
+    const b = new DomBackend(document);
+    document.body.appendChild(b.root);
+    try {
+      b.setIds(['edit']);
+      b.render(list([textCmd('hello')]));
+      const div = b.root.querySelector('[data-node-id="edit"]') as HTMLElement;
+      div.setAttribute('contenteditable', 'true');
+      div.tabIndex = 0;
+      div.focus();
+      expect(document.activeElement).toBe(div);
+      const tn = div.firstChild;
+      // an animation tick changes the model text WHILE the caret is live
+      b.setIds(['edit']);
+      b.render(list([textCmd('world')]));
+      expect(div.firstChild).toBe(tn);
+      expect(div.textContent).toBe('hello'); // FROZEN — caret not stomped
+      div.blur();
+      b.setIds(['edit']);
+      b.render(list([textCmd('world')]));
+      expect(div.textContent).toBe('world'); // freeze lifted
+    } finally {
+      b.root.remove();
+      b.dispose();
+    }
+  });
+
+  it('Q4#1 focus survives an unchanged re-render with a FOREIGN node positioned BEFORE the focused node (placement-move trap)', () => {
+    const b = new DomBackend(document);
+    document.body.appendChild(b.root); // focus needs a connected tree
+    try {
+      b.setIds(['edit']);
+      b.render(list([textCmd('hi')]));
+      const div = b.root.querySelector('[data-node-id="edit"]') as HTMLElement;
+      div.setAttribute('contenteditable', 'true');
+      div.tabIndex = 0;
+      div.focus();
+      expect(document.activeElement).toBe(div);
+      const tn = div.firstChild;
+      // host inserts a foreign overlay as the FIRST child — BEFORE the owned node.
+      const overlay = document.createElement('div');
+      overlay.className = 'gs-foreign';
+      b.root.insertBefore(overlay, b.root.firstChild);
+      // unchanged re-render: the owned focused node must NOT be relocated (which
+      // would blur it) just because a foreign sibling now precedes it.
+      b.setIds(['edit']);
+      b.render(list([textCmd('hi')]));
+      expect(document.activeElement).toBe(div); // focus preserved
+      expect(div.firstChild).toBe(tn); // caret/Text node intact
+      expect(b.root.querySelector('.gs-foreign')).toBe(overlay); // foreign survived
+    } finally {
+      b.root.remove();
+      b.dispose();
+    }
+  });
+
+  it('Q4#2 a FOREIGN node INSIDE a managed text div survives a text change (no textContent wipe)', () => {
+    const b = new DomBackend(document);
+    b.setIds(['t']);
+    b.render(list([textCmd('hi')]));
+    const div = b.root.querySelector('[data-node-id="t"]') as HTMLElement;
+    // host injects a foreign badge as a sibling of the managed Text node, inside the div.
+    const badge = document.createElement('span');
+    badge.className = 'gs-badge';
+    div.insertBefore(badge, div.firstChild);
+    // the model text changes — the MANAGED Text node mutates; the badge is not wiped.
+    b.setIds(['t']);
+    b.render(list([textCmd('ho')]));
+    expect(div.querySelector('.gs-badge')).toBe(badge); // foreign survived (no textContent=)
+    expect(div.textContent).toContain('ho'); // managed text updated
+  });
+
+  it('Q4#2 foreign overlay (root child) survives a re-render', () => {
+    const b = new DomBackend(document);
+    b.render(list([fillCmd()], [triangle]));
+    const overlay = document.createElement('div');
+    overlay.className = 'gs-selection';
+    b.root.appendChild(overlay);
+    b.render(list([fillCmd()], [triangle]));
+    expect(overlay.parentNode).toBe(b.root);
+    expect(b.root.querySelector('.gs-selection')).toBe(overlay);
+  });
+
+  it('Q4#2 foreign overlay (child of a node wrapper) survives a re-render', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }], []);
+    b.setIds(['g']);
+    b.render(dl);
+    const wrap = b.root.querySelector('[data-node-id="g"]') as HTMLElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'gs-handle';
+    wrap.appendChild(overlay);
+    b.setIds(['g']);
+    b.render(dl);
+    expect(overlay.parentNode).toBe(wrap);
+    expect(wrap.querySelector('.gs-handle')).toBe(overlay);
+  });
+
+  it('Q4#2 foreign interleaved + reorder: owned svgs MOVE (not recreate); foreign stays', () => {
+    const b = new DomBackend(document);
+    b.setIds(['a', 'b']);
+    b.render(list([fillCmd(), fillCmd()], [triangle]));
+    const svgA = b.root.querySelector('[data-node-id="a"]')!.closest('svg')!;
+    const svgB = b.root.querySelector('[data-node-id="b"]')!.closest('svg')!;
+    // host injects a foreign node between the two svgs
+    const foreign = document.createElement('div');
+    foreign.className = 'gs-foreign';
+    b.root.insertBefore(foreign, svgB);
+    // re-render with B before A
+    b.setIds(['b', 'a']);
+    b.render(list([fillCmd(), fillCmd()], [triangle]));
+    expect(b.root.querySelector('[data-node-id="a"]')!.closest('svg')).toBe(svgA); // moved, not recreated
+    expect(b.root.querySelector('[data-node-id="b"]')!.closest('svg')).toBe(svgB);
+    const order = Array.from(b.root.children).filter((c) => c.tagName.toLowerCase() === 'svg');
+    expect(order).toEqual([svgB, svgA]); // DOM order now B, A
+    expect(b.root.querySelector('.gs-foreign')).toBe(foreign); // foreign survived (same object)
+  });
+
+  it('Q4#2 stale-node removal + foreign retention', () => {
+    const b = new DomBackend(document);
+    b.setIds(['a', 'b']);
+    b.render(list([textCmd('A'), textCmd('B')]));
+    const foreign = document.createElement('div');
+    foreign.className = 'gs-foreign';
+    b.root.appendChild(foreign);
+    b.setIds(['a']);
+    b.render(list([textCmd('A')])); // B gone
+    expect(b.root.querySelector('[data-node-id="b"]')).toBeNull();
+    expect(b.root.querySelector('[data-node-id="a"]')).toBeTruthy();
+    expect(b.root.querySelector('.gs-foreign')).toBe(foreign); // foreign retained
+  });
+
+  it('Q4#3 focus on the selected element is preserved across a re-render', () => {
+    const b = new DomBackend(document);
+    document.body.appendChild(b.root);
+    try {
+      b.setIds(['f']);
+      b.render(list([textCmd('x')]));
+      const el = b.root.querySelector('[data-node-id="f"]') as HTMLElement;
+      el.tabIndex = 0;
+      el.focus();
+      expect(document.activeElement).toBe(el);
+      b.setIds(['f']);
+      b.render(list([textCmd('x')]));
+      expect(document.activeElement).toBe(el);
+    } finally {
+      b.root.remove();
+      b.dispose();
+    }
+  });
+
+  it('Q4#4 cross-node text selection (Text-node identity proxy) survives', () => {
+    const b = new DomBackend(document);
+    b.setIds(['a', 'b']);
+    b.render(list([textCmd('A'), textCmd('B')]));
+    const divA = b.root.querySelector('[data-node-id="a"]')!;
+    const divB = b.root.querySelector('[data-node-id="b"]')!;
+    const tnA = divA.firstChild;
+    const tnB = divB.firstChild;
+    b.setIds(['a', 'b']);
+    b.render(list([textCmd('A'), textCmd('B')]));
+    expect(divA.firstChild).toBe(tnA);
+    expect(divB.firstChild).toBe(tnB);
+  });
+
+  it('Q4#5 host event listeners on a node element survive a re-render', () => {
+    const b = new DomBackend(document);
+    const dl = list([textCmd('btn')]);
+    b.setIds(['btn']);
+    b.render(dl);
+    const el = b.root.querySelector('[data-node-id="btn"]') as HTMLElement;
+    let fired = 0;
+    el.addEventListener('click', () => fired++);
+    b.setIds(['btn']);
+    b.render(dl);
+    el.dispatchEvent(new Event('click'));
+    expect(fired).toBe(1);
+    expect(b.root.querySelector('[data-node-id="btn"]')).toBe(el);
+  });
+
+  it('Q4#6 host CSS transition / class persists across a re-render', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }], []);
+    b.setIds(['c']);
+    b.render(dl);
+    const el = b.root.querySelector('[data-node-id="c"]') as HTMLElement;
+    el.style.transition = 'opacity 1s';
+    el.classList.add('host-anim');
+    b.setIds(['c']);
+    b.render(dl);
+    expect(el.style.transition).toBe('opacity 1s');
+    expect(el.classList.contains('host-anim')).toBe(true);
+  });
+});
+
+describe('DomBackend — S3 keying / structure regression guards', () => {
+  it('deterministic def ids are stable across frames and keep referencing live defs', () => {
+    const b = new DomBackend(document);
+    const dl = list(
+      [
+        { op: 'clip', path: 0, rule: 'nonzero' },
+        { op: 'fillPath', path: 0, paint: { kind: 'linear', from: [0, 0], to: [10, 0], stops: [{ offset: 0, color: '#000' }, { offset: 1, color: '#fff' }] } },
+      ],
+      [triangle],
+    );
+    b.render(dl);
+    const clipId = b.root.querySelector('clipPath')!.getAttribute('id')!;
+    const gradId = b.root.querySelector('linearGradient')!.getAttribute('id')!;
+    b.render(dl);
+    expect(b.root.querySelector('clipPath')!.getAttribute('id')).toBe(clipId); // stable
+    expect(b.root.querySelector('linearGradient')!.getAttribute('id')).toBe(gradId);
+    // references still resolve to a live def
+    expect(b.root.querySelector('div[style*="clip-path"]')!.getAttribute('style')).toContain(`url(#${clipId})`);
+    expect(b.root.querySelector('svg path[fill^="url"]')!.getAttribute('fill')).toBe(`url(#${gradId})`);
+  });
+
+  it('a multi-command node (transform+fillPath sharing an id) reuses both, no key collision', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }, fillCmd()], [triangle]);
+    b.setIds(['rect', 'rect']);
+    b.render(dl);
+    const wrap = b.root.querySelector('div[style*="matrix"]');
+    const svg = b.root.querySelector('svg');
+    expect(wrap).toBeTruthy();
+    expect(svg).toBeTruthy();
+    b.setIds(['rect', 'rect']);
+    b.render(dl);
+    expect(b.root.querySelector('div[style*="matrix"]')).toBe(wrap);
+    expect(b.root.querySelector('svg')).toBe(svg);
+    expect(b.root.querySelectorAll('svg').length).toBe(1); // no duplicate from a key collision
+  });
+
+  it('id-less render is idempotent: stable element count + same object across frames', () => {
+    const b = new DomBackend(document);
+    const dl = list([{ op: 'transform', m: [1, 0, 0, 1, 0, 0] }, fillCmd()], [triangle]);
+    b.render(dl); // no ids
+    const n = b.root.querySelectorAll('*').length;
+    const svg = b.root.querySelector('svg');
+    b.render(dl);
+    expect(b.root.querySelectorAll('*').length).toBe(n);
+    expect(b.root.querySelector('svg')).toBe(svg);
+  });
+
+  it('nested cursor prune timing: inner stale draw removed; ancestor wrappers kept', () => {
+    const b = new DomBackend(document);
+    const dl2 = list(
+      [
+        { op: 'transform', m: [1, 0, 0, 1, 0, 0] },
+        { op: 'pushGroup', opacity: 1, blend: 'source-over', filters: [] },
+        fillCmd(),
+        fillCmd(),
+        { op: 'popGroup' },
+      ],
+      [triangle],
+    );
+    b.setIds(['t', 'g', 'p1', 'p2']);
+    b.render(dl2);
+    const wrap = b.root.querySelector('[data-node-id="t"]');
+    const grp = b.root.querySelector('[data-node-id="g"]');
+    expect(grp!.querySelectorAll('svg').length).toBe(2);
+    const dl1 = list(
+      [
+        { op: 'transform', m: [1, 0, 0, 1, 0, 0] },
+        { op: 'pushGroup', opacity: 1, blend: 'source-over', filters: [] },
+        fillCmd(),
+        { op: 'popGroup' },
+      ],
+      [triangle],
+    );
+    b.setIds(['t', 'g', 'p1']);
+    b.render(dl1);
+    expect(b.root.querySelector('[data-node-id="t"]')).toBe(wrap); // ancestor kept
+    expect(b.root.querySelector('[data-node-id="g"]')).toBe(grp); // group kept
+    expect(grp!.querySelectorAll('svg').length).toBe(1); // the 2nd fill pruned
   });
 });
