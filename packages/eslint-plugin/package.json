@@ -1,6 +1,6 @@
 {
   "name": "@glissade/eslint-plugin",
-  "version": "0.21.0",
+  "version": "0.22.0-pre.0",
   "description": "ESLint rules enforcing glissade's determinism contract in scene code: no wall-clock reads, no unseeded Math.random, no async in the evaluate() path.",
   "license": "Apache-2.0",
   "engines": {
