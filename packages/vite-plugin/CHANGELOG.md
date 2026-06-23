@@ -1,5 +1,11 @@
 # @glissade/vite-plugin
 
+## 0.20.1
+
+### Patch Changes
+
+- @glissade/core@0.20.1
+
 ## 0.20.1-pre.0
 
 ### Patch Changes
