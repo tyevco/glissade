@@ -186,7 +186,7 @@ describe('DomBackend — text, clip, image, groups', () => {
     expect(div.style.color).toBe('rgb(34, 68, 102)'); // #246 normalized by jsdom
     // canvas textAlign anchors AROUND x; a shrink-wrapped div is left-anchored, so
     // `center` must shift by −50% of its own width (text-align would be a no-op).
-    expect(div.style.transform).toBe('translate(-50%, -0.8em)');
+    expect(div.style.transform).toBe('translate(-50%, -0.84em)');
     expect(div.style.lineHeight).toBe('1');
   });
 
@@ -197,10 +197,10 @@ describe('DomBackend — text, clip, image, groups', () => {
       );
       return (Array.from(root.querySelectorAll('div')).find((d) => d.textContent === 'x') as HTMLElement).style.transform;
     };
-    expect(t('left')).toBe('translate(0px, -0.8em)');
-    expect(t(undefined)).toBe('translate(0px, -0.8em)'); // no align → left-anchored
-    expect(t('center')).toBe('translate(-50%, -0.8em)');
-    expect(t('right')).toBe('translate(-100%, -0.8em)');
+    expect(t('left')).toBe('translate(0px, -0.84em)');
+    expect(t(undefined)).toBe('translate(0px, -0.84em)'); // no align → left-anchored
+    expect(t('center')).toBe('translate(-50%, -0.84em)');
+    expect(t('right')).toBe('translate(-100%, -0.84em)');
   });
 
   it('clip → a <clipPath> def with clip-rule + a referencing wrapper', () => {

@@ -374,14 +374,18 @@ export class DomBackend implements RenderBackend {
           this.#setStyle(o, div, 'left', `${cmd.x}px`);
           this.#setStyle(o, div, 'top', `${cmd.y}px`);
           // Reproduce canvas text positioning with ONE transform. (a) Baseline:
-          // canvas `y` is the baseline, CSS `top` is the box top, so lift by
-          // ~0.8em (the font ascent at line-height:1). (b) Alignment: canvas
-          // `textAlign` anchors the run AROUND `x`, but a shrink-wrapped div is
-          // left-anchored at `x` — so shift by the text's OWN width: center →
-          // −50%, right → −100%. (CSS `text-align` is a no-op on a shrink-wrapped
-          // div, which is why it must be a translate, not text-align.)
+          // canvas `y` is the baseline, CSS `top` is the box top, so lift by the
+          // font ascent at line-height:1. 0.84em is empirically the systematic
+          // offset (browser-canary pixel-measured DOM-vs-canvas: a single,
+          // NOT-per-font ~0.84em — between the font's actualBoundingBoxAscent
+          // ~0.719 and fontBoundingBoxAscent ~0.938 — lands the baseline on
+          // canvas's, ±~1px). (b) Alignment: canvas `textAlign` anchors the run
+          // AROUND `x`, but a shrink-wrapped div is left-anchored at `x` — so shift
+          // by the text's OWN width: center → −50%, right → −100%. (CSS
+          // `text-align` is a no-op on a shrink-wrapped div, so it must be a
+          // translate.)
           const ax = cmd.align === 'center' ? '-50%' : cmd.align === 'right' ? '-100%' : '0px';
-          this.#setStyle(o, div, 'transform', `translate(${ax}, -0.8em)`);
+          this.#setStyle(o, div, 'transform', `translate(${ax}, -0.84em)`);
           // Set the font via LONGHANDS, not the `font` shorthand: the shorthand
           // resets line-height (clobbering the line-height:1 set at create, which
           // keeps the baseline offset predictable). Longhands leave it alone.
