@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.20.1"
   },
   "changesets": [
+    "backend-dom-baseline-tune",
     "backend-dom-s2",
     "backend-dom-s3-reconciler",
     "backend-dom-text-fix",
