@@ -28,6 +28,7 @@
   "changesets": [
     "backend-dom-s2",
     "backend-dom-s3-reconciler",
+    "backend-dom-text-fix",
     "glissade-dom-iife"
   ]
 }

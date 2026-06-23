@@ -1,5 +1,19 @@
 # @glissade/cli
 
+## 0.21.0-pre.3
+
+### Patch Changes
+
+- @glissade/backend-skia@0.21.0-pre.3
+- @glissade/core@0.21.0-pre.3
+- @glissade/interact@0.21.0-pre.3
+- @glissade/lottie@0.21.0-pre.3
+- @glissade/narrate@0.21.0-pre.3
+- @glissade/player@0.21.0-pre.3
+- @glissade/scene@0.21.0-pre.3
+- @glissade/sfx@0.21.0-pre.3
+- @glissade/svg@0.21.0-pre.3
+
 ## 0.21.0-pre.2
 
 ### Patch Changes
