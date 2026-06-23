@@ -119,6 +119,42 @@ describe('DomBackend — geometry round-trips', () => {
     expect(path.getAttribute('stroke-dasharray')).toBe('4 2');
     expect(path.getAttribute('stroke-dashoffset')).toBe('1');
   });
+
+  it('fillPath island is sized TIGHTLY to the path bbox (not full-canvas) + click-through', () => {
+    const root = renderTo(
+      list(
+        [{ op: 'fillPath', path: 0, paint: { kind: 'color', color: '#abc' } }],
+        [{ kind: 'path', segs: [['M', 20, 30], ['L', 60, 30], ['L', 40, 80], ['Z']] }],
+        { w: 800, h: 600 },
+      ),
+    );
+    const svg = root.querySelector('svg') as SVGSVGElement;
+    // bbox of the triangle is x20 y30 w40 h50 — NOT the 800×600 canvas
+    expect(svg.getAttribute('width')).toBe('40');
+    expect(svg.getAttribute('height')).toBe('50');
+    expect(svg.getAttribute('viewBox')).toBe('20 30 40 50');
+    expect(svg.style.left).toBe('20px');
+    expect(svg.style.top).toBe('30px');
+    // the box is click-through; the painted fill re-enables hit-testing so a
+    // shape can't swallow clicks meant for shapes behind its (former) full-canvas box
+    expect(svg.style.pointerEvents).toBe('none');
+    expect((svg.querySelector('path') as SVGPathElement).style.pointerEvents).toBe('auto');
+  });
+
+  it('strokePath island is padded by the stroke width (the stroke straddles the centerline)', () => {
+    const root = renderTo(
+      list(
+        [{ op: 'strokePath', path: 0, paint: { kind: 'color', color: '#111' }, stroke: { width: 4 } }],
+        [{ kind: 'path', segs: [['M', 50, 50], ['L', 90, 50]] }],
+        { w: 400, h: 400 },
+      ),
+    );
+    const svg = root.querySelector('svg') as SVGSVGElement;
+    // bbox x50 y50 w40 h0, padded by stroke width 4 → x46 y46 w48 h8 (the pad also
+    // rescues a degenerate-thin axis-aligned stroke from a zero-area viewBox)
+    expect(svg.getAttribute('viewBox')).toBe('46 46 48 8');
+    expect((svg.querySelector('path') as SVGPathElement).style.pointerEvents).toBe('stroke');
+  });
 });
 
 describe('DomBackend — paint', () => {

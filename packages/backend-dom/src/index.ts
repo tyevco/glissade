@@ -133,6 +133,56 @@ function segsToD(segs: readonly PathSeg[]): string {
   return parts.join(' ');
 }
 
+/**
+ * Axis-aligned bounding box of a path in its LOCAL coordinate space, or null for
+ * an empty path. Curve control points give a safe superset (the painted curve
+ * never exceeds its hull); `E` uses `max(rx,ry)` so the box contains the ellipse
+ * at any rotation (exact for the rounded-rect `rx==ry` case). Used to size each
+ * shape's `<svg>` island TIGHTLY around its geometry instead of full-canvas —
+ * the paint is unchanged (the viewBox maps local coords 1:1), but the SVG box no
+ * longer spans the whole viewport, so shapes don't overlap as giant transparent
+ * hit-targets.
+ */
+function pathBBox(segs: readonly PathSeg[]): { x: number; y: number; w: number; h: number } | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const pt = (x: number, y: number): void => {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  };
+  for (const seg of segs) {
+    switch (seg[0]) {
+      case 'M':
+      case 'L':
+        pt(seg[1], seg[2]);
+        break;
+      case 'C':
+        pt(seg[1], seg[2]);
+        pt(seg[3], seg[4]);
+        pt(seg[5], seg[6]);
+        break;
+      case 'Q':
+        pt(seg[1], seg[2]);
+        pt(seg[3], seg[4]);
+        break;
+      case 'E': {
+        const r = Math.max(seg[3], seg[4]);
+        pt(seg[1] - r, seg[2] - r);
+        pt(seg[1] + r, seg[2] + r);
+        break;
+      }
+      case 'Z':
+        break;
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 /** Short, stable FNV-1a hash (hex) over a string — for deterministic def ids
  * that survive reorder (same scope+key → same id across frames). */
 function hashKey(s: string): string {
@@ -256,15 +306,24 @@ export class DomBackend implements RenderBackend {
       const res: Resource | undefined = list.resources[id];
       return res && res.kind === 'path' ? res.segs : [];
     };
-    /** A fresh `<svg>` geometry island absolutely positioned over the cursor. */
+    /**
+     * A fresh `<svg>` geometry island. Starts collapsed (0×0) — fillPath/
+     * strokePath size it TIGHTLY to the path bbox per render (#sizeIsland);
+     * clip's defs-only island stays collapsed (it renders nothing, only holds a
+     * <clipPath> referenced by id). `overflow:visible` keeps any curve/miter
+     * overshoot painted; `pointer-events:none` makes the box's transparent area
+     * click-through, so it can't swallow clicks meant for shapes behind it (the
+     * painted path re-enables hit-testing with its own `pointer-events`).
+     */
     const island = (): SVGSVGElement => {
       const svg = doc.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
-      svg.setAttribute('width', String(list.size.w));
-      svg.setAttribute('height', String(list.size.h));
+      svg.setAttribute('width', '0');
+      svg.setAttribute('height', '0');
       svg.style.position = 'absolute';
       svg.style.left = '0';
       svg.style.top = '0';
       svg.style.overflow = 'visible';
+      svg.style.pointerEvents = 'none';
       return svg;
     };
 
@@ -334,12 +393,16 @@ export class DomBackend implements RenderBackend {
           const o = this.#matchOrCreate(cursor, key, 'fillPath', () => {
             const svg = island();
             const path = doc.createElementNS(SVG_NS, 'path') as SVGPathElement;
+            // the island is pointer-events:none; the painted fill re-enables it
+            path.style.pointerEvents = 'auto';
             svg.appendChild(path);
             return { op: 'fillPath', el: svg, path, props: {} };
           });
           const path = o.path!;
-          this.#setAttr(path, o, 'd', 'd', segsToD(pathSegs(cmd.path)));
+          const segs = pathSegs(cmd.path);
+          this.#setAttr(path, o, 'd', 'd', segsToD(segs));
           this.#setAttr(path, o, 'fill', 'fill', this.#resolvePaint(cmd.paint, o, scope, key));
+          this.#sizeIsland(o.el as SVGSVGElement, o, segs, 0);
           this.#stamp(o, path, id);
           break;
         }
@@ -348,14 +411,19 @@ export class DomBackend implements RenderBackend {
           const o = this.#matchOrCreate(cursor, key, 'strokePath', () => {
             const svg = island();
             const path = doc.createElementNS(SVG_NS, 'path') as SVGPathElement;
+            path.style.pointerEvents = 'stroke'; // the painted stroke is the hit-target
             svg.appendChild(path);
             return { op: 'strokePath', el: svg, path, props: {} };
           });
           const path = o.path!;
-          this.#setAttr(path, o, 'd', 'd', segsToD(pathSegs(cmd.path)));
+          const segs = pathSegs(cmd.path);
+          this.#setAttr(path, o, 'd', 'd', segsToD(segs));
           this.#setAttr(path, o, 'fill', 'fill', 'none');
           this.#setAttr(path, o, 'stroke', 'stroke', this.#resolvePaint(cmd.paint, o, scope, key));
           this.#applyStroke(path, o, cmd.stroke);
+          // pad the box by the stroke width so the box contains the stroke (which
+          // straddles the path centerline) and reasonable miter/round joins.
+          this.#sizeIsland(o.el as SVGSVGElement, o, segs, cmd.stroke.width);
           this.#stamp(o, path, id);
           break;
         }
@@ -668,6 +736,33 @@ export class DomBackend implements RenderBackend {
   #stamp(o: Owned, el: Element, id: string | undefined): void {
     if (id === undefined) return;
     this.#setAttr(el, o, 'nodeId', 'data-node-id', id);
+  }
+
+  /**
+   * Size a geometry island's `<svg>` box tightly to its path bbox (in the
+   * cursor's local space) via the `viewBox`, so the painted coordinates are
+   * UNCHANGED (1:1 mapping) while the element box shrinks from full-canvas to the
+   * shape. Cached writes — only touches the DOM when the bbox moves. `pad`
+   * (stroke width) grows the box so it contains a stroke straddling the
+   * centerline; `overflow:visible` covers any residual curve/miter overshoot.
+   */
+  #sizeIsland(svg: SVGSVGElement, o: Owned, segs: readonly PathSeg[], pad: number): void {
+    const bb = pathBBox(segs);
+    if (bb === null) {
+      this.#setAttr(svg, o, 'svgW', 'width', '0');
+      this.#setAttr(svg, o, 'svgH', 'height', '0');
+      this.#setAttr(svg, o, 'svgVB', 'viewBox', undefined);
+      return;
+    }
+    const x = bb.x - pad;
+    const y = bb.y - pad;
+    const w = bb.w + 2 * pad;
+    const h = bb.h + 2 * pad;
+    this.#setStyle(o, svg, 'left', `${x}px`);
+    this.#setStyle(o, svg, 'top', `${y}px`);
+    this.#setAttr(svg, o, 'svgW', 'width', String(w));
+    this.#setAttr(svg, o, 'svgH', 'height', String(h));
+    this.#setAttr(svg, o, 'svgVB', 'viewBox', `${x} ${y} ${w} ${h}`);
   }
 
   /**
