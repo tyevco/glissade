@@ -364,23 +364,37 @@ export class DomBackend implements RenderBackend {
           const o = this.#matchOrCreate(cursor, key, 'fillText', () => {
             const div = doc.createElement('div');
             div.style.position = 'absolute';
-            div.style.transform = 'translateY(-0.8em)';
             div.style.whiteSpace = 'pre';
+            // line-height:1 removes the line-box leading so the baseline sits a
+            // predictable ~ascent (≈0.8em) below the box top (the translateY below).
+            div.style.lineHeight = '1';
             return { op: 'fillText', el: div, props: {} };
           });
           const div = o.el as HTMLElement;
           this.#setStyle(o, div, 'left', `${cmd.x}px`);
-          // canvas `y` is a BASELINE; CSS `top` is the box top — the translateY
-          // lift (set once at create) sits the text box near the baseline.
           this.#setStyle(o, div, 'top', `${cmd.y}px`);
-          this.#setStyle(o, div, 'font', fontString(cmd.font));
+          // Reproduce canvas text positioning with ONE transform. (a) Baseline:
+          // canvas `y` is the baseline, CSS `top` is the box top, so lift by
+          // ~0.8em (the font ascent at line-height:1). (b) Alignment: canvas
+          // `textAlign` anchors the run AROUND `x`, but a shrink-wrapped div is
+          // left-anchored at `x` — so shift by the text's OWN width: center →
+          // −50%, right → −100%. (CSS `text-align` is a no-op on a shrink-wrapped
+          // div, which is why it must be a translate, not text-align.)
+          const ax = cmd.align === 'center' ? '-50%' : cmd.align === 'right' ? '-100%' : '0px';
+          this.#setStyle(o, div, 'transform', `translate(${ax}, -0.8em)`);
+          // Set the font via LONGHANDS, not the `font` shorthand: the shorthand
+          // resets line-height (clobbering the line-height:1 set at create, which
+          // keeps the baseline offset predictable). Longhands leave it alone.
+          this.#setStyle(o, div, 'fontFamily', cmd.font.family);
+          this.#setStyle(o, div, 'fontSize', `${cmd.font.size}px`);
+          this.#setStyle(o, div, 'fontWeight', cmd.font.weight !== undefined ? String(cmd.font.weight) : undefined);
+          this.#setStyle(o, div, 'fontStyle', cmd.font.style !== undefined ? cmd.font.style : undefined);
           this.#setStyle(o, div, 'fontVariationSettings',
             cmd.font.fontVariationSettings !== undefined ? cmd.font.fontVariationSettings : undefined);
           this.#setStyle(o, div, 'color', this.#solid(cmd.paint));
           // A non-solid text fill (gradient/mesh) has no CSS text analogue here —
           // flag the approximation so an editor can badge it (design-agent ask).
           this.#setAttr(div, o, 'dataApprox', 'data-approx', cmd.paint.kind !== 'color' ? 'true' : undefined);
-          this.#setStyle(o, div, 'textAlign', cmd.align !== undefined ? cmd.align : undefined);
           this.#setText(div, o, cmd.text);
           this.#stamp(o, div, id);
           break;

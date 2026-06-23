@@ -175,7 +175,7 @@ describe('DomBackend — paint', () => {
 });
 
 describe('DomBackend — text, clip, image, groups', () => {
-  it('fillText → a positioned div with font/color/content', () => {
+  it('fillText → a positioned div with font/color/content; align maps to a translate (NOT text-align)', () => {
     const root = renderTo(
       list([{ op: 'fillText', text: 'hi', font: { family: 'Inter', size: 24, weight: 700 }, paint: { kind: 'color', color: '#246' }, x: 12, y: 30, align: 'center' }]),
     );
@@ -184,7 +184,23 @@ describe('DomBackend — text, clip, image, groups', () => {
     expect(div.style.left).toBe('12px');
     expect(div.style.top).toBe('30px');
     expect(div.style.color).toBe('rgb(34, 68, 102)'); // #246 normalized by jsdom
-    expect(div.style.textAlign).toBe('center');
+    // canvas textAlign anchors AROUND x; a shrink-wrapped div is left-anchored, so
+    // `center` must shift by −50% of its own width (text-align would be a no-op).
+    expect(div.style.transform).toBe('translate(-50%, -0.8em)');
+    expect(div.style.lineHeight).toBe('1');
+  });
+
+  it('fillText alignment → the correct translateX per align (left 0 / center −50% / right −100%)', () => {
+    const t = (align?: 'left' | 'center' | 'right'): string => {
+      const root = renderTo(
+        list([{ op: 'fillText', text: 'x', font: { family: 'X', size: 10 }, paint: { kind: 'color', color: '#000' }, x: 50, y: 50, ...(align ? { align } : {}) }]),
+      );
+      return (Array.from(root.querySelectorAll('div')).find((d) => d.textContent === 'x') as HTMLElement).style.transform;
+    };
+    expect(t('left')).toBe('translate(0px, -0.8em)');
+    expect(t(undefined)).toBe('translate(0px, -0.8em)'); // no align → left-anchored
+    expect(t('center')).toBe('translate(-50%, -0.8em)');
+    expect(t('right')).toBe('translate(-100%, -0.8em)');
   });
 
   it('clip → a <clipPath> def with clip-rule + a referencing wrapper', () => {
