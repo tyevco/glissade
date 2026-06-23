@@ -80,17 +80,23 @@ function ellipsePoint(
   return [cx + rx * ct * cp - ry * st * sp, cy + rx * ct * sp + ry * st * cp];
 }
 
-/** An `['E', cx, cy, rx, ry, rot, a0, a1]` ellipse seg → SVG path commands
- * (`M start A … [A …]`). SVG can't draw a ≥360° arc in one `A`, so a full
- * ellipse splits into two half-arcs. The dominant `E` producer is
+/** An `['E', cx, cy, rx, ry, rot, a0, a1]` ellipse seg → SVG path commands. When
+ * `continues` (an open subpath precedes it — e.g. a rounded-rect corner after an
+ * edge `L`) it leads with `L start` so the contour stays ONE continuous subpath
+ * (a stray `M` would break the fill — e1JP5_1IzI2D); standalone (a Circle's `E`
+ * is the first seg) it leads with `M start`. SVG can't draw a ≥360° arc in one
+ * `A`, so a full ellipse splits into two half-arcs. The dominant `E` producer is
  * `roundedRectSegs`/`Circle`, whose quarter/full arcs this reconstructs exactly. */
-function ellipseToArcs(seg: ['E', number, number, number, number, number, number, number]): string {
+function ellipseToArcs(
+  seg: ['E', number, number, number, number, number, number, number],
+  continues: boolean,
+): string {
   const [, cx, cy, rx, ry, rot, a0, a1] = seg;
   const rotDeg = (rot * 180) / Math.PI;
   const delta = a1 - a0;
   const sweep = delta >= 0 ? 1 : 0;
   const [sx, sy] = ellipsePoint(cx, cy, rx, ry, rot, a0);
-  const out = [`M${sx} ${sy}`];
+  const out = [`${continues ? 'L' : 'M'}${sx} ${sy}`];
   if (Math.abs(delta) >= 2 * Math.PI - 1e-9) {
     const dir = sweep ? Math.PI : -Math.PI;
     const [mx, my] = ellipsePoint(cx, cy, rx, ry, rot, a0 + dir);
@@ -108,25 +114,36 @@ function ellipseToArcs(seg: ['E', number, number, number, number, number, number
 /** Turn a `PathSeg[]` into an SVG `d` attribute (M/L/C/Q/E/Z — the full set). */
 function segsToD(segs: readonly PathSeg[]): string {
   const parts: string[] = [];
+  // Track whether a subpath is currently open (has a current point). An `E`
+  // mid-subpath (e.g. a rounded-rect corner following an edge `L`) must CONTINUE
+  // the contour, not start a new `M` subpath — a stray moveto breaks the shape
+  // into disconnected open subpaths that don't fill (e1JP5_1IzI2D).
+  let open = false;
   for (const seg of segs) {
     switch (seg[0]) {
       case 'M':
         parts.push(`M${seg[1]} ${seg[2]}`);
+        open = true;
         break;
       case 'L':
         parts.push(`L${seg[1]} ${seg[2]}`);
+        open = true;
         break;
       case 'C':
         parts.push(`C${seg[1]} ${seg[2]} ${seg[3]} ${seg[4]} ${seg[5]} ${seg[6]}`);
+        open = true;
         break;
       case 'Q':
         parts.push(`Q${seg[1]} ${seg[2]} ${seg[3]} ${seg[4]}`);
+        open = true;
         break;
       case 'E':
-        parts.push(ellipseToArcs(seg));
+        parts.push(ellipseToArcs(seg, open));
+        open = true;
         break;
       case 'Z':
         parts.push('Z');
+        open = false;
         break;
     }
   }
@@ -336,9 +353,17 @@ export class DomBackend implements RenderBackend {
           break;
         }
         case 'restore': {
-          // Prune the (possibly no-push) transform/clip cursor being unwound.
-          this.#pruneCursor(cursor);
-          cursor = stack.pop() ?? this.root;
+          const saved = stack.pop() ?? this.root;
+          // Prune ONLY a child cursor this save/restore actually ENTERED (a
+          // transform/clip changed `cursor` to a no-push child). When `cursor`
+          // is unchanged from the matching `save` — a node at identity transform
+          // emits `save … draw … restore` with no wrapper, so the bracket sits on
+          // the SHARED parent — pruning here would wrongly drop later siblings'
+          // elements that haven't been re-emitted yet this frame (the structural-
+          // transition `insertBefore` crash, faMEQkj0Lk0z). The parent is pruned
+          // once, correctly, at end-of-render.
+          if (cursor !== saved) this.#pruneCursor(cursor);
+          cursor = saved;
           scope = scopeStack.pop() ?? '';
           break;
         }
@@ -557,6 +582,9 @@ export class DomBackend implements RenderBackend {
   measureText(text: string, font: FontSpec): TextMetricsLite {
     const size = font.size;
     const span = this.#ensureMeasureSpan();
+    // Re-attach to a live tree if it drifted out (host swapped, body replaced) —
+    // a disconnected span measures 0 and silently degrades wrapping to estimate.
+    if (!span.isConnected) this.#mountMeasureSpan(span);
     span.style.font = fontString(font);
     span.style.fontVariationSettings = font.fontVariationSettings ?? 'normal';
     span.style.letterSpacing = font.letterSpacing !== undefined ? `${font.letterSpacing}px` : 'normal';
@@ -823,11 +851,23 @@ export class DomBackend implements RenderBackend {
     span.style.whiteSpace = 'pre';
     span.style.left = '-99999px';
     span.style.top = '0';
-    // The span must be in the live layout tree to measure; prefer the host (in
-    // the real DOM), else <body>, else the detached root (measures 0 → estimate).
-    (this.#host ?? this.#doc.body ?? this.root).appendChild(span);
     this.#measureSpan = span;
+    this.#mountMeasureSpan(span);
     return span;
+  }
+
+  /**
+   * Attach the measuring span to a CONNECTED layout tree. A detached element
+   * reports a 0-width rect in real browsers too — so a measurer mounted under a
+   * not-yet-connected host silently falls back to the coarse estimate, mis-breaks
+   * long Text, and captions overflow their `width` (aJsLQp0fSs5L). Prefer the
+   * document body (reliably live), then a connected host, else the root (headless
+   * jsdom has no layout anyway → 0 → estimate, which is expected there).
+   */
+  #mountMeasureSpan(span: HTMLElement): void {
+    const body = this.#doc.body;
+    const mount = (body && body.isConnected !== false ? body : null) ?? (this.#host?.isConnected ? this.#host : null) ?? this.root;
+    mount.appendChild(span);
   }
 
   /** Best-effort `src` for a registered image asset (an `HTMLImageElement` or a

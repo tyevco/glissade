@@ -8,8 +8,10 @@
  * backend does not claim.
  */
 import { describe, expect, it } from 'vitest';
-import { setDevWarning } from '@glissade/core';
+import { setDevWarning, timeline } from '@glissade/core';
 import type { DisplayList, DrawCommand, Resource } from '@glissade/scene';
+import { Rect, Text, createScene } from '@glissade/scene';
+import { emitWithIds } from '@glissade/scene/identity';
 import { DomBackend } from '../src/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -94,6 +96,22 @@ describe('DomBackend — geometry round-trips', () => {
     const d = root.querySelector('svg path')!.getAttribute('d')!;
     expect(d.startsWith('M')).toBe(true);
     expect((d.match(/A/g) ?? []).length).toBe(2); // 360° → two half-arcs
+  });
+
+  it('a corner E continuing an open subpath stays ONE contour (leads with L, not a stray M) — rounded-rect fill', () => {
+    // M → L → E(corner) → L → Z: the corner arc must CONTINUE the contour, not
+    // start a new subpath. A stray `M` here is the rounded-rect fill-gap bug
+    // (e1JP5_1IzI2D) — disconnected open subpaths don't fill solid.
+    const root = renderTo(
+      list(
+        [{ op: 'fillPath', path: 0, paint: { kind: 'color', color: '#abc' } }],
+        [{ kind: 'path', segs: [['M', 0, 0], ['L', 10, 0], ['E', 10, 10, 10, 10, 0, -Math.PI / 2, 0], ['L', 20, 10], ['Z']] }],
+      ),
+    );
+    const d = root.querySelector('svg path')!.getAttribute('d')!;
+    expect((d.match(/M/g) ?? []).length).toBe(1); // exactly one moveto → one continuous subpath
+    expect(d.startsWith('M0 0')).toBe(true);
+    expect(d).toContain('A'); // the corner arc is present
   });
 
   it('strokePath emits fill=none + StrokeStyle attributes', () => {
@@ -727,5 +745,57 @@ describe('DomBackend — S3 keying / structure regression guards', () => {
     expect(b.root.querySelector('[data-node-id="t"]')).toBe(wrap); // ancestor kept
     expect(b.root.querySelector('[data-node-id="g"]')).toBe(grp); // group kept
     expect(grp!.querySelectorAll('svg').length).toBe(1); // the 2nd fill pruned
+  });
+});
+
+describe('DomBackend — reconciler structural transitions (faMEQkj0Lk0z)', () => {
+  it('survives a node leaving then re-entering before its sibling (no insertBefore throw)', () => {
+    const backend = new DomBackend(document);
+    const a = new Rect({ id: 'a', position: [0, 0], width: 50, height: 50, fill: '#3fa148' });
+    const b = new Rect({ id: 'b', position: [60, 0], width: 50, height: 50, fill: '#a8842a' });
+    const EMPTY = timeline(() => {});
+    const frame = (nodes: Rect[]): void => {
+      const sub = createScene({ size: { w: 200, h: 100 }, children: nodes });
+      const r = emitWithIds(sub, EMPTY, 0);
+      backend.setIds(r.ids);
+      backend.render(r.displayList);
+    };
+    frame([a, b]); // both present
+    const bEl = backend.root.querySelector('[data-node-id="b"]'); // capture b's element
+    expect(bEl).toBeTruthy();
+    frame([b]); // 'a' leaves — must NOT prune 'b' mid-frame (the bug)
+    expect(backend.root.querySelector('[data-node-id="b"]')).toBe(bEl); // b persists (S3 identity)
+    expect(() => frame([a, b])).not.toThrow(); // 'a' re-enters before 'b'
+    // b kept its element identity across the whole transition; both present, in order
+    expect(backend.root.querySelector('[data-node-id="b"]')).toBe(bEl);
+    const ids = Array.from(backend.root.querySelectorAll('[data-node-id]')).map((e) => (e as HTMLElement).dataset.nodeId);
+    expect(ids).toContain('a');
+    expect(ids).toContain('b');
+    expect(ids.indexOf('a')).toBeLessThan(ids.lastIndexOf('b')); // a ordered before b
+  });
+});
+
+describe('DomBackend — Text wrapping (aJsLQp0fSs5L)', () => {
+  it('a Text wider than its `width` wraps into multiple stacked line elements (not one overflowing line)', () => {
+    const backend = new DomBackend(document);
+    const long =
+      'You have written the same request, deleted it, and rewritten it eleven times now. ' +
+      'Somewhere you picked up the idea that there is a perfect prompt that finally makes this thing useful.';
+    const cap = new Text({ id: 'cap', position: [100, 100], text: long, fontSize: 33, align: 'center', width: 600 });
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [cap] });
+    scene.setTextMeasurer(backend);
+    const r = emitWithIds(scene, timeline(() => {}), 0);
+    // the SCENE pre-wraps into per-line fillText (the backend renders one div per
+    // line); a long caption must be more than one line, at distinct y's
+    const lines = r.displayList.commands.filter((c) => c.op === 'fillText');
+    expect(lines.length).toBeGreaterThan(1);
+    backend.setIds(r.ids);
+    backend.render(r.displayList);
+    const tops = new Set(
+      Array.from(backend.root.querySelectorAll('div'))
+        .filter((d) => d.textContent && d.style.whiteSpace === 'pre')
+        .map((d) => d.style.top),
+    );
+    expect(tops.size).toBeGreaterThan(1); // multiple lines at distinct vertical offsets
   });
 });
