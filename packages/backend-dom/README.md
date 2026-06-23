@@ -44,6 +44,14 @@ function frame(t) {
 }
 ```
 
+> **A node may stamp `data-node-id` on more than one element.** Identity is
+> stamped per emitted command, so a node's transform wrapper *and* its content
+> element (the `<svg>`/text `<div>`) both carry the id. Use `el.closest('[data-node-id]')`
+> for hit-testing (the editing contract — it resolves to the nearest tagged
+> element regardless); if you build a node→element MAP, `querySelectorAll('[data-node-id="x"]')`
+> returns more than one element per node, so dedupe by id (or key off the outer
+> wrapper).
+
 Then the DOM is your **interaction surface** while the scene graph stays the single
 source of truth — read identity, mutate the scene, never write the DOM back:
 
