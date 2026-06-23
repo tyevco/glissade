@@ -513,9 +513,9 @@ describe('node-constructor fail-loud guard (0.20.1)', () => {
           stroke: '#000',
           strokeWidth: 1,
           reveal: 1,
-          sketch: false,
+          sketch: { kind: 'marker' },
           sketchSeed: 1,
-          sketchFill: false,
+          sketchFill: { angleRad: 0, gap: 6 },
         }),
     ).not.toThrow();
     expect(() => new Circle({ radius: 5, fill: '#fff', stroke: '#000', strokeWidth: 1 })).not.toThrow();
