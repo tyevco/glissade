@@ -1,0 +1,33 @@
+{
+  "name": "@glissade/backend-dom",
+  "version": "0.20.1",
+  "description": "glissade DOM render backend: DisplayList -> HTML/SVG elements. A preview / non-parity realtime tier (accessibility, selectable text, CSS-native embedding) — NOT a Skia-export twin.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@glissade/core": "workspace:*",
+    "@glissade/scene": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tyevco/glissade.git",
+    "directory": "packages/backend-dom"
+  }
+}

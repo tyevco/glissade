@@ -63,6 +63,15 @@ importers:
         specifier: workspace:*
         version: link:../scene
 
+  packages/backend-dom:
+    dependencies:
+      '@glissade/core':
+        specifier: workspace:*
+        version: link:../core
+      '@glissade/scene':
+        specifier: workspace:*
+        version: link:../scene
+
   packages/backend-skia:
     dependencies:
       '@glissade/core':

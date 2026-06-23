@@ -1,0 +1,95 @@
+# @glissade/backend-dom
+
+A **DOM/SVG render backend** for glissade: it consumes the identical `DisplayList`
+IR the canvas2d/skia backends consume, but emits **HTML/SVG elements** instead of
+pixels.
+
+> **Preview / non-parity.** There is no canvas, so neither Skia byte-exactness nor
+> browser↔Skia SSIM applies — this backend is **never on the `gs render` export
+> path**. Its value is elsewhere: accessibility + selectable text, CSS-native
+> embedding, and a zero-raster structural preview you can click into. Export stays
+> on the raster path (canvas2d/Skia → WebM/MP4); this is the **edit / inspect /
+> a11y** tier.
+
+## Usage
+
+It is a passive `RenderBackend` sink — your host owns the clock. Swap the backend
+factory; the [controlled-drive](../../docs/controlled-drive.md) loop is otherwise
+unchanged:
+
+```js
+import { DomBackend } from '@glissade/backend-dom';
+
+const backend = new DomBackend(document.getElementById('stage')); // a host element
+function frame(t) {
+  for (const m of movements) m.run(t);             // your signals, your clock
+  backend.render(evaluate(scene));                  // paint current values
+}
+```
+
+### Node identity (`data-node-id`) — for click-to-edit
+
+Identity rides **out-of-band** (the `DisplayList` stays identity-less). Feed the
+backend the id stream from [`@glissade/scene/identity`](../scene)'s `emitWithIds`
+and it stamps `data-node-id` on each node's element:
+
+```js
+import { emitWithIds } from '@glissade/scene/identity';
+
+function frame(t) {
+  for (const m of movements) m.run(t);
+  const { displayList, ids } = emitWithIds(scene, EMPTY, t);
+  backend.setIds(ids);          // positional id stream (off by default)
+  backend.render(displayList);
+}
+```
+
+Then the DOM is your **interaction surface** while the scene graph stays the single
+source of truth — read identity, mutate the scene, never write the DOM back:
+
+```js
+stage.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-node-id]');
+  if (!el) return;
+  const node = scene.nodes.get(el.dataset.nodeId);
+  node.text.set('edited');     // → the next render reflects it (one-way: scene → DOM)
+});
+```
+
+## What it maps
+
+| IR op | DOM/SVG |
+|---|---|
+| `transform` / `save` / `restore` | nested `<div>` with a CSS `matrix(...)` |
+| `pushGroup` / `popGroup` | nested `<div>` with `opacity` / `mix-blend-mode` / `filter` |
+| `fillPath` / `strokePath` | inline `<svg><path>` (full `M/L/C/Q/E/Z`, `E`→ SVG arc) |
+| `fillText` | a positioned `<div>` with **real, selectable** text |
+| `clip` | an SVG `<clipPath>` + a `clip-path: url(#…)` wrapper |
+| `drawImage` | an `<img>` at the dst box |
+| linear/radial gradient | `<linearGradient>` / `<radialGradient>` defs |
+
+### Documented divergences (preview/non-parity)
+
+- **Text line-breaking** is the browser's layout engine, **not** the canvas/Skia
+  rasterizer — so line breaks can differ from `gs render`. Intended.
+- **`measureText`** measures via a hidden DOM element (so it matches what this
+  backend draws). With no layout engine (e.g. jsdom) it falls back to an estimate
+  and warns once.
+- **Mesh paints, gaussian/smooth gradient interpolation, and exact blend
+  isolation** have no CSS/SVG analogue — they **degrade to a best-effort solid /
+  linear** and the element is stamped **`data-approx="true"`** so an editor can
+  badge it. Shader (`pushGroup.shader`) passes are ignored (`caps.shaders=false`).
+- **`readPixels()` throws** — there is no pixel buffer; use canvas2d/skia for
+  readback.
+
+The backend only ever manages its **own root** subtree — your overlay/foreign DOM
+in the host element is left untouched.
+
+## Status: Stage S2 (forward render)
+
+Today this is a **forward renderer**: each `render()` rebuilds the tree. That is
+right for **playback preview, structural snapshots, and a11y reads**. The
+**retained-DOM reconciler** (reuse + patch the same element per `data-node-id`
+across frames — required so an in-progress inline-edit caret, selection, focus,
+and event listeners survive a re-render) is **Stage S3**, a follow-up. See
+`docs/design/dom-backend.md`.

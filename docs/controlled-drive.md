@@ -91,6 +91,62 @@ stop passing the clobbering timeline to `evaluate`, your imperative value rules
 again.)
 :::
 
+## A complete host loop (`dt`-based, scrub + resume)
+
+The minimal example above advances implicitly. A real host owns a clock. The
+canonical shape — a wall-clock-delta loop with scrub-overrides-play and a
+persisted playhead — looks like this (distilled from a shipping 277 s, 15-scene
+no-build port):
+
+```js
+let raf, last = null;
+const loop = (ts) => {
+  if (last == null) last = ts;
+  const dt = (ts - last) / 1000;       // SECONDS since last frame — never assume 16.67ms
+  last = ts;
+  if (playing && hover == null) {       // advance only when playing and not scrubbing
+    t += dt;
+    if (t >= DURATION) t = 0;           // wrap (loop the piece)
+    localStorage.setItem('mykey:t', String(t)); // resume on reload
+  }
+  const shown = hover != null ? hover : t; // hover (scrub) overrides play
+  drive(shown);                         // set signals from `shown`, then render (below)
+  raf = requestAnimationFrame(loop);
+};
+raf = requestAnimationFrame(loop);
+```
+
+where `drive(t)` recomputes every signal **purely from `t`** and renders:
+
+```js
+function drive(t) {
+  for (const m of movements) m.run(t);  // each writes node.<prop>.set(...) from t alone
+  backend.render(evaluate(scene));      // paint current signal values (no timeline)
+}
+```
+
+Two properties make this sound:
+
+- **`evaluate(scene)` paints live `.set()` values** (the "Why it works" guarantee
+  above) — so the host's per-frame writes are exactly what renders.
+- **`drive(t)` is a pure function of `t`** — no frame depends on the previous one
+  (no integration, no easing state carried across ticks). That is what makes
+  **seek ≡ play-through**: `seek(t){ t = clamp(t,0,DURATION); drive(t); }` needs no
+  special path, and scrubbing to any `t` reproduces the played-through frame
+  byte-for-byte.
+
+### Keep your easing stateless (and mind springs under seek)
+
+For controlled mode to stay seek-safe, every easing you call must be a **pure,
+stateless** `f(t)` (`[0,1] → [0,1]`). glissade's named easings are; so are the
+usual cubic/expo/back closed forms. **The one to watch is springs:** glissade's
+springs are **closed-form / analytic** (evaluated directly from `t`, *never*
+integrated step-to-step), so they are **deterministic under seek** — sampling a
+spring at `t = 1.4` gives the same value whether you scrubbed there or played
+through. A hand-rolled *integrated* spring solver (one that accumulates velocity
+across frames) is **not** a function of `t` and **breaks** seek ≡ play-through —
+don't use one in controlled mode; sample analytically instead.
+
 ## Relationship to the own-rAF embed
 
 This is the natural companion to the [own-rAF embed path](./browser#two-ways-to-render):
@@ -98,3 +154,9 @@ there, you own the *clock* and feed it to `evaluate(scene, timeline, t)`; here,
 you own the *clock and the values* and call `evaluate(scene)`. Both are pure —
 same scene state in, same `DisplayList` out — so both scrub, snapshot, and
 export the same way. The difference is only where the property values come from.
+
+The `backend` in these examples is pluggable: the default `Canvas2DBackend`
+rasterizes to a `<canvas>`, but the same `backend.render(evaluate(scene))` loop
+drives any `RenderBackend` — e.g. `@glissade/backend-dom` for a DOM/SVG preview
+(selectable text, accessibility, CSS-native embedding). `evaluate` produces the
+identical `DisplayList`; only the backend that consumes it changes.

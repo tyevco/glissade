@@ -16,6 +16,10 @@ const ALLOWED = {
   core: [],
   scene: ['core'],
   'backend-canvas2d': ['core', 'scene'],
+  // §3.4 / dom-backend memo: a peer backend (preview/non-parity DOM tier). Like
+  // the other backends it may import only core+scene; player does NOT depend on
+  // it (DOM is caller-injected via mount({ backend }), never a static player dep).
+  'backend-dom': ['core', 'scene'],
   'backend-skia': ['core', 'scene'],
   player: ['core', 'scene', 'backend-canvas2d'],
   element: ['core', 'scene', 'backend-canvas2d', 'player'],

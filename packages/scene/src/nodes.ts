@@ -290,6 +290,15 @@ function emitDrawOnStroke(
  * tree-shakeable `@glissade/scene/path` subpath (kept off the base embed), so a
  * string `data` throws a clear error pointing at `pathFromSvg(d)`. Returns `[]`
  * for `undefined` (the empty-path default).
+ *
+ * Note on the two surfaces (both accept `PathValue`, both reject raw `d`
+ * strings — only the rejection LAYER differs, by design): the construction prop
+ * `data` is coerced HERE at `new Path({ data })` time; the animatable target
+ * `<id>/d` (the same underlying signal) is a `'path'`-typed track validated at
+ * bind time by core's value-type guard. So a string passed to `data` throws
+ * this construction-time `TypeError`, while a string track VALUE on `d` is
+ * rejected at `bindScene` — same outcome (use `pathFromSvg` for SVG strings),
+ * different layer/wording.
  */
 export function coercePathData(data: unknown): PathValue {
   if (data === undefined) return [];
