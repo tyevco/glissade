@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@glissade/backend-canvas2d": "workspace:*",
+    "@glissade/backend-dom": "workspace:*",
     "@glissade/core": "workspace:*",
     "@glissade/element": "workspace:*",
     "@glissade/player": "workspace:*",

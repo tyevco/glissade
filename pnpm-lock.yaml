@@ -89,6 +89,9 @@ importers:
       '@glissade/backend-canvas2d':
         specifier: workspace:*
         version: link:../backend-canvas2d
+      '@glissade/backend-dom':
+        specifier: workspace:*
+        version: link:../backend-dom
       '@glissade/core':
         specifier: workspace:*
         version: link:../core

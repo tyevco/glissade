@@ -122,6 +122,7 @@ const BUDGETS = {
   interact: 6, // v2 §C.6 CI target: machine + listeners + hitTest + pointerDriver ≤ 6 kB gz (opt-in)
   'interact/audio': 2, // v2 §C.6: offline audio as a separate export ≤ 2 kB gz
   'effects-webgpu': 4, // §3.7 browser-only shader runner (incl. built-in WGSL strings)
+  'browser-dom': 20, // 0.21: the OPTIONAL `glissade-dom.browser.js` augmentation IIFE — a 2nd <script src> a no-build editor page loads AFTER glissade.browser.js to add window.glissade.DomBackend + emitWithIds (the DOM render tier). SEPARATE from the lean base playback IIFE (which stays DomBackend-free — the "base IIFE excludes DomBackend" guard below asserts it), so playback embeds never pay for the edit/a11y tier. A self-contained 2nd script inherently re-inlines the scene emit path emitWithIds walks (the @glissade/* external only catches CROSS-package deps; a standalone IIFE inlines same-package scene helpers), so the measured size is mostly that shared evaluate/emit path + DomBackend, not its own surface — the duplication is the accepted cost of the 2-script no-build model (an editor page, not a size-critical playback embed). Measured from the prebuilt artifact in the dedicated block after the loop.
   browser: 49, // §4.4 single-file IIFE: the WHOLE embed path INLINED (core+scene+canvas2d+player+element) PLUS the @glissade/core/clips tier (presence/each/morph/clip + stdlib) for window.glissade discoverability — measured from the prebuilt dist/glissade.browser.js (42.3 kB measured w/ clips + headroom; was 39.3 kB before clips). 45→46 in 0.18 pre.6 for describe() construction-completeness: the richer API manifest (construction props + the curated Layout family schema + the assets-shape createScene string + the negative-space prop entries) is a static data table re-exported onto window.glissade for AI discoverability — it is NOT on the base embed path (describe stays tree-shaken off the base scene index; base embed measured UNCHANGED at 38.15 kB), only this convenience bundle inlines it (45.12 kB measured). 46→47 in 0.19 to expose renderToDataURL/snapshotCanvas on window.glissade (the +0.36 kB screenshot DX seam): the Claude-Design no-build consumer works ONLY against the IIFE, so a feature absent from window.glissade is unusable to it — the snapshot helper's primary audience IS this bundle. This is the CONVENIENCE bundle, NOT the sacred base embed (which stays tree-shaken-lean at 38.6/39); browser measures ~45.96. 47→48 in 0.20 for the no-build authoring + DX features re-exported onto window.glissade — Stack/Row/Column + loadYogaLayoutEngine (Yoga itself stays an async import, NOT inlined), Grid (the scene/grid track resolver), the describe() helpers section, the friendlier construction-prop bind message, and static variable-font passthrough — all features the no-build Claude-Design consumer works against window.glissade for. The SACRED base embed actually SHRANK this milestone (38.79 → 35.55 via the 0.20 budget-review relocations), so the convenience bundle's growth is decoupled from the embed budget. 48→49 in 0.20.1 for the fail-loud node-constructor guard (Node.checkProps + acceptedConstructionKeys + NodeConstructionError + the per-leaf new.target calls) — it ships in scene, so it rides this bundle; +the corrected/longer splitText describe() usage string + the splitText by-guard. The guard is a real safety feature (rejects silently-dropped ctor props like `new Rect({ size })`, the shipped footgun all three canary seats confirmed). The SACRED base embed stays healthy (35.62 → 36.00/39, +0.38 for the guard's ctor-path code — well under ceiling); only this convenience bundle needed the bump. Not measured by the standalone loop below (that externalizes @glissade/*, which would leave an empty shell) — see the dedicated block after the loop.
 };
 
@@ -149,7 +150,7 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   // The single-file IIFE is INLINED, not externalized — bundling it through the
   // standalone (external @glissade/*) path below would measure an empty shell.
   // It is measured from its prebuilt dist in the dedicated block after the loop.
-  if (pkg === 'browser') continue;
+  if (pkg === 'browser' || pkg === 'browser-dom') continue;
   const subset = SUBSET_EXPORTS[pkg];
   const result = await build({
     ...(subset
@@ -487,6 +488,41 @@ for (const pkg of ['core', 'scene', 'backend-canvas2d', 'player', 'element']) {
               !loaderExternal ? `${wasmInlined ? '; ' : ''}yoga-layout/load not kept as a runtime import` : ''
             })`
       }`,
+    );
+
+    // 0.21 guard: the BASE playback IIFE must stay DomBackend-FREE (browser-canary's
+    // byte-stability invariant). The DOM render tier rides the SEPARATE optional
+    // `glissade-dom.browser.js` augmentation bundle, never the base. `data-node-id`
+    // is a string literal emitted only by @glissade/backend-dom's render walk
+    // (survives minification as a string), so its presence in the base bundle would
+    // mean DomBackend leaked in — fail loud.
+    const domLeaked = browserOut.includes('data-node-id');
+    if (domLeaked) failed = true;
+    console.log(
+      `${domLeaked ? 'FAIL' : 'ok  '} browser IIFE excludes DomBackend${domLeaked ? " (data-node-id present — backend-dom leaked into the base bundle)" : ''}`,
+    );
+  }
+}
+
+// 0.21: the OPTIONAL `glissade-dom.browser.js` augmentation IIFE (DomBackend +
+// emitWithIds → window.glissade). Measured directly; skip gracefully when unbuilt.
+{
+  const domFile = `${root}packages/browser/dist/glissade-dom.browser.js`;
+  let raw;
+  try {
+    raw = readFileSync(domFile);
+  } catch {
+    raw = null;
+  }
+  if (raw === null) {
+    console.log(`skip browser-dom         (dist/glissade-dom.browser.js not built — run pnpm build:browser)`);
+  } else {
+    const budgetKb = BUDGETS['browser-dom'];
+    const gz = gzipSync(raw).length / 1024;
+    const ok = gz <= budgetKb;
+    if (!ok) failed = true;
+    console.log(
+      `${ok ? 'ok  ' : 'FAIL'} ${'browser-dom'.padEnd(18)} ${gz.toFixed(2).padStart(6)} kB gz  (budget ${budgetKb} kB, ${(raw.length / 1024).toFixed(2)} kB raw)`,
     );
   }
 }

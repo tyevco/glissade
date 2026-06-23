@@ -56,6 +56,36 @@ stage.addEventListener('click', (e) => {
 });
 ```
 
+> **One `emitWithIds()` feeds BOTH `setIds` and `render`.** The id stream is
+> positional by command index, so `setIds(...)` and `render(...)` must come from
+> the *same* emit — `setIds(emitWithIds(sceneA, …).ids)` then
+> `render(evaluate(sceneB, …))` silently mis-maps `data-node-id`. Always destructure
+> one call: `const { displayList, ids } = emitWithIds(scene, tl, t)`.
+
+## No-build (`<script src>`)
+
+The DOM tier ships as a separate **optional** IIFE, `glissade-dom.browser.js`, a
+second `<script>` loaded *after* the base bundle — it augments `window.glissade`
+with `DomBackend` + `emitWithIds` (the base playback bundle stays lean and
+`DomBackend`-free):
+
+```html
+<script src="https://unpkg.com/@glissade/browser/dist/glissade.browser.js"></script>
+<script src="https://unpkg.com/@glissade/browser/dist/glissade-dom.browser.js"></script>
+<script type="module">
+  const backend = new glissade.DomBackend(document.getElementById('stage'));
+  function frame(t) {
+    for (const m of movements) m.run(t);
+    const { displayList, ids } = glissade.emitWithIds(scene, EMPTY, t); // ONE emit
+    backend.setIds(ids);
+    backend.render(displayList);
+  }
+</script>
+```
+
+Load order is fail-loud: `glissade-dom.browser.js` throws a clear error if the
+base bundle is absent or a different version (never a cryptic `undefined`).
+
 ## What it maps
 
 | IR op | DOM/SVG |
