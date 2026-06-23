@@ -108,6 +108,9 @@ export class Layout extends Group {
     this.registerTarget('height', this.height, 'number');
     this.registerTarget('gap', this.gap, 'number');
     this.registerTarget('padding', this.padding, 'number');
+    // Validate as Layout (Group's own check skipped via its new.target guard).
+    // Stack/Row/Column are factories that `new Layout(...)`, so they validate here.
+    if (new.target === Layout) this.checkProps(props);
   }
 
   override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {

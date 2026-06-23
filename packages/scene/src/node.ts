@@ -24,6 +24,7 @@ import {
 } from './displayList.js';
 import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import { fromTRS, multiply, matEquals, IDENTITY, type Mat2x3 } from './matrix.js';
+import { acceptedConstructionKeys } from './constructionProps.js';
 
 /**
  * Where `position` pins to on the node's intrinsic box, as fractions of its
@@ -141,6 +142,19 @@ function initVec2(sig: Vec2Signal, init: PropInit<Vec2> | undefined): Vec2Signal
   if (typeof init === 'function') sig.bindSource(init);
   else if (init !== undefined) sig.set(init);
   return sig;
+}
+
+/**
+ * Thrown by a node constructor when it's passed an unknown prop key (the
+ * construction-time sibling of the timeline builder's `TimelineValidationError`).
+ * Names the offending key(s), the node type, and the valid props. See
+ * {@link Node.checkProps}.
+ */
+export class NodeConstructionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NodeConstructionError';
+  }
 }
 
 export abstract class Node {
@@ -271,6 +285,40 @@ export abstract class Node {
    */
   listTargets(): { path: string; expects: ValueTypeId | readonly ValueTypeId[] | undefined }[] {
     return [...this.targets].map(([path, sig]) => ({ path, expects: sig.expects }));
+  }
+
+  /**
+   * Fail-loud guard against UNKNOWN construction props — the sibling of the
+   * timeline builder's unknown-option guard (`to(…, { eaze })` throws). Without
+   * it a node silently drops a misnamed prop: `new Rect({ size:[80,80] })` keeps
+   * width/height at 0 → an invisible node, no warning (a real footgun the docs
+   * even shipped). Each BUILT-IN node calls this at the END of its constructor,
+   * guarded by `new.target === <ThisClass>` so it runs ONLY for the exact leaf
+   * type (an intermediate base like `Group` skips it when a `Layout` is being
+   * constructed — `Layout` validates itself with its own fuller target set; and
+   * user `Custom`/external subclasses, whose `new.target` matches no built-in,
+   * are never validated, keeping that extension seam lenient).
+   *
+   * The allow-list is {@link acceptedConstructionKeys} — built from the live
+   * `registerTarget` set + the construction-prop name sets, so it can't drift
+   * from what the constructors actually honor. Must be called after the leaf has
+   * registered all its targets (i.e. last), so the animatable keys are present.
+   */
+  protected checkProps(props: object): void {
+    const accepted = acceptedConstructionKeys(this.describeType, this.targets.keys());
+    let unknown: string[] | undefined;
+    for (const k of Object.keys(props)) {
+      if (!accepted.has(k)) (unknown ??= []).push(k);
+    }
+    if (unknown !== undefined) {
+      const valid = [...accepted].sort().join(', ');
+      throw new NodeConstructionError(
+        `new ${this.describeType}({ … }): unknown construction ${unknown.length > 1 ? 'props' : 'prop'} ` +
+          `${unknown.map((k) => `'${k}'`).join(', ')}. Valid ${this.describeType} props: ${valid}. ` +
+          `(Animatable sub-paths like 'position.x' are timeline targets — to('<id>/position.x', …) — ` +
+          `not construction keys; set the whole 'position' at construction.)`,
+      );
+    }
   }
 
   /** Subclass drawing: emit own commands (and children for containers). */

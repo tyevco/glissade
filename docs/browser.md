@@ -49,10 +49,10 @@ const canvasEl = document.querySelector('canvas');
 // NOTE: Canvas2DBackend takes the CANVAS ELEMENT, not a 2d context.
 const backend = new G.Canvas2DBackend(canvasEl);
 
-// Nodes take `position:[x,y]` + `size:[w,h]`, under `children`.
+// Nodes take `position:[x,y]` + `width`/`height`, under `children`.
 const scene = G.createScene({
   size: { w: 640, h: 360 },
-  children: [new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa' })],
+  children: [new G.Rect({ id: 'box', position: [80, 140], width: 80, height: 80, fill: '#89b4fa' })],
 });
 scene.setTextMeasurer(backend); // the backend supplies text metrics to scene
 
@@ -178,7 +178,7 @@ const backend = new G.Canvas2DBackend(canvasEl);
 
 const scene = G.createScene({
   size: { w: 640, h: 360 },
-  children: [new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa' })],
+  children: [new G.Rect({ id: 'box', position: [80, 140], width: 80, height: 80, fill: '#89b4fa' })],
 });
 scene.setTextMeasurer(backend);
 
@@ -280,11 +280,11 @@ A single self-contained file — a `<canvas>`, a tiny scene + timeline in plain 
       var G = window.glissade;
       var canvasEl = document.getElementById('stage');
 
-      // Scene: nodes take `position:[x,y]` + `size:[w,h]` (Rect/Text/…), under `children`.
+      // Scene: nodes take `position:[x,y]` + `width`/`height` (Rect/Text/…), under `children`.
       var scene = G.createScene({
         size: { w: 640, h: 360 },
         children: [
-          new G.Rect({ id: 'box', position: [80, 140], size: [80, 80], fill: '#89b4fa', cornerRadius: 10 }),
+          new G.Rect({ id: 'box', position: [80, 140], width: 80, height: 80, fill: '#89b4fa', cornerRadius: 10 }),
           new G.Text({ id: 'label', position: [80, 250], text: 'glissade', fontSize: 28, fill: '#cdd6f4', fontFamily: 'system-ui, sans-serif' }),
         ],
       });

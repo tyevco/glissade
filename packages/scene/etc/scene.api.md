@@ -728,6 +728,7 @@ abstract class Node_2 {
     // (undocumented)
     readonly blend: BindableSignal<BlendMode>;
     readonly cache: boolean;
+    protected checkProps(props: object): void;
     get describeType(): string;
     protected abstract draw(out: DisplayListBuilder, ctx: EvalContext): void;
     drawOffset(measurer?: TextMeasurer): {
@@ -787,6 +788,11 @@ export { Node_2 as Node }
 
 // @public
 export const NODE_TAXONOMY: readonly ["Group", "Rect", "Circle", "Path", "Text", "Image", "Video", "Layout", "Custom"];
+
+// @public
+export class NodeConstructionError extends Error {
+    constructor(message: string);
+}
 
 // @public (undocumented)
 export interface NodeProps {

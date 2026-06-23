@@ -27,6 +27,7 @@ import {
   ReservedNodeIdError,
   Text,
   Video,
+  NodeConstructionError,
   type DisplayList,
 } from '../src/index.js';
 import { Layout, Stack } from '@glissade/scene/layout-ctors';
@@ -463,5 +464,159 @@ describe('construction-prop bind error (0.20)', () => {
     // Stack/Row/Column are factories returning Layout — they inherit 'Layout',
     // so the bind guard names their construction props in the bundle too.
     expect(Stack().describeType).toBe('Layout');
+  });
+});
+
+// 0.20.1 (browser-canary finding): node constructors used to SILENTLY DROP an
+// unknown prop key — `new Rect({ size:[80,80] })` left width/height at 0 → an
+// invisible node (the browser guide even shipped that example). The constructor
+// guard makes it fail loud, mirroring the timeline builder's unknown-option
+// guard. The completeness risk (rejecting a VALID construction-only prop) is the
+// thing to nail — so this exercises the full accepted-key surface per node.
+describe('node-constructor fail-loud guard (0.20.1)', () => {
+  it('accepts EVERY valid construction key per node — zero false-positives (the allow-list completeness gate)', () => {
+    // Each node constructed with its full Props-interface surface (base +
+    // animatable + construction-only). None may throw.
+    expect(
+      () =>
+        new Group({
+          id: 'g',
+          position: [0, 0],
+          rotation: 0,
+          scale: [1, 1],
+          opacity: 1,
+          blend: 'source-over',
+          zIndex: 0,
+          filters: [],
+          anchor: 'center',
+          cache: false,
+          children: [],
+        }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new Rect({
+          id: 'r',
+          position: [0, 0],
+          rotation: 0,
+          scale: [1, 1],
+          opacity: 1,
+          blend: 'source-over',
+          zIndex: 0,
+          filters: [],
+          anchor: 'center',
+          cache: false,
+          width: 10,
+          height: 10,
+          cornerRadius: 2,
+          fill: '#fff',
+          stroke: '#000',
+          strokeWidth: 1,
+          reveal: 1,
+          sketch: false,
+          sketchSeed: 1,
+          sketchFill: false,
+        }),
+    ).not.toThrow();
+    expect(() => new Circle({ radius: 5, fill: '#fff', stroke: '#000', strokeWidth: 1 })).not.toThrow();
+    // The Path data/d alias: constructs with `data` (a PathValue), animates
+    // target `d` — both must be accepted by the guard. (A bare SVG STRING is
+    // separately rejected by Path — use pathFromSvg — so pass a PathValue here.)
+    expect(() => new Path({ data: [], stroke: '#000', strokeWidth: 2 })).not.toThrow();
+    expect(
+      () =>
+        new Text({
+          text: 'hi',
+          fill: '#000',
+          fontFamily: 'serif',
+          fontSize: 12,
+          fontWeight: 700,
+          fontStyle: 'italic',
+          fontVariationSettings: '"wght" 600',
+          align: 'center',
+          width: 100,
+          lineHeight: 1.4,
+          reveal: 1,
+          revealFraction: 0.5,
+        }),
+    ).not.toThrow();
+    expect(() => new ImageNode({ assetId: 'a', width: 10, height: 10 })).not.toThrow();
+    expect(
+      () =>
+        new Video({
+          assetId: 'v',
+          at: 0,
+          trimStart: 0,
+          playbackRate: 1,
+          clipDuration: 2,
+          sourceFps: 30,
+          width: 10,
+          height: 10,
+        }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new Layout({
+          width: 100,
+          height: 100,
+          gap: 8,
+          padding: 4,
+          direction: 'row',
+          justify: 'center',
+          align: 'stretch',
+          children: [],
+        }),
+    ).not.toThrow();
+    // Stack/Row/Column factories validate as Layout (new Layout under the hood).
+    expect(() => Stack({ gap: 8, padding: 4, align: 'start', children: [] })).not.toThrow();
+  });
+
+  it('throws NodeConstructionError naming the bad key + node type', () => {
+    let err: unknown;
+    try {
+      new Rect({ width: 10, height: 10, size: [10, 10] } as unknown as ConstructorParameters<typeof Rect>[0]);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(NodeConstructionError);
+    const m = (err as Error).message;
+    expect(m).toContain("'size'");
+    expect(m).toContain('Rect');
+    expect(m).toContain('Valid Rect props'); // lists the allow-list
+  });
+
+  it('the shipped footgun: new Rect({ size }) now throws instead of an invisible 0×0 box', () => {
+    expect(() => new Rect({ size: [80, 80] } as unknown as ConstructorParameters<typeof Rect>[0])).toThrow(
+      NodeConstructionError,
+    );
+  });
+
+  it('names ALL unknown keys when several are passed', () => {
+    let err: unknown;
+    try {
+      new Rect({ size: [1, 1], foo: 1 } as unknown as ConstructorParameters<typeof Rect>[0]);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as Error).message).toContain("'size'");
+    expect((err as Error).message).toContain("'foo'");
+  });
+
+  it('rejects a dotted target sub-path as a CONSTRUCTOR key, while the timeline still accepts it as a tween target', () => {
+    // Two distinct namespaces: `position.x` is a tween target, NEVER a ctor key.
+    expect(() => new Rect({ 'position.x': 5 } as unknown as ConstructorParameters<typeof Rect>[0])).toThrow(
+      NodeConstructionError,
+    );
+    // ...the SAME path resolves fine as a timeline target.
+    const scene = createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'r', width: 10, height: 10 })] });
+    const doc = timeline({ tracks: [track('r/position.x', 'number', [key(0, 0), key(1, 5)])] });
+    expect(() => bindScene(scene, doc)).not.toThrow();
+  });
+
+  it('does NOT validate user subclasses (the lenient extension seam — new.target guard)', () => {
+    // A user subclass’s new.target is the subclass, not the built-in, so the
+    // built-in’s checkProps never fires — external nodes can carry arbitrary props.
+    class MyRect extends Rect {}
+    expect(() => new MyRect({ totallyCustomProp: 1 } as unknown as ConstructorParameters<typeof Rect>[0])).not.toThrow();
   });
 });

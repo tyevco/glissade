@@ -82,6 +82,9 @@ export class Group extends Node {
     super(props);
     this.children = props.children ?? [];
     for (const child of this.children) child.parent = this;
+    // Validate ONLY a plain Group — subclasses (Layout) run their own check with
+    // their fuller target set; see Node.checkProps.
+    if (new.target === Group) this.checkProps(props);
   }
 
   /** Record the structural version as a dependency — call inside a computed
@@ -405,6 +408,7 @@ export class Rect extends Shape {
     this.registerTarget('width', this.width, 'number');
     this.registerTarget('height', this.height, 'number');
     this.registerTarget('cornerRadius', this.cornerRadius, 'number');
+    if (new.target === Rect) this.checkProps(props);
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -431,6 +435,7 @@ export class Circle extends Shape {
     super(props);
     this.radius = initProp(signal(0), props.radius);
     this.registerTarget('radius', this.radius, 'number');
+    if (new.target === Circle) this.checkProps(props);
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -481,6 +486,7 @@ export class Path extends Shape {
           : undefined;
     this.data = initProp(signal<PathValue>([]), coerced);
     this.registerTarget('d', this.data, 'path');
+    if (new.target === Path) this.checkProps(props);
   }
 
   /** Control-point bounding box (conservative: contains the true curve). */
@@ -580,6 +586,7 @@ export class ImageNode extends Node {
     this.height = initProp(signal(0), props.height);
     this.registerTarget('width', this.width, 'number');
     this.registerTarget('height', this.height, 'number');
+    if (new.target === ImageNode) this.checkProps(props);
   }
 
   override intrinsicSize(): { w: number; h: number } {
@@ -648,6 +655,7 @@ export class Video extends Node {
     this.height = initProp(signal(0), props.height);
     this.registerTarget('width', this.width, 'number');
     this.registerTarget('height', this.height, 'number');
+    if (new.target === Video) this.checkProps(props);
   }
 
   /** Frame-indexed media time for timeline time t; null when outside the clip. */
@@ -812,6 +820,7 @@ export class Text extends Node {
     // track on `<id>/fontVariationSettings` hard-throws UnboundTargetError (no
     // signal resolves to it). When unset, fontSpec() omits the key, so default
     // Text emits a byte-identical FontSpec.
+    if (new.target === Text) this.checkProps(props);
   }
 
   /**

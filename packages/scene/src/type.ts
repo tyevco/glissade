@@ -115,6 +115,15 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
     );
   }
   const by = opts.by ?? 'word';
+  // Fail loud on an unknown `by` instead of silently falling through to the
+  // grapheme branch below (the IIFE/JS footgun — TS already constrains it to
+  // SplitBy, but a no-build caller can pass anything; `'char'`/`'zzz'` were
+  // silently treated as graphemes). Same fail-loud class as the ctor guard.
+  if (!(['word', 'line', 'grapheme'] as readonly string[]).includes(by)) {
+    throw new SplitTextError(
+      `splitText() got an unknown { by: ${JSON.stringify(by)} } — valid values are 'word', 'line', 'grapheme'.`,
+    );
+  }
   const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
   // Silent footgun: with no real backend (split before setTextMeasurer, no
   // { measurer } passed) the part geometry is a rough per-character estimate

@@ -74,7 +74,7 @@ it owns the target's `position` (and `rotation` with `orient`) and exposes a
 `progress` you drive with a track. See the full guide: [Motion along a path](./motion-path).
 
 ```js
-const cursor = new G.Rect({ id: 'cursor', size: [12, 12], fill: '#ff5d73' });
+const cursor = new G.Rect({ id: 'cursor', width: 12, height: 12, fill: '#ff5d73' });
 const route = new G.Path({ id: 'route', data: G.pathFromSvg('M0 0 C 80 -120 240 120 320 0'), stroke: '#4ea1ff' });
 const scene = G.createScene({ children: [route, cursor, G.followPath(cursor, route, { id: 'cf', orient: true })] });
 const timeline = G.timeline((tl) => tl.to('cf/progress', 1, { duration: 2.6, ease: G.easings.cubicInOut }));

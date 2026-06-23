@@ -29,6 +29,7 @@ export {
 
 export {
   Node,
+  NodeConstructionError,
   resolveAnchor,
   type AnchorSpec,
   type EvalContext,

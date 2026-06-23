@@ -185,6 +185,24 @@ vdescribe('describe() helpers section', () => {
       expect(byName.get(n)!.import).toBe('@glissade/scene/layout');
     }
   });
+
+  // 0.20.1 (browser-canary finding): the splitText usage string mis-described the
+  // function — `): Node[]` (it returns an object) and `by?: 'word'|'char'` (the
+  // real SplitBy is word|line|grapheme, and 'char' only "worked" via a silent
+  // fallback). It also hid the `measurer` opt — the documented escape hatch from
+  // the 0.19 estimating-measurer footgun. Pin the corrected signature.
+  it('describes splitText accurately — object return shape, the real by enum, and the measurer opt (0.20.1)', () => {
+    const usage = m.helpers.find((h) => h.name === 'splitText')!.usage;
+    // returns an object, not Node[]
+    expect(usage).toContain('{ node');
+    expect(usage).not.toMatch(/\):\s*Node\[\]/);
+    // the real granularities — word|line|grapheme, NOT the bogus 'char'
+    expect(usage).toContain("'word'|'line'|'grapheme'");
+    expect(usage).not.toContain("'char'");
+    // the measurer escape-hatch is discoverable
+    expect(usage).toContain('measurer');
+    expect(usage).toContain('id');
+  });
 });
 
 vdescribe('describe() docs-honesty', () => {

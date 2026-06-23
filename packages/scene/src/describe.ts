@@ -410,9 +410,10 @@ const HELPERS: DescribedHelper[] = [
   {
     name: 'splitText',
     summary:
-      'Split a Text node into per-word / per-char parts you can animate individually (kinetic typography). Tree-shaken off the base scene index.',
+      'Split a Text node into per-word / per-line / per-grapheme parts you can animate individually (kinetic typography). Pass { measurer } (or call setTextMeasurer first) so part geometry uses the real backend, not the estimating fallback. Tree-shaken off the base scene index.',
     import: '@glissade/scene/type',
-    usage: "splitText(text: Text, opts?: { by?: 'word'|'char' }): Node[]",
+    usage:
+      "splitText(text: Text | TextProps, opts?: { by?: 'word'|'line'|'grapheme', id?: string, measurer?: TextMeasurer }): { node: Group, children: Text[], parts: SplitPart[], targets(prop): string[] }",
   },
   {
     name: 'Grid',

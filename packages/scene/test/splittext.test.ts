@@ -301,3 +301,25 @@ describe('splitText() estimate-fallback dev warning (o_aLYFFPjFDf)', () => {
     expect(warnings).toEqual([]);
   });
 });
+
+// 0.20.1 (browser-canary finding): an unknown `by` was SILENTLY treated as
+// grapheme (the ternary's fall-through), so the manifest's bogus `'char'` and a
+// typo `'zzz'` both "worked" by accident. Fail loud — the splitText sibling of
+// the node-constructor guard.
+describe('splitText by-guard (0.20.1)', () => {
+  it('throws SplitTextError on an unknown `by` instead of falling through to grapheme', () => {
+    expect(() => splitText({ id: 't', text: 'a b c', fontSize: 10 }, { by: 'zzz' as never, measurer: fixed })).toThrow(
+      SplitTextError,
+    );
+    // The manifest's old bogus value is rejected too (it only ever "worked" via the silent fallback).
+    expect(() => splitText({ id: 't', text: 'a b c', fontSize: 10 }, { by: 'char' as never, measurer: fixed })).toThrow(
+      /unknown .*by/i,
+    );
+  });
+
+  it('still accepts the three real granularities', () => {
+    for (const by of ['word', 'line', 'grapheme'] as const) {
+      expect(() => splitText({ id: 't', text: 'a b c', fontSize: 10 }, { by, measurer: fixed })).not.toThrow();
+    }
+  });
+});
