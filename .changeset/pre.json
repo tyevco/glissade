@@ -27,6 +27,7 @@
   },
   "changesets": [
     "backend-dom-s2",
-    "backend-dom-s3-reconciler"
+    "backend-dom-s3-reconciler",
+    "glissade-dom-iife"
   ]
 }
