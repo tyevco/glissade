@@ -28,6 +28,7 @@ import {
   type VoiceSpec,
 } from './index.js';
 import { misakiZhG2p, type ZhG2p } from './zh-g2p.js';
+import { misakiEnG2p, type EnG2p } from './en-g2p.js';
 
 export interface TtsRequest {
   text: string;
@@ -622,12 +623,15 @@ export function isKokoroChineseVoice(voice: string): boolean {
 }
 
 export function kokoroProvider(
-  opts: { model?: string; voice?: VoiceSpec; dtype?: KokoroDtype; zhG2p?: ZhG2p } = {},
+  opts: { model?: string; voice?: VoiceSpec; dtype?: KokoroDtype; zhG2p?: ZhG2p; enG2p?: EnG2p } = {},
 ): TtsProvider {
   const modelId = opts.model ?? KOKORO_MODEL;
   const dtype: KokoroDtype = opts.dtype ?? 'q8';
   // the Chinese g2p seam (Fork B = pinned Python misaki[zh]); injectable for tests
   const zhG2p: ZhG2p = opts.zhG2p ?? misakiZhG2p();
+  // the English g2p seam (Fork B = pinned Python misaki[en]); only the ENGLISH
+  // BLEND path uses it (named English voices keep kokoro-js's own espeak path).
+  const enG2p: EnG2p = opts.enG2p ?? misakiEnG2p();
   let loaded: Promise<{ tts: KokoroModel; entry: string }> | null = null;
 
   const loadLib = async (): Promise<{ lib: KokoroLib; entry: string }> => {
@@ -675,7 +679,16 @@ export function kokoroProvider(
       // path instead routes the blend per-REQUEST, where cacheKey() canonicalizes
       // the blend spec into the key — so the cache invalidates on any weight /
       // base-voice / BLEND_SPEC_VERSION change either way.
-      const blendSuffix = isVoiceBlend(opts.voice) ? ` ${blendIdentity(opts.voice)}` : '';
+      let blendSuffix = '';
+      if (isVoiceBlend(opts.voice)) {
+        blendSuffix = ` ${blendIdentity(opts.voice)}`;
+        // English blends drive misaki[en] (gh#2) — fold its g2p identity into the
+        // key so a pin/map bump invalidates English-blend audio. Scoped to en
+        // BLENDS only: zh blends + z* named voices are already covered by the
+        // global zhG2p.version() above, and named English voices use kokoro-js's
+        // own espeak path (no enG2p) — so this never busts their caches.
+        if (resolveBlend(opts.voice).language === 'en') blendSuffix += ` en-g2p=[${enG2p.version()}]`;
+      }
       const v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype} g2p=[${zhG2p.version()}]${blendSuffix}`;
       return Promise.resolve(v);
     },
@@ -708,14 +721,14 @@ export function kokoroProvider(
             const phonemes = zhG2p.phonemize(req.text); // throws install hint if Python/misaki absent
             inputIds = tts.tokenizer(phonemes, { truncation: true }).input_ids;
           } else {
-            // English blends: kokoro-js does not expose its English phonemizer for
-            // the generate_from_ids route, so a faithful tokenized-phoneme input is
-            // not reachable here. SCOPED OUT as a documented follow-up — the z*
-            // (Chinese) blend is the tested consumer deliverable (see gh#2).
-            throw new NarrationError(
-              'English voice blends are not yet supported (the z*/Chinese blend is the shipped path) — ' +
-                'use a single English voice, or a Chinese (zf_/zm_) blend; see gh#2 for the English follow-up',
-            );
+            // English blends (gh#2): a blend has no registered name, so we drive
+            // generate_from_ids with the summed style tensor — which bypasses
+            // kokoro-js's internal English phonemizer. So run misaki[en] ourselves
+            // (the g2p the English voices were trained on), exactly as the zh blend
+            // runs misaki[zh]. throws an actionable install hint if Python/misaki[en]/
+            // espeak/spaCy-model is absent.
+            const phonemes = enG2p.phonemize(req.text);
+            inputIds = tts.tokenizer(phonemes, { truncation: true }).input_ids;
           }
           const audio = await kokoroGenerateFromBlend(tts, Tensor, inputIds, blended, speed ?? 1);
           const wav = floatToWav(audio.audio, audio.sampling_rate);

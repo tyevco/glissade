@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { NarrationError, isVoiceBlend, type NarrationScript, type VoiceBlend } from '../src/index.js';
 import { JIEBA_PIN, MISAKI_PIN, PHONEME_MAP_VERSION, misakiZhG2p } from '../src/zh-g2p.js';
+import { EN_PHONEME_MAP_VERSION } from '../src/en-g2p.js';
 import {
   alignerById,
   BLEND_SPEC_VERSION,
@@ -236,6 +237,18 @@ describe('blended kokoro voices (gh#2)', () => {
     expect(() => resolveBlend({ blend: [['zf_xiaoni', 1], ['af_heart', 1]] })).toThrow(/mixes languages/);
     // empty voice name
     expect(() => resolveBlend({ blend: [['', 1], ['zf_xiaoxiao', 1]] })).toThrow(/empty voice name/);
+  });
+
+  it('version() folds the misaki[en] g2p identity for an ENGLISH blend (gh#2), scoped to en only', async () => {
+    // kokoro-js is a devDep here, so version() reads its real lib version (no model download)
+    const ven = await kokoroProvider({ voice: { blend: [['af_heart', 0.641], ['af_sarah', 0.186], ['af_sky', 0.173]] } }).version();
+    expect(ven).toContain(`en-g2p=[misaki-en misaki=${MISAKI_PIN} map=${EN_PHONEME_MAP_VERSION} dialect=us]`);
+    expect(ven).toContain('lang=en');
+    // a zh blend keeps the GLOBAL zh g2p identity but must NOT carry the en suffix
+    // (named English voices don't use enG2p either → their caches never bust on an en pin bump)
+    const vzh = await kokoroProvider({ voice: { blend: [['zf_xiaoni', 0.65], ['zf_xiaoxiao', 0.35]] } }).version();
+    expect(vzh).not.toContain('en-g2p=');
+    expect(vzh).toContain('misaki-zh');
   });
 
   it('blendStyleVectors computes the normalized weighted sum on small fake tensors (the math)', () => {
