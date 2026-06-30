@@ -27,6 +27,7 @@
   },
   "changesets": [
     "examples-registry",
+    "examples-self-contained",
     "fail-loud-measuretext",
     "iife-examples"
   ]

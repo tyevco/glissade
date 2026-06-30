@@ -1,5 +1,14 @@
 # glissade
 
+## 0.24.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies [ad0decf]
+  - @glissade/scene@0.24.0-pre.3
+  - @glissade/player@0.24.0-pre.3
+  - @glissade/core@0.24.0-pre.3
+
 ## 0.24.0-pre.2
 
 ### Patch Changes
