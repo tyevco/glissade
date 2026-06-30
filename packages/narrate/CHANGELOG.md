@@ -1,5 +1,37 @@
 # @glissade/narrate
 
+## 0.23.0
+
+### Minor Changes
+
+- 60fc247: narrate: British English voice-blend dialect (`bf_`/`bm_`)
+
+  English Kokoro voice blends are no longer US-only. The dialect is inferred from the base-voice prefixes — American (`af_`/`am_`) → **US** English, British (`bf_`/`bm_`) → **GB** English — and threaded into `misaki[en]` (`G2P(british=True)` + `EspeakFallback(british=True)`).
+
+  ```js
+  synthesizeScript(script, {
+    providerImpl: kokoroProvider({
+      voice: {
+        blend: [
+          ["bf_emma", 2],
+          ["bm_george", 1],
+        ],
+      },
+    }),
+  }); // GB
+  ```
+
+  A blend mixing US and GB voices is rejected (different espeak front-ends, like a mixed-language blend), and the dialect folds into the segment cache key (`dialect=us`/`gb`) so US and GB renders never collide.
+
+### Patch Changes
+
+- Updated dependencies [8209c61]
+- Updated dependencies [e54d593]
+- Updated dependencies [33077e8]
+- Updated dependencies [7c8f184]
+  - @glissade/core@0.23.0
+  - @glissade/scene@0.23.0
+
 ## 0.23.0-pre.5
 
 ### Patch Changes

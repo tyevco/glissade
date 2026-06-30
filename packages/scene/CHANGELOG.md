@@ -1,5 +1,73 @@
 # @glissade/scene
 
+## 0.23.0
+
+### Minor Changes
+
+- 8209c61: Text: animatable variable-font axes (`fontAxes`)
+
+  OpenType axes (`wght`/`opsz`/`slnt`) are now ANIMATABLE. The static `fontVariationSettings` string isn't lerp-able, so animation uses a new structured value type — `fontAxes`, a `{ wght: 700, opsz: 14 }` map — set on `Text.fontAxes` and bound as a track target `<id>/fontAxes`:
+
+  ```js
+  new Text({
+    id: "hero",
+    text: "Bold",
+    fontFamily: "Inter",
+    fontAxes: { wght: 400 },
+  });
+  timeline((tl) =>
+    tl.tracks([
+      track("hero/fontAxes", "fontAxes", [
+        key(0, { wght: 400 }),
+        key(1, { wght: 800 }),
+      ]),
+    ])
+  );
+  ```
+
+  It interpolates **per-axis**, then formats to the CSS `font-variation-settings` string at draw (so backends are unchanged). Both keyframes must declare the same axis tags (a mismatched set snaps + warns, like path/paint topology). The static `fontVariationSettings` string still works (and a non-empty `fontAxes` overrides it); default Text is byte-identical. `describe()` lists `fontAxes` as an animatable target.
+
+- 7c8f184: scene: `measureWrappedText` — size a container to wrapped text without a Text node
+
+  Sizing a bubble/card to _wrapped_ text previously meant re-implementing line-breaking consumer-side. `Text.measuredSize`/`lineBoxes` already cover a Text _node_; the new `measureWrappedText` covers a raw _string_:
+
+  ```js
+  const { width, lines, height, ascent, descent } = scene.measureWrappedText(
+    text,
+    font,
+    width,
+    lineHeight /* = 1.25 */
+  );
+  ```
+
+  It reuses the renderer's own `breakLines` + measurer (the exact `Text.intrinsicSize` steps), so the line breaks match what gets drawn. Also exported standalone as `measureWrappedText(text, font, width, lineHeight, measurer)`, and surfaced in `describe()` (pointing at the Text-node analogue). `width <= 0` = no wrap (explicit `\n` still breaks).
+
+### Patch Changes
+
+- e54d593: builder: `to`/`fromTo`/`set` accept an explicit `{ type }` — the value-type inference escape hatch
+
+  `inferValueType(value)` can't name a structured value like `fontAxes`'s `{ wght: 700 }` map, so the fluent builder threw `ValueTypeInferenceError` when you animated `fontAxes` (you had to drop to `track(target, 'fontAxes', keys)`). Now pass the type explicitly:
+
+  ```js
+  timeline((tl) =>
+    tl.to(
+      "hero/fontAxes",
+      { wght: 900 },
+      { type: "fontAxes", from: { wght: 400 } }
+    )
+  );
+  ```
+
+  `{ type }` overrides inference for that target's whole track (and works on `fromTo`/`set` too). Two different explicit types on one target throw (a track has one value type). `describe().builder` surfaces the new option.
+
+- 33077e8: scene: `measureWrappedText` now fails loud on a missing/invalid `font.size`
+
+  A `font.size` that wasn't a positive number made `height` `NaN` (which serializes to `null`) and `ascent`/`descent` `0` — a silent wrong result. The common cause is the field name: the `FontSpec` field is **`size`**, not `fontSize` (that's the Text node prop). `measureWrappedText` now throws an actionable error in that case instead of returning garbage.
+
+- Updated dependencies [8209c61]
+- Updated dependencies [e54d593]
+  - @glissade/core@0.23.0
+
 ## 0.23.0-pre.5
 
 ### Patch Changes
