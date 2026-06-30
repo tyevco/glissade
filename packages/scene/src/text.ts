@@ -34,6 +34,25 @@ export function quantize(v: number): number {
 }
 
 /**
+ * FAIL LOUD on a non-measurable FontSpec (§0.24 fail-loud sweep). A `size` that
+ * isn't a finite positive number silently yields NaN/0 metrics in the estimating
+ * measurers (and a wrong-font fallback in the real backends) → zero-height layout
+ * boxes, broken wrapping/reveal, all with NO error — the silent-wrong-result class
+ * an agent can't glance-test. The common cause is the field name: the FontSpec
+ * field is `size`, NOT `fontSize` (that is the Text node prop). The single guard
+ * every measurement entry point (breakLines, measureWrappedText, the backend
+ * `measureText`s) routes through, so the contract is enforced uniformly.
+ */
+export function assertFiniteFontSize(font: FontSpec, where: string): void {
+  if (typeof font.size !== 'number' || !Number.isFinite(font.size) || font.size <= 0) {
+    throw new Error(
+      `${where}: font.size must be a positive number (got ${JSON.stringify(font.size)}). ` +
+        'The FontSpec field is `size`, not `fontSize` (that is the Text node prop) — pass `{ family, size }`.',
+    );
+  }
+}
+
+/**
  * Estimating fallback measurer — used only when no backend has been injected
  * (e.g. evaluating for IR-level tests). Deterministic but not metrically
  * faithful; mount(), the CLI, and exporters always inject the real one.
@@ -174,6 +193,10 @@ export function breakLines(
   maxWidth: number | undefined,
   measurer: TextMeasurer,
 ): string[] {
+  // The measurement chokepoint — intrinsicSize / lineBoxes / wordBoxes / drawOffset
+  // / measureWrappedText all wrap through here, so one guard fails loud on a
+  // non-measurable FontSpec instead of cascading NaN/0 metrics into the layout.
+  assertFiniteFontSize(font, 'breakLines');
   const paragraphs = text.split('\n');
   if (maxWidth === undefined || maxWidth <= 0) return paragraphs;
 
@@ -227,15 +250,9 @@ export function measureWrappedText(
   lineHeight: number,
   measurer: TextMeasurer,
 ): WrappedTextMetrics {
-  // FAIL LOUD: a missing `font.size` makes height NaN (→ null over JSON) and
-  // ascent/descent 0 — the silent-wrong-result class. The common cause is the
-  // FontSpec field name: it's `size`, NOT `fontSize` (that's the Text node prop).
-  if (typeof font.size !== 'number' || !Number.isFinite(font.size) || font.size <= 0) {
-    throw new Error(
-      `measureWrappedText: font.size must be a positive number (got ${JSON.stringify(font.size)}). ` +
-        'The FontSpec field is `size`, not `fontSize` (that is the Text node prop) — pass `{ family, size }`.',
-    );
-  }
+  // FAIL LOUD on a non-measurable size (height would be NaN → null over JSON);
+  // the shared guard (also enforced in breakLines) names the size-vs-fontSize gotcha.
+  assertFiniteFontSize(font, 'measureWrappedText');
   const lines = breakLines(text, font, width > 0 ? width : undefined, measurer);
   let widest = 0;
   let ascent = 0;

@@ -149,6 +149,7 @@ export {
 } from './meshGradient.js';
 
 export {
+  assertFiniteFontSize,
   breakLines,
   measureWrappedText,
   segmentWords,

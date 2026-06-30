@@ -44,6 +44,9 @@ export function applyToPoint(m: Mat2x3, p: Vec2): Vec2;
 export function arcLength(poly: Polyline): number;
 
 // @public
+export function assertFiniteFontSize(font: FontSpec, where: string): void;
+
+// @public
 export interface BackendCaps {
     readonly filters: ReadonlySet<FilterKind>;
     readonly maxTextureSize: number;

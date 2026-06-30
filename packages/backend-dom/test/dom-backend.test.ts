@@ -902,3 +902,12 @@ describe('DomBackend — S4 a11y + CSS-variable theming', () => {
     expect(pdiv.style.color).not.toContain('var('); // literal (byte-stable default)
   });
 });
+
+describe('DomBackend — measureText fail-loud contract (0.24 sweep)', () => {
+  it('throws on a non-finite font.size (boundary guard) instead of NaN-metrics zero-height', () => {
+    const b = new DomBackend(document);
+    expect(() => b.measureText('hi', { family: 'X', size: Number.NaN })).toThrow(/DomBackend\.measureText: font\.size/);
+    expect(() => b.measureText('hi', { family: 'X', size: 0 })).toThrow(/positive number/);
+    expect(() => b.measureText('hi', { family: 'X', size: 16 })).not.toThrow(); // valid size unaffected
+  });
+});

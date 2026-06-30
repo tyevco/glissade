@@ -31,6 +31,7 @@
 import { emitDevWarning } from '@glissade/core';
 import {
   ALL_FILTER_KINDS,
+  assertFiniteFontSize,
   fontString,
   filtersToCanvasFilter,
   type BackendCaps,
@@ -648,6 +649,9 @@ export class DomBackend implements RenderBackend {
   }
 
   measureText(text: string, font: FontSpec): TextMetricsLite {
+    // contract: a non-finite size makes the estimating fallback emit NaN metrics
+    // → silent zero-height layout. Fail loud at the boundary (§0.24).
+    assertFiniteFontSize(font, 'DomBackend.measureText');
     const size = font.size;
     const span = this.#ensureMeasureSpan();
     // Re-attach to a live tree if it drifted out (host swapped, body replaced) —

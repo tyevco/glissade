@@ -10,6 +10,7 @@ import { createCanvas, GlobalFonts, Path2D, type Canvas, type Image } from '@nap
 import {
   ALL_FILTER_KINDS,
   Raster2D,
+  assertFiniteFontSize,
   fontString,
   type BackendCaps,
   type Ctx2DLike,
@@ -73,6 +74,7 @@ export class SkiaBackend implements RenderBackend {
   }
 
   measureText(text: string, font: FontSpec): TextMetricsLite {
+    assertFiniteFontSize(font, 'SkiaBackend.measureText'); // contract: finite positive size (§0.24)
     const ctx = this.canvas.getContext('2d');
     ctx.save();
     ctx.font = fontString(font);

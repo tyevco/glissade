@@ -8,6 +8,7 @@
 import {
   ALL_FILTER_KINDS,
   Raster2D,
+  assertFiniteFontSize,
   fontString,
   type BackendCaps,
   type Ctx2DLike,
@@ -96,6 +97,9 @@ export class Canvas2DBackend implements RenderBackend {
   }
 
   measureText(text: string, font: FontSpec): TextMetricsLite {
+    // contract: a non-finite size silently sets `ctx.font` to a wrong fallback →
+    // metrics for the wrong size, no error. Fail loud at the boundary (§0.24).
+    assertFiniteFontSize(font, 'Canvas2DBackend.measureText');
     const ctx = this.context(this.target);
     ctx.save();
     ctx.font = fontString(font);
