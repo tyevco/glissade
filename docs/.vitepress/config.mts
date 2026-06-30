@@ -41,6 +41,10 @@ export default defineConfig({
         ],
       },
       {
+        text: 'Reference',
+        items: [{ text: 'API reference (generated)', link: '/api-reference' }],
+      },
+      {
         text: 'Design',
         items: [
           {

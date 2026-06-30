@@ -33,6 +33,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm docs:api # regenerate the API reference from the built describe() manifest (can't drift)
       - run: pnpm exec vitepress build docs
       - run: pnpm --filter @glissade/examples exec vite build --base=/glissade/demo/app/
       - name: Compose site

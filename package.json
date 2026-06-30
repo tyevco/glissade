@@ -18,6 +18,8 @@
     "check:types": "node scripts/check-types.mjs",
     "check:api": "node scripts/api-report.mjs",
     "api:update": "node scripts/api-report.mjs --local",
+    "docs:api": "node scripts/gen-api-docs.mjs",
+    "check:docs-api": "node scripts/gen-api-docs.mjs --check",
     "lint": "eslint packages/core/src packages/scene/src"
   },
   "devDependencies": {
