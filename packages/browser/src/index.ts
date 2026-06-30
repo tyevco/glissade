@@ -80,10 +80,16 @@ export * from '@glissade/scene/describe';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified
 // snippet per node/builder method/helper — the no-build agent's primary
-// onboarding fix. A side-effect import (examples.js is marked sideEffectful so
-// bundlers keep it); the corpus rides ONLY this convenience bundle (budget bump
+// onboarding fix. The corpus rides ONLY this convenience bundle (budget bump
 // justified below), never the base embed.
-import '@glissade/scene/examples';
+// 0.25 (card 7eC7Pb4wTbHj): re-register in NO-BUILD IIFE form — every snippet's
+// `import { X } from '...'` rewritten to `const { X } = window.glissade`, so it
+// runs VERBATIM in a <script src> page (the bare import already registered the
+// npm form; this overrides it, last-write-wins). examplesByKey is a used import,
+// so the module's side-effect register runs and isn't tree-shaken.
+import { examplesByKey } from '@glissade/scene/examples';
+import { registerExamples } from '@glissade/scene/describe';
+registerExamples(examplesByKey({ iife: true }));
 export * from '@glissade/player';
 export { Canvas2DBackend, setShaderRunner } from '@glissade/backend-canvas2d';
 // `renderToDataURL` (0.19): the one-shot "screenshot a frame as a data URL" DX

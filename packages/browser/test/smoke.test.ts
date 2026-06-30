@@ -162,15 +162,21 @@ describe('@glissade/browser entry surface', () => {
     });
   });
 
-  it('surfaces runnable examples via describe({ examples: true }) — the no-build onboarding fix (0.24)', () => {
-    // The browser entry imports @glissade/scene/examples (a side-effect that
-    // registers the corpus), so window.glissade.describe({ examples: true })
-    // gives the no-build agent a copy-pasteable, doctest-verified snippet per
-    // node/builder/helper — the cold agent's worst time-sink (stale examples) fixed.
+  it('surfaces runnable examples via describe({ examples: true }) — in NO-BUILD form (0.24/0.25)', () => {
+    // The browser entry registers the corpus, so window.glissade.describe({
+    // examples: true }) gives the no-build agent a copy-pasteable, doctest-verified
+    // snippet per node/builder/helper — the cold agent's worst time-sink (stale
+    // examples) fixed.
     const m = glissade.describe({ examples: true });
     expect(m.nodes.Rect?.examples?.length).toBeGreaterThan(0);
     expect(m.builder.methods.find((x) => x.name === 'to')?.examples?.length).toBeGreaterThan(0);
     expect(m.helpers.find((x) => x.name === 'splitText')?.examples?.length).toBeGreaterThan(0);
+    // 0.25 (card 7eC7Pb4wTbHj): on the IIFE the snippets are NO-BUILD form — every
+    // `import { X } from '...'` rewritten to `const { X } = window.glissade`, so a
+    // no-build agent runs them verbatim (no import-mapping).
+    const rectEx = m.nodes.Rect!.examples![0]!;
+    expect(rectEx).toContain('window.glissade');
+    expect(rectEx).not.toContain('import {');
     // zero-arg stays examples-free — the manifest is byte-identical to before.
     expect(glissade.describe().nodes.Rect?.examples).toBeUndefined();
   });

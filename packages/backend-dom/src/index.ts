@@ -676,7 +676,12 @@ export class DomBackend implements RenderBackend {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async readPixels(): Promise<Uint8ClampedArray> {
+  // SYNC-throw (not `async` → not a rejected Promise): the DOM tier can NEVER
+  // produce pixels, so this always fails — throwing synchronously means a plain
+  // `try { backend.readPixels() }` catches it (an async rejection would slip past
+  // a non-awaited call). The declared Promise return type is satisfied vacuously
+  // (the throw never returns). (0.25 papercut, card wknlJgpONVHa.)
+  readPixels(): Promise<Uint8ClampedArray> {
     throw new Error(
       '@glissade/backend-dom has no pixel buffer (preview/non-parity backend — there is no canvas to read). Use @glissade/backend-canvas2d or @glissade/backend-skia for pixel readback.',
     );

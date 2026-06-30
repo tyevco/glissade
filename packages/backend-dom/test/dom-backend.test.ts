@@ -352,9 +352,9 @@ describe('DomBackend — identity, caps, readPixels', () => {
     expect([...b.caps.filters].sort()).toEqual(['blur', 'brightness', 'contrast', 'drop-shadow', 'saturate']);
   });
 
-  it('readPixels rejects (preview/non-parity — no pixel buffer)', async () => {
+  it('readPixels SYNC-throws (preview/non-parity — no pixel buffer; 0.25: was an async rejection)', () => {
     const b = new DomBackend(document);
-    await expect(b.readPixels()).rejects.toThrow(/no pixel buffer/);
+    expect(() => b.readPixels()).toThrow(/no pixel buffer/);
   });
 
   it('re-rendering PATCHES in place (retained — element reused, stale text replaced)', () => {

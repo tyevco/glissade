@@ -128,10 +128,11 @@ base bundle is absent or a different version (never a cryptic `undefined`).
   isolation** have no CSS/SVG analogue — they **degrade to a best-effort solid /
   linear** and the element is stamped **`data-approx="true"`** so an editor can
   badge it. Shader (`pushGroup.shader`) passes are ignored (`caps.shaders=false`).
-- **`readPixels()` rejects** (it is `async` — there is no pixel buffer). It
-  returns a `Promise` per the `RenderBackend` contract, so **`await` it or use
-  `.catch()`** — a bare synchronous `try/catch` will not see the rejection. Use
-  canvas2d/skia for real pixel readback.
+- **`readPixels()` throws synchronously** — there is no pixel buffer, so it can
+  never succeed. It **sync-throws** (not an async rejection), so a plain
+  `try { backend.readPixels() }` catches it; its declared `Promise` return type
+  (the `RenderBackend` contract) is satisfied vacuously. Use canvas2d/skia for
+  real pixel readback.
 
 The backend only ever manages its **own root** subtree — your overlay/foreign DOM
 in the host element is left untouched.

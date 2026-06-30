@@ -155,10 +155,23 @@ export const EXAMPLES: readonly ApiExample[] = [
   },
 ];
 
-/** Group the corpus by describe-key → the surfaced code snippets. */
-export function examplesByKey(): { readonly [key: string]: readonly string[] } {
+/**
+ * Rewrite an npm `import`-form snippet to the no-build IIFE form: every export is
+ * `window.glissade.<name>`, so `import { Rect, timeline } from '@glissade/scene'`
+ * becomes `const { Rect, timeline } = window.glissade`. The body is unchanged, so
+ * the snippet runs verbatim in a no-build `<script src>` page (§0.24 follow-up,
+ * card 7eC7Pb4wTbHj). Derived from the single npm-form source — no duplicate to
+ * maintain.
+ */
+export function toIifeForm(code: string): string {
+  return code.replace(/import\s+\{([^}]*)\}\s+from\s+'[^']*';?/g, (_m, names) => `const {${names}} = window.glissade;`);
+}
+
+/** Group the corpus by describe-key → the surfaced code snippets. `iife: true`
+ *  rewrites each snippet to the no-build `window.glissade` form. */
+export function examplesByKey(opts: { iife?: boolean } = {}): { readonly [key: string]: readonly string[] } {
   const byKey: { [key: string]: string[] } = {};
-  for (const ex of EXAMPLES) (byKey[ex.key] ??= []).push(ex.code);
+  for (const ex of EXAMPLES) (byKey[ex.key] ??= []).push(opts.iife ? toIifeForm(ex.code) : ex.code);
   return byKey;
 }
 
