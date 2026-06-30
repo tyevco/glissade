@@ -7,7 +7,9 @@
     "node": ">=20.19"
   },
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/examples.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
