@@ -16,6 +16,36 @@ describe('examples corpus — runnable + drift-guarded', () => {
     }
   });
 
+  it('every example CODE is self-contained — imports every glissade identifier it uses (copy-paste safe)', () => {
+    // browser-canary 0.24.0-pre.2: the run() thunk has the module's imports in
+    // scope, so the doctest stayed green even when the displayed `code` string
+    // omitted an import (e.g. `new Rect(...)` in a Stack's children without
+    // importing Rect) — copy-paste threw `ReferenceError`. This guards the
+    // *snippet* itself: every glissade API identifier it uses must be imported.
+    const m = apiDescribe();
+    const apiNames = new Set([
+      ...Object.keys(m.nodes),
+      ...m.helpers.map((h) => h.name),
+      'timeline',
+      'key',
+      'track',
+      'createScene',
+      'evaluate',
+      'pathFromSvg',
+    ]);
+    for (const ex of EXAMPLES) {
+      const noComments = ex.code.replace(/\/\/[^\n]*/g, ''); // strip line comments (prose isn't "use")
+      const importBlock = (noComments.match(/import\s+\{[^}]*\}/g) ?? []).join(' ');
+      const imported = new Set([...importBlock.matchAll(/[A-Za-z_]\w*/g)].map((mm) => mm[0]));
+      const body = noComments.replace(/import\s+\{[^}]*\}\s+from\s+'[^']*';?/g, '');
+      for (const name of apiNames) {
+        // `new Name(` or a bare `Name` not preceded by `.` (so `.method` doesn't count)
+        const used = new RegExp(`(?:new\\s+|[^.\\w$])${name}\\b`).test(body);
+        expect(!used || imported.has(name), `example '${ex.key}': uses \`${name}\` but the snippet doesn't import it (copy-paste would throw)`).toBe(true);
+      }
+    }
+  });
+
   it('every corpus key is a real describe key (no orphan examples attaching to nothing)', () => {
     const m = apiDescribe();
     const validKeys = new Set([...Object.keys(m.nodes), ...m.builder.methods.map((x) => x.name), ...m.helpers.map((x) => x.name)]);

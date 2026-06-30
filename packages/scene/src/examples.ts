@@ -133,7 +133,7 @@ export const EXAMPLES: readonly ApiExample[] = [
   },
   {
     key: 'Grid',
-    code: "import { Grid } from '@glissade/scene/grid';\n// build-time fan-out into a column grid (no Yoga) — children move to cell centers.\n// fr columns (`columns: 3`) need a `width` to resolve against; `cellHeight` is the row pitch\nGrid({ columns: 3, width: 360, gap: 16, cellHeight: 80, children: [new Rect({ width: 80, height: 60 }), new Rect({ width: 80, height: 60 })] });",
+    code: "import { Rect } from '@glissade/scene';\nimport { Grid } from '@glissade/scene/grid';\n// build-time fan-out into a column grid (no Yoga) — children move to cell centers.\n// fr columns (`columns: 3`) need a `width` to resolve against; `cellHeight` is the row pitch\nGrid({ columns: 3, width: 360, gap: 16, cellHeight: 80, children: [new Rect({ width: 80, height: 60 }), new Rect({ width: 80, height: 60 })] });",
     run: () =>
       void Grid({
         columns: 3,
@@ -145,7 +145,7 @@ export const EXAMPLES: readonly ApiExample[] = [
   },
   {
     key: 'Stack',
-    code: "import { Stack } from '@glissade/scene/layout';\nimport { loadYogaLayoutEngine } from '@glissade/scene/layout';\n// flexbox via Yoga — load the engine ONCE before evaluating any layout scene:\n// await loadYogaLayoutEngine();\nStack({ direction: 'row', gap: 16, children: [new Rect({ width: 80, height: 80 }), new Rect({ width: 80, height: 80 })] });",
+    code: "import { Rect } from '@glissade/scene';\nimport { Stack, loadYogaLayoutEngine } from '@glissade/scene/layout';\n// flexbox via Yoga — load the engine ONCE before evaluating any layout scene:\n// await loadYogaLayoutEngine();\nStack({ direction: 'row', gap: 16, children: [new Rect({ width: 80, height: 80 }), new Rect({ width: 80, height: 80 })] });",
     run: () => void Stack({ direction: 'row', gap: 16, children: [new Rect({ width: 80, height: 80 }), new Rect({ width: 80, height: 80 })] }),
   },
   {

@@ -35,6 +35,11 @@ function buildMarkdown(m) {
       'Every snippet here is executed by the doctest harness in CI, so it cannot drift from the API.',
   );
   out.push('');
+  out.push(
+    '> **No-build (`<script src>`) consumers:** the snippets use npm `import` form. On the IIFE every export is `window.glissade.<name>` — ' +
+      "replace `import { Rect, timeline } from '@glissade/scene'` with `const { Rect, timeline } = window.glissade` (or call `window.glissade.Rect` directly).",
+  );
+  out.push('');
 
   // ---- Nodes ----
   out.push('## Nodes');

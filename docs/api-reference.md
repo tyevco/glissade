@@ -2,6 +2,8 @@
 
 > **Generated** from the live `describe()` manifest — do not edit by hand (run `pnpm docs:api`). Your INSTALLED version is the source of truth: call `glissade.describe()` (or `describe()` from `@glissade/scene/describe`) for the machine-readable form at your version, and `describe({ examples: true })` after `import '@glissade/scene/examples'` for the runnable snippets below. Every snippet here is executed by the doctest harness in CI, so it cannot drift from the API.
 
+> **No-build (`<script src>`) consumers:** the snippets use npm `import` form. On the IIFE every export is `window.glissade.<name>` — replace `import { Rect, timeline } from '@glissade/scene'` with `const { Rect, timeline } = window.glissade` (or call `window.glissade.Rect` directly).
+
 ## Nodes
 
 Each node lists its props: **animatable** props carry a track `target` (`<id>/<path>`); the rest are construction-only.
@@ -302,8 +304,8 @@ Import from `@glissade/scene/layout`. Default `position` anchor: `top-left`.
 | `children` | `Node[]` | no | — |
 
 ```ts
-import { Stack } from '@glissade/scene/layout';
-import { loadYogaLayoutEngine } from '@glissade/scene/layout';
+import { Rect } from '@glissade/scene';
+import { Stack, loadYogaLayoutEngine } from '@glissade/scene/layout';
 // flexbox via Yoga — load the engine ONCE before evaluating any layout scene:
 // await loadYogaLayoutEngine();
 Stack({ direction: 'row', gap: 16, children: [new Rect({ width: 80, height: 80 }), new Rect({ width: 80, height: 80 })] });
@@ -619,6 +621,7 @@ Grid({ columns: number | (number | { fr })[], children: Node[], gap?, columnGap?
 ```
 
 ```ts
+import { Rect } from '@glissade/scene';
 import { Grid } from '@glissade/scene/grid';
 // build-time fan-out into a column grid (no Yoga) — children move to cell centers.
 // fr columns (`columns: 3`) need a `width` to resolve against; `cellHeight` is the row pitch
@@ -636,8 +639,8 @@ Stack({ children, direction?: 'row'|'column', gap?, padding?, justify?, align? }
 ```
 
 ```ts
-import { Stack } from '@glissade/scene/layout';
-import { loadYogaLayoutEngine } from '@glissade/scene/layout';
+import { Rect } from '@glissade/scene';
+import { Stack, loadYogaLayoutEngine } from '@glissade/scene/layout';
 // flexbox via Yoga — load the engine ONCE before evaluating any layout scene:
 // await loadYogaLayoutEngine();
 Stack({ direction: 'row', gap: 16, children: [new Rect({ width: 80, height: 80 }), new Rect({ width: 80, height: 80 })] });
