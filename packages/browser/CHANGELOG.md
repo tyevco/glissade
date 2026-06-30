@@ -1,5 +1,29 @@
 # @glissade/browser
 
+## 0.24.0-pre.2
+
+### Minor Changes
+
+- c5cccc4: browser: `window.glissade.describe({ examples: true })` surfaces the runnable example corpus
+
+  The no-build IIFE now registers the `@glissade/scene/examples` corpus, so a no-build agent gets a copy-pasteable, **doctest-verified** snippet per node / builder method / helper straight off `window.glissade`:
+
+  ```js
+  const m = window.glissade.describe({ examples: true });
+  m.nodes.Rect.examples; // → ["import { Rect } from '@glissade/scene';\nnew Rect({ … })"]
+  ```
+
+  This is the cold-agent onboarding fix — the canonical example can't go stale (it's run in CI). `describe()` (zero-arg) is byte-identical; the corpus rides only the convenience bundle (the budget was raised 50→53), never the base embed.
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.24.0-pre.2
+- @glissade/backend-dom@0.24.0-pre.2
+- @glissade/core@0.24.0-pre.2
+- @glissade/element@0.24.0-pre.2
+- @glissade/player@0.24.0-pre.2
+- @glissade/scene@0.24.0-pre.2
+
 ## 0.24.0-pre.1
 
 ### Patch Changes

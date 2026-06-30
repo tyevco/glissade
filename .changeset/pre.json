@@ -27,6 +27,7 @@
   },
   "changesets": [
     "examples-registry",
-    "fail-loud-measuretext"
+    "fail-loud-measuretext",
+    "iife-examples"
   ]
 }
