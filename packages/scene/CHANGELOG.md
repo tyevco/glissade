@@ -1,5 +1,28 @@
 # @glissade/scene
 
+## 0.23.0-pre.0
+
+### Minor Changes
+
+- scene: `measureWrappedText` — size a container to wrapped text without a Text node
+
+  Sizing a bubble/card to _wrapped_ text previously meant re-implementing line-breaking consumer-side. `Text.measuredSize`/`lineBoxes` already cover a Text _node_; the new `measureWrappedText` covers a raw _string_:
+
+  ```js
+  const { width, lines, height, ascent, descent } = scene.measureWrappedText(
+    text,
+    font,
+    width,
+    lineHeight /* = 1.25 */
+  );
+  ```
+
+  It reuses the renderer's own `breakLines` + measurer (the exact `Text.intrinsicSize` steps), so the line breaks match what gets drawn. Also exported standalone as `measureWrappedText(text, font, width, lineHeight, measurer)`, and surfaced in `describe()` (pointing at the Text-node analogue). `width <= 0` = no wrap (explicit `\n` still breaks).
+
+### Patch Changes
+
+- @glissade/core@0.23.0-pre.0
+
 ## 0.22.0
 
 ### Minor Changes
