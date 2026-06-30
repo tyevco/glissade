@@ -304,3 +304,30 @@ describe('letterSpacing (0.21 — STATIC tracking passthrough)', () => {
     expect(node.resolveTarget('letterSpacing')).toBeUndefined();
   });
 });
+
+describe('fontAxes (0.23 — ANIMATABLE variable-font axes)', () => {
+  it('threads a static fontAxes map into the FontSpec as a SORTED font-variation-settings string', () => {
+    const fonts = emitFonts(new Text({ text: 'x', fontAxes: { wght: 700, opsz: 14 } }));
+    expect(fonts[0]!.fontVariationSettings).toBe('"opsz" 14, "wght" 700'); // tags sorted → deterministic
+  });
+
+  it('default Text OMITS the field — byte-identical FontSpec', () => {
+    const fonts = emitFonts(new Text({ text: 'x' }));
+    expect('fontVariationSettings' in fonts[0]!).toBe(false);
+  });
+
+  it('a non-empty fontAxes OVERRIDES a static fontVariationSettings string', () => {
+    const fonts = emitFonts(new Text({ text: 'x', fontVariationSettings: '"wght" 100', fontAxes: { wght: 900 } }));
+    expect(fonts[0]!.fontVariationSettings).toBe('"wght" 900'); // fontAxes wins
+  });
+
+  it('fontAxes IS an animatable track target (unlike the static string)', () => {
+    const node = new Text({ id: 'hero', text: 'x', fontAxes: { wght: 400 } });
+    expect(node.resolveTarget('fontAxes')).toBeDefined();
+    expect(node.resolveTarget('fontVariationSettings')).toBeUndefined(); // static string stays non-bindable
+  });
+
+  it('constructs from { fontAxes } without a NodeConstructionError (registered target)', () => {
+    expect(() => new Text({ id: 'h', text: 'x', fontAxes: { wght: 700 } })).not.toThrow();
+  });
+});

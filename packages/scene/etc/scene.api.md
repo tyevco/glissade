@@ -11,6 +11,7 @@ import { Clip } from '@glissade/core/clips';
 import { CompiledTimeline } from '@glissade/core';
 import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
+import { FontAxes } from '@glissade/core';
 import { FontMode } from '@glissade/core';
 import { FontUsage } from '@glissade/core';
 import { MeshInterpolation } from '@glissade/core';
@@ -1200,6 +1201,7 @@ class Text_2 extends Node_2 {
     };
     // (undocumented)
     readonly fill: BindableSignal<string>;
+    readonly fontAxes: BindableSignal<FontAxes>;
     // (undocumented)
     readonly fontFamily: string;
     // (undocumented)
@@ -1295,6 +1297,7 @@ export interface TextProps extends NodeProps {
     align?: 'left' | 'center' | 'right';
     // (undocumented)
     fill?: PropInit<string>;
+    fontAxes?: PropInit<FontAxes>;
     // (undocumented)
     fontFamily?: string;
     // (undocumented)

@@ -273,6 +273,13 @@ vdescribe('describe() construction props', () => {
     expect(m.nodes.Text!.props.letterSpacing!.target).toBeUndefined();
   });
 
+  it('flags Text.fontAxes as an ANIMATABLE fontAxes target (0.23 — variable-font axis fork)', () => {
+    expect(m.nodes.Text!.props.fontAxes).toEqual({ type: 'fontAxes', animatable: true, target: '<id>/fontAxes' });
+    expect(m.valueTypes).toContain('fontAxes'); // the new value type is in the live registry
+    // the STATIC string stays construction-only (an opaque CSS string isn't lerp-able)
+    expect(m.nodes.Text!.props.fontVariationSettings!.animatable).toBe(false);
+  });
+
   it('surfaces each node positionAnchor + enumerates the anchor presets (Rect-center vs Text-baseline discoverability)', () => {
     // the default origin per node — so a consumer aligning a card + label stops
     // pixel-measuring the shape-vs-Text mismatch (UhOVUlewfVz7)

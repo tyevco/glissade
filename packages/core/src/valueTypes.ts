@@ -220,6 +220,52 @@ export const pathType: ValueType<PathValue> = {
   defaultHandoff: 'blend-from-frozen',
 };
 
+/** A variable-font axis map: OpenType axis tag → value (e.g. `{ wght: 700, opsz: 14 }`).
+ *  The ANIMATABLE counterpart to the static `fontVariationSettings` string (§3.6). */
+export type FontAxes = { readonly [axis: string]: number };
+
+const fontAxisKeys = (a: FontAxes): string[] => Object.keys(a).sort();
+const fontAxesKeysMatch = (a: FontAxes, b: FontAxes): boolean => {
+  const ka = fontAxisKeys(a);
+  const kb = fontAxisKeys(b);
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i]);
+};
+let warnedFontAxes = false;
+
+/**
+ * Variable-font axis map (§3.6) — `{ wght: 700, opsz: 14 }`, the ANIMATABLE
+ * counterpart to the static `fontVariationSettings` string. Lerps PER AXIS. Both
+ * keyframes must declare the SAME axis tags; a mismatched axis set SNAPS (holds
+ * `a`, then `b` at t≥1) + a one-time dev-warning — the same topology rule as
+ * path/paint, which prevents the silent-NaN class. No add/sub/scale (a structured
+ * map carries no linear offset); handoffs blend from the frozen value.
+ */
+export const fontAxesType: ValueType<FontAxes> = {
+  id: 'fontAxes',
+  lerp: (a, b, t) => {
+    if (!fontAxesKeysMatch(a, b)) {
+      if (!warnedFontAxes) {
+        warnedFontAxes = true;
+        emitDevWarning(
+          'fontAxes lerp with mismatched axis tags (the two keyframes declare different axes): ' +
+            'snapping instead of interpolating — give both keyframes the SAME axis set (§3.6)',
+        );
+      }
+      return t >= 1 ? b : a;
+    }
+    const out: { [axis: string]: number } = {};
+    for (const k of Object.keys(a)) out[k] = a[k]! + (b[k]! - a[k]!) * t;
+    return out;
+  },
+  extrapolates: false, // springs clamp with the generic dev warning (§2.7)
+  equals: (a, b) => {
+    if (a === b) return true;
+    if (!fontAxesKeysMatch(a, b)) return false;
+    return Object.keys(a).every((k) => a[k] === b[k]);
+  },
+  defaultHandoff: 'blend-from-frozen',
+};
+
 /** A gradient color stop: `offset` 0..1 along the gradient, `color` a CSS string. */
 export interface ColorStop {
   offset: number;
@@ -489,3 +535,4 @@ registerValueType(stringType);
 registerValueType(booleanType);
 registerValueType(pathType);
 registerValueType(paintType);
+registerValueType(fontAxesType);

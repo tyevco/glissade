@@ -242,6 +242,14 @@ export type Equals<T> = (a: T, b: T) => boolean;
 export function evaluateAt<R>(playhead: Playhead, t: number, read: () => R): R;
 
 // @public
+export type FontAxes = {
+    readonly [axis: string]: number;
+};
+
+// @public
+export const fontAxesType: ValueType<FontAxes>;
+
+// @public
 export interface FontFaceRef {
     // (undocumented)
     style?: 'normal' | 'italic' | undefined;

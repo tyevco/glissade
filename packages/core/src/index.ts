@@ -85,6 +85,8 @@ export {
   type PathContour,
   type PathValue,
   pathType,
+  type FontAxes,
+  fontAxesType,
   type ValueType,
   type ValueTypeId,
   type Vec2,

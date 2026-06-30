@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { emitDevWarning, random, signal, type BindableSignal, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
+import { emitDevWarning, random, signal, type BindableSignal, type FontAxes, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
 import {
   arcLength,
@@ -742,14 +742,23 @@ export interface TextProps extends NodeProps {
    * `ctx.fontVariationSettings`) renders the axes; the browser DOM 2D context
    * has no such property, so axes are best-effort there (a guarded no-op, never
    * a throw). OMITTED when unset, so default Text emits a byte-identical
-   * FontSpec. Axes are STATIC only in 0.20 — **animatable** axes (a `wght`
-   * track, `opsz` driven by size, …) are deferred to 1.0 (an opaque CSS string
-   * isn't lerp-able); a track targeting `<id>/fontVariationSettings` hard-throws
-   * `UnboundTargetError` today (no property signal resolves to it). For a
-   * dynamic weight, use the discrete `fontWeight` named instances your font
-   * ships.
+   * FontSpec. This is the STATIC form (an opaque CSS string isn't lerp-able);
+   * to ANIMATE an axis (`wght`, `opsz`, …), use {@link fontAxes} instead — a
+   * structured, per-axis-interpolated map (0.23). When both are given, `fontAxes`
+   * (if non-empty) wins.
    */
   fontVariationSettings?: string;
+  /**
+   * Variable-font axes as a STRUCTURED, ANIMATABLE map — `{ wght: 700, opsz: 14 }`
+   * (0.23). Unlike the opaque {@link fontVariationSettings} string, this is a
+   * lerp-able value type (`fontAxes`): a track on `<id>/fontAxes` interpolates
+   * each axis per-frame, formatted to the CSS `font-variation-settings` string at
+   * draw (so backends are unchanged). Both keyframes of a track must declare the
+   * SAME axis tags (a mismatched set snaps + warns, like path/paint topology).
+   * Empty/unset ⇒ omitted, so default Text stays byte-identical. Track target
+   * `<id>/fontAxes`, value type `fontAxes`.
+   */
+  fontAxes?: PropInit<FontAxes>;
   /** Horizontal alignment about the node position; default 'left'. */
   align?: 'left' | 'center' | 'right';
   /** Wrap width in px; unset = no wrapping (explicit \n still breaks). */
@@ -786,6 +795,16 @@ export interface TextProps extends NodeProps {
   revealFraction?: PropInit<number>;
 }
 
+/** Format a variable-font axis map → the CSS `font-variation-settings` string,
+ *  `'"wght" 700, "opsz" 14'`. Axis tags are SORTED so the same axes always emit
+ *  the same string regardless of insertion order — a deterministic FontSpec. */
+function formatFontAxes(axes: FontAxes): string {
+  return Object.keys(axes)
+    .sort()
+    .map((tag) => `"${tag}" ${axes[tag]}`)
+    .join(', ');
+}
+
 export class Text extends Node {
   /** Taxonomy name pinned literally (survives IIFE minification — see {@link Group}). */
   override get describeType(): string {
@@ -799,6 +818,9 @@ export class Text extends Node {
   readonly fontStyle: 'normal' | 'italic';
   /** Static variable-font axes (CSS `font-variation-settings`); undefined = none. */
   readonly fontVariationSettings: string | undefined;
+  /** Animatable variable-font axes (track target `<id>/fontAxes`); empty = none.
+   *  When non-empty, overrides {@link fontVariationSettings} in the FontSpec. */
+  readonly fontAxes: BindableSignal<FontAxes>;
   readonly align: 'left' | 'center' | 'right';
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
@@ -821,6 +843,7 @@ export class Text extends Node {
     this.fontWeight = props.fontWeight ?? 400;
     this.fontStyle = props.fontStyle ?? 'normal';
     this.fontVariationSettings = props.fontVariationSettings;
+    this.fontAxes = initProp(signal<FontAxes>({}), props.fontAxes);
     this.align = props.align ?? 'left';
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
@@ -835,12 +858,13 @@ export class Text extends Node {
     this.registerTarget('fontSize', this.fontSize, 'number');
     this.registerTarget('reveal', this.reveal, 'number');
     this.registerTarget('revealFraction', this.revealFraction, 'number');
-    // 0.20 STATIC passthrough: `fontVariationSettings` is threaded into the
-    // FontSpec via `fontSpec()` and applied by the rasterizer (Skia/export). It
-    // is NOT a registered target — animatable axes are deferred to 1.0, and a
-    // track on `<id>/fontVariationSettings` hard-throws UnboundTargetError (no
-    // signal resolves to it). When unset, fontSpec() omits the key, so default
-    // Text emits a byte-identical FontSpec.
+    // 0.23 ANIMATABLE axes: `fontAxes` is a structured `fontAxes` value type, so
+    // a track on `<id>/fontAxes` interpolates each axis per-frame; fontSpec()
+    // formats it to the CSS string at draw. The STATIC `fontVariationSettings`
+    // string stays construction-only (an opaque string isn't lerp-able) — a track
+    // on it still hard-throws UnboundTargetError. Empty fontAxes ⇒ fontSpec()
+    // falls back to the static string (or omits) → default Text byte-identical.
+    this.registerTarget('fontAxes', this.fontAxes, 'fontAxes');
     if (new.target === Text) this.checkProps(props);
   }
 
@@ -852,12 +876,16 @@ export class Text extends Node {
    * golden corpus depends on it).
    */
   private fontSpec(): FontSpec {
+    // Animatable axes win when present; else the static string; else omitted (so
+    // a default / static-only Text emits a byte-identical FontSpec — §3.6).
+    const axes = this.fontAxes();
+    const fvs = Object.keys(axes).length > 0 ? formatFontAxes(axes) : this.fontVariationSettings;
     return {
       family: this.fontFamily,
       size: this.fontSize(),
       weight: this.fontWeight,
       ...(this.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
-      ...(this.fontVariationSettings !== undefined ? { fontVariationSettings: this.fontVariationSettings } : {}),
+      ...(fvs !== undefined ? { fontVariationSettings: fvs } : {}),
       ...(this.letterSpacing !== undefined ? { letterSpacing: this.letterSpacing } : {}),
     };
   }
