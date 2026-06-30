@@ -36,6 +36,8 @@ export class DomBackend implements RenderBackend {
 
 // @public
 export interface DomBackendOptions {
+    ariaLabel?: string;
+    cssColorVars?: boolean;
     onReflow?: () => void;
 }
 

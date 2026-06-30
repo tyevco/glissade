@@ -848,3 +848,57 @@ describe('DomBackend — onReflow on web-font load (caption first-paint wrap)', 
     });
   });
 });
+
+describe('DomBackend — S4 a11y + CSS-variable theming', () => {
+  it('decorative geometry is aria-hidden; the text stays readable', () => {
+    const root = renderTo(
+      list(
+        [
+          { op: 'fillPath', path: 0, paint: { kind: 'color', color: '#abc' } },
+          { op: 'fillText', text: 'Hello', font: { family: 'X', size: 20 }, paint: { kind: 'color', color: '#000' }, x: 0, y: 20 },
+        ],
+        [{ kind: 'path', segs: [['M', 0, 0], ['L', 10, 0], ['Z']] }],
+      ),
+    );
+    expect((root.querySelector('svg') as SVGSVGElement).getAttribute('aria-hidden')).toBe('true'); // geometry hidden
+    const textDiv = Array.from(root.querySelectorAll('div')).find((d) => d.textContent === 'Hello') as HTMLElement;
+    expect(textDiv.getAttribute('aria-hidden')).toBeNull(); // text is in the a11y tree
+  });
+
+  it('drawImage is decorative (alt="" + aria-hidden — no scene alt text)', () => {
+    const b = new DomBackend(document);
+    b.setImageAsset('hero', 'https://example.test/hero.png');
+    b.render(list([{ op: 'drawImage', image: 0, dst: { x: 0, y: 0, w: 10, h: 10 } }], [{ kind: 'image', assetId: 'hero' }]));
+    const img = b.root.querySelector('img') as HTMLImageElement;
+    expect(img.getAttribute('aria-hidden')).toBe('true');
+    expect(img.getAttribute('alt')).toBe('');
+  });
+
+  it('ariaLabel → role=figure + aria-label on the root; default = no role', () => {
+    const labeled = new DomBackend(document, { ariaLabel: 'Intro animation' });
+    expect(labeled.root.getAttribute('role')).toBe('figure');
+    expect(labeled.root.getAttribute('aria-label')).toBe('Intro animation');
+    expect(new DomBackend(document).root.getAttribute('role')).toBeNull();
+  });
+
+  it('cssColorVars wraps solid colors in var(--gs-c-…, color); off = a literal color', () => {
+    const themed = new DomBackend(document, { cssColorVars: true });
+    themed.render(
+      list(
+        [
+          { op: 'fillPath', path: 0, paint: { kind: 'color', color: '#abc' } },
+          { op: 'fillText', text: 'x', font: { family: 'X', size: 20 }, paint: { kind: 'color', color: '#89b4fa' }, x: 0, y: 20 },
+        ],
+        [{ kind: 'path', segs: [['M', 0, 0], ['L', 5, 0], ['Z']] }],
+      ),
+    );
+    expect(themed.root.querySelector('svg path')!.getAttribute('fill')).toBe('var(--gs-c-abc, #abc)');
+    const tdiv = Array.from(themed.root.querySelectorAll('div')).find((d) => d.textContent === 'x') as HTMLElement;
+    expect(tdiv.style.color).toContain('var(--gs-c-89b4fa');
+
+    const plain = new DomBackend(document);
+    plain.render(list([{ op: 'fillText', text: 'x', font: { family: 'X', size: 20 }, paint: { kind: 'color', color: '#89b4fa' }, x: 0, y: 20 }]));
+    const pdiv = Array.from(plain.root.querySelectorAll('div')).find((d) => d.textContent === 'x') as HTMLElement;
+    expect(pdiv.style.color).not.toContain('var('); // literal (byte-stable default)
+  });
+});

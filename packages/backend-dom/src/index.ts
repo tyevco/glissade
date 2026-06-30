@@ -257,6 +257,21 @@ export interface DomBackendOptions {
    * draw loop. No-op where `document.fonts` is absent (e.g. jsdom).
    */
   onReflow?: () => void;
+  /**
+   * S4 a11y: an accessible name for the whole rendered graphic. When set, the
+   * root gets `role="figure"` + `aria-label` (a labeled region whose readable
+   * text stays in the a11y tree). Decorative geometry (the SVG shape islands +
+   * images) is always `aria-hidden`, so a screen reader reads the Text, not the
+   * paths. Unset ⇒ the root carries no role (a generic container).
+   */
+  ariaLabel?: string;
+  /**
+   * S4 theming: emit solid colors as CSS custom properties — `var(--gs-c-<ident>,
+   * <color>)` — so a host can re-theme (light/dark, brand) by overriding the
+   * `--gs-c-*` variables in CSS, **without a re-render** (the browser re-paints).
+   * Default off ⇒ literal colors (byte-stable for existing consumers).
+   */
+  cssColorVars?: boolean;
 }
 
 /**
@@ -280,6 +295,8 @@ export class DomBackend implements RenderBackend {
 
   #ids: NodeIdStream = [];
   readonly #onReflow: (() => void) | undefined;
+  /** S4: wrap solid colors in `var(--gs-c-…, color)` so a host re-themes via CSS. */
+  readonly #cssColorVars: boolean;
   #measureSpan: HTMLElement | null = null;
   #warnedMeasure = false;
   #warnedMesh = false;
@@ -295,8 +312,15 @@ export class DomBackend implements RenderBackend {
     this.root.setAttribute('data-gs-dom', '');
     this.root.style.position = 'relative';
     this.root.style.overflow = 'hidden';
+    // S4 a11y: a labeled figure whose readable Text stays in the a11y tree
+    // (role="figure", unlike role="img", keeps children exposed).
+    if (opts.ariaLabel !== undefined) {
+      this.root.setAttribute('role', 'figure');
+      this.root.setAttribute('aria-label', opts.ariaLabel);
+    }
     if (this.#host) this.#host.appendChild(this.root);
     this.#onReflow = opts.onReflow;
+    this.#cssColorVars = opts.cssColorVars ?? false;
     this.#wireFontReflow();
   }
 
@@ -373,6 +397,9 @@ export class DomBackend implements RenderBackend {
       const svg = doc.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
       svg.setAttribute('width', '0');
       svg.setAttribute('height', '0');
+      // S4 a11y: shape geometry is decorative — hide it from the a11y tree so a
+      // screen reader reads the Text divs (the meaningful content), not paths.
+      svg.setAttribute('aria-hidden', 'true');
       svg.style.position = 'absolute';
       svg.style.left = '0';
       svg.style.top = '0';
@@ -543,6 +570,10 @@ export class DomBackend implements RenderBackend {
             const img = doc.createElement('img');
             img.style.position = 'absolute';
             img.style.objectFit = 'fill';
+            // S4 a11y: no alt text flows from the scene Image node, so treat the
+            // rendered image as decorative (a labeled alt is a future enhancement).
+            img.setAttribute('alt', '');
+            img.setAttribute('aria-hidden', 'true');
             return { op: 'drawImage', el: img, props: {} };
           });
           const img = o.el as HTMLImageElement;
@@ -919,9 +950,26 @@ export class DomBackend implements RenderBackend {
   }
 
   #solid(paint: Paint): string {
-    if (paint.kind === 'color') return paint.color;
-    if (paint.kind === 'mesh') return paint.bg ?? paint.points[0]?.color ?? '#000';
-    return paint.stops[0]?.color ?? '#000';
+    const color =
+      paint.kind === 'color'
+        ? paint.color
+        : paint.kind === 'mesh'
+          ? (paint.bg ?? paint.points[0]?.color ?? '#000')
+          : (paint.stops[0]?.color ?? '#000');
+    return this.#themeColor(color);
+  }
+
+  /**
+   * S4 theming: when `cssColorVars` is on, wrap a literal color in a CSS custom
+   * property `var(--gs-c-<ident>, <color>)` so a host re-themes by overriding the
+   * `--gs-c-*` vars in CSS — no re-render (the browser re-paints). Off ⇒ the
+   * literal color (byte-stable). The ident is the color with non-ident runs
+   * collapsed to '-' (`'#89b4fa'` → `89b4fa`, `'rgb(1,2,3)'` → `rgb-1-2-3`).
+   */
+  #themeColor(color: string): string {
+    if (!this.#cssColorVars) return color;
+    const ident = color.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return `var(--gs-c-${ident}, ${color})`;
   }
 
   /** A signature of the gradient paint — a `<defs>` subtree is rebuilt only when
@@ -942,7 +990,7 @@ export class DomBackend implements RenderBackend {
       this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', undefined);
       // A prior gradient def (if the paint changed kind) is left in defs but
       // unreferenced; harmless in this preview tier.
-      return paint.color;
+      return this.#themeColor(paint.color);
     }
     if (paint.kind === 'mesh') {
       this.#setAttr(o.path!, o, 'dataApprox', 'data-approx', 'true');

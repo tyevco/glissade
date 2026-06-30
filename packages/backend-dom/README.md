@@ -136,11 +136,38 @@ base bundle is absent or a different version (never a cryptic `undefined`).
 The backend only ever manages its **own root** subtree — your overlay/foreign DOM
 in the host element is left untouched.
 
-## Status: Stage S2 (forward render)
+## Accessibility & theming (S4)
 
-Today this is a **forward renderer**: each `render()` rebuilds the tree. That is
-right for **playback preview, structural snapshots, and a11y reads**. The
-**retained-DOM reconciler** (reuse + patch the same element per `data-node-id`
-across frames — required so an in-progress inline-edit caret, selection, focus,
-and event listeners survive a re-render) is **Stage S3**, a follow-up. See
-`docs/design/dom-backend.md`.
+The DOM tier exists for editing + a11y, so it keeps the **real text** readable by
+assistive tech and hides the decorative geometry:
+
+- **Shape `<svg>` islands and `<img>` elements are `aria-hidden`** — a screen
+  reader reads the Text divs (the meaningful content), not the paths.
+- **`ariaLabel`** names the whole graphic: the root gets `role="figure"` +
+  `aria-label` (a labeled region whose readable text stays exposed — unlike
+  `role="img"`, which would hide the text). Unset ⇒ a generic container.
+- **Focus order** is the host/editor's to manage — every node carries
+  `data-node-id`, so an editor decides which nodes are focusable (`tabindex`)
+  rather than the backend imposing a tab order on every shape.
+
+```js
+const backend = new DomBackend(stage, {
+  ariaLabel: 'Episode 1 cold open',
+  cssColorVars: true, // emit colors as var(--gs-c-…, color) for re-theming
+});
+```
+
+**CSS-variable theming** (`cssColorVars`): solid fills/text colors emit as
+`var(--gs-c-<ident>, <color>)`, so a host can re-theme (light/dark, brand) by
+overriding the `--gs-c-*` variables in CSS — the browser re-paints with **no
+re-render**. Off by default (literal colors; byte-stable for existing consumers).
+Gradient stops are not yet varied (a follow-up).
+
+## Stages
+
+S2 (forward render) + **S3** (the retained-DOM reconciler — reuse + patch per
+`data-node-id` so inline-edit caret / selection / focus / listeners survive a
+re-render) + the 0.22 structural hardening (shape-sized SVG islands, rounded-rect
+fill, movement-boundary reconcile, `onReflow` font re-wrap) + **S4** (a11y +
+CSS-native theming, above) have all shipped. The real-browser visual-smoke gate
+runs in the consumer canaries' standing harnesses. See `docs/design/dom-backend.md`.
