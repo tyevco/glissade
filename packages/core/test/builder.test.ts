@@ -965,3 +965,35 @@ describe('KMu5GL1DvFms: builder-form init.tracks is applied, not silently droppe
     expect(arr).toEqual([t]);
   });
 });
+
+describe('TweenOpts.type — value-type escape hatch (0.23)', () => {
+  it('to() with { type } overrides inference (the fontAxes { wght } case the builder can\'t infer)', () => {
+    const tl = timeline((b) => {
+      b.to('hero/fontAxes', { wght: 900 }, { type: 'fontAxes', from: { wght: 400 }, duration: 1 });
+    });
+    const tr = tl.tracks.find((t) => t.target === 'hero/fontAxes')!;
+    expect(tr.type).toBe('fontAxes');
+    expect(tr.keys.map((k) => k.value)).toEqual([{ wght: 400 }, { wght: 900 }]);
+  });
+
+  it('set() and fromTo() accept { type } too', () => {
+    const tl = timeline((b) => b.set('h/fontAxes', { wght: 250 }, { type: 'fontAxes' }));
+    expect(tl.tracks.find((t) => t.target === 'h/fontAxes')!.type).toBe('fontAxes');
+    const tl2 = timeline((b) => b.fromTo('h2/fontAxes', { wght: 100 }, { wght: 900 }, { type: 'fontAxes' }));
+    expect(tl2.tracks.find((t) => t.target === 'h2/fontAxes')!.type).toBe('fontAxes');
+  });
+
+  it('two DIFFERENT explicit types on one target throw (a track has one type)', () => {
+    expect(() =>
+      timeline((b) => {
+        b.set('x/fontAxes', { wght: 1 }, { type: 'fontAxes' });
+        b.to('x/fontAxes', { wght: 2 }, { type: 'number', from: { wght: 1 } });
+      }),
+    ).toThrow(/conflicting explicit value types/);
+  });
+
+  it('without { type }, inference still drives (a plain number stays number) — back-compat', () => {
+    const tl = timeline((b) => b.to('node/opacity', 1, { from: 0 }));
+    expect(tl.tracks.find((t) => t.target === 'node/opacity')!.type).toBe('number');
+  });
+});

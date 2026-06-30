@@ -723,6 +723,7 @@ export interface TimelineBuilder {
     }): TimelineBuilder;
     set<T>(target: TweenTarget, value: T, opts?: {
         at?: Position;
+        type?: ValueTypeId;
     }): TimelineBuilder;
     stagger<T>(targets: TweenTarget[], spec: StaggerSpec<T>, opts: StaggerOpts): TimelineBuilder;
     // (undocumented)
@@ -789,6 +790,7 @@ export interface TweenOpts<T = unknown> {
     // (undocumented)
     ease?: EaseSpec;
     from?: T;
+    type?: ValueTypeId;
 }
 
 // @public

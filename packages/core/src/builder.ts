@@ -26,7 +26,7 @@ import {
 } from './timeline.js';
 import { type Key, type Track } from './track.js';
 import { isEditableNodeId, resolveTweenTarget, targetNodeId, type TweenTarget } from './targetRef.js';
-import { inferValueType } from './valueTypes.js';
+import { inferValueType, type ValueTypeId } from './valueTypes.js';
 
 export type Position = number | string;
 
@@ -36,6 +36,14 @@ export interface TweenOpts<T = unknown> {
   at?: Position;
   /** Explicit start value — sugar for fromTo; required ergonomics for string targets. */
   from?: T;
+  /**
+   * Explicit value type — the escape hatch for when `inferValueType(value)` can't
+   * tell what a value is (a structured map like `fontAxes`'s `{ wght: 700 }`, or a
+   * `number`-under-a-custom-id). Overrides inference for this target's whole track,
+   * e.g. `to('hero/fontAxes', { wght: 900 }, { type: 'fontAxes' })`. Two different
+   * explicit types on the same target throw (one track has one type).
+   */
+  type?: ValueTypeId;
 }
 
 /** The shared tween shape applied to every staggered target (§2.6 stagger sugar). */
@@ -108,8 +116,9 @@ export interface TimelineBuilder {
    * no cursor-offset or rebasing wrapper (deferred). Does NOT move the cursor.
    */
   tracks(tracks: Track[] | { tracks: Track[] }): TimelineBuilder;
-  /** Hold key: the value snaps at the resolved position (§2.6). */
-  set<T>(target: TweenTarget, value: T, opts?: { at?: Position }): TimelineBuilder;
+  /** Hold key: the value snaps at the resolved position (§2.6). `type` is the
+   *  value-type escape hatch (see {@link TweenOpts.type}). */
+  set<T>(target: TweenTarget, value: T, opts?: { at?: Position; type?: ValueTypeId }): TimelineBuilder;
   label(name: string, at?: Position): TimelineBuilder;
   add(child: Timeline, at?: Position, opts?: { mode?: 'add' | 'sync'; timeScale?: number }): TimelineBuilder;
   /**
@@ -154,6 +163,8 @@ interface Insertion {
   kind: 'tween' | 'set';
   target: string;
   explicitFrom?: unknown;
+  /** Explicit value type from `opts.type`, overriding inferValueType at compile. */
+  valueType?: ValueTypeId;
   value: unknown;
   duration: number;
   ease: EaseSpec;
@@ -192,8 +203,8 @@ function rejectUnknownOpts(method: string, opts: object, known: readonly string[
 }
 
 // The KNOWN key sets, enumerated from each method's real destructuring below.
-const TO_OPTS_KEYS = ['duration', 'ease', 'at', 'from'] as const;
-const SET_OPTS_KEYS = ['at'] as const;
+const TO_OPTS_KEYS = ['duration', 'ease', 'at', 'from', 'type'] as const;
+const SET_OPTS_KEYS = ['at', 'type'] as const;
 const STAGGER_SPEC_KEYS = ['to', 'from', 'duration', 'ease'] as const;
 const STAGGER_OPTS_KEYS = ['each', 'anchor', 'at'] as const;
 
@@ -278,6 +289,7 @@ export function buildTimeline(
         start,
       };
       if (opts.from !== undefined) ins.explicitFrom = opts.from;
+      if (opts.type !== undefined) ins.valueType = opts.type;
       insertions.push(ins);
       prevStart = start;
       prevEnd = start + duration;
@@ -360,7 +372,7 @@ export function buildTimeline(
     set(target, value, opts = {}) {
       rejectUnknownOpts('set', opts, SET_OPTS_KEYS);
       const start = resolvePosition(opts.at);
-      insertions.push({
+      const ins: Insertion = {
         kind: 'set',
         target: resolveTweenTarget(target),
         value,
@@ -370,7 +382,9 @@ export function buildTimeline(
         baseValue: peekBase(target),
         editable: false,
         start,
-      });
+      };
+      if (opts.type !== undefined) ins.valueType = opts.type;
+      insertions.push(ins);
       prevStart = start;
       prevEnd = start;
       return builder;
@@ -528,7 +542,16 @@ export function buildTimeline(
       if (last && last.t === k.t) deduped[deduped.length - 1] = k;
       else deduped.push(k);
     }
-    const type = inferValueType(list[0]!.value);
+    // an explicit opts.type (the inference escape hatch — for structured values
+    // like fontAxes's `{ wght }` that inferValueType can't name) wins; two
+    // different explicit types on one target contradict (a track has one type).
+    const explicitTypes = [...new Set(list.filter((i) => i.valueType !== undefined).map((i) => i.valueType!))];
+    if (explicitTypes.length > 1) {
+      throw new TimelineValidationError(
+        `'${target}': conflicting explicit value types [${explicitTypes.join(', ')}] on one target — a track has a single value type`,
+      );
+    }
+    const type = explicitTypes[0] ?? inferValueType(list[0]!.value);
     const tr: Track = { target, type, keys: deduped };
     if (editable) tr.editable = true;
     tracks.push(tr);

@@ -356,11 +356,11 @@ const NODE_FACTORIES: { [typeName: string]: () => Node } = {
  * to the `TimelineBuilder` interface so it can't silently drift from the API.
  */
 const BUILDER_METHODS: DescribedBuilderMethod[] = [
-  { name: 'to', signature: 'to<T>(target, value, opts?: { duration?, ease?, at?, from? }): TimelineBuilder' },
-  { name: 'fromTo', signature: 'fromTo<T>(target, from, to, opts?: { duration?, ease?, at? }): TimelineBuilder' },
+  { name: 'to', signature: "to<T>(target, value, opts?: { duration?, ease?, at?, from?, type? }): TimelineBuilder  —  type is the value-type escape hatch (e.g. { type: 'fontAxes' } for a { wght } map inferValueType can't name)" },
+  { name: 'fromTo', signature: 'fromTo<T>(target, from, to, opts?: { duration?, ease?, at?, type? }): TimelineBuilder' },
   { name: 'stagger', signature: 'stagger<T>(targets, { to: T | ((index, count) => T), from?: T | ((index, count) => T), duration?, ease? }, { each: number | ((rank, count) => number), anchor?, at? }): TimelineBuilder' },
   { name: 'tracks', signature: 'tracks(tracks: Track[] | { tracks: Track[] }): TimelineBuilder' },
-  { name: 'set', signature: 'set<T>(target, value, opts?: { at? }): TimelineBuilder' },
+  { name: 'set', signature: 'set<T>(target, value, opts?: { at?, type? }): TimelineBuilder' },
   { name: 'label', signature: 'label(name, at?): TimelineBuilder' },
   { name: 'add', signature: "add(child, at?, opts?: { mode?: 'add'|'sync', timeScale? }): TimelineBuilder" },
   { name: 'sequence', signature: 'sequence(subs, opts?: { gap? }): TimelineBuilder' },
