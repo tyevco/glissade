@@ -1,6 +1,6 @@
 {
   "name": "@glissade/backend-skia",
-  "version": "0.23.0-pre.0",
+  "version": "0.23.0-pre.1",
   "description": "glissade headless render backend: DisplayList -> @napi-rs/canvas (Skia). Node-only; the CI-grade deterministic path.",
   "license": "Apache-2.0",
   "engines": {
