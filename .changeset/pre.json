@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.22.0"
   },
   "changesets": [
+    "british-english-blend",
     "dom-s4-a11y-theming",
     "font-axis-animation",
     "measure-wrapped-guard",
