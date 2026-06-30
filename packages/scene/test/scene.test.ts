@@ -662,4 +662,14 @@ describe('measureWrappedText / scene.measureWrappedText (wrap-aware string measu
     expect(wrapped.width).toBe(box.w);
     expect(wrapped.height).toBe(box.h);
   });
+
+  it('FAILS LOUD on a missing/invalid font.size (the size-vs-fontSize footgun — height would be NaN→null)', () => {
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [] });
+    // the FontSpec field is `size`; `fontSize` is the Text node prop — a silent NaN otherwise
+    expect(() => scene.measureWrappedText('hi', { family: 'X', fontSize: 24 } as never, 200)).toThrow(
+      /font\.size must be a positive number.*`size`, not `fontSize`/s,
+    );
+    expect(() => scene.measureWrappedText('hi', { family: 'X', size: 0 }, 200)).toThrow(/positive number/);
+    expect(() => measureWrappedText('hi', { family: 'X', size: Number.NaN }, 200, 1.25, estimatingMeasurer)).toThrow(/positive number/);
+  });
 });

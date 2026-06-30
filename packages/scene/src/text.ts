@@ -227,6 +227,15 @@ export function measureWrappedText(
   lineHeight: number,
   measurer: TextMeasurer,
 ): WrappedTextMetrics {
+  // FAIL LOUD: a missing `font.size` makes height NaN (→ null over JSON) and
+  // ascent/descent 0 — the silent-wrong-result class. The common cause is the
+  // FontSpec field name: it's `size`, NOT `fontSize` (that's the Text node prop).
+  if (typeof font.size !== 'number' || !Number.isFinite(font.size) || font.size <= 0) {
+    throw new Error(
+      `measureWrappedText: font.size must be a positive number (got ${JSON.stringify(font.size)}). ` +
+        'The FontSpec field is `size`, not `fontSize` (that is the Text node prop) — pass `{ family, size }`.',
+    );
+  }
   const lines = breakLines(text, font, width > 0 ? width : undefined, measurer);
   let widest = 0;
   let ascent = 0;
