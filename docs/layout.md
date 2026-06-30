@@ -104,6 +104,46 @@ const rowOfColumns = Stack({
 });
 ```
 
+## Anchoring a node's `position`
+
+Outside flexbox, a node is placed by its **`position`** — and the point on the node that sits *at* that position is its **`anchor`** (which is also the pivot `rotation` and `scale` turn around). `anchor` takes a preset or an explicit `[ax, ay]` fraction of the node's box (`[0, 0]` = top-left, `[1, 1]` = bottom-right):
+
+> `'center'` · `'top-left'` · `'top'` · `'top-right'` · `'left'` · `'right'` · `'bottom-left'` · `'bottom'` · `'bottom-right'` · or `[ax, ay]`
+
+**Different node types anchor differently by default** — the source of truth is `describe().nodes.<T>.positionAnchor`:
+
+| Node | Default `position` anchor |
+| --- | --- |
+| `Rect`, `Circle`, `Image` | `center` |
+| `Text` | `baseline-left` |
+| `Path` | author coordinates (the path's own space) |
+
+So a `Rect` at `position: [100, 100]` is *centered* there, but a `Text` at the same point starts its first glyph at the left of the baseline — author a bubble and its label at one coordinate and they won't share a corner. The fix is to **set `anchor` explicitly** so `position` means the same thing on both:
+
+```ts
+// a bubble + its label, both pinned to the same top-left point
+const bubble = new Rect({ position: [40, 40], anchor: 'top-left', width: 240, height: 80, fill: '#1e293b', cornerRadius: 12 });
+const label  = new Text({ position: [56, 56], anchor: 'top-left', text: 'Ready', fontSize: 20, fill: '#e2e8f0' });
+```
+
+Because the anchor is also the transform pivot, `anchor: 'bottom'` makes a bar `scale`-grow *upward* from its base, and `anchor: 'left'` sweeps a `rotation` from its left edge — one prop does both placement and pivot. An unknown preset throws (`use a preset like 'top-left' or a [ax, ay] pair`), so a typo fails loud rather than silently centering.
+
+## Grouping for containment (selectable units)
+
+glissade's scene graph is **flat** — a bubble `Rect` and its label `Text` are *siblings*, not parent/child. To make them one **unit** (move, fade, or — in an editor — *select* them together), wrap them in a `Group`:
+
+```ts
+const card = new Group({
+  id: 'price-card',
+  children: [
+    new Rect({ id: 'card-bg', anchor: 'top-left', position: [0, 0], width: 240, height: 120, fill: '#0f172a', cornerRadius: 16 }),
+    new Text({ id: 'card-label', anchor: 'top-left', position: [16, 16], text: '$29 / mo', fontSize: 24, fill: '#f8fafc' }),
+  ],
+});
+```
+
+This is the **containment pattern for the editable DOM tier**: the [DOM backend](./browser) renders a `Group` as a wrapper `<div>` carrying the group's `data-node-id`, so the bubble + label nest under one element. A host editor reads real container→child structure straight off the DOM — `el.closest('[data-node-id]')` from a click resolves to `price-card`, and its descendant `[data-node-id]` elements are the bubble + the text. Express containment in the *scene* (a `Group`) and the DOM mirrors it; the backend never *guesses* which text belongs to which shape (a geometric guess that breaks on overlap/rotation/z-order).
+
 ## No-build (`<script src>`) layout
 
 The single-file `@glissade/browser` IIFE (`window.glissade.*`, for no-build `<script src>` pages) exposes the layout node ctors — `glissade.Stack`, `glissade.Row`, `glissade.Column`, `glissade.Layout` — **without** bundling Yoga's wasm. The ctors only touch the layout engine at *compute* time, so they ride the convenience bundle for free.

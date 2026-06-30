@@ -110,6 +110,19 @@ glissade has two render backends; they are for different jobs:
 Same scene, same `DisplayList` IR, different sink. Export stays on the raster path;
 reach for the DOM tier when you need to inspect, edit, or DOM-screenshot.
 
+Two authoring gotchas worth front-loading:
+
+- **`position` anchors differ by node type.** A `Rect`/`Circle`/`Image` is *centered*
+  on its `position`; a `Text` sits at its `baseline-left`. Author a bubble + label at
+  one coordinate and they won't align. Set `anchor` explicitly (`'top-left'`, any
+  preset, or `[ax, ay]`) so `position` means the same corner on every node —
+  `describe().nodes.<T>.positionAnchor` is each type's default.
+- **Containment is a `Group`, not a guess.** Wrap a bubble `Rect` + its `Text` in a
+  `Group`; the DOM tier nests them under one `data-node-id` div, so a click's
+  `el.closest('[data-node-id]')` selects the container, not the bare rectangle. The
+  backend never infers which text belongs to which shape — you express it in the
+  scene. See [Layout → Anchoring / Grouping for containment](./layout).
+
 ## 7. The timeline model in one paragraph
 
 The fluent builder (`timeline(tl => …)`) **compiles to a serializable document** —
