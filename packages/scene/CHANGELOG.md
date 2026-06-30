@@ -1,5 +1,40 @@
 # @glissade/scene
 
+## 0.24.0
+
+### Minor Changes
+
+- d2f85c7: scene: executable examples registry + `describe({ examples: true })`
+
+  The new `@glissade/scene/examples` subpath is a curated corpus of **runnable** examples — a copy-pasteable `code` snippet plus an executable `run` thunk against the real API. Importing it registers the corpus with `describe()`:
+
+  ```js
+  import "@glissade/scene/examples";
+  import { describe } from "@glissade/scene/describe";
+  const m = describe({ examples: true });
+  m.nodes.Rect.examples; // → ["import { Rect } from '@glissade/scene';\nnew Rect({ … })"]
+  m.helpers.find((h) => h.name === "splitText").examples;
+  ```
+
+  A vitest doctest harness runs every example's `run()` and asserts it never throws — so a snippet that references a renamed export or a changed shape fails CI, and the surfaced examples **can't drift** from the API. `describe()` (zero-arg) is byte-identical to before; the corpus is tree-shaken off the base embed (describe reads a registry it never imports), so the base embed and the browser IIFE are unchanged.
+
+- 096e988: fail-loud: the `measureText` / `font.size` contract (0.24 sweep)
+
+  A non-finite or non-positive `font.size` used to cascade NaN/0 metrics into zero-height layout boxes — broken wrapping/reveal, with **no error** (the silent-wrong-result class an agent can't glance-test). Now every measurement entry point fails loud:
+
+  - new `assertFiniteFontSize(font, where)` (exported from `@glissade/scene`) — throws an actionable error naming the common `size`-vs-`fontSize` gotcha (the FontSpec field is `size`, not the Text-node `fontSize`).
+  - enforced at the `breakLines` chokepoint (covers `intrinsicSize`/`lineBoxes`/`wordBoxes`/`measureWrappedText`) and at all three backend `measureText`s (the contract boundary).
+
+  Valid sizes are unaffected — the 262 goldens are byte-identical. (Audited and verified NOT bugs, so unchanged: `track.ts` pre-first-key clamping, `grid.ts` single-row `cellHeight`, empty-text 0 metrics, degenerate gradients/rng.)
+
+### Patch Changes
+
+- ad0decf: scene: example snippets are now self-contained (copy-paste safe) + a doctest guard
+
+  Two corpus snippets (`Stack`, `Grid`) used `new Rect(...)` in their `children` without importing `Rect`, so a copy-paste threw `ReferenceError` — in npm and no-build alike (found by the canary seats). Root cause: the doctest ran the `run` thunk (which had `Rect` in scope) but never checked the displayed `code` string was self-contained. Fixed both snippets, and added a doctest assertion that every example's `code` imports every glissade identifier it uses — so the `code`-vs-`run` divergence class can't recur (the displayed snippet is the product). The generated API reference also notes the IIFE adaptation (`import { X }` → `const { X } = window.glissade`).
+
+  - @glissade/core@0.24.0
+
 ## 0.24.0-pre.3
 
 ### Patch Changes
