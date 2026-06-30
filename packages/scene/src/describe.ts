@@ -67,6 +67,13 @@ export interface DescribedProp {
 export interface DescribedNode {
   props: { [prop: string]: DescribedProp };
   /**
+   * Runnable, drift-guarded code snippets for this node — present ONLY when
+   * `describe({ examples: true })` is called AND `@glissade/scene/examples` has
+   * been imported (it registers the corpus). Each string is an executable example
+   * the doctest harness runs, so it can't go stale (§0.24 onboarding).
+   */
+  examples?: readonly string[];
+  /**
    * What this node's `position` points at WITHOUT an explicit `anchor` (its
    * legacy origin): 'center' for shapes, 'baseline-left' for Text, etc. Override
    * with the base `anchor` prop. Surfaced so consumers stop discovering the
@@ -84,6 +91,8 @@ export interface DescribedNode {
 export interface DescribedBuilderMethod {
   name: string;
   signature: string;
+  /** Runnable example snippets — see {@link DescribedNode.examples}. */
+  examples?: readonly string[];
 }
 
 /**
@@ -104,6 +113,8 @@ export interface DescribedHelper {
   import: string;
   /** A minimal signature/usage string showing the call shape. */
   usage: string;
+  /** Runnable example snippets — see {@link DescribedNode.examples}. */
+  examples?: readonly string[];
 }
 
 /** The full machine-readable manifest `describe()` returns. */
@@ -499,27 +510,67 @@ const SUBPATHS: { [entry: string]: string } = {
  * targets, enumerate the ValueType + easing registries, and curate the builder /
  * subpath surface. JSON-serializable; safe to call any number of times.
  */
-export function describe(): ApiManifest {
+export interface DescribeOptions {
+  /**
+   * Attach runnable example snippets (per node / builder method / helper) from
+   * the registered corpus (§0.24 onboarding). The corpus is registered by
+   * importing `@glissade/scene/examples`, kept OFF the base index so it costs
+   * nothing when unused. With no corpus registered, `examples: true` is a no-op
+   * (the manifest is byte-identical to `describe()`).
+   */
+  examples?: boolean;
+}
+
+/**
+ * The registered runnable-example corpus, keyed by describe-key (node type name /
+ * builder method name / helper name). Populated by `@glissade/scene/examples` at
+ * import time via {@link registerExamples} — describe NEVER statically imports the
+ * corpus, so the base index and the IIFE never pay for it (the value-type-registry
+ * pattern). Empty until that subpath is loaded.
+ */
+let exampleCorpus: { readonly [key: string]: readonly string[] } = {};
+
+/**
+ * Register the runnable-example corpus — called by `@glissade/scene/examples` on
+ * import. A registration hook (not a static import) so `describe()` stays lean.
+ */
+export function registerExamples(corpus: { readonly [key: string]: readonly string[] }): void {
+  exampleCorpus = corpus;
+}
+
+export function describe(opts: DescribeOptions = {}): ApiManifest {
+  // examples attach only when explicitly requested AND a corpus is registered;
+  // otherwise the manifest is byte-identical to the legacy zero-arg form.
+  const withEx = opts.examples === true && Object.keys(exampleCorpus).length > 0;
+  const ex = (key: string): { examples: readonly string[] } | undefined => {
+    const e = withEx ? exampleCorpus[key] : undefined;
+    return e && e.length > 0 ? { examples: e } : undefined;
+  };
+
   const nodes: { [typeName: string]: DescribedNode } = {};
   for (const [name, factory] of Object.entries(NODE_FACTORIES)) {
-    nodes[name] = describeNode(factory(), name);
+    const node = describeNode(factory(), name);
+    nodes[name] = { ...node, ...ex(name) };
   }
   // The Layout family lives on @glissade/scene/layout (Yoga); describe() can't
   // import it, so a curated, drift-guarded schema gives it first-class entries.
   // Stack/Row/Column are ergonomic factories over Layout — same props, different
   // defaults — so they share its manifest verbatim.
   const layout = describeLayoutNode();
-  for (const name of ['Layout', 'Stack', 'Row', 'Column']) nodes[name] = layout;
+  for (const name of ['Layout', 'Stack', 'Row', 'Column']) {
+    const e = ex(name);
+    nodes[name] = e ? { ...layout, ...e } : layout;
+  }
   return {
     version: PACKAGE_VERSION,
     nodes,
     valueTypes: listValueTypes(),
     easings: Object.keys(easings),
-    builder: { methods: BUILDER_METHODS },
+    builder: { methods: withEx ? BUILDER_METHODS.map((m) => ({ ...m, ...ex(m.name) })) : BUILDER_METHODS },
     // The curated helper/factory surface (transport, motion-path, clips,
     // snapshot, splitText) — several live above scene in the dep graph, so this
     // is a hand-kept literal, drift-guarded by @glissade/browser's smoke test.
-    helpers: HELPERS,
+    helpers: withEx ? HELPERS.map((h) => ({ ...h, ...ex(h.name) })) : HELPERS,
     // The full construct-a-scene surface: the size + children AND the asset
     // manifest (so Image/Video `assetId` resolves to a real media URL). An
     // `assetId` on a node names an entry in this `assets` map.

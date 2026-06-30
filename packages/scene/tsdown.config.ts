@@ -19,6 +19,7 @@ export default defineConfig({
     'src/tokens.ts',
     'src/motion.ts',
     'src/identity.ts',
+    'src/examples.ts',
   ],
   format: 'esm',
   dts: true,

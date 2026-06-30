@@ -52,6 +52,10 @@
     "./identity": {
       "types": "./dist/identity.d.ts",
       "default": "./dist/identity.js"
+    },
+    "./examples": {
+      "types": "./dist/examples.d.ts",
+      "default": "./dist/examples.js"
     }
   },
   "files": [
