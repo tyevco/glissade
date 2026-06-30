@@ -162,6 +162,19 @@ describe('@glissade/browser entry surface', () => {
     });
   });
 
+  it('surfaces runnable examples via describe({ examples: true }) — the no-build onboarding fix (0.24)', () => {
+    // The browser entry imports @glissade/scene/examples (a side-effect that
+    // registers the corpus), so window.glissade.describe({ examples: true })
+    // gives the no-build agent a copy-pasteable, doctest-verified snippet per
+    // node/builder/helper — the cold agent's worst time-sink (stale examples) fixed.
+    const m = glissade.describe({ examples: true });
+    expect(m.nodes.Rect?.examples?.length).toBeGreaterThan(0);
+    expect(m.builder.methods.find((x) => x.name === 'to')?.examples?.length).toBeGreaterThan(0);
+    expect(m.helpers.find((x) => x.name === 'splitText')?.examples?.length).toBeGreaterThan(0);
+    // zero-arg stays examples-free — the manifest is byte-identical to before.
+    expect(glissade.describe().nodes.Rect?.examples).toBeUndefined();
+  });
+
   it('the curated describe().helpers names ALL resolve to real window.glissade.<name> functions (0.20 drift guard)', () => {
     // CROSS-PACKAGE DRIFT GUARD. describe() lives in `scene`, but several helpers
     // it documents (createPlayer/mount, renderToDataURL/snapshotCanvas) live ABOVE
