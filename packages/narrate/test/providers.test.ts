@@ -23,6 +23,7 @@ import {
   heuristicAligner,
   heuristicWords,
   interpolateMissing,
+  isKokoroBritishVoice,
   kokoroProvider,
   mapAsrToScript,
   piperProvider,
@@ -224,6 +225,41 @@ describe('blended kokoro voices (gh#2)', () => {
   it('resolveBlend routes language by base-voice prefix (all zh / all en)', () => {
     expect(resolveBlend({ blend: [['zf_xiaoni', 1], ['zm_yunxi', 1]] }).language).toBe('zh');
     expect(resolveBlend({ blend: [['af_heart', 1], ['am_adam', 1]] }).language).toBe('en');
+  });
+
+  it('resolveBlend routes English DIALECT: bf_/bm_ → gb, af_/am_ → us; zh has none (0.23)', () => {
+    expect(resolveBlend({ blend: [['af_heart', 1], ['am_adam', 1]] }).dialect).toBe('us');
+    expect(resolveBlend({ blend: [['bf_emma', 2], ['bm_george', 1]] }).dialect).toBe('gb');
+    expect(resolveBlend({ blend: [['zf_xiaoni', 1], ['zm_yunxi', 1]] }).dialect).toBeUndefined();
+  });
+
+  it('resolveBlend rejects a MIXED US+GB English blend (different espeak front-ends)', () => {
+    expect(() => resolveBlend({ blend: [['af_heart', 1], ['bm_george', 1]] })).toThrow(/mixes English dialects/);
+    expect(() => resolveBlend({ blend: [['bf_emma', 1], ['am_adam', 1]] })).toThrow(/British.*American/);
+  });
+
+  it('blendIdentity folds the dialect → US and GB blends key SEPARATE cache entries (0.23)', () => {
+    const us = blendIdentity({ blend: [['af_heart', 1], ['am_adam', 1]] });
+    const gb = blendIdentity({ blend: [['bf_emma', 1], ['bm_george', 1]] });
+    expect(us).toContain('dialect=us');
+    expect(gb).toContain('dialect=gb');
+    expect(us).not.toBe(gb);
+    expect(blendIdentity({ blend: [['zf_xiaoni', 1], ['zm_yunxi', 1]] })).not.toContain('dialect='); // zh: none
+  });
+
+  it('isKokoroBritishVoice flags bf_/bm_ only', () => {
+    expect(isKokoroBritishVoice('bf_emma')).toBe(true);
+    expect(isKokoroBritishVoice('bm_george')).toBe(true);
+    expect(isKokoroBritishVoice('af_heart')).toBe(false);
+    expect(isKokoroBritishVoice('zf_xiaoni')).toBe(false);
+  });
+
+  it('kokoroProvider.version() distinguishes GB vs US blends (en-g2p dialect → distinct cache)', async () => {
+    const gb = await kokoroProvider({ voice: { blend: [['bf_emma', 1], ['bm_george', 1]] } }).version();
+    const us = await kokoroProvider({ voice: { blend: [['af_heart', 1], ['am_adam', 1]] } }).version();
+    expect(gb).toContain('dialect=gb');
+    expect(gb).toContain('en-g2p=[misaki-en');
+    expect(gb).not.toBe(us);
   });
 
   it('resolveBlend rejects empty / single-entry / non-finite / non-positive / mixed-language', () => {

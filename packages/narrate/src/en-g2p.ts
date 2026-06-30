@@ -14,9 +14,12 @@
  * model + espeak-ng); each missing piece exits with a distinct code → an
  * actionable hint.
  *
- * DIALECT: US English (`british=False`) — the `af_`/`am_` (American) voices.
- * GB-voice (`bf_`/`bm_`) blends are a documented follow-up; the dialect folds
- * into `version()` so US and GB never share a cache entry.
+ * DIALECT: US (`british=False`, the `af_`/`am_` voices) OR GB (`british=True`,
+ * `bf_`/`bm_`) — `phonemize(text, british)` and `version(british)` take the
+ * dialect per call (the caller derives it from the blend's voice prefixes via
+ * `resolveBlend`). The dialect folds into `version()` (`dialect=us`/`gb`) so US
+ * and GB never share a cache entry. A mixed US+GB blend is rejected upstream
+ * (different espeak phoneme front-ends, like mixed languages).
  *
  * DETERMINISM: g2p runs at PREPARE time, never at render. Its identity — a PURE
  * pin string `misaki=<PIN> map=<MAP> dialect=us` (NO Python, no spawn) — folds
@@ -87,13 +90,15 @@ def _check_pins():
         sys.exit(96)
 
 def _g2p():
+    # dialect: --british ⇒ GB English (bf_/bm_ voices); default US (af_/am_)
+    british = "--british" in sys.argv[1:]
     try:
         from misaki import espeak
-        fallback = espeak.EspeakFallback(british=False)
+        fallback = espeak.EspeakFallback(british=british)
     except Exception:
         sys.exit(95)
     try:
-        g = en.G2P(trf=False, british=False, fallback=fallback)
+        g = en.G2P(trf=False, british=british, fallback=fallback)
     except OSError:
         # spaCy en_core_web_sm model not downloaded
         sys.exit(94)
@@ -107,10 +112,12 @@ _g2p()
 
 export interface EnG2p {
   readonly id: string;
-  /** the g2p identity, folded into kokoroProvider.version() → the cache key */
-  version(): string;
-  /** English text → a misaki[en] phoneme string (US English) */
-  phonemize(text: string): string;
+  /** the g2p identity, folded into kokoroProvider.version() → the cache key.
+   *  `british` ⇒ GB dialect, a DISTINCT cache entry from US (default false). */
+  version(british?: boolean): string;
+  /** English text → a misaki[en] phoneme string. `british` ⇒ GB (`bf_`/`bm_`
+   *  voices); default US (`af_`/`am_`). */
+  phonemize(text: string, british?: boolean): string;
 }
 
 /** Install hint — Python absent (ENOENT), misaki[en] absent, or a missing
@@ -168,10 +175,13 @@ export function misakiEnG2p(opts: { python?: string } = {}): EnG2p {
     id: 'misaki-en',
     // PURE + Python-free: the misaki pin + map + dialect. Bumping any moves this
     // string → invalidates English-blend audio. No spawn/introspection, so it
-    // ALWAYS folds (even on zh-only or named-voice runs with no misaki[en]).
-    version: () => `misaki-en misaki=${MISAKI_PIN} map=${EN_PHONEME_MAP_VERSION} dialect=us`,
-    phonemize: (text) => {
-      const r = spawnSync(python, ['-c', EN_G2P_PY, '--pins', MISAKI_PIN], {
+    // ALWAYS folds (even on zh-only or named-voice runs with no misaki[en]). The
+    // dialect (us/gb) keys SEPARATE cache entries — GB and US never collide.
+    version: (british = false) => `misaki-en misaki=${MISAKI_PIN} map=${EN_PHONEME_MAP_VERSION} dialect=${british ? 'gb' : 'us'}`,
+    phonemize: (text, british = false) => {
+      const args = ['-c', EN_G2P_PY, '--pins', MISAKI_PIN];
+      if (british) args.push('--british'); // GB dialect for bf_/bm_ blends
+      const r = spawnSync(python, args, {
         input: text,
         maxBuffer: 8 * 1024 * 1024,
       });

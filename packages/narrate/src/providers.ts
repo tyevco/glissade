@@ -402,6 +402,9 @@ export interface ResolvedBlend {
   entries: readonly (readonly [string, number])[];
   /** 'zh' (all zf_/zm_) or 'en' (all other / English) — the g2p front-end. */
   language: 'zh' | 'en';
+  /** For English: 'gb' (all bf_/bm_) or 'us' (all af_/am_ / other) — the misaki[en]
+   *  dialect (`british` flag). Undefined for 'zh'. A mixed US+GB blend throws. */
+  dialect?: 'us' | 'gb';
 }
 
 /**
@@ -442,8 +445,25 @@ export function resolveBlend(spec: VoiceBlend): ResolvedBlend {
         'a blend must share one g2p front-end (all zf_/zm_ OR all English)',
     );
   }
+  // dialect routing (English only): all bf_/bm_ → 'gb'; all af_/am_/other → 'us';
+  // a MIXED US+GB blend throws (different espeak phoneme front-ends, like langs).
+  let dialect: 'us' | 'gb' | undefined;
+  if (allEn) {
+    const british = raw.map(([name]) => isKokoroBritishVoice(name));
+    const allGb = british.every(Boolean);
+    const allUs = british.every((b) => !b);
+    if (!allGb && !allUs) {
+      const gb = raw.filter((_, i) => british[i]).map(([n]) => n);
+      const us = raw.filter((_, i) => !british[i]).map(([n]) => n);
+      throw new NarrationError(
+        `voice blend mixes English dialects — British [${gb.join(', ')}] with American [${us.join(', ')}]; ` +
+          'a blend must share one espeak front-end (all bf_/bm_ OR all af_/am_)',
+      );
+    }
+    dialect = allGb ? 'gb' : 'us';
+  }
   const entries = raw.map(([name, weight]) => [name, weight / sum] as const);
-  return { entries, language: allZh ? 'zh' : 'en' };
+  return { entries, language: allZh ? 'zh' : 'en', ...(dialect !== undefined ? { dialect } : {}) };
 }
 
 /**
@@ -454,9 +474,11 @@ export function resolveBlend(spec: VoiceBlend): ResolvedBlend {
  * segment cache, EXACTLY the 0.15 g2p-identity pattern.
  */
 export function blendIdentity(spec: VoiceBlend): string {
-  const { entries, language } = resolveBlend(spec);
+  const { entries, language, dialect } = resolveBlend(spec);
   const parts = entries.map(([name, w]) => `${name}:${w.toFixed(6)}`).join(',');
-  return `blend=[${parts} lang=${language} v${BLEND_SPEC_VERSION}]`;
+  // dialect keys US vs GB English apart (zh has none) → caches never collide
+  const dia = dialect !== undefined ? ` dialect=${dialect}` : '';
+  return `blend=[${parts} lang=${language}${dia} v${BLEND_SPEC_VERSION}]`;
 }
 
 /**
@@ -622,6 +644,11 @@ export function isKokoroChineseVoice(voice: string): boolean {
   return voice.startsWith('zf_') || voice.startsWith('zm_');
 }
 
+/** A b* (bf_/bm_) kokoro voice is BRITISH English → misaki[en] british=True. */
+export function isKokoroBritishVoice(voice: string): boolean {
+  return voice.startsWith('bf_') || voice.startsWith('bm_');
+}
+
 export function kokoroProvider(
   opts: { model?: string; voice?: VoiceSpec; dtype?: KokoroDtype; zhG2p?: ZhG2p; enG2p?: EnG2p } = {},
 ): TtsProvider {
@@ -687,7 +714,8 @@ export function kokoroProvider(
         // BLENDS only: zh blends + z* named voices are already covered by the
         // global zhG2p.version() above, and named English voices use kokoro-js's
         // own espeak path (no enG2p) — so this never busts their caches.
-        if (resolveBlend(opts.voice).language === 'en') blendSuffix += ` en-g2p=[${enG2p.version()}]`;
+        const resolvedV = resolveBlend(opts.voice);
+        if (resolvedV.language === 'en') blendSuffix += ` en-g2p=[${enG2p.version(resolvedV.dialect === 'gb')}]`;
       }
       const v = `kokoro-js ${version} ${basename(modelId)} dtype=${dtype} g2p=[${zhG2p.version()}]${blendSuffix}`;
       return Promise.resolve(v);
@@ -712,7 +740,10 @@ export function kokoroProvider(
         // so the derived blend is Apache-2.0. Surface the recipe in the synth log.
         const recipe = resolved.entries.map(([n, w]) => `${n}*${w.toFixed(4)}`).join(' + ');
         // eslint-disable-next-line no-console
-        console.log(`[narrate] kokoro blended voice (Apache-2.0, derived) lang=${resolved.language}: ${recipe}`);
+        console.log(
+          `[narrate] kokoro blended voice (Apache-2.0, derived) lang=${resolved.language}` +
+            `${resolved.dialect !== undefined ? `/${resolved.dialect}` : ''}: ${recipe}`,
+        );
         // phonemize per the blend's language (all z* → misaki[zh]; English → the
         // model's own generate(text) tokenizer, run via the tokenizer seam)
         let inputIds: KokoroInputIds;
@@ -727,7 +758,7 @@ export function kokoroProvider(
             // (the g2p the English voices were trained on), exactly as the zh blend
             // runs misaki[zh]. throws an actionable install hint if Python/misaki[en]/
             // espeak/spaCy-model is absent.
-            const phonemes = enG2p.phonemize(req.text);
+            const phonemes = enG2p.phonemize(req.text, resolved.dialect === 'gb');
             inputIds = tts.tokenizer(phonemes, { truncation: true }).input_ids;
           }
           const audio = await kokoroGenerateFromBlend(tts, Tensor, inputIds, blended, speed ?? 1);
