@@ -1,5 +1,20 @@
 # @glissade/cli
 
+## 0.23.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies [33077e8]
+  - @glissade/scene@0.23.0-pre.3
+  - @glissade/backend-skia@0.23.0-pre.3
+  - @glissade/interact@0.23.0-pre.3
+  - @glissade/lottie@0.23.0-pre.3
+  - @glissade/narrate@0.23.0-pre.3
+  - @glissade/player@0.23.0-pre.3
+  - @glissade/svg@0.23.0-pre.3
+  - @glissade/core@0.23.0-pre.3
+  - @glissade/sfx@0.23.0-pre.3
+
 ## 0.23.0-pre.2
 
 ### Patch Changes

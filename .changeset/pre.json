@@ -28,6 +28,7 @@
   "changesets": [
     "dom-s4-a11y-theming",
     "font-axis-animation",
+    "measure-wrapped-guard",
     "measure-wrapped-text"
   ]
 }
