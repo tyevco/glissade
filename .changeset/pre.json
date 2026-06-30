@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.23.0"
   },
   "changesets": [
-    "examples-registry"
+    "examples-registry",
+    "fail-loud-measuretext"
   ]
 }
