@@ -1,5 +1,17 @@
 # @glissade/scene
 
+## 0.25.0-pre.0
+
+### Minor Changes
+
+- d907a72: examples: no-build (IIFE) form of the example corpus
+
+  The runnable example snippets are npm `import`-form, which don't run verbatim in a no-build `<script src>` page. New `toIifeForm(code)` (exported from `@glissade/scene/examples`) rewrites `import { X } from '...'` → `const { X } = window.glissade`, and `examplesByKey({ iife: true })` returns the transformed corpus. The `@glissade/browser` IIFE now registers the no-build form, so `window.glissade.describe({ examples: true })` gives a no-build agent snippets it can copy-paste and run as-is. npm consumers still get the `import`-form (the doctest + the generated reference are unchanged).
+
+### Patch Changes
+
+- @glissade/core@0.25.0-pre.0
+
 ## 0.24.0
 
 ### Minor Changes
