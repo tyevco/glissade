@@ -751,6 +751,13 @@ describe('DomBackend — S3 keying / structure regression guards', () => {
 describe('DomBackend — reconciler structural transitions (faMEQkj0Lk0z)', () => {
   it('survives a node leaving then re-entering before its sibling (no insertBefore throw)', () => {
     const backend = new DomBackend(document);
+    // ⚠️ POSITION IS LOAD-BEARING — do NOT "tidy" these coords. `a` at the ORIGIN
+    // [0,0] has an IDENTITY transform, so the scene emits `save…fillPath…restore`
+    // with NO transform wrapper — its restore brackets the SHARED parent cursor,
+    // which is the exact bug (restore pruning the parent mid-frame). Off-origin
+    // coords (e.g. [30,30]) get a transform wrapper and the bug NEVER fires — the
+    // test would silently false-pass even on buggy builds (browser-canary's
+    // independent finding). At least one node MUST sit at the origin.
     const a = new Rect({ id: 'a', position: [0, 0], width: 50, height: 50, fill: '#3fa148' });
     const b = new Rect({ id: 'b', position: [60, 0], width: 50, height: 50, fill: '#a8842a' });
     const EMPTY = timeline(() => {});
