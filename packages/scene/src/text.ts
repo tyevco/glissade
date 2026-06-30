@@ -194,3 +194,55 @@ export function breakLines(
   }
   return lines;
 }
+
+/** Wrapped-text metrics: the box a string occupies when wrapped to `width`,
+ *  plus the laid-out lines — so a consumer can size a container (bubble/card)
+ *  to wrapped text WITHOUT a Text node or re-implementing line breaking. */
+export interface WrappedTextMetrics {
+  /** Box width: the wrap `width` when wrapping, else the widest line's ink. */
+  width: number;
+  /** The wrapped lines (the SAME breaks the renderer draws — `breakLines`). */
+  lines: string[];
+  /** Box height: `quantize(fontSize * lineHeight) * lineCount` (the draw grid). */
+  height: number;
+  /** Max line ascent above the first baseline (font metric; for baseline align). */
+  ascent: number;
+  /** Max line descent below the baseline. */
+  descent: number;
+}
+
+/**
+ * Measure how `text` wraps to `width` with `font`, returning `{ width, lines,
+ * height, ascent, descent }` — the node-free analogue of `Text.measuredSize`/
+ * `lineBoxes`, for sizing a container to wrapped text. Reuses {@link breakLines}
+ * + the injected `measurer` (so breaks match what the rasterizer draws) — the
+ * exact `Text.intrinsicSize` steps. `width <= 0` = no wrap (only explicit '\n').
+ * `lineHeight` is a multiple of `font.size` (it lives on the Text node, not
+ * `FontSpec`, so it's a parameter here).
+ */
+export function measureWrappedText(
+  text: string,
+  font: FontSpec,
+  width: number,
+  lineHeight: number,
+  measurer: TextMeasurer,
+): WrappedTextMetrics {
+  const lines = breakLines(text, font, width > 0 ? width : undefined, measurer);
+  let widest = 0;
+  let ascent = 0;
+  let descent = 0;
+  for (const line of lines) {
+    const m = measurer.measureText(line, font);
+    const w = quantize(m.width);
+    if (w > widest) widest = w;
+    if (m.ascent > ascent) ascent = m.ascent;
+    if (m.descent > descent) descent = m.descent;
+  }
+  return {
+    width: width > 0 ? width : widest,
+    lines,
+    height: quantize(font.size * lineHeight) * lines.length,
+    ascent,
+    descent,
+  };
+}

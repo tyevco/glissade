@@ -28,6 +28,9 @@ import {
   Text,
   Video,
   NodeConstructionError,
+  measureWrappedText,
+  quantize,
+  estimatingMeasurer,
   type DisplayList,
 } from '../src/index.js';
 import { Layout, Stack } from '@glissade/scene/layout-ctors';
@@ -618,5 +621,45 @@ describe('node-constructor fail-loud guard (0.20.1)', () => {
     // built-in’s checkProps never fires — external nodes can carry arbitrary props.
     class MyRect extends Rect {}
     expect(() => new MyRect({ totallyCustomProp: 1 } as unknown as ConstructorParameters<typeof Rect>[0])).not.toThrow();
+  });
+});
+
+describe('measureWrappedText / scene.measureWrappedText (wrap-aware string measurement)', () => {
+  const font = { family: 'X', size: 33 } as const;
+  const long =
+    'You have written the same request deleted it and rewritten it eleven times now ' +
+    'somewhere you picked up the idea that there is a perfect prompt';
+
+  it('wraps a long string to width → lines + a box height, node-free', () => {
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [] });
+    const m = scene.measureWrappedText(long, font, 600);
+    expect(m.lines.length).toBeGreaterThan(1); // wrapped
+    expect(m.width).toBe(600); // the wrap width when wrapping
+    expect(m.height).toBe(quantize(font.size * 1.25) * m.lines.length); // draw grid
+    expect(m.lines.join(' ')).toContain('written'); // content preserved across the breaks
+    expect(m.ascent).toBeGreaterThan(0);
+    expect(m.descent).toBeGreaterThan(0);
+  });
+
+  it('width <= 0 = no wrap; explicit \\n still breaks', () => {
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [] });
+    expect(scene.measureWrappedText('a b c d', font, 0).lines).toEqual(['a b c d']);
+    expect(scene.measureWrappedText('a\nb', font, 0).lines).toEqual(['a', 'b']);
+  });
+
+  it('lineHeight scales the box height (1.25 default)', () => {
+    const scene = createScene({ size: { w: 800, h: 400 }, children: [] });
+    const single = scene.measureWrappedText('a\nb\nc', font, 0, 1).height;
+    const dbl = scene.measureWrappedText('a\nb\nc', font, 0, 2).height;
+    expect(dbl).toBe(single * 2);
+  });
+
+  it('matches Text.measuredSize for the same string/font/width/lineHeight (the node analogue)', () => {
+    // the standalone fn must agree with the node path (both run breakLines + the same grid)
+    const wrapped = measureWrappedText(long, font, 600, 1.4, estimatingMeasurer);
+    const node = new Text({ text: long, fontFamily: font.family, fontSize: font.size, width: 600, lineHeight: 1.4 });
+    const box = node.measuredSize(estimatingMeasurer);
+    expect(wrapped.width).toBe(box.w);
+    expect(wrapped.height).toBe(box.h);
   });
 });

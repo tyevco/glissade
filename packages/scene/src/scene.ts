@@ -16,8 +16,13 @@ import {
   type Timeline,
   type Track,
 } from '@glissade/core';
-import { createDisplayListBuilder, type DisplayList } from './displayList.js';
-import { fallbackMeasurer, type TextMeasurer } from './text.js';
+import { createDisplayListBuilder, type DisplayList, type FontSpec } from './displayList.js';
+import {
+  fallbackMeasurer,
+  measureWrappedText as measureWrappedImpl,
+  type TextMeasurer,
+  type WrappedTextMetrics,
+} from './text.js';
 import { type BindablePropTarget, type EvalContext, Node } from './node.js';
 import { Group } from './nodes.js';
 import { isConstructionProp } from './constructionProps.js';
@@ -35,6 +40,14 @@ export interface Scene {
    */
   setTextMeasurer(measurer: TextMeasurer): void;
   readonly textMeasurer: TextMeasurer;
+  /**
+   * Measure how `text` wraps to `width` with `font`, using THIS scene's measurer
+   * — `{ width, lines, height, ascent, descent }`. Size a container (bubble/card)
+   * to wrapped text WITHOUT a Text node (the node-free analogue of
+   * `Text.measuredSize`/`lineBoxes`). `lineHeight` is a multiple of `font.size`,
+   * default 1.25.
+   */
+  measureWrappedText(text: string, font: FontSpec, width: number, lineHeight?: number): WrappedTextMetrics;
 }
 
 export class DuplicateNodeIdError extends Error {
@@ -121,6 +134,8 @@ export function createScene(init: SceneInit): Scene {
     get textMeasurer() {
       return measurer.peek() ?? fallbackMeasurer();
     },
+    measureWrappedText: (text, font, width, lineHeight = 1.25) =>
+      measureWrappedImpl(text, font, width, lineHeight, measurer.peek() ?? fallbackMeasurer()),
   };
 }
 

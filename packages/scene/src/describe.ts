@@ -384,6 +384,14 @@ const BUILDER_METHODS: DescribedBuilderMethod[] = [
  */
 const HELPERS: DescribedHelper[] = [
   {
+    name: 'measureWrappedText',
+    summary:
+      'Measure how a STRING wraps to a width — size a bubble/card to wrapped text WITHOUT a Text node or re-implementing line breaking (uses the renderer\'s own wrapper). For a Text NODE, use text.measuredSize(measurer)/lineBoxes(measurer)/wordBoxes(measurer) instead.',
+    import: '@glissade/scene',
+    usage:
+      'scene.measureWrappedText(text, font, width, lineHeight = 1.25): { width, lines: string[], height, ascent, descent }  —  node-free; or measureWrappedText(text, font, width, lineHeight, measurer) standalone. width<=0 = no wrap (only explicit \\n). Text node analogue: text.measuredSize(measurer) -> { w, h }.',
+  },
+  {
     name: 'createPlayer',
     summary:
       'Build the transport object (play / pause / seek / rate / loop / marker + cue callbacks) directly — what mount() returns as mounted.player.',

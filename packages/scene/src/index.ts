@@ -150,6 +150,7 @@ export {
 
 export {
   breakLines,
+  measureWrappedText,
   segmentWords,
   segmentGraphemes,
   quantize,
@@ -160,6 +161,7 @@ export {
   __resetEstimateWarnings,
   type TextMeasurer,
   type TextMetricsLite,
+  type WrappedTextMetrics,
 } from './text.js';
 
 export {

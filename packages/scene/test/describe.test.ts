@@ -176,6 +176,13 @@ vdescribe('describe() helpers section', () => {
     expect(byName.get('splitText')!.import).toBe('@glissade/scene/type');
   });
 
+  it('surfaces measureWrappedText (0.23) — node-free wrapped-text sizing, pointing at the node analogue', () => {
+    const byName = new Map(m.helpers.map((h) => [h.name, h]));
+    expect(byName.get('measureWrappedText'), 'measureWrappedText missing from helpers').toBeDefined();
+    expect(byName.get('measureWrappedText')!.import).toBe('@glissade/scene');
+    expect(byName.get('measureWrappedText')!.usage).toContain('measuredSize'); // surfaces the Text-node path too
+  });
+
   it('lists Grid + the Stack/Row/Column layout factories on their tree-shaken subpaths (0.20)', () => {
     const byName = new Map(m.helpers.map((h) => [h.name, h]));
     expect(byName.get('Grid'), 'Grid missing from helpers').toBeDefined();

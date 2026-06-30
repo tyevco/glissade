@@ -698,6 +698,9 @@ export function matEquals(a: Mat2x3, b: Mat2x3): boolean;
 export const MEASURE_QUANTUM_PX = 0.5;
 
 // @public
+export function measureWrappedText(text: string, font: FontSpec, width: number, lineHeight: number, measurer: TextMeasurer): WrappedTextMetrics;
+
+// @public
 export const MESH_DOWNSCALE = 4;
 
 // @public
@@ -1033,6 +1036,7 @@ export function roundedRectSegs(x: number, y: number, w: number, h: number, r: n
 
 // @public (undocumented)
 export interface Scene {
+    measureWrappedText(text: string, font: FontSpec, width: number, lineHeight?: number): WrappedTextMetrics;
     // (undocumented)
     readonly nodes: ReadonlyMap<string, Node_2>;
     readonly playhead: Playhead;
@@ -1418,6 +1422,15 @@ export interface WordBox {
     x: number;
     // (undocumented)
     y: number;
+}
+
+// @public
+export interface WrappedTextMetrics {
+    ascent: number;
+    descent: number;
+    height: number;
+    lines: string[];
+    width: number;
 }
 
 // (No @packageDocumentation comment for this package)
