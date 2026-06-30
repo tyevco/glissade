@@ -27,6 +27,7 @@
   },
   "changesets": [
     "anchor-discoverability",
+    "dom-onreflow-fonts",
     "dom-punchlist-blockers",
     "dom-shape-sized-svg",
     "english-voice-blends",

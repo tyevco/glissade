@@ -1,5 +1,11 @@
 # @glissade/sfx
 
+## 0.22.0-pre.5
+
+### Patch Changes
+
+- @glissade/core@0.22.0-pre.5
+
 ## 0.22.0-pre.4
 
 ### Patch Changes
