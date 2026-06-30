@@ -799,3 +799,45 @@ describe('DomBackend — Text wrapping (aJsLQp0fSs5L)', () => {
     expect(tops.size).toBeGreaterThan(1); // multiple lines at distinct vertical offsets
   });
 });
+
+describe('DomBackend — onReflow on web-font load (caption first-paint wrap)', () => {
+  function withStubbedFonts<T>(fonts: unknown, fn: () => T): T {
+    const orig = Object.getOwnPropertyDescriptor(document, 'fonts');
+    Object.defineProperty(document, 'fonts', { value: fonts, configurable: true });
+    try {
+      return fn();
+    } finally {
+      if (orig) Object.defineProperty(document, 'fonts', orig);
+      else Reflect.deleteProperty(document, 'fonts');
+    }
+  }
+
+  it('fires onReflow when fonts become ready AND on later loadingdone batches (host re-wraps)', async () => {
+    let resolveReady!: () => void;
+    const ready = new Promise<void>((r) => { resolveReady = r; });
+    const listeners: Record<string, (() => void)[]> = {};
+    const fakeFonts = {
+      ready,
+      addEventListener: (ev: string, cb: () => void) => void (listeners[ev] ??= []).push(cb),
+    };
+    let reflows = 0;
+    await withStubbedFonts(fakeFonts, async () => {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      // eslint-disable-next-line no-new
+      new DomBackend(host, { onReflow: () => void (reflows += 1) });
+      resolveReady();
+      await ready;
+      await Promise.resolve(); // flush the .then microtask
+      expect(reflows).toBe(1); // initial web-font set ready
+      listeners['loadingdone']?.forEach((cb) => cb());
+      expect(reflows).toBe(2); // a later lazy @font-face batch
+    });
+  });
+
+  it('is a no-op (no throw) when document.fonts is unavailable (e.g. jsdom)', () => {
+    withStubbedFonts(undefined, () => {
+      expect(() => new DomBackend(document, { onReflow: () => undefined })).not.toThrow();
+    });
+  });
+});

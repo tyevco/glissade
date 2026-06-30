@@ -14,7 +14,7 @@ import { VideoFrameSource } from '@glissade/scene';
 
 // @public
 export class DomBackend implements RenderBackend {
-    constructor(target: HTMLElement | Document);
+    constructor(target: HTMLElement | Document, opts?: DomBackendOptions);
     // (undocumented)
     readonly caps: BackendCaps;
     // (undocumented)
@@ -32,6 +32,11 @@ export class DomBackend implements RenderBackend {
     setImageAsset(assetId: string, image: unknown): void;
     // (undocumented)
     setVideoAsset(assetId: string, source: VideoFrameSource): void;
+}
+
+// @public
+export interface DomBackendOptions {
+    onReflow?: () => void;
 }
 
 // (No @packageDocumentation comment for this package)

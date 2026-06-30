@@ -246,6 +246,19 @@ interface Owned {
   props: Record<string, string | undefined>;
 }
 
+/** Construction options for {@link DomBackend}. */
+export interface DomBackendOptions {
+  /**
+   * Called when web fonts finish loading (and on later lazy `@font-face`
+   * batches). **Re-render in this callback** so text re-wraps with the loaded
+   * fonts — wrapping is computed upstream in the scene from this backend's
+   * `measureText`, so a caption measured before its font loaded can render
+   * unwrapped at first paint. Typically `() => drive(currentTime)` in a host's
+   * draw loop. No-op where `document.fonts` is absent (e.g. jsdom).
+   */
+  onReflow?: () => void;
+}
+
 /**
  * A DOM/SVG `RenderBackend`. Construct with a host element (renders into it) or a
  * bare `Document` (builds a detached `root` you read off `backend.root`). Each
@@ -266,6 +279,7 @@ export class DomBackend implements RenderBackend {
   readonly #owned = new WeakMap<Element, Owned>();
 
   #ids: NodeIdStream = [];
+  readonly #onReflow: (() => void) | undefined;
   #measureSpan: HTMLElement | null = null;
   #warnedMeasure = false;
   #warnedMesh = false;
@@ -273,7 +287,7 @@ export class DomBackend implements RenderBackend {
   #warnedShader = false;
   #warnedUnbalanced = false;
 
-  constructor(target: HTMLElement | Document) {
+  constructor(target: HTMLElement | Document, opts: DomBackendOptions = {}) {
     const isDoc = target.nodeType === 9; // Node.DOCUMENT_NODE
     this.#doc = isDoc ? (target as Document) : ((target as HTMLElement).ownerDocument ?? (target as unknown as Document));
     this.#host = isDoc ? null : (target as HTMLElement);
@@ -282,6 +296,29 @@ export class DomBackend implements RenderBackend {
     this.root.style.position = 'relative';
     this.root.style.overflow = 'hidden';
     if (this.#host) this.#host.appendChild(this.root);
+    this.#onReflow = opts.onReflow;
+    this.#wireFontReflow();
+  }
+
+  /**
+   * When web fonts finish loading, fire `onReflow` so the HOST re-renders. Text
+   * wrapping is computed UPSTREAM in the scene (from this backend's `measureText`),
+   * so a caption measured before its font loaded wraps on the fallback-font
+   * estimate and can render unwrapped at first paint. The backend can't re-wrap
+   * alone — the line breaks already live in the DisplayList the scene produced —
+   * so per the passive-sink contract it SIGNALS, and the host re-evaluates with
+   * the now-loaded fonts. No-op when no `onReflow` is given or the environment
+   * has no `document.fonts` (e.g. jsdom).
+   */
+  #wireFontReflow(): void {
+    const reflow = this.#onReflow;
+    if (!reflow) return;
+    const fonts = (this.#doc as Document & { fonts?: FontFaceSet }).fonts;
+    if (!fonts) return;
+    // the initial web-font set finishing → re-wrap once
+    void fonts.ready?.then?.(() => reflow())?.catch?.(() => {});
+    // lazily-loaded @font-face batches → re-wrap on each
+    fonts.addEventListener?.('loadingdone', () => reflow());
   }
 
   readonly caps: BackendCaps = {

@@ -108,11 +108,17 @@ base bundle is absent or a different version (never a cryptic `undefined`).
 
 ### Documented divergences (preview/non-parity)
 
-- **Text line-breaking** is the browser's layout engine, **not** the canvas/Skia
-  rasterizer — so line breaks can differ from `gs render`. Intended.
 - **Text line-breaking** uses the browser's layout engine, so it can differ from
-  the canvas/Skia rasterizer; the measuring span is mounted in the live document
-  so wrapping reflects the real font (a detached host would measure 0).
+  the canvas/Skia rasterizer (intended). The measuring span is mounted in the live
+  document so wrapping reflects the real font (a detached host would measure 0).
+  **Web fonts load async**, so text first measured before its font loads wraps on
+  the fallback estimate. Pass **`onReflow`** and re-render in it — the backend
+  fires it when `document.fonts` becomes ready (and on later `@font-face` batches),
+  so the host re-evaluates and text re-wraps with the loaded font:
+
+  ```js
+  const backend = new DomBackend(stage, { onReflow: () => frame(currentTime) });
+  ```
 - **`measureText`** measures `width` via a hidden DOM element (matching what this
   backend draws). `ascent`/`descent` are **estimates** (`0.8`/`0.2 × fontSize`),
   not real font metrics — fine for layout composition, not for exact vertical
