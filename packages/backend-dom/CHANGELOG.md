@@ -1,5 +1,45 @@
 # @glissade/backend-dom
 
+## 0.22.0
+
+### Patch Changes
+
+- 42d281e: describe(): surface node position anchors; backend-dom doc accuracy
+
+  The `anchor` prop (pin `position` to any corner/edge, `'top-left'`/`[ax,ay]`, the rotation/scale pivot) already exists and works on every node — but it was undiscoverable, so consumers hit the Rect-center-vs-Text-baseline mismatch and pixel-measured around it (UhOVUlewfVz7). `describe()` now:
+
+  - adds **`nodes.<T>.positionAnchor`** — what each node's `position` points at without an explicit anchor (`'center'` for shapes, `'baseline-left'` for Text, `'author-coords'` for Path), so the mismatch is in the manifest, and
+  - **enumerates the `anchor` presets** in its type (`'center'|'top-left'|…|[ax,ay]`) instead of the opaque `AnchorSpec`, so `anchor:'top-left'` is discoverable as the fix.
+
+  `@glissade/backend-dom` doc accuracy: `readPixels()` is documented as **async-reject** (it returns a `Promise` per the `RenderBackend` contract — `await`/`.catch`, not a bare `try/catch`); `measureText` `ascent`/`descent` are documented as estimates, and its measuring span now mounts in the live document so wrapping reflects the real font.
+
+- 6b575ef: backend-dom: `onReflow` — re-wrap text when web fonts finish loading
+
+  Text wrapping is computed upstream in the scene from this backend's `measureText`, so a caption first measured before its web font loaded wraps on the fallback-font estimate and can render unwrapped at first paint. `DomBackend` now accepts an `onReflow` option:
+
+  ```js
+  const backend = new DomBackend(stage, { onReflow: () => frame(currentTime) });
+  ```
+
+  It fires when `document.fonts` becomes ready (and on later lazy `@font-face` batches), so the host re-evaluates and text re-wraps with the loaded font. Passive-sink contract preserved — the backend signals, the host re-renders. No-op where `document.fonts` is absent (e.g. jsdom).
+
+- 3b03789: backend-dom: fix three visual-parity blockers found dogfooding the editable-DOM tier
+
+  - **Rounded-Rect fill gaps (e1JP5_1IzI2D):** an `E` (arc) seg mid-contour emitted a leading `M` (moveto), breaking a rounded rect into 8 disconnected open subpaths that don't fill solid. A continuing arc now leads with `L` (only a standalone `E`, e.g. a Circle, keeps its `M`), so the contour is one continuous closed subpath — solid fill, matching canvas2d/Skia.
+  - **Reconciler `insertBefore` crash on structural transitions (faMEQkj0Lk0z):** `restore` pruned the _current_ cursor even when no transform/clip child was entered — so a node at identity transform (`save … draw … restore` with no wrapper) pruned its **shared parent** mid-frame, dropping later siblings' elements before they re-emitted and throwing `NotFoundError` on the next insert (freezing continuous playback across movement boundaries). `restore` now prunes only a child cursor it actually entered; the parent is pruned once at end-of-render. Persisting nodes keep element identity (the S3 contract).
+  - **Text wrap measurement (aJsLQp0fSs5L):** the hidden measuring span could be mounted under a not-yet-connected host, which reports a 0-width rect in real browsers too — silently degrading wrapping to the coarse estimate so long captions overflow their `width`. The span now mounts in a guaranteed-live tree (document body) and re-attaches if it drifts out.
+
+- 4b9700e: backend-dom: size each shape's `<svg>` to its bounding box (not full-canvas)
+
+  Every `fillPath`/`strokePath` previously rendered as a full viewport-sized (e.g. 1920×1080) `<svg>` with the shape painted inside — so an 800×96 bubble lived in a canvas-sized box. Stacked, those giant transparent boxes overlapped every other node, made the DOM tree read as "huge/unstructured," and swallowed clicks meant for shapes behind them (breaking the editable-DOM tier's hit-testing).
+
+  Each geometry island is now sized **tightly to its path's bounding box** via the SVG `viewBox`, so the painted coordinates are unchanged (1:1 mapping — the render is pixel-identical) while the element box shrinks to the shape. The island is `pointer-events:none` (its transparent area is click-through) and the painted path re-enables hit-testing, so `el.closest('[data-node-id]')` resolves to the shape actually under the pointer. Strokes pad the box by their width; `overflow:visible` covers any curve/miter overshoot.
+
+- Updated dependencies [42d281e]
+- Updated dependencies [095cfd2]
+  - @glissade/scene@0.22.0
+  - @glissade/core@0.22.0
+
 ## 0.22.0-pre.5
 
 ### Patch Changes
