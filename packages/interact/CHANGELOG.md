@@ -1,5 +1,14 @@
 # @glissade/interact
 
+## 0.30.0
+
+### Patch Changes
+
+- Updated dependencies [e651ed6]
+  - @glissade/scene@0.30.0
+  - @glissade/player@0.30.0
+  - @glissade/core@0.30.0
+
 ## 0.30.0-pre.0
 
 ### Patch Changes
