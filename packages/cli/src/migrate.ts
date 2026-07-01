@@ -113,10 +113,17 @@ function diffProp(
 export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationReport {
   const out: MigrationChange[] = [];
 
+  // A baseline older than a given describe() field WON'T HAVE that field — helpers
+  // were added after 0.19, builder/valueTypes/easings could be absent on an even
+  // older manifest. The whole point of migrate is deep jumps, so treat EVERY
+  // collection as possibly-missing on either side (missing ⇒ empty, never throw).
+  const fromNodes = from.nodes ?? {};
+  const toNodes = to.nodes ?? {};
+
   // ── nodes (+ their props) ──────────────────────────────────────────────
-  for (const name of keys(from.nodes)) {
-    const a = from.nodes[name];
-    const b = to.nodes[name];
+  for (const name of keys(fromNodes)) {
+    const a = fromNodes[name];
+    const b = toNodes[name];
     if (a === undefined) continue;
     if (b === undefined) {
       out.push({
@@ -169,9 +176,9 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
       }
     }
   }
-  for (const name of keys(to.nodes)) {
-    if (from.nodes[name] === undefined) {
-      const sp = to.nodes[name]?.subpath ?? '@glissade/scene';
+  for (const name of keys(toNodes)) {
+    if (fromNodes[name] === undefined) {
+      const sp = toNodes[name]?.subpath ?? '@glissade/scene';
       out.push({
         kind: 'added',
         category: 'node',
@@ -183,8 +190,8 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
   }
 
   // ── helpers (by name) — the tokenHighlight / motionPath import-move case ─
-  const fromHelpers = new Map(from.helpers.map((h) => [h.name, h]));
-  const toHelpers = new Map(to.helpers.map((h) => [h.name, h]));
+  const fromHelpers = new Map((from.helpers ?? []).map((h) => [h.name, h]));
+  const toHelpers = new Map((to.helpers ?? []).map((h) => [h.name, h]));
   for (const name of [...fromHelpers.keys()].sort()) {
     const a = fromHelpers.get(name)!;
     const b = toHelpers.get(name);
@@ -233,8 +240,8 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
   }
 
   // ── builder methods (by name) ──────────────────────────────────────────
-  const fromB = new Map(from.builder.methods.map((m) => [m.name, m]));
-  const toB = new Map(to.builder.methods.map((m) => [m.name, m]));
+  const fromB = new Map((from.builder?.methods ?? []).map((m) => [m.name, m]));
+  const toB = new Map((to.builder?.methods ?? []).map((m) => [m.name, m]));
   for (const name of [...fromB.keys()].sort()) {
     const a = fromB.get(name)!;
     const b = toB.get(name);
@@ -273,8 +280,8 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
   }
 
   // ── value types, easings, subpaths (flat string sets) ──────────────────
-  diffStringSet('valueType', from.valueTypes, to.valueTypes, out);
-  diffStringSet('easing', from.easings, to.easings, out);
+  diffStringSet('valueType', from.valueTypes ?? [], to.valueTypes ?? [], out);
+  diffStringSet('easing', from.easings ?? [], to.easings ?? [], out);
   diffStringSet('subpath', keys(from.subpaths), keys(to.subpaths), out);
 
   const breaking = out.filter((c) => c.breaking).length;

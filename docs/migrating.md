@@ -73,6 +73,21 @@ must act) or **additive** (new capability — informational):
 
 The kind markers in the report: `→` moved · `✗` removed · `~` changed · `+` added.
 
+## A note on very old baselines
+
+`gs migrate` reports the diff between two manifests, so it can only tell you what
+*those two manifests recorded*. A field that a `describe()` release didn't have yet
+is simply absent on the old side — migrate treats a missing collection as empty and
+diffs the rest (it never crashes on an old-but-valid manifest). One consequence
+worth knowing: a symbol only shows up as **moved** when the baseline recorded it at
+its *old* import path. Helpers were added to `describe()` after the 0.20 import
+moves, so a baseline older than that never recorded `motionPath` at its root path —
+migrate will list it as **additive at its current path** (`motionPath: import from
+@glissade/scene/motion`), which is still exactly the actionable import you need,
+just classified as "new here" rather than "moved." Move-detection is exact for any
+change *after* the field entered the manifest. Snapshot each release with
+`gs describe --out` going forward and this limit disappears for future jumps.
+
 ## What it does *not* do (yet)
 
 This is an **advisory** tool: it hands you the precise change list plus a suggested

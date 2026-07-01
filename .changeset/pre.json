@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.30.0"
   },
   "changesets": [
+    "gs-migrate-legacy-manifest",
     "gs-migrate"
   ]
 }

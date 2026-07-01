@@ -131,6 +131,33 @@ vdescribe('diffManifests', () => {
     expect(find(changes, 'easing', 'oldEase')).toMatchObject({ kind: 'removed', breaking: true });
   });
 
+  it('does not throw on a baseline PREDATING a describe() field (the deep-jump case)', () => {
+    // A real 0.19.1-shaped manifest: helpers/builder/valueTypes/easings/subpaths
+    // were all added to describe() AFTER it, so an old-but-valid manifest has only
+    // version + nodes. This is EXACTLY the long-lived-jump case migrate exists for —
+    // it must diff, not crash (regression for the from.helpers.map TypeError).
+    const legacy = { version: '0.19.1', nodes: { Circle: { props: {}, positionAnchor: 'center' } } } as unknown as ApiManifest;
+    const current = manifest({ version: '0.31.0' });
+    expect(() => diffManifests(legacy, current)).not.toThrow();
+    const r = diffManifests(legacy, current);
+    expect(r.from).toBe('0.19.1');
+    expect(r.to).toBe('0.31.0');
+    // the current engine's helpers/valueTypes/easings/builder all surface as ADDITIVE
+    // (the baseline never recorded them), none breaking, and nothing crashes.
+    expect(find(r.changes, 'helper', 'followPath')).toMatchObject({ kind: 'added', breaking: false });
+    expect(find(r.changes, 'valueType', 'vec2')).toMatchObject({ kind: 'added', breaking: false });
+    expect(find(r.changes, 'builder', 'tl.to')).toMatchObject({ kind: 'added', breaking: false });
+    expect(r.summary.breaking).toBe(0);
+  });
+
+  it('is symmetric-safe: a current engine MISSING a field the baseline had does not throw', () => {
+    const from = manifest();
+    const stripped = { version: '0.40.0', nodes: from.nodes } as unknown as ApiManifest;
+    expect(() => diffManifests(from, stripped)).not.toThrow();
+    // the baseline's helpers/valueTypes now read as REMOVED (breaking) — no crash
+    expect(find(diffManifests(from, stripped).changes, 'helper', 'followPath')).toMatchObject({ kind: 'removed', breaking: true });
+  });
+
   it('summary counts and ordering are deterministic', () => {
     const to = manifest({
       helpers: [{ name: 'brandNew', summary: 'x', import: '@glissade/scene', usage: 'brandNew()' }],
