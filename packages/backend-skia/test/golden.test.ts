@@ -29,6 +29,7 @@ import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
+import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
@@ -162,6 +163,10 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // leaving 6 fading ghost copies at earlier playhead offsets — a pure multi-time
   // re-eval (playhead re-addressed + restored per copy), byte-stable on Skia.
   { name: 'echo', mod: goldenEcho },
+  // 0.30 sampled motion blur: a fast dot rendered at 16 sub-frame times across a
+  // shutter and averaged (running-mean) → a real smear, vs a crisp reference dot.
+  // Pure multi-time re-eval (playhead re-addressed + restored), byte-stable on Skia.
+  { name: 'motionblur', mod: goldenMotionBlur },
   // following a morphing path live (re-sample as 'route/d' bends)
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)

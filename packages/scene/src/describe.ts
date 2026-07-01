@@ -453,6 +453,13 @@ const HELPERS: DescribedHelper[] = [
     usage: 'echo(child: Node, opts?: { id?, count?: number, spacing?: number, decay?: number }): Echo',
   },
   {
+    name: 'motionBlur',
+    summary:
+      'Real sampled motion blur: wrap a child so it renders at N sub-frame times across a shutter interval (centered on the frame) and AVERAGES them — tracks every animated prop, not a faked directional blur. A pure multi-time re-eval (playhead re-addressed per sample, running-mean opacity, restored), byte-exact on Skia; browser↔Skia is perceptual-tier for blur.',
+    import: '@glissade/scene',
+    usage: 'motionBlur(child: Node, opts?: { id?, shutter?: number, samples?: number }): MotionBlur',
+  },
+  {
     name: 'clip',
     summary:
       'A reusable, target-agnostic motion captured once as a relative-time key schedule, then applied to a node at a wall-clock start time. Build-time sugar: clip.apply() compiles to ordinary Track[].',

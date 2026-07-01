@@ -28,6 +28,7 @@ import { splitText } from './type.js';
 import { motionPath } from './motionPath.js';
 import { orientToPath, lookAt } from './orient.js';
 import { echo } from './echo.js';
+import { motionBlur } from './motionBlur.js';
 import { pathFromSvg } from './path.js';
 
 /** One runnable example, attached to its describe-key (node type / builder method
@@ -185,6 +186,11 @@ export const EXAMPLES: readonly ApiExample[] = [
     key: 'echo',
     code: "import { Circle, echo } from '@glissade/scene';\n// motion trail / onion-skin: renders the child at K past playhead offsets, each fading by `decay`.\n// Add the returned Echo to the scene; drive the child however you like (its ghosts re-derive at each offset).\nconst dot = new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' });\nconst trail = echo(dot, { count: 6, spacing: 0.05, decay: 0.7 });",
     run: () => void echo(new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' }), { count: 6, spacing: 0.05, decay: 0.7 }),
+  },
+  {
+    key: 'motionBlur',
+    code: "import { Circle, motionBlur } from '@glissade/scene';\n// real sampled motion blur: renders the child at N sub-frame times across `shutter` (seconds) and averages them.\n// Wrap the MOVING content; its background stays crisp. Byte-exact on Skia, perceptual browser↔Skia.\nconst dot = new Circle({ id: 'dot', radius: 16, fill: '#ffcf3f' });\nconst blurred = motionBlur(dot, { shutter: 0.06, samples: 16 });",
+    run: () => void motionBlur(new Circle({ id: 'dot', radius: 16, fill: '#ffcf3f' }), { shutter: 0.06, samples: 16 }),
   },
 ];
 
