@@ -27,6 +27,7 @@
   },
   "changesets": [
     "echo-trails",
+    "motion-craft-discoverability",
     "orient-drivers",
     "retime"
   ]
