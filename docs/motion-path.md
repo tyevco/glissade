@@ -60,3 +60,27 @@ track('cf/progress', 'number', [key(0, 0), key(2.6, 1)]);                       
 ```
 
 The arc-length table is rebuilt only when the path's value actually changes (memoized by reference), so a **static** route — a raw `PathValue`, or a Path node whose data never animates — still builds its table just once. Pass a `PathValue` directly when you want a fixed route.
+
+## Orientation on its own — `orientToPath` and `lookAt`
+
+`followPath` owns *both* position and rotation. When you want the **rotation only** — a node whose position comes from keyframes, a layout, or a separate `followPath`, but which should still *bank* to a direction — reach for the two rotation-only driver siblings (also on `@glissade/scene/motion`):
+
+```ts
+import { orientToPath, lookAt } from '@glissade/scene/motion';
+```
+
+**`orientToPath(target, path, { progress?, offset? })`** binds `target.rotation` to the path tangent at `progress`, and nothing else:
+
+```ts
+// the dot's POSITION is keyframed; its ROTATION banks to the route direction
+orientToPath(dot, route, { id: 'bank', progress: 0.5, offset: -90 });
+track('bank/progress', 'number', [key(0, 0), key(3, 1)]); // sweep the tangent angle
+```
+
+**`lookAt(target, at, { offset? })`** aims `target`'s local **+x axis** at another node's world origin — a turret tracking a mover, an arrow pointing at a label. It re-derives from both nodes' positions every frame (no stored state):
+
+```ts
+lookAt(turret, mover); // turret always faces the mover, wherever it goes
+```
+
+`lookAt` computes the angle in world space and applies it as `target`'s local rotation — exact when the target's parent is unrotated (the common case). Use `offset` if your sprite points up (`-90`) rather than along +x. Both are pure driver nodes (they draw nothing) and stay in the golden corpus.
