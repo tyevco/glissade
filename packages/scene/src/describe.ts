@@ -446,6 +446,13 @@ const HELPERS: DescribedHelper[] = [
     usage: 'lookAt(target: Node, at: Node, opts?: { id?, offset?: number }): LookAt',
   },
   {
+    name: 'echo',
+    summary:
+      'Motion trails / onion-skin: wrap a child so it renders at K past playhead offsets (t − i·spacing), each trailing copy fading by decay. A pure multi-time re-eval (the playhead is re-addressed per copy and restored), byte-stable in the golden corpus. Add the returned Echo to the scene.',
+    import: '@glissade/scene',
+    usage: 'echo(child: Node, opts?: { id?, count?: number, spacing?: number, decay?: number }): Echo',
+  },
+  {
     name: 'clip',
     summary:
       'A reusable, target-agnostic motion captured once as a relative-time key schedule, then applied to a node at a wall-clock start time. Build-time sugar: clip.apply() compiles to ordinary Track[].',

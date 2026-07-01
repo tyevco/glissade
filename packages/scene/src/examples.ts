@@ -17,7 +17,7 @@
  * pattern) — describe never imports examples, so the base embed + IIFE stay lean.
  */
 
-import { key, timeline, track } from '@glissade/core';
+import { key, retime, timeline, track } from '@glissade/core';
 import { registerExamples } from './describe.js';
 import { type Node } from './node.js';
 import { Circle, Group, ImageNode, Path, Rect, Text } from './nodes.js';
@@ -26,6 +26,8 @@ import { Grid } from './grid.js';
 import { Stack } from './layoutCtors.js';
 import { splitText } from './type.js';
 import { motionPath } from './motionPath.js';
+import { orientToPath, lookAt } from './orient.js';
+import { echo } from './echo.js';
 import { pathFromSvg } from './path.js';
 
 /** One runnable example, attached to its describe-key (node type / builder method
@@ -152,6 +154,37 @@ export const EXAMPLES: readonly ApiExample[] = [
     key: 'motionPath',
     code: "import { motionPath } from '@glissade/scene/motion';\nimport { pathFromSvg } from '@glissade/scene/path';\nconst mp = motionPath(pathFromSvg('M0 0 C50 0 50 100 100 100'));\nconst pointHalfway = mp.atProgress(0.5); // { x, y }",
     run: () => void motionPath(pathFromSvg('M0 0 C50 0 50 100 100 100')).atProgress(0.5),
+  },
+  {
+    key: 'orientToPath',
+    code: "import { Rect } from '@glissade/scene';\nimport { orientToPath } from '@glissade/scene/motion';\nimport { pathFromSvg } from '@glissade/scene/path';\n// rotation-only sibling of followPath: banks the target to the path tangent while its\n// POSITION comes from elsewhere. Drive '<id>/progress' with a track; `offset` if it rests facing up.\nconst sprite = new Rect({ id: 'sprite', width: 12, height: 12 });\norientToPath(sprite, pathFromSvg('M0 0 L100 0 L100 100'), { id: 'bank', progress: 0.5 });",
+    run: () => {
+      const sprite = new Rect({ id: 'sprite', width: 12, height: 12 });
+      orientToPath(sprite, pathFromSvg('M0 0 L100 0 L100 100'), { id: 'bank', progress: 0.5 });
+    },
+  },
+  {
+    key: 'lookAt',
+    code: "import { Rect, Circle } from '@glissade/scene';\nimport { lookAt } from '@glissade/scene/motion';\n// aim the target's local +x axis at another node's world origin (a turret tracking a mover)\nconst turret = new Rect({ id: 'turret', width: 12, height: 12, position: [0, 0] });\nconst mover = new Circle({ id: 'mover', radius: 6, position: [40, 20] });\nlookAt(turret, mover);",
+    run: () => {
+      const turret = new Rect({ id: 'turret', width: 12, height: 12, position: [0, 0] });
+      const mover = new Circle({ id: 'mover', radius: 6, position: [40, 20] });
+      lookAt(turret, mover);
+    },
+  },
+  {
+    key: 'retime',
+    code: "import { retime, track, key } from '@glissade/core';\n// pure key-time transform → ordinary retimed tracks (speed / shift / reverse / pingpong)\nconst move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];\nconst slow = retime(move, { speed: 0.5 });    // half speed\nconst back = retime(move, { reverse: true }); // play it backward",
+    run: () => {
+      const move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];
+      void retime(move, { speed: 0.5 });
+      void retime(move, { reverse: true });
+    },
+  },
+  {
+    key: 'echo',
+    code: "import { Circle, echo } from '@glissade/scene';\n// motion trail / onion-skin: renders the child at K past playhead offsets, each fading by `decay`.\n// Add the returned Echo to the scene; drive the child however you like (its ghosts re-derive at each offset).\nconst dot = new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' });\nconst trail = echo(dot, { count: 6, spacing: 0.05, decay: 0.7 });",
+    run: () => void echo(new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' }), { count: 6, spacing: 0.05, decay: 0.7 }),
   },
 ];
 
