@@ -1,5 +1,42 @@
 # @glissade/cli
 
+## 0.28.0
+
+### Minor Changes
+
+- 2a9f74c: `gs mcp <scene>` — the AI-native write layer: an MCP stdio server for authoring a scene
+
+  Turns `describe()` from a read-only manifest (the observation space) into a full **author → render → verify** loop (the action space). `gs mcp <scene-module>` starts a Model Context Protocol stdio server for that scene, exposing tools an agent calls without ever reading source:
+
+  - **`describe`** — the API manifest: which props are animatable, per node type.
+  - **`list_targets`** — the concrete `<nodeId>/<prop>` animatable targets of THIS scene (id-substituted, with value types).
+  - **`apply_patch`** — a **validated, reversible** Timeline Patch batch. A target that isn't animatable on this scene is rejected before it touches the doc (fail-loud write boundary); every apply records its inverse.
+  - **`undo`** — revert the last `apply_patch`.
+  - **`render_frame(t)`** — render one frame of the (patched) scene → a PNG returned inline as an image. The deterministic verifier.
+  - **`get_timeline`** — the current merged timeline (code + edits) as JSON.
+
+  It rides only shipped primitives — `describe()` (can't drift, examples run in CI), Timeline Patch (pure doc→doc, reversible, sidecar-merged), and a single deterministic Skia frame — so the whole loop stays pure. Lives in `@glissade/cli` (Node-only, `@modelcontextprotocol/sdk`) — never on the embed path; the base embed is unchanged.
+
+  ```
+  gs mcp my-scene.ts   # then point an MCP client (an agent) at it
+  ```
+
+### Patch Changes
+
+- 01719fe: `gs mcp`: fix `render_frame` staleness after `undo` returns the sidecar to baseline
+
+  `render_frame` reused one scene instance across calls. `evaluate` binds the current merged timeline's tracks but does not unbind a track that was present in a prior evaluate and absent now — so undoing the last edit (sidecar back to empty) left the removed track's stale binding on the reused scene, and `render_frame` kept rendering the pre-undo frame even though `get_timeline` correctly reverted. `render_frame` now builds a fresh scene per call (stateless, like `gs render` per run), so it's a pure function of the current merged timeline + t. Found independently by two canary seats; a regression test (apply → render → undo → render == baseline byte-identical) is added.
+
+  - @glissade/backend-skia@0.28.0
+  - @glissade/core@0.28.0
+  - @glissade/interact@0.28.0
+  - @glissade/lottie@0.28.0
+  - @glissade/narrate@0.28.0
+  - @glissade/player@0.28.0
+  - @glissade/scene@0.28.0
+  - @glissade/sfx@0.28.0
+  - @glissade/svg@0.28.0
+
 ## 0.28.0-pre.1
 
 ### Patch Changes
