@@ -85,4 +85,23 @@ describe('McpSession — render_frame (the verifier)', () => {
     await s.renderFrame(0.5, after);
     expect(readFileSync(before).equals(readFileSync(after))).toBe(false); // the patch is reflected
   });
+
+  it('render_frame reflects undo-to-baseline (regression: two-canary undo-to-empty staleness)', async () => {
+    const s = await McpSession.load(FIXTURE);
+    const base1 = join(dir, 'base1.png');
+    await s.renderFrame(0.5, base1); // baseline
+
+    // add a track that ISN'T in the code timeline, so undo returns the sidecar to EMPTY
+    s.applyPatch([{ op: 'setTrackKeys', timelineId: 'main', target: 'box/opacity', type: 'number', keys: [{ t: 0, value: 0 }, { t: 1, value: 0 }] }]);
+    const edited = join(dir, 'edited.png');
+    await s.renderFrame(0.5, edited);
+    expect(readFileSync(edited).equals(readFileSync(base1))).toBe(false); // edit reflected
+
+    s.undo();
+    expect(s.editCount()).toBe(0);
+    const base2 = join(dir, 'base2.png');
+    await s.renderFrame(0.5, base2); // AFTER undo-to-empty
+    // the bug: this rendered the stale edited frame. Fixed: back to baseline, byte-identical.
+    expect(readFileSync(base2).equals(readFileSync(base1))).toBe(true);
+  });
 });

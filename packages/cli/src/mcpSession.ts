@@ -42,7 +42,7 @@ export class McpSession {
   private sidecar: SidecarDoc = emptySidecar();
   private readonly undoStack: TimelinePatch[][] = [];
 
-  private constructor(mod: SceneModule) {
+  private constructor(private readonly mod: SceneModule) {
     this.scene = mod.createScene();
     this.codeTimeline = mod.timeline;
   }
@@ -132,24 +132,32 @@ export class McpSession {
     return this.undoStack.length;
   }
 
-  /** Render ONE frame of the current (patched) scene to a PNG — the agent's verifier. */
+  /**
+   * Render ONE frame of the current (patched) scene to a PNG — the agent's verifier.
+   * Builds a FRESH scene each call (like `gs render` does per run): the verifier is
+   * stateless, so a track that was added then undone — leaving the sidecar back at a
+   * prior/empty state — can't leave a stale binding on a reused scene instance
+   * (evaluate binds the current timeline's tracks but won't unbind a track absent
+   * from it). This keeps render_frame a pure function of (current merged timeline, t).
+   */
   async renderFrame(t: number, outPath: string): Promise<{ path: string; width: number; height: number }> {
-    const hasLayout = [...this.scene.nodes.values()].some(
+    const scene = this.mod.createScene();
+    const hasLayout = [...scene.nodes.values()].some(
       (n) => (n.constructor as { isLayoutNode?: boolean }).isLayoutNode === true,
     );
     if (hasLayout) {
       const { loadYogaLayoutEngine } = await import('@glissade/scene/layout');
       await loadYogaLayoutEngine();
     }
-    const dl = evaluate(this.scene, this.mergedTimeline(), t);
-    const backend = new SkiaBackend(this.scene.size.w, this.scene.size.h);
+    const dl = evaluate(scene, this.mergedTimeline(), t);
+    const backend = new SkiaBackend(scene.size.w, scene.size.h);
     try {
-      this.scene.setTextMeasurer(backend);
+      scene.setTextMeasurer(backend);
       backend.render(dl);
       writeFileSync(outPath, backend.encodePng());
     } finally {
       backend.dispose();
     }
-    return { path: outPath, width: this.scene.size.w, height: this.scene.size.h };
+    return { path: outPath, width: scene.size.w, height: scene.size.h };
   }
 }
