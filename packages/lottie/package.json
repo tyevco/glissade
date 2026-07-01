@@ -1,6 +1,6 @@
 {
   "name": "@glissade/lottie",
-  "version": "0.30.0",
+  "version": "0.31.0-pre.0",
   "description": "glissade Lottie import (S1 MVP): pure .json (Lottie/bodymovin) → node specs + a v1 Timeline. Fail-fast feature audit; no DOM/Node dependencies.",
   "license": "Apache-2.0",
   "engines": {

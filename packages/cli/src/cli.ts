@@ -7,6 +7,7 @@
 import { render, parseFrameRange, renderLocales, parseLocalesList, LocaleArgsError } from './render.js';
 import { parseCaptionsMode, type CaptionsMode } from './captions.js';
 import { parseArgs } from './args.js';
+import type { ApiManifest } from '@glissade/scene/describe';
 
 function fail(msg: string): never {
   console.error(`gs: ${msg}`);
@@ -36,6 +37,8 @@ const USAGE = `usage:
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
   gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
+  gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
+  gs migrate <baseline-api.json> [--json]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; never rewrites your files)
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -127,7 +130,7 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -214,6 +217,54 @@ async function main(): Promise<void> {
       if (!result.ok) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // gs describe [--out <file>] — snapshot this engine's describe() API manifest.
+  // Self-contained (no <scene-module>): the manifest is the global API taxonomy,
+  // not a scene. This is the artifact you commit per release + feed to gs migrate.
+  if (command === 'describe') {
+    const { flags: df } = parseArgs(rest);
+    const { describe } = await import('@glissade/scene/describe');
+    if (df.has('examples')) await import('@glissade/scene/examples'); // register the corpus first
+    const manifest = describe(df.has('examples') ? { examples: true } : {});
+    const json = `${JSON.stringify(manifest, null, 2)}\n`;
+    const outPath = df.get('out');
+    if (outPath) {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(outPath, json);
+      process.stderr.write(`gs describe: wrote ${manifest.version} API manifest → ${outPath}\n`);
+    } else {
+      process.stdout.write(json);
+    }
+    return;
+  }
+
+  // gs migrate <baseline-api.json> — diff a saved manifest against the current
+  // engine. The report is generated FROM the real registry, so it can't claim a
+  // move that didn't happen (the no-drift guarantee extends to migration).
+  if (command === 'migrate') {
+    const { positional: mp, flags: mf } = parseArgs(rest);
+    const baselinePath = mp[0];
+    if (!baselinePath) fail(`gs migrate needs <baseline-api.json> (a manifest from an older 'gs describe --out')\n${USAGE}`);
+    const { readFileSync } = await import('node:fs');
+    const { describe } = await import('@glissade/scene/describe');
+    const { diffManifests, formatReport } = await import('./migrate.js');
+    let baseline: ApiManifest;
+    try {
+      baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as ApiManifest;
+    } catch (err) {
+      fail(`could not read baseline manifest '${baselinePath}': ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (typeof baseline.version !== 'string' || baseline.nodes === undefined) {
+      fail(`'${baselinePath}' is not a describe() API manifest (missing version/nodes) — did you point at the right file?`);
+    }
+    const report = diffManifests(baseline, describe());
+    if (mf.has('json')) {
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${formatReport(report)}\n`);
     }
     return;
   }
