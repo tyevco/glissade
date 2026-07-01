@@ -35,6 +35,7 @@ const USAGE = `usage:
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
+  gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -126,7 +127,7 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -148,6 +149,30 @@ async function main(): Promise<void> {
         resolvePath: (url) => resolveAssetPath(url, sceneModule),
       });
       process.stdout.write(`${text}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // gs build [filter...] — the content-graph DAG runner. Reads glissade.config.ts
+  // (or --config), derives narrate→sfx→loudness→render per scene, and runs ONLY the
+  // stale subtree. Self-contained: no <scene-module> positional (positionals filter).
+  if (command === 'build') {
+    const { positional: bp, flags: bf } = parseArgs(rest);
+    const { buildCommand } = await import('./build.js');
+    const config = bf.get('config') || 'glissade.config.ts';
+    const explain = bf.has('explain');
+    try {
+      const r = await buildCommand({
+        config,
+        explain,
+        ...(bp.length ? { only: bp } : {}),
+        onLog: (line) => process.stderr.write(`${line}\n`),
+      });
+      process.stderr.write(
+        `gs build: ${r.ran} step${r.ran === 1 ? '' : 's'} ${explain ? 'WOULD run' : 'ran'}, ${r.skipped} fresh, across ${r.scenes} scene${r.scenes === 1 ? '' : 's'}${explain ? ' (--explain: nothing executed)' : ''}\n`,
+      );
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
