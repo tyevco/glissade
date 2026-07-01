@@ -282,8 +282,11 @@ export interface ColorStop {
 export type GradientInterpolation = 'linear' | 'smooth' | 'gaussian';
 
 /** One mesh-gradient color point: `pos` in normalized [0,1]² fill space, `color`
- * a CSS string. Both are ANIMATABLE (e.g. `track('node/fill.points.0.color', …)`
- * drives aurora drift on one node). */
+ * a CSS string. To ANIMATE a mesh (aurora drift), drive the WHOLE `fill` as a
+ * `paint` track — `track('node/fill', 'paint', [key(0, meshA), key(1, meshB)])` —
+ * and two same-point-count meshes interpolate their points PAIRWISE (pos + color).
+ * There are **no per-point sub-path targets**: `fill.points.<i>.pos`/`.color` do
+ * NOT resolve (`fill` is one signal, not a nested tree), so animate the whole mesh. */
 export interface MeshPoint {
   pos: [number, number];
   color: string;

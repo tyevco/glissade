@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
-import { createScene, evaluate, Rect } from '../src/index.js';
+import { Circle, createScene, evaluate, Rect } from '../src/index.js';
 import { Grid, GridError } from '../src/grid.js';
 
 /**
@@ -77,5 +77,37 @@ describe('Grid (build-time track resolver)', () => {
     const cs = kids(2);
     const scene = createScene({ size: { w: 640, h: 360 }, children: [Grid({ columns: 2, width: 100, children: cs })] });
     expect(() => evaluate(scene, timeline({ duration: 1 }), 0)).not.toThrow();
+  });
+});
+
+describe('Grid stretch (0.25) — size children to their cells', () => {
+  it('sets each child width to its resolved column-track width + height to cellHeight', () => {
+    const rects = [new Rect({ width: 10, height: 10 }), new Rect({ width: 10, height: 10 }), new Rect({ width: 10, height: 10 })];
+    Grid({ columns: 3, width: 360, cellHeight: 80, stretch: true, children: rects }); // 3 fr cols, gap 0 → cell 120
+    for (const r of rects) {
+      expect(r.width()).toBe(120);
+      expect(r.height()).toBe(80);
+    }
+  });
+
+  it('default (no stretch) leaves child sizes untouched — position-only, byte-identical to v1', () => {
+    const r = new Rect({ width: 10, height: 10 });
+    Grid({ columns: 3, width: 360, cellHeight: 80, children: [r] });
+    expect(r.width()).toBe(10);
+    expect(r.height()).toBe(10);
+  });
+
+  it('a later explicit bind still wins (stretch is a plain signal.set)', () => {
+    const r = new Rect({ width: 10, height: 10 });
+    Grid({ columns: 2, width: 200, cellHeight: 50, stretch: true, children: [r] });
+    expect(r.width()).toBe(100); // stretched to cell
+    r.width.set(42); // author overrides after
+    expect(r.width()).toBe(42);
+  });
+
+  it('stretch is a no-op for children without a width signal (Circle) — just positioned, no throw', () => {
+    const c = new Circle({ radius: 20 });
+    expect(() => Grid({ columns: 1, width: 100, cellHeight: 50, stretch: true, children: [c] })).not.toThrow();
+    expect(c.radius()).toBe(20);
   });
 });

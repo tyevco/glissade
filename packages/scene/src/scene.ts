@@ -167,6 +167,16 @@ function constructionPropMessage(nodes: ReadonlyMap<string, Node>, target: strin
         `(new ${node.describeType}({ ${prop} })); it is not an animatable target.`
       );
     }
+    // 0.25 (card OKvGXSizYf7w): a mesh Paint has NO per-point sub-path targets —
+    // `fill` is a single signal, not a nested tree. Point at the real mechanism.
+    if (/^fill\.points\./.test(prop)) {
+      const id = target.slice(0, slash);
+      return (
+        `'${target}' does not resolve — a mesh Paint has no per-point sub-path targets. ` +
+        `Animate the WHOLE fill as a paint track: track('${id}/fill', 'paint', [key(0, meshA), key(1, meshB)]) — ` +
+        `two same-point-count meshes interpolate their points pairwise (pos + color).`
+      );
+    }
     return undefined; // node found, prop is not a construction prop ⇒ generic
   }
   return undefined;

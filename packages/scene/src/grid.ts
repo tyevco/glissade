@@ -12,10 +12,11 @@
  * `scene/type`/`scene/motion`) — the base embed never pays for it. Re-exported
  * onto the `@glissade/browser` IIFE so `window.glissade.Grid` survives.
  *
- * v1 is POSITION-ONLY: it places each child at the center of its cell. Cell
- * SIZING / `stretch` (binding a child's width to its column track) is deferred —
- * that needs a child-width binding, out of scope for this slice. Children keep
- * their own intrinsic size; the grid only positions them.
+ * By default it is POSITION-ONLY: it places each child at the center of its cell
+ * and children keep their own intrinsic size. Pass `stretch: true` (0.25) to also
+ * SIZE each child to its cell — the resolved column-track width becomes the
+ * child's `width`, and `cellHeight` its `height` (a plain `signal.set`, only for
+ * children that expose those signals — Rect/Image).
  *
  *   const board = Grid({
  *     columns: 3,            // 3 equal-fr columns
@@ -71,6 +72,15 @@ export interface GridProps extends NodeProps {
    * (v1 is position-only, so the grid does not measure child heights.)
    */
   cellHeight?: number;
+  /**
+   * Stretch each child to fill its cell (0.25): sets the child's `width` to its
+   * resolved column-track width and, when `cellHeight` is given, its `height` to
+   * `cellHeight` — a plain `signal.set`, so a later explicit bind still wins.
+   * Only children that expose a settable `width`/`height` signal (Rect/Image) are
+   * sized; others (Circle/Text/Path) keep their own size and are just positioned.
+   * Default false (position-only, byte-identical to v1).
+   */
+  stretch?: boolean;
 }
 
 /** Resolve the column spec into per-column [centerX] offsets from the grid's left edge. */
@@ -78,7 +88,7 @@ function resolveColumns(
   spec: number | readonly GridTrack[],
   columnGap: number,
   totalWidth: number | undefined,
-): { centers: number[]; width: number } {
+): { centers: number[]; width: number; widths: number[] } {
   const tracks: GridTrack[] =
     typeof spec === 'number'
       ? (() => {
@@ -117,7 +127,7 @@ function resolveColumns(
     centers.push(x + widths[c]! / 2);
     x += widths[c]! + columnGap;
   }
-  return { centers, width };
+  return { centers, width, widths };
 }
 
 /**
@@ -131,12 +141,12 @@ function resolveColumns(
  * rebinds it). Pass freshly constructed nodes for a clean, deterministic layout.
  */
 export function Grid(props: GridProps): Group {
-  const { columns, gap = 0, columnGap, rowGap, width, cellHeight } = props;
+  const { columns, gap = 0, columnGap, rowGap, width, cellHeight, stretch = false } = props;
   const children = props.children ?? [];
   const colGap = columnGap ?? gap;
   const rowGapPx = rowGap ?? gap;
 
-  const { centers, width: gridWidth } = resolveColumns(columns, colGap, width);
+  const { centers, width: gridWidth, widths: colWidths } = resolveColumns(columns, colGap, width);
   const cols = centers.length;
   const rows = Math.ceil(children.length / cols);
 
@@ -157,15 +167,29 @@ export function Grid(props: GridProps): Group {
     const cx = ox + centers[col]!;
     const cy = oy + row * rowPitch + (cellHeight ?? 0) / 2;
     child.position.set([cx, cy]);
+    if (stretch) {
+      setDim(child, 'width', colWidths[col]!);
+      if (cellHeight !== undefined) setDim(child, 'height', cellHeight);
+    }
   });
 
   const groupProps: NodeProps & { children: Node[] } = { children, ...stripGridOnly(props) };
   return new Group(groupProps);
 }
 
+/** Set a child's `width`/`height` signal IF it exposes one (Rect/Image do;
+ *  Circle/Text/Path don't) — a plain `.set`, so a later explicit bind still wins. */
+function setDim(child: Node, prop: 'width' | 'height', value: number): void {
+  // a BindableSignal is a CALLABLE (typeof 'function') carrying a `.set` method.
+  const sig = (child as unknown as Record<string, unknown>)[prop];
+  if (sig != null && typeof (sig as { set?: unknown }).set === 'function') {
+    (sig as { set: (v: number) => void }).set(value);
+  }
+}
+
 /** Strip Grid's own props so the rest (id/position/opacity/…) pass to the Group. */
 function stripGridOnly(props: GridProps): NodeProps {
-  const { columns, children, gap, columnGap, rowGap, width, cellHeight, ...nodeProps } = props;
+  const { columns, children, gap, columnGap, rowGap, width, cellHeight, stretch, ...nodeProps } = props;
   void columns;
   void children;
   void gap;
@@ -173,5 +197,6 @@ function stripGridOnly(props: GridProps): NodeProps {
   void rowGap;
   void width;
   void cellHeight;
+  void stretch;
   return nodeProps;
 }

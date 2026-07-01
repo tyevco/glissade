@@ -497,6 +497,24 @@ vdescribe('describe() negative space: construction props are not bindable', () =
     expect(() => bindScene(scene, doc)).toThrow(/set it at construction/);
   });
 
+  it('a mesh `fill.points.<i>.pos` target fails loud with a SPECIFIC hint at the whole-fill paint track (0.25, card OKvGXSizYf7w)', () => {
+    const scene = createScene({
+      size: { w: 100, h: 100 },
+      children: [
+        new Rect({
+          id: 'hero',
+          width: 100,
+          height: 100,
+          fill: { kind: 'mesh', points: [{ pos: [0, 0], color: '#f00' }, { pos: [1, 1], color: '#00f' }] },
+        }),
+      ],
+    });
+    const doc = timeline((tl) => tl.to('hero/fill.points.0.pos', [0.5, 0.5], { from: [0, 0] }));
+    // NOT the generic UnboundTargetError — a mesh-specific hint (there are no per-point sub-paths)
+    expect(() => bindScene(scene, doc)).toThrow(/no per-point sub-path targets/);
+    expect(() => bindScene(scene, doc)).toThrow(/Animate the WHOLE fill as a paint track/);
+  });
+
   it('confirms every construction-only prop in the manifest has no target', () => {
     for (const [name, node] of Object.entries(m.nodes)) {
       for (const [prop, spec] of Object.entries(node.props)) {
