@@ -1,5 +1,34 @@
 # @glissade/scene
 
+## 0.25.0-pre.1
+
+### Minor Changes
+
+- d780cdd: Grid: `stretch` — size children to their cells
+
+  `Grid` was position-only. Pass `stretch: true` to also SIZE each child to its cell: the resolved column-track width becomes the child's `width`, and `cellHeight` its `height`.
+
+  ```js
+  Grid({
+    columns: 3,
+    width: 360,
+    cellHeight: 80,
+    stretch: true,
+    children: [rectA, rectB, rectC],
+  }); // each 120×80
+  ```
+
+  A plain `signal.set`, so a later explicit bind still wins; only children exposing a settable `width`/`height` signal (Rect/Image) are sized (Circle/Text/Path keep their own size and are just positioned). Default `false` — position-only, byte-identical to before.
+
+### Patch Changes
+
+- d780cdd: mesh: per-point sub-path targets now fail loud (the docstring over-promised them)
+
+  Animating a mesh point via `track('node/fill.points.0.pos', …)` never resolved — `fill` is a single signal, not a nested tree — but the `MeshPoint` docstring implied per-point sub-path tracks exist. Now: (1) the docstring documents the real mechanism (drive the WHOLE `fill` as a `paint` track; two same-point-count meshes interpolate pairwise), and (2) a `fill.points.<i>.*` target throws a SPECIFIC actionable error pointing at that whole-fill paint track, instead of the generic "no property signal resolves to it".
+
+- Updated dependencies [d780cdd]
+  - @glissade/core@0.25.0-pre.1
+
 ## 0.25.0-pre.0
 
 ### Minor Changes
