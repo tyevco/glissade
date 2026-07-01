@@ -110,6 +110,13 @@ describe('Chart', () => {
     expect(chart.targets('fill')).toEqual(['sales/bars/0/fill', 'sales/bars/1/fill', 'sales/bars/2/fill']);
   });
 
+  it('targets() fails loud on a missing prop instead of emitting undefined paths', () => {
+    const chart = Chart({ id: 'sales', data, xKey: 'm', yKey: 'v', width: 600, height: 360 });
+    // @ts-expect-error — the no-build seat's nit: no-arg must throw, not return '.../undefined'
+    expect(() => chart.targets()).toThrow(/needs a prop name/);
+    expect(() => chart.targets('')).toThrow(ChartError);
+  });
+
   it('accepts an explicit yScale and a colorRamp fill', () => {
     const chart = Chart({
       id: 'c',

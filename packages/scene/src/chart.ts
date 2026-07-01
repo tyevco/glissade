@@ -285,7 +285,16 @@ export function Chart(spec: ChartSpec): ChartResult {
   });
 
   const node = new Group({ id, children: bars as Node[], ...stripChartOnly(spec) });
-  const targets = (prop: string): string[] => bars.map((_, i) => `${id}/bars/${i}/${prop}`);
+  const targets = (prop: string): string[] => {
+    // fail loud rather than emit '<id>/bars/<i>/undefined' targets that surface
+    // much later as a confusing UnboundTargetError (the no-build seat's nit).
+    if (!prop) {
+      throw new ChartError(
+        "Chart.targets(prop) needs a prop name, e.g. targets('height') or targets('fill')",
+      );
+    }
+    return bars.map((_, i) => `${id}/bars/${i}/${prop}`);
+  };
   return { node, bars, targets };
 }
 

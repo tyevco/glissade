@@ -64,6 +64,36 @@ export function validateTrack(track: Track): void {
       if (k.interp !== 'hold') k.interp = 'hold';
     }
   }
+  // Fail loud on a non-numeric keyframe value for a numeric type. A value type
+  // whose repr is number/vec2 does arithmetic in lerp — a function (the classic
+  // "keyed to `node.height` instead of `node.height()`" — a signal accessor IS a
+  // function), NaN, or undefined silently propagates to NaN and detonates much
+  // later as a native backend panic (a Skia abort with no source location). Catch
+  // it here with the target + t named. Additive: every valid finite key passes,
+  // so all goldens stay byte-identical. (Two canary seats' paired 0.32 nit.)
+  const repr = (vt as { repr?: string }).repr ?? vt.id;
+  if (repr === 'number' || repr === 'vec2') {
+    for (const k of track.keys) {
+      const ok =
+        repr === 'number'
+          ? typeof k.value === 'number' && Number.isFinite(k.value)
+          : Array.isArray(k.value) &&
+            k.value.length === 2 &&
+            (k.value as unknown[]).every((n) => typeof n === 'number' && Number.isFinite(n));
+      if (!ok) {
+        const got =
+          typeof k.value === 'function'
+            ? 'a function (a signal accessor? call it — e.g. node.height(), not node.height)'
+            : typeof k.value === 'object'
+              ? JSON.stringify(k.value)
+              : String(k.value);
+        throw new TrackValidationError(
+          track.target,
+          `${repr} keyframe at t=${k.t} must be ${repr === 'number' ? 'a finite number' : 'a [x, y] of finite numbers'}, got ${got}`,
+        );
+      }
+    }
+  }
   for (let i = 1; i < track.keys.length; i++) {
     const prev = track.keys[i - 1]!;
     const cur = track.keys[i]!;

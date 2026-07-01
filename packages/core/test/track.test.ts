@@ -32,6 +32,25 @@ describe('track validation', () => {
     expect(JSON.parse(JSON.stringify(additive)).additive).toBe(true); // serializes
   });
 
+  it('fails loud on a non-numeric keyframe value for a numeric type (the signal-accessor footgun)', () => {
+    // keying to `node.height` (a signal accessor — a FUNCTION) instead of
+    // `node.height()` used to propagate NaN into a native backend panic; now a
+    // clean TrackValidationError naming the target + t (two canary seats' nit).
+    const accessor = () => 42;
+    expect(() => track('bar/height', 'number', [key(0, 0), key(1, accessor as unknown as number)])).toThrow(
+      /must be a finite number, got a function/,
+    );
+    expect(() => track('a/x', 'number', [key(0, NaN)])).toThrow(TrackValidationError);
+    expect(() => track('a/x', 'number', [key(0, Infinity)])).toThrow(TrackValidationError);
+    expect(() => track('a/x', 'number', [key(0, undefined as unknown as number)])).toThrow(TrackValidationError);
+    // vec2 too: a non-[x,y]-of-finite value throws
+    expect(() => track('a/pos', 'vec2', [key(0, [0, NaN] as Vec2)])).toThrow(/finite numbers/);
+    expect(() => track('a/pos', 'vec2', [key(0, 5 as unknown as Vec2)])).toThrow(TrackValidationError);
+    // valid finite values still pass, unchanged
+    expect(() => track('a/x', 'number', [key(0, 0), key(1, -3.5)])).not.toThrow();
+    expect(() => track('a/pos', 'vec2', [key(0, [1, 2] as Vec2)])).not.toThrow();
+  });
+
   it('coerces non-hold keys on discrete (string/boolean) tracks to hold (§2.2)', () => {
     // a non-hold key on a hold-only type would silently degrade to a t=1 snap;
     // validateTrack canonicalizes it to an explicit hold (behaviorally a no-op)

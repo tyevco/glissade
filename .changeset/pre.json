@@ -26,6 +26,8 @@
     "@glissade/vite-plugin": "0.31.0"
   },
   "changesets": [
-    "chart"
+    "chart-targets-guard",
+    "chart",
+    "track-numeric-guard"
   ]
 }
