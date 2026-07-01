@@ -1,5 +1,11 @@
 # @glissade/scene
 
+## 0.29.0-pre.0
+
+### Patch Changes
+
+- @glissade/core@0.29.0-pre.0
+
 ## 0.28.0
 
 ### Patch Changes
