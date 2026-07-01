@@ -38,6 +38,7 @@ export default defineConfig({
           { text: 'Retiming & motion trails', link: '/motion-craft' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'SVG import', link: '/svg' },
+          { text: 'Render caching & remux', link: '/caching' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],
       },
