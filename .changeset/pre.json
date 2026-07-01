@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.27.1"
   },
   "changesets": [
+    "gs-mcp-render-undo-fix",
     "gs-mcp"
   ]
 }

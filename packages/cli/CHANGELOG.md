@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.28.0-pre.1
+
+### Patch Changes
+
+- 01719fe: `gs mcp`: fix `render_frame` staleness after `undo` returns the sidecar to baseline
+
+  `render_frame` reused one scene instance across calls. `evaluate` binds the current merged timeline's tracks but does not unbind a track that was present in a prior evaluate and absent now — so undoing the last edit (sidecar back to empty) left the removed track's stale binding on the reused scene, and `render_frame` kept rendering the pre-undo frame even though `get_timeline` correctly reverted. `render_frame` now builds a fresh scene per call (stateless, like `gs render` per run), so it's a pure function of the current merged timeline + t. Found independently by two canary seats; a regression test (apply → render → undo → render == baseline byte-identical) is added.
+
+  - @glissade/backend-skia@0.28.0-pre.1
+  - @glissade/core@0.28.0-pre.1
+  - @glissade/interact@0.28.0-pre.1
+  - @glissade/lottie@0.28.0-pre.1
+  - @glissade/narrate@0.28.0-pre.1
+  - @glissade/player@0.28.0-pre.1
+  - @glissade/scene@0.28.0-pre.1
+  - @glissade/sfx@0.28.0-pre.1
+  - @glissade/svg@0.28.0-pre.1
+
 ## 0.28.0-pre.0
 
 ### Minor Changes
