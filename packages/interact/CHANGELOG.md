@@ -1,5 +1,16 @@
 # @glissade/interact
 
+## 0.25.0
+
+### Patch Changes
+
+- Updated dependencies [d780cdd]
+- Updated dependencies [d907a72]
+- Updated dependencies [d780cdd]
+  - @glissade/scene@0.25.0
+  - @glissade/core@0.25.0
+  - @glissade/player@0.25.0
+
 ## 0.25.0-pre.1
 
 ### Patch Changes
