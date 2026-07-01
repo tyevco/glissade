@@ -1,5 +1,58 @@
 # @glissade/cli
 
+## 0.31.0
+
+### Minor Changes
+
+- 7113436: `gs migrate` + `gs describe` — the describe()-driven engine-bump assistant (ends the adopt-debt)
+
+  Bumping the engine across several minors used to mean hand-repointing moved imports (`tokenHighlight`→`/scene/tokens`, `motionPath`→`/scene/motion`), guessing which symbols were removed, and eyeballing a scary unreviewable batch. But `describe()` (0.18) already pins version + node/prop taxonomy + import subpaths + builder signatures per release — **so the diff between two manifests IS the migration surface.**
+
+  ```sh
+  gs describe --out api-0.30.json     # snapshot THIS engine's API manifest (commit it per release)
+  gs migrate api-0.30.json            # diff that baseline against the current engine
+  gs migrate api-0.30.json --json     # machine-readable report (an agent codemod's input)
+  ```
+
+  `gs migrate` reports, with the right breaking/additive classification and a suggested fix per breaking item:
+
+  ```
+  gs migrate: 0.13.0 → 0.31.0
+    3 breaking · 5 additive · 8 total
+
+  BREAKING — action needed:
+    → [helper] tokenHighlight: import moved @glissade/scene/diagnostics → @glissade/scene/tokens
+        ↳ import { tokenHighlight } from '@glissade/scene/tokens'
+    ✗ [node]   LegacyThing: node type removed (was imported from @glissade/scene)
+    ~ [prop]   Text.wrap: value type number → vec2
+        ↳ a Track on Text.wrap now expects a vec2 value — VERIFY every keyframe
+  ADDITIVE — new in this engine:
+    + [node]   MotionBlur: new node type (import from @glissade/scene)
+    …
+  ```
+
+  The report is generated **FROM the real registry** — it cannot claim a move that didn't happen, so the no-drift guarantee extends to migration itself (an identical manifest yields an empty report). It detects moved imports (node subpath + helper import), removed/added nodes · props · helpers · builder methods · value types · easings, prop value-type changes, and animatable transitions — each `breaking` when a consumer on the old engine could break, `additive` otherwise.
+
+  This MVP is **advisory** — it hands you the precise, exhaustive change list + a suggested action per item; it never touches your files. (AST source-rewriting is deferred: the `--json` report here is exactly the input such a codemod would consume.) Ships entirely in `cli`; nothing added to the embed path.
+
+### Patch Changes
+
+- f938c44: `gs migrate`: don't crash on a baseline that predates a `describe()` field (the deep-jump case)
+
+  `gs migrate` reads a saved API manifest and diffs it against the current engine — and the whole point is _deep_ jumps. But a baseline older than a given `describe()` field simply doesn't have that field: `helpers` was added after 0.19, and `builder` / `valueTypes` / `easings` each have their own introduction point. The manifest-validity check only requires `version` + `nodes`, so an old-but-valid manifest passed validation and then threw a raw `TypeError` (`Cannot read properties of undefined (reading 'map')`) in the diff — on exactly the long-lived-jump path the tool exists for.
+
+  `diffManifests` now treats **every** collection as possibly-absent on either side (missing ⇒ empty): a field the current engine has but the baseline didn't records as _additive_, a field the baseline had but the current engine dropped records as _breaking_, and nothing crashes. Verified on a real 0.19.1 (pre-`helpers`) manifest end-to-end, plus a regression test for each direction. Also documents the data-history nuance in the migration guide: a symbol shows up as **moved** only when the baseline recorded its old import path — a baseline older than a move sees the symbol as additive-at-its-current-path (still the exact import you need). Caught by two canary seats on 0.31.0-pre.0.
+
+  - @glissade/backend-skia@0.31.0
+  - @glissade/core@0.31.0
+  - @glissade/interact@0.31.0
+  - @glissade/lottie@0.31.0
+  - @glissade/narrate@0.31.0
+  - @glissade/player@0.31.0
+  - @glissade/scene@0.31.0
+  - @glissade/sfx@0.31.0
+  - @glissade/svg@0.31.0
+
 ## 0.31.0-pre.1
 
 ### Patch Changes
