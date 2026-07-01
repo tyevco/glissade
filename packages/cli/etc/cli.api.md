@@ -102,7 +102,7 @@ export interface CaptionProbe {
 // @public
 export function clearFrameCache(dir: string): void;
 
-// @public
+// @public (undocumented)
 export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
 
 // @public

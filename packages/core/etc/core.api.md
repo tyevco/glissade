@@ -226,7 +226,7 @@ export const easingDerivatives: Record<string, EasingFn>;
 // @public
 export type EasingFn = (t: number) => number;
 
-// @public (undocumented)
+// @public
 export const easings: Record<string, EasingFn>;
 
 // @public
@@ -515,6 +515,17 @@ export interface RetargetSpring {
     value(tau: number): number;
     // (undocumented)
     velocity(tau: number): number;
+}
+
+// @public
+export function retime<T>(tracks: readonly Track<T>[], spec: RetimeSpec): Track<T>[];
+
+// @public (undocumented)
+export interface RetimeSpec {
+    pingpong?: boolean;
+    reverse?: boolean;
+    shift?: number;
+    speed?: number;
 }
 
 // @public

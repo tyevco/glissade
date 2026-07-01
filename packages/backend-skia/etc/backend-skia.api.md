@@ -9,6 +9,7 @@ import { Canvas } from '@napi-rs/canvas';
 import { DisplayList } from '@glissade/scene';
 import { FontSpec } from '@glissade/scene';
 import { Image as Image_2 } from '@napi-rs/canvas';
+import { LayerStore } from '@glissade/scene';
 import { RenderBackend } from '@glissade/scene';
 import { TextMeasurer } from '@glissade/scene';
 import { TextMetricsLite } from '@glissade/scene';
@@ -21,7 +22,9 @@ export function createMeasurer(opts?: {
 
 // @public (undocumented)
 export class SkiaBackend implements RenderBackend {
-    constructor(width: number, height: number);
+    constructor(width: number, height: number, opts?: {
+        layerStore?: LayerStore;
+    });
     readonly caps: BackendCaps;
     // (undocumented)
     dispose(): void;
@@ -36,6 +39,7 @@ export class SkiaBackend implements RenderBackend {
     //
     // (undocumented)
     setImageAsset(assetId: string, image: Drawable): void;
+    setLayerStore(store: LayerStore | undefined): void;
     // (undocumented)
     setVideoAsset(assetId: string, source: VideoFrameSource): void;
 }

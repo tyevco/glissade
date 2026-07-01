@@ -70,6 +70,18 @@ export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry;
 // @public (undocumented)
 export type BlendMode = 'source-over' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';
 
+// @public (undocumented)
+export interface Bounds {
+    // (undocumented)
+    maxX: number;
+    // (undocumented)
+    maxY: number;
+    // (undocumented)
+    minX: number;
+    // (undocumented)
+    minY: number;
+}
+
 // @public
 export function breakLines(text: string, font: FontSpec, maxWidth: number | undefined, measurer: TextMeasurer): string[];
 
@@ -161,6 +173,7 @@ export interface Ctx2DLike<TPath, TDrawable> {
     // (undocumented)
     font: string;
     fontVariationSettings?: string;
+    getImageData(sx: number, sy: number, sw: number, sh: number): ImageDataLike;
     // (undocumented)
     getTransform(): unknown;
     // (undocumented)
@@ -396,6 +409,33 @@ export interface EachResult {
     tracks: Track[];
 }
 
+// @public (undocumented)
+export class Echo extends Group {
+    constructor(props?: EchoProps);
+    // (undocumented)
+    readonly count: number;
+    // (undocumented)
+    readonly decay: number;
+    // (undocumented)
+    get describeType(): string;
+    // (undocumented)
+    protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
+    // (undocumented)
+    readonly spacing: number;
+}
+
+// @public
+export function echo(child: Node_2, props?: Omit<EchoProps, 'children'>): Echo;
+
+// @public (undocumented)
+export interface EchoProps extends NodeProps {
+    // (undocumented)
+    children?: Node_2[];
+    count?: number;
+    decay?: number;
+    spacing?: number;
+}
+
 // @public
 export interface EditMark {
     grapheme: string;
@@ -411,6 +451,7 @@ export const estimatingMeasurer: TextMeasurer;
 export interface EvalContext {
     readonly frame: number;
     readonly measurer: TextMeasurer;
+    readonly playhead?: Playhead;
     readonly time: number;
 }
 
@@ -627,6 +668,25 @@ export function invert(m: Mat2x3): Mat2x3 | null;
 export function isEstimatingMeasurer(m: TextMeasurer): boolean;
 
 // @public
+export interface LayerCacheEntry {
+    readonly bounds: Bounds | null;
+    // (undocumented)
+    readonly h: number;
+    readonly rgba: Uint8ClampedArray;
+    // (undocumented)
+    readonly unbounded: boolean;
+    // (undocumented)
+    readonly w: number;
+}
+
+// @public (undocumented)
+export interface LayerStore {
+    get(key: string): LayerCacheEntry | undefined;
+    // (undocumented)
+    put(key: string, entry: LayerCacheEntry): void;
+}
+
+// @public
 export interface LayoutBox {
     // (undocumented)
     height: number;
@@ -724,6 +784,30 @@ export function meshRasterSize(bw: number, bh: number): {
     w: number;
     h: number;
 };
+
+// @public (undocumented)
+export class MotionBlur extends Group {
+    constructor(props?: MotionBlurProps);
+    // (undocumented)
+    get describeType(): string;
+    // (undocumented)
+    protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
+    // (undocumented)
+    readonly samples: number;
+    // (undocumented)
+    readonly shutter: number;
+}
+
+// @public
+export function motionBlur(child: Node_2, props?: Omit<MotionBlurProps, 'children'>): MotionBlur;
+
+// @public (undocumented)
+export interface MotionBlurProps extends NodeProps {
+    // (undocumented)
+    children?: Node_2[];
+    samples?: number;
+    shutter?: number;
+}
 
 // @public (undocumented)
 export function multiply(m1: Mat2x3, m2: Mat2x3): Mat2x3;
@@ -900,11 +984,13 @@ export function quantize(v: number): number;
 // @public (undocumented)
 export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawable> {
     constructor(host: Raster2DHost<TCanvas, TPath, TDrawable>, shaderCaps?: ShaderCaps,
-    cacheEnabled?: boolean);
+    cacheEnabled?: boolean,
+    layerStore?: LayerStore | undefined);
     // (undocumented)
     dispose(): void;
     render(target: TCanvas, list: DisplayList): void;
     setImageAsset(assetId: string, image: TDrawable): void;
+    setLayerStore(store: LayerStore | undefined): void;
     setVideoAsset(assetId: string, source: VideoFrameSource): void;
 }
 

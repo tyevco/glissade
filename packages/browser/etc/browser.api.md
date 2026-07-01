@@ -4,14 +4,23 @@
 
 ```ts
 
+import { bandScale } from '@glissade/scene/chart';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { Chart } from '@glissade/scene/chart';
+import { colorRamp } from '@glissade/scene/chart';
 import { Column } from '@glissade/scene/layout-ctors';
 import { FollowPath } from '@glissade/scene/motion';
 import { followPath } from '@glissade/scene/motion';
 import { Grid } from '@glissade/scene/grid';
 import { Layout } from '@glissade/scene/layout-ctors';
+import { linearScale } from '@glissade/scene/chart';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
+import { logScale } from '@glissade/scene/chart';
+import { LookAt } from '@glissade/scene/motion';
+import { lookAt } from '@glissade/scene/motion';
 import { motionPath } from '@glissade/scene/motion';
+import { OrientToPath } from '@glissade/scene/motion';
+import { orientToPath } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
@@ -21,7 +30,13 @@ import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
 
+export { bandScale }
+
 export { Canvas2DBackend }
+
+export { Chart }
+
+export { colorRamp }
 
 export { Column }
 
@@ -33,9 +48,21 @@ export { Grid }
 
 export { Layout }
 
+export { linearScale }
+
 export { loadYogaLayoutEngine }
 
+export { logScale }
+
+export { LookAt }
+
+export { lookAt }
+
 export { motionPath }
+
+export { OrientToPath }
+
+export { orientToPath }
 
 export { pathLength }
 
