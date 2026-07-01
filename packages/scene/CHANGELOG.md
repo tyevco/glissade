@@ -1,5 +1,42 @@
 # @glissade/scene
 
+## 0.26.0-pre.0
+
+### Minor Changes
+
+- b3218c9: Motion-craft quick-win: `Echo` / `echo()` — motion trails & onion-skin
+
+  A wrapper node that renders its subtree at the playhead **plus K−1 earlier offsets** (`t − i·spacing`), each trailing copy fading by `decay` — comet trails, strobe echoes, editor onion-skinning. The leading copy is the live frame; the ghosts are the subtree "as it was" a few slices ago (their positions come from whatever drives them — tracks, `followPath`, computed signals all re-derive at the offset time).
+
+  It is the pure render form of "re-evaluate at t + k·spacing": within one frame Echo re-addresses the scene playhead to each offset, emits the children, then **restores** it before the walk continues — the whole dance wrapped in `batch()` so a player's repaint subscriber coalesces to a single idempotent notification at the restored time (never mid-emit reentrancy). Headless the playhead has no subscribers, so it's a plain pure multi-sample: `evaluate()` stays a pure function of time, the DisplayList is byte-stable, and the cache-cold determinism audit passes.
+
+  ```js
+  import { echo } from "@glissade/scene";
+  echo(mover, { count: 6, spacing: 0.05, decay: 0.7 }); // mover leaves a fading trail
+  ```
+
+  `EvalContext` gains an optional `playhead` (the one channel a node may re-address within a frame); it's supplied by the real `evaluate()` / `emitWithIds()` / cache-audit, so existing nodes are unaffected. Ships on the base scene index alongside `ShaderEffect`; a golden + showcase scene added.
+
+- b3218c9: Motion-craft quick-win: `orientToPath` + `lookAt` orientation drivers (`@glissade/scene/motion`)
+
+  Two rotation-only companion nodes — the pure-model siblings of `followPath`. Each owns only its target's `rotation` via pull-based binding, so it composes with whatever drives position (keyframes, layout, a separate `followPath`). Tree-shakeable off the base embed; also on the browser IIFE (`window.glissade.orientToPath` / `.lookAt`).
+
+  - **`orientToPath(target, path, { progress?, offset? })`** — banks a node to the path tangent at `progress` (the rotation half of `followPath`'s `orient`, usable when position comes from elsewhere).
+  - **`lookAt(target, at, { offset? })`** — aims `target`'s local +x axis at another node's world origin (a turret tracking a mover). Reads the aimed node's world position through its parent matrix, and computes its own origin the same way, so there is no `rotation → worldMatrix → rotation` cycle.
+
+  Both are pure functions of the signal graph — determinism and the golden corpus are unchanged (all existing goldens byte-identical; a new `orient` golden + showcase scene added).
+
+  ```js
+  import { orientToPath, lookAt } from "@glissade/scene/motion";
+  orientToPath(rocket, track, { id: "bank", progress: 0.5 }); // drive 'bank/progress'
+  lookAt(turret, rocket); // turret always faces the rocket
+  ```
+
+### Patch Changes
+
+- Updated dependencies [b3218c9]
+  - @glissade/core@0.26.0-pre.0
+
 ## 0.25.0
 
 ### Minor Changes
