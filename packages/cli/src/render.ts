@@ -5,7 +5,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, mkdtempSync, rmSync, existsSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
 import { buildFontRegistry, type AudioClip } from '@glissade/core';
 import { evaluate, validateSceneFonts, collectLocalizedTextUsages, withDeterminismGuards, type SceneModule } from '@glissade/scene';
+import { readRenderManifest, writeRenderManifest, frameKeyDigest, canRemux } from './renderManifest.js';
 import { collectAssetReferences, validateAssetReferences } from './assetValidation.js';
 import { SkiaBackend } from '@glissade/backend-skia';
 
@@ -543,35 +544,69 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     };
   }
 
-  for (let f = firstFrame; f <= lastFrame; f++) {
-    // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
-    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
-    let pngBytes: Buffer | undefined;
-    if (frameCache && keyCtx) {
-      const { frameCacheKey } = await import('./frameCache.js');
-      const key = frameCacheKey(dl, keyCtx);
-      const cached = frameCache.get(key);
-      if (cached) {
-        // HIT: blit the stored RGBA into the backend, then encode via the EXACT
-        // same path a miss takes → byte-identical to a cold render.
-        backend.putPixels(cached);
-        pngBytes = backend.encodePng();
+  // ── 0.27 audio-only REMUX fast path (video + cache) ──────────────────────
+  // A prior render leaves a manifest of the ordered per-frame content-key digest
+  // beside the output. A key-only pre-pass (evaluate + hash, NO raster) recomputes
+  // it; if it matches and the encode params + output are unchanged, the video is
+  // byte-identical — skip the frame loop and `-c:v copy` remux the new audio below.
+  let videoOut: { outAbs: string; container: 'mp4' | 'webm'; encName: string; encNote?: string } | undefined;
+  let remuxDigest: string | undefined;
+  if (isVideo) {
+    const outAbs = resolve(opts.out);
+    const container: 'mp4' | 'webm' = /\.webm$/i.test(outAbs) ? 'webm' : 'mp4';
+    const { pickEncoder } = await import('./encoders.js');
+    const enc = pickEncoder('video', container);
+    videoOut = { outAbs, container, encName: enc.name, ...(enc.note ? { encNote: enc.note } : {}) };
+    if (frameCache && keyCtx && opts.cache!.mode !== 'off') {
+      const prev = readRenderManifest(outAbs);
+      if (prev && existsSync(outAbs)) {
+        const { frameCacheKey } = await import('./frameCache.js');
+        const keys: string[] = [];
+        for (let f = firstFrame; f <= lastFrame; f++) {
+          const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+          keys.push(frameCacheKey(dl, keyCtx));
+        }
+        const digest = frameKeyDigest(keys);
+        if (canRemux(prev, { frameKeyDigest: digest, container, videoCodec: enc.name, fps, firstFrame, frames: total }, true)) {
+          remuxDigest = digest;
+        }
+      }
+    }
+  }
+
+  const frameKeys: string[] = []; // per-frame content keys, collected for the manifest
+  if (!remuxDigest) {
+    for (let f = firstFrame; f <= lastFrame; f++) {
+      // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
+      const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+      let pngBytes: Buffer | undefined;
+      if (frameCache && keyCtx) {
+        const { frameCacheKey } = await import('./frameCache.js');
+        const key = frameCacheKey(dl, keyCtx);
+        frameKeys.push(key);
+        const cached = frameCache.get(key);
+        if (cached) {
+          // HIT: blit the stored RGBA into the backend, then encode via the EXACT
+          // same path a miss takes → byte-identical to a cold render.
+          backend.putPixels(cached);
+          pngBytes = backend.encodePng();
+        } else {
+          backend.render(dl);
+          pngBytes = backend.encodePng();
+          // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
+          frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
+        }
       } else {
         backend.render(dl);
         pngBytes = backend.encodePng();
-        // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
-        frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
       }
-    } else {
-      backend.render(dl);
-      pngBytes = backend.encodePng();
+      const file = singleFile ? resolve(opts.out) : join(framesDir, `frame-${String(f).padStart(5, '0')}.png`);
+      writeFileSync(file, pngBytes);
+      opts.onProgress?.(f - firstFrame + 1, total);
     }
-    const file = singleFile ? resolve(opts.out) : join(framesDir, `frame-${String(f).padStart(5, '0')}.png`);
-    writeFileSync(file, pngBytes);
-    opts.onProgress?.(f - firstFrame + 1, total);
   }
   backend.dispose();
-  if (frameCache) {
+  if (frameCache && !remuxDigest) {
     const s = frameCache.getStats();
     process.stderr.write(
       `cache (${opts.cache!.mode}): ${s.hits} hit${s.hits === 1 ? '' : 's'}, ${s.misses} miss${s.misses === 1 ? '' : 'es'}` +
@@ -580,6 +615,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
         ` → ${opts.cache!.dir}\n`,
     );
   }
+  // the digest to record in the manifest (loop path only; remux reuses the prior)
+  const newDigest = frameCache && !remuxDigest && frameKeys.length === total ? frameKeyDigest(frameKeys) : undefined;
   for (const source of videoSources) source.close();
 
   // burn and sidecar modes both emit .srt/.vtt — the cues come from the same
@@ -613,18 +650,48 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     return { frames: total, out: framesDir };
   }
 
-  const outAbs = resolve(opts.out);
+  const outAbs = videoOut!.outAbs;
+  const container = videoOut!.container;
   mkdirSync(dirname(outAbs), { recursive: true });
   emitSidecars(outAbs);
   emitCues(outAbs);
-  const isWebm = /\.webm$/i.test(outAbs);
-  const container = isWebm ? ('webm' as const) : ('mp4' as const);
+  if (videoOut!.encNote) process.stderr.write(`note: ${videoOut!.encNote}\n`);
 
-  // pick encoders from what THIS ffmpeg build actually offers (§5.2)
-  const { pickEncoder } = await import('./encoders.js');
-  const videoEnc = pickEncoder('video', container);
-  if (videoEnc.note) process.stderr.write(`note: ${videoEnc.note}\n`);
-  // quality flags are per-encoder: crf (x264/vpx), bitrate (openh264), q:v (mpeg4)
+  // audio inputs follow input 0 in BOTH paths (frames-as-video, or the prior
+  // video on remux), so the audio maps are identical — only the video source differs.
+  const { audioInputs, audioArgs } = await planFinalAudio(opts, [...compiled.audio], duration, container);
+
+  if (remuxDigest) {
+    // REMUX FAST PATH: the video stream is byte-identical to the prior render
+    // (matching frame-key digest), so copy it and mux ONLY the fresh audio. ffmpeg
+    // can't write to its own input, so render to a sibling temp then atomically swap.
+    const remuxArgs = [
+      '-y',
+      '-i', outAbs,
+      ...audioInputs,
+      ...audioArgs,
+      '-map', '0:v:0',
+      '-c:v', 'copy',
+      ...(container === 'webm' ? [] : ['-movflags', '+faststart']),
+      '-t', String(duration),
+    ];
+    const encodeDir = mkdtempSync(join(dirname(outAbs), '.gs-remux-'));
+    const tmpOut = join(encodeDir, `out.${container}`);
+    const result = spawnSync('ffmpeg', [...remuxArgs, tmpOut], { stdio: ['ignore', 'ignore', 'pipe'] });
+    rmSync(framesDir, { recursive: true, force: true }); // created but unused on this path
+    if (result.status !== 0) {
+      rmSync(encodeDir, { recursive: true, force: true });
+      throw new Error(`ffmpeg remux failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
+    }
+    renameSync(tmpOut, outAbs);
+    rmSync(encodeDir, { recursive: true, force: true });
+    // manifest digest is unchanged (video is identical) — rewrite so mtime tracks
+    writeRenderManifest(outAbs, { v: 1, frameKeyDigest: remuxDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total });
+    process.stderr.write(`cache: ${total}/${total} frames unchanged (audio-only) — video copy + remux → ${outAbs}\n`);
+    return { frames: total, out: outAbs };
+  }
+
+  // FULL ENCODE: quality flags are per-encoder: crf (x264/vpx), bitrate (openh264), q:v (mpeg4)
   const VIDEO_QUALITY: Record<string, string[]> = {
     'libx264': ['-crf', '18'],
     'libvpx-vp9': ['-b:v', '0', '-crf', '32'],
@@ -633,13 +700,10 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     'mpeg4': ['-q:v', '3'],
   };
   const codec = [
-    '-c:v', videoEnc.name,
-    ...(VIDEO_QUALITY[videoEnc.name] ?? []),
-    ...(isWebm ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
+    '-c:v', videoOut!.encName,
+    ...(VIDEO_QUALITY[videoOut!.encName] ?? []),
+    ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
-
-  const { audioInputs, audioArgs } = await planFinalAudio(opts, [...compiled.audio], duration, container);
-
   const args = [
     '-y',
     '-framerate', String(fps),
@@ -655,6 +719,10 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   rmSync(framesDir, { recursive: true, force: true });
   if (result.status !== 0) {
     throw new Error(`ffmpeg failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
+  }
+  // record the manifest so the next render of this output can remux (audio-only reuse)
+  if (newDigest) {
+    writeRenderManifest(outAbs, { v: 1, frameKeyDigest: newDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total });
   }
   return { frames: total, out: outAbs };
 }
