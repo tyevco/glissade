@@ -23,6 +23,7 @@ import marker from './scenes/golden-marker.js';
 import orient from './scenes/golden-orient.js';
 import echoTrail from './scenes/golden-echo.js';
 import motionblur from './scenes/golden-motionblur.js';
+import chart from './scenes/golden-chart.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
@@ -56,6 +57,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   orient: { mod: orient, blurb: 'Orientation drivers: a rocket laps a track with its POSITION owned by followPath and its ROTATION by a separate orientToPath (banking to the tangent), while a center turret uses lookAt to always face the orbiting rocket — pure, tree-shakeable motion helpers.' },
   echo: { mod: echoTrail, blurb: 'Echo motion trails: a dot orbits leaving six fading ghost copies at earlier playhead offsets — Echo re-addresses the scene playhead per copy and restores it, so the whole comet trail is a PURE function of the current time (byte-compared on Skia in CI).' },
   motionblur: { mod: motionblur, blurb: 'Sampled motion blur: a fast dot is rendered at 16 sub-frame times across the shutter and AVERAGED (running-mean), so it smears like a real analog shutter while the crisp reference dot stays sharp — a pure multi-time re-eval, byte-exact on Skia.' },
+  chart: { mod: chart, blurb: 'The data-motion stack: Chart() binds a table → bar chart as a pure build-time fan-out (like Grid), each bar a Rect pinned to the axis and grown from its base. The bars rise in staggered, then RACE to a second dataset — all from ordinary per-bar height tracks, colours from a value ramp. Byte-compared on Skia in CI.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
 };
 

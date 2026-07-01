@@ -36,6 +36,7 @@ export default defineConfig({
           { text: 'Motion clips', link: '/clips' },
           { text: 'Motion along a path', link: '/motion-path' },
           { text: 'Retiming & motion trails', link: '/motion-craft' },
+          { text: 'Data-driven charts', link: '/charts' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'SVG import', link: '/svg' },
           { text: 'Render caching & remux', link: '/caching' },

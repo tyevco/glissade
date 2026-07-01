@@ -12,6 +12,7 @@ export default defineConfig({
     'src/layout.ts',
     'src/layoutCtors.ts',
     'src/grid.ts',
+    'src/chart.ts',
     'src/path.ts',
     'src/describe.ts',
     'src/type.ts',

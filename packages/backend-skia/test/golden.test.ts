@@ -30,6 +30,7 @@ import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
+import goldenChart from '../../examples/src/scenes/golden-chart.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
@@ -167,6 +168,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // shutter and averaged (running-mean) → a real smear, vs a crisp reference dot.
   // Pure multi-time re-eval (playhead re-addressed + restored), byte-stable on Skia.
   { name: 'motionblur', mod: goldenMotionBlur },
+  // the data-motion stack: a table → bar chart (build-time fan-out), a staggered
+  // rise-in then a bar-chart race from ordinary per-bar height tracks
+  { name: 'chart', mod: goldenChart },
   // following a morphing path live (re-sample as 'route/d' bends)
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)

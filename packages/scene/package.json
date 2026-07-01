@@ -1,6 +1,6 @@
 {
   "name": "@glissade/scene",
-  "version": "0.31.0",
+  "version": "0.32.0-pre.0",
   "description": "glissade scene graph: nodes, transforms, DisplayList emission. Renderer-agnostic; zero DOM/Node dependencies.",
   "license": "Apache-2.0",
   "engines": {
@@ -26,6 +26,10 @@
     "./grid": {
       "types": "./dist/grid.d.ts",
       "default": "./dist/grid.js"
+    },
+    "./chart": {
+      "types": "./dist/chart.d.ts",
+      "default": "./dist/chart.js"
     },
     "./path": {
       "types": "./dist/path.d.ts",

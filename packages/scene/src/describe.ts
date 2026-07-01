@@ -509,6 +509,42 @@ const HELPERS: DescribedHelper[] = [
       'Grid({ columns: number | (number | { fr })[], children: Node[], gap?, columnGap?, rowGap?, cellHeight?, width? }): Group  —  child[i] → row floor(i/cols), col i%cols',
   },
   {
+    name: 'Chart',
+    summary:
+      'Build-time bar chart: bind a table (rows) → positioned+sized Rect bars, each pinned to the axis and grown from its base, returning a Group. Pure fan-out (like Grid) — animate a reveal with tl.stagger(chart.targets("height"), …) or a colour sweep on "fill". Tree-shaken off the base scene index.',
+    import: '@glissade/scene/chart',
+    usage:
+      "Chart({ id, data: Row[], xKey, yKey, width, height, yScale?, bandPadding?, fill?: string | ColorScale }): { node: Group, bars: Rect[], targets(prop): string[] }",
+  },
+  {
+    name: 'linearScale',
+    summary:
+      'A serializable linear scale (value axis): maps a numeric domain onto a pixel/unit range. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.',
+    import: '@glissade/scene/chart',
+    usage: 'linearScale(domain: [number, number], range: [number, number]): Scale',
+  },
+  {
+    name: 'logScale',
+    summary:
+      'A serializable base-10 log scale (strictly-positive domain; throws otherwise) for a value axis. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.',
+    import: '@glissade/scene/chart',
+    usage: 'logScale(domain: [number, number], range: [number, number]): Scale',
+  },
+  {
+    name: 'bandScale',
+    summary:
+      'A categorical band scale: N equal bands across a range with a padding gap, each with a bandwidth. Chart uses this internally for the x axis; exposed for custom layouts. On the @glissade/scene/chart subpath.',
+    import: '@glissade/scene/chart',
+    usage: 'bandScale(count: number, range: [number, number], padding?: number): BandScale',
+  },
+  {
+    name: 'colorRamp',
+    summary:
+      'A serializable colour ramp (>=2 hex stops, sRGB-interpolated) over a numeric domain → a #rrggbb string. Pass as Chart({ fill }) to colour bars by value. On the @glissade/scene/chart subpath.',
+    import: '@glissade/scene/chart',
+    usage: 'colorRamp(stops: string[], domain?: [number, number]): ColorScale',
+  },
+  {
     name: 'Stack',
     summary:
       'Yoga-flexbox layout factory (column by default) — a Layout subclass that stacks children with gap/padding/justify/align. Needs loadYogaLayoutEngine() before mount/render. On the @glissade/scene/layout subpath.',

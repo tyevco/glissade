@@ -54,6 +54,11 @@ export { loadYogaLayoutEngine } from '@glissade/scene/layout';
 // `@glissade/scene/grid` subpath, off the base embed. Re-exported here so
 // `window.glissade.Grid` survives for the no-build consumer.
 export { Grid } from '@glissade/scene/grid';
+// 0.32 Chart (the data-motion stack): a build-time fan-out (like Grid) on the
+// tree-shakeable `@glissade/scene/chart` subpath, off the base embed. The no-build
+// data-viz author reaches for `window.glissade.Chart` + the scale factories, so
+// the convenience bundle re-exports them here (same rationale as Grid/splitText).
+export { Chart, linearScale, logScale, bandScale, colorRamp } from '@glissade/scene/chart';
 // `motionPath` / `followPath` (the §3 motion-path follow helper) moved to the
 // tree-shakeable `@glissade/scene/motion` subpath in the 0.20 budget review (off
 // the base scene index, off the base-embed budget). It is a USER-FACING helper
