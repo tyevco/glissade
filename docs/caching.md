@@ -45,3 +45,18 @@ The frame-key digest tracks exactly what's **on screen**, so the fast path is ta
 - **A missing/moved output** — no prior video to copy, so it re-renders.
 
 The manifest is a **portable determinism proof**: identical DisplayLists per frame ⇒ identical raster on the pinned Skia toolchain ⇒ identical encode. The fast path never trades correctness for speed — a cache hit's output is byte-identical to a cold render.
+
+### Verifying it yourself — compare *pixels*, not container bytes
+
+The correctness contract is that the **decoded picture** is identical, not that the container bytes are. A remux (`-c:v copy`) copies the coded video packets verbatim, but it re-writes the container's framing (PTS/DTS, the `moov` atom, `+faststart`) — so a whole-file or packet-level hash *will* differ even when every pixel is identical. On a real GOP-structured video this bites subtly: `ffmpeg -f framemd5` emits per-frame hashes in **decode order**, and the remux's timestamp rewrite reorders how B-frames decode, so the framemd5 *sequence* diverges even though the frames match.
+
+Compare in **presentation order with timestamps stripped**:
+
+```sh
+# PSNR reports MSE=0 / psnr=inf on every frame when the pictures are identical
+ffmpeg -i cold.mp4 -i remuxed.mp4 -lavfi psnr -f null -
+# or a raw pixel hash in presentation order (no container/timestamp fields)
+ffmpeg -i remuxed.mp4 -f rawvideo -pix_fmt rgb24 - | sha256sum
+```
+
+A `psnr` of `inf` (MSE 0) on all frames is the pass: the video is pixel-for-pixel the cold render, and only the audio (and cosmetic container timestamps) changed.
