@@ -15,6 +15,7 @@ import {
   type BackendCaps,
   type Ctx2DLike,
   type DisplayList,
+  type LayerStore,
   type FontSpec,
   type RenderBackend,
   type TextMeasurer,
@@ -54,15 +55,25 @@ export class SkiaBackend implements RenderBackend {
   /** Headless CPU Skia: all document filters, no GPU shader pass (§3.4/§3.7). */
   readonly caps: BackendCaps = { filters: ALL_FILTER_KINDS, shaders: false, maxTextureSize: MAX_TEXTURE };
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, opts: { layerStore?: LayerStore } = {}) {
     this.canvas = createCanvas(width, height);
-    this.raster = new Raster2D<Canvas, Path2D, Drawable>({
-      // one structural cast at the seam: SKRSContext2D satisfies Ctx2DLike
-      // (fillStyle/getTransform widen to unknown); behavior is golden-tested
-      context: (c) => c.getContext('2d') as unknown as Ctx2DLike<Path2D, Drawable>,
-      createCanvas: (w, h) => createCanvas(w, h),
-      newPath: () => new Path2D(),
-    });
+    this.raster = new Raster2D<Canvas, Path2D, Drawable>(
+      {
+        // one structural cast at the seam: SKRSContext2D satisfies Ctx2DLike
+        // (fillStyle/getTransform widen to unknown); behavior is golden-tested
+        context: (c) => c.getContext('2d') as unknown as Ctx2DLike<Path2D, Drawable>,
+        createCanvas: (w, h) => createCanvas(w, h),
+        newPath: () => new Path2D(),
+      },
+      'warn',
+      undefined, // cacheEnabled → its env-driven default
+      opts.layerStore, // §3.5 disk layer-cache tier (undefined = in-memory only)
+    );
+  }
+
+  /** Attach the §3.5 disk layer-cache store (the CLI wires this once caps are known). */
+  setLayerStore(store: LayerStore | undefined): void {
+    this.raster.setLayerStore(store);
   }
 
   setImageAsset(assetId: string, image: Drawable): void {

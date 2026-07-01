@@ -535,13 +535,27 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       mode: opts.cache.mode,
       ...(opts.cache.maxSize !== undefined ? { maxSize: opts.cache.maxSize } : {}),
     });
+    const version = glissadeVersion();
+    const caps = capsId(backend.caps);
     keyCtx = {
-      version: glissadeVersion(),
-      capsId: capsId(backend.caps),
+      version,
+      capsId: caps,
       // fold the BYTES of every referenced image/video/font so an in-place asset
       // edit (same id/url) invalidates the key instead of serving stale pixels.
       assetsDigest: combineAssetDigests(assetDigests),
     };
+    // §3.5 disk layer-cache tier: persist cache:true group rasters across renders
+    // so an expensive static subtree survives a re-narration (which flips the
+    // whole-frame key but leaves the backdrop's sub-DisplayList untouched). Salt
+    // the compositor's layer key with version ⊕ caps ⊕ frame size.
+    const { LayerCache } = await import('./layerCache.js');
+    backend.setLayerStore(
+      new LayerCache({
+        dir: join(opts.cache.dir, 'layers'),
+        mode: opts.cache.mode,
+        salt: `${version}|${caps}|${scene.size.w}x${scene.size.h}`,
+      }),
+    );
   }
 
   // ── 0.27 audio-only REMUX fast path (video + cache) ──────────────────────

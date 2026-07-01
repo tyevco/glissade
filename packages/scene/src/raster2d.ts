@@ -108,6 +108,9 @@ export interface Ctx2DLike<TPath, TDrawable> {
    * blit it (clip + drawImage). Both DOM and @napi-rs/canvas expose these. */
   createImageData(w: number, h: number): ImageDataLike;
   putImageData(data: ImageDataLike, x: number, y: number): void;
+  /** Read straight-RGBA back out — used to persist a cached layer's raster to
+   * the disk layer store (§3.5 tier). Both DOM and @napi-rs/canvas expose it. */
+  getImageData(sx: number, sy: number, sw: number, sh: number): ImageDataLike;
 }
 
 /** The structural ImageData surface the mesh blit drives — DOM ImageData and
@@ -210,11 +213,38 @@ interface Layer<TPath extends PathLike, TDrawable, TCanvas extends CanvasLike> {
   cacheStoreKey?: string;
 }
 
-interface Bounds {
+export interface Bounds {
   minX: number;
   minY: number;
   maxX: number;
   maxY: number;
+}
+
+/**
+ * §3.5 DISK layer-cache tier. The in-memory raster LRU below spans one render;
+ * an injected `LayerStore` persists a cached layer's DEVICE-space RGBA across
+ * renders (and re-narrations), so an expensive static subtree — a blurred mesh
+ * backdrop — rasterizes ONCE and re-blits on later runs even when the whole-frame
+ * cache is defeated by a caption/timing change. The store is injected (scene stays
+ * Node-dep-free); the CLI provides an fs-backed impl that salts the key with the
+ * toolchain version + backend caps + frame size. A restored RGBA composites
+ * byte-identically to a fresh raster (getImageData → store → putImageData
+ * round-trips exactly — the same guarantee the frame cache relies on).
+ */
+export interface LayerCacheEntry {
+  /** straight-RGBA of the full w×h device-space layer canvas */
+  readonly rgba: Uint8ClampedArray;
+  readonly w: number;
+  readonly h: number;
+  /** device-space painted bounds (or null); rides along — the hit can't recompute it */
+  readonly bounds: Bounds | null;
+  readonly unbounded: boolean;
+}
+
+export interface LayerStore {
+  /** key = `<sub-DisplayList fnv1a>@<deviceTransformKey>` (the store salts version/caps/size). */
+  get(key: string): LayerCacheEntry | undefined;
+  put(key: string, entry: LayerCacheEntry): void;
 }
 
 /**
@@ -345,8 +375,20 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
      * A disabled cache is byte-identical — it just always takes the miss path.
      */
     cacheEnabled: boolean = (globalThis.process?.env?.['RASTER_CACHE'] ?? '1') !== '0',
+    /**
+     * §3.5 disk layer-cache tier: an injected persistent store for cached-layer
+     * rasters (spans renders, survives re-narration). Undefined = in-memory only.
+     * Also settable post-construction (the CLI needs backend caps to salt the
+     * store's key, which aren't known until the backend exists).
+     */
+    private layerStore: LayerStore | undefined = undefined,
   ) {
     this.cacheEnabled = cacheEnabled;
+  }
+
+  /** Attach (or clear) the §3.5 disk layer-cache store after construction. */
+  setLayerStore(store: LayerStore | undefined): void {
+    this.layerStore = store;
   }
 
   /** Register a decoded still (kind 'image' assets). */
@@ -767,6 +809,41 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
               }
               break;
             }
+            // §3.5 DISK tier: in-memory miss — try the persistent layer store. On a
+            // hit, rebuild a device-space canvas from the stored RGBA (byte-exact
+            // round-trip), promote it into the in-memory LRU for later frames this
+            // render, and composite exactly as an in-memory hit would.
+            const disk = this.layerStore?.get(lruKey);
+            if (disk !== undefined && disk.w === w && disk.h === h) {
+              const canvas = this.acquire(w, h);
+              const dctx = this.host.context(canvas);
+              dctx.resetTransform();
+              const img = dctx.createImageData(w, h);
+              img.data.set(disk.rgba);
+              dctx.putImageData(img, 0, 0);
+              this.cacheStore(lruKey, { canvas, bounds: disk.bounds, unbounded: disk.unbounded });
+              this.composite(
+                parent,
+                top(),
+                canvas as unknown as TDrawable,
+                disk.bounds,
+                disk.unbounded,
+                false,
+                cmd.opacity,
+                cmd.blend,
+                filtersToCanvasFilter(cmd.filters),
+                cmd.filters,
+                w,
+                h,
+              );
+              let depth = 1;
+              while (depth > 0 && ++ci < commands.length) {
+                const c = commands[ci]!;
+                if (c.op === 'pushGroup') depth++;
+                else if (c.op === 'popGroup') depth--;
+              }
+              break;
+            }
           }
           const layerCanvas = this.acquire(w, h);
           const layerCtx = this.host.context(layerCanvas);
@@ -840,6 +917,20 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
               bounds: layer.bounds,
               unbounded: layer.unbounded,
             });
+            // §3.5 disk tier: persist the device-space raster (full w×h) so a
+            // LATER render re-blits it even when the whole-frame cache is defeated
+            // (a re-narration). Only reached on a MISS (first raster of the layer);
+            // subsequent frames/renders hit RAM or disk and fast-forward past here.
+            if (this.layerStore !== undefined) {
+              const rgba = this.host.context(layer.canvas).getImageData(0, 0, w, h).data;
+              this.layerStore.put(layer.cacheStoreKey, {
+                rgba,
+                w,
+                h,
+                bounds: layer.bounds,
+                unbounded: layer.unbounded,
+              });
+            }
           } else {
             this.release(layer.canvas);
           }

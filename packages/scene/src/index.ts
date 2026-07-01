@@ -133,9 +133,12 @@ export { Echo, echo, type EchoProps } from './echo.js';
 export {
   Raster2D,
   fontString,
+  type Bounds,
   type CanvasLike,
   type Ctx2DLike,
   type ImageDataLike,
+  type LayerCacheEntry,
+  type LayerStore,
   type PathLike,
   type Raster2DHost,
   type ShaderCaps,
