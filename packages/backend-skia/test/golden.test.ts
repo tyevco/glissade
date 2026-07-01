@@ -27,6 +27,8 @@ import goldenCaption from '../../examples/src/scenes/golden-caption.js';
 import goldenMarker from '../../examples/src/scenes/golden-marker.js';
 import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
 import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
+import goldenOrient from '../../examples/src/scenes/golden-orient.js';
+import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
@@ -152,6 +154,14 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'typewriter', mod: goldenTypewriter },
   // motion along a path: arc-length follow + tangent orient
   { name: 'motionpath', mod: goldenMotionPath },
+  // 0.26 orientation drivers: orientToPath banks a rocket to the track tangent
+  // (position owned separately by followPath), and lookAt pivots a center turret
+  // to face the orbiting rocket — a world-space aim angle, byte-stable on Skia.
+  { name: 'orient', mod: goldenOrient },
+  // 0.26 Echo motion trails: a dot orbits (position by followPath) inside an Echo,
+  // leaving 6 fading ghost copies at earlier playhead offsets — a pure multi-time
+  // re-eval (playhead re-addressed + restored per copy), byte-stable on Skia.
+  { name: 'echo', mod: goldenEcho },
   // following a morphing path live (re-sample as 'route/d' bends)
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)

@@ -18,3 +18,12 @@ export {
   type FollowPathProps,
   type PathSampler,
 } from './motionPath.js';
+
+export {
+  OrientToPath,
+  orientToPath,
+  LookAt,
+  lookAt,
+  type OrientToPathProps,
+  type LookAtProps,
+} from './orient.js';

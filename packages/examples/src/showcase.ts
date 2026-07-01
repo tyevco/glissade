@@ -20,6 +20,8 @@ import filters from './scenes/golden-filters.js';
 import paths from './scenes/golden-paths.js';
 import captions from './scenes/golden-captions.js';
 import marker from './scenes/golden-marker.js';
+import orient from './scenes/golden-orient.js';
+import echoTrail from './scenes/golden-echo.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
@@ -50,6 +52,8 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   filters: { mod: filters, blurb: 'Group filters as signals: blur, drop-shadow, brightness, contrast, saturate — each param is a tweening track. The bottom row is the unfiltered control. Composites clip to content bounds, so these stay cheap even on software-rendered browsers.' },
   paths: { mod: paths, blurb: 'Path morphing: contours are a value type, so shapes tween point-by-point like any number — with fill-rule-aware hit testing on the result.' },
   marker: { mod: marker, blurb: 'Anchors: bars grow FROM their pinned edge with plain width/height tracks, a needle rotates around its anchored end, and a marker highlight sweeps wrapped text via one progress track — line boxes come from the text itself.' },
+  orient: { mod: orient, blurb: 'Orientation drivers: a rocket laps a track with its POSITION owned by followPath and its ROTATION by a separate orientToPath (banking to the tangent), while a center turret uses lookAt to always face the orbiting rocket — pure, tree-shakeable motion helpers.' },
+  echo: { mod: echoTrail, blurb: 'Echo motion trails: a dot orbits leaving six fading ghost copies at earlier playhead offsets — Echo re-addresses the scene playhead per copy and restores it, so the whole comet trail is a PURE function of the current time (byte-compared on Skia in CI).' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
 };
 

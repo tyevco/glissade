@@ -97,6 +97,7 @@ export {
   track,
   springTo,
   stagger,
+  retime,
   sampleTrack,
   velocityAt,
   validateTrack,
@@ -106,6 +107,7 @@ export {
   type Key,
   type KeyOpts,
   type Track,
+  type RetimeSpec,
 } from './track.js';
 
 export {

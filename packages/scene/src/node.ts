@@ -11,6 +11,7 @@ import {
   vec2Signal,
   TARGET_PATH,
   type BindableSignal,
+  type Playhead,
   type ReadonlySignal,
   type ValueTypeId,
   type Vec2,
@@ -75,6 +76,16 @@ export interface EvalContext {
   readonly frame: number;
   /** Injected by mount()/CLI/exporters (§3.2): the active backend's measurer. */
   readonly measurer: TextMeasurer;
+  /**
+   * The scene playhead being driven this evaluate. The one channel a node may
+   * re-address WITHIN a frame to sample its subtree at an OFFSET time (Echo's
+   * trails / onion-skin) — always restored before the walk continues, so it is
+   * a pure, re-entrant read. Everything else reads it only through bound signals.
+   * Optional: the real evaluate()/emitWithIds()/cache-cold audit always supply
+   * it; a bare hand-built ctx (a unit test emitting one node) may omit it, and a
+   * playhead-dependent node degrades gracefully (Echo → a plain group).
+   */
+  readonly playhead?: Playhead;
 }
 
 /** A property initializer: a value, or a computed source (§2.1). */

@@ -432,6 +432,20 @@ const HELPERS: DescribedHelper[] = [
     usage: "followPath(target: Node, path: Node, opts?: { id?, orient?: boolean }): FollowPath  —  drive '<id>/progress' with a track",
   },
   {
+    name: 'orientToPath',
+    summary:
+      "The rotation-only sibling of followPath: owns a target's rotation, banking it to the path tangent at progress, while POSITION is left to whatever drives it (keyframes, layout, a sibling followPath). Pure, tree-shakeable.",
+    import: '@glissade/scene/motion',
+    usage: "orientToPath(target: Node, path: PathValue | Path, opts?: { id?, progress?, offset?: number }): OrientToPath  —  drive '<id>/progress' with a track",
+  },
+  {
+    name: 'lookAt',
+    summary:
+      "A driver node that owns a target's rotation, aiming its local +x axis at another node's world origin — a turret tracking a mover, an arrow pointing at a label. Re-derives from both positions each frame; no stored state.",
+    import: '@glissade/scene/motion',
+    usage: 'lookAt(target: Node, at: Node, opts?: { id?, offset?: number }): LookAt',
+  },
+  {
     name: 'clip',
     summary:
       'A reusable, target-agnostic motion captured once as a relative-time key schedule, then applied to a node at a wall-clock start time. Build-time sugar: clip.apply() compiles to ordinary Track[].',
@@ -443,6 +457,13 @@ const HELPERS: DescribedHelper[] = [
     summary: 'Fan one clip across many targets, staggered, in a single call — returns the combined Track[].',
     import: '@glissade/core/clips',
     usage: 'clipList(clip: Clip, targets: string[], startT: number, opts?: { stagger?: number }): { tracks }',
+  },
+  {
+    name: 'retime',
+    summary:
+      'Retime a set of tracks by remapping their key TIMES — speed (slow-mo/fast), shift (delay/advance), reverse, or pingpong — as a pure build-time transform to ordinary retimed Track[]. Reverse/pingpong time-mirror each ease exactly (built-ins + cubicBezier); springs/holds fail loud.',
+    import: '@glissade/core',
+    usage: 'retime(tracks: Track[], { speed?, shift?, reverse?, pingpong? }): Track[]',
   },
   {
     name: 'renderToDataURL',

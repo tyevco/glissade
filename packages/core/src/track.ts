@@ -8,6 +8,7 @@ import {
   cubicBezier,
   cubicBezierDerivative,
   easingDerivatives,
+  mirrorEase,
   namedEasing,
   type EaseSpec,
   type EasingFn,
@@ -131,6 +132,85 @@ export function stagger<T>(tracks: readonly Track<T>[], delay: number | ((index:
   return tracks.map((tr, i) => {
     const d = at(i);
     return { ...tr, keys: tr.keys.map((k) => ({ ...k, t: k.t + d })) };
+  });
+}
+
+export interface RetimeSpec {
+  /** playback rate: 2 = twice as fast (key times ÷ speed), 0.5 = half speed. Must be > 0. Default 1. */
+  speed?: number;
+  /** seconds added to every key time (applied AFTER speed/reverse) — delay or advance the group. Default 0. */
+  shift?: number;
+  /** play the schedule BACKWARD in place — same [start,end] span, values reversed, eases time-mirrored. */
+  reverse?: boolean;
+  /** forward THEN reversed as one there-and-back track (roughly doubles the active span). */
+  pingpong?: boolean;
+}
+
+/** Minimal reversed copy of a key schedule: mirror times about [t0,tn], reverse
+ * the value order, and time-mirror each segment's ease so it plays identically
+ * backward. Throws on `hold` segments (asymmetric — can't reverse cleanly). */
+function reversedKeys<T>(keys: Key<T>[]): Key<T>[] {
+  const n = keys.length;
+  if (n < 2) return keys.map((k) => ({ t: k.t, value: k.value }));
+  const t0 = keys[0]!.t;
+  const tn = keys[n - 1]!.t;
+  const out: Key<T>[] = [];
+  for (let j = 0; j < n; j++) {
+    const src = keys[n - 1 - j]!;
+    const k: Key<T> = { t: t0 + tn - src.t, value: src.value };
+    if (j >= 1) {
+      // the segment arriving at out[j] is the OLD segment departing from `src`,
+      // i.e. old arrival key (n-j), traversed backward → mirror ITS ease.
+      const oldArrival = keys[n - j]!;
+      if (oldArrival.interp === 'hold') {
+        throw new TrackValidationError(
+          'retime',
+          'cannot reverse/pingpong a track with a hold segment (a hold is asymmetric in time) — ' +
+            'retime it with { speed } / { shift }, or author the reversed schedule explicitly',
+        );
+      }
+      const m = mirrorEase(oldArrival.ease);
+      if (m !== undefined) k.ease = m;
+    }
+    out.push(k);
+  }
+  return out;
+}
+
+/**
+ * Retime a set of tracks by remapping their key TIMES — slow-mo/fast (`speed`),
+ * delay/advance (`shift`), `reverse`, or `pingpong` — as a pure build-time
+ * transform. Because it rewrites the schedule into an ordinary `Track[]` (no
+ * runtime clock warp, no cross-frame state), evaluate() stays a pure function of
+ * time and the result is golden-stable and O(log keys) scrubbable like any doc.
+ * Reverse/pingpong time-mirror each segment's ease exactly for the built-in
+ * eases and cubicBezier; springs and hold segments fail loud (they're causal /
+ * asymmetric). Returns NEW tracks; the inputs are untouched.
+ *
+ *   retime(move, { speed: 0.5 })            // half speed
+ *   retime(move, { reverse: true })         // play it backward
+ *   retime(move, { pingpong: true })        // there and back
+ */
+export function retime<T>(tracks: readonly Track<T>[], spec: RetimeSpec): Track<T>[] {
+  const speed = spec.speed ?? 1;
+  if (!(speed > 0) || !Number.isFinite(speed)) {
+    throw new TrackValidationError('retime', `speed must be a finite number > 0 (got ${speed})`);
+  }
+  if (spec.reverse && spec.pingpong) {
+    throw new TrackValidationError('retime', 'pass reverse OR pingpong, not both');
+  }
+  const shift = spec.shift ?? 0;
+  return tracks.map((tr) => {
+    let keys: Key<T>[] = tr.keys.map((k) => ({ ...k, t: k.t / speed }));
+    if (spec.reverse) keys = reversedKeys(keys);
+    if (spec.pingpong && keys.length >= 2) {
+      const t0 = keys[0]!.t;
+      const tn = keys[keys.length - 1]!.t;
+      const back = reversedKeys(keys).map((k) => ({ ...k, t: k.t + (tn - t0) }));
+      keys = [...keys, ...back.slice(1)]; // drop the shared midpoint (== forward's last key)
+    }
+    if (shift !== 0) keys = keys.map((k) => ({ ...k, t: k.t + shift }));
+    return { ...tr, keys };
   });
 }
 

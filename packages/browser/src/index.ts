@@ -61,6 +61,10 @@ export { Grid } from '@glissade/scene/grid';
 // single-file convenience bundle MUST re-export it here so it lands on
 // window.glissade — mirroring pathFromSvg / splitText.
 export { followPath, motionPath, pointAtLength, pathLength, FollowPath } from '@glissade/scene/motion';
+// 0.26 orientation drivers (rotation-only siblings of followPath): the no-build
+// design agent reaches for `window.glissade.orientToPath` / `.lookAt`, so the
+// convenience bundle re-exports them here too (same rationale as followPath).
+export { orientToPath, lookAt, OrientToPath, LookAt } from '@glissade/scene/motion';
 // `tokenHighlight` (the PRODUCTION token-highlight render component — visible
 // sub-line token tell-tags) lives on the tree-shakeable `@glissade/scene/tokens`
 // subpath (off the base scene index for the scene budget; the ai-training finding

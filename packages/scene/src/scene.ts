@@ -237,6 +237,7 @@ export function evaluate(scene: Scene, doc?: Timeline, t = 0): DisplayList {
     time: t,
     frame: fps !== undefined ? Math.round(t * fps) : -1,
     measurer: scene.textMeasurer,
+    playhead: scene.playhead,
   };
   return evaluateAt(scene.playhead, t, () => {
     const out = createDisplayListBuilder(scene.size);

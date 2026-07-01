@@ -110,6 +110,7 @@ export function emitWithIds(scene: Scene, doc: Timeline, t: number): EmitWithIds
     time: t,
     frame: fps !== undefined ? Math.round(t * fps) : -1,
     measurer: scene.textMeasurer,
+    playhead: scene.playhead,
   };
   return evaluateAt(scene.playhead, t, () => {
     const builder = instrument(createDisplayListBuilder(scene.size));

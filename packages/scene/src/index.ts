@@ -129,6 +129,7 @@ export {
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';
+export { Echo, echo, type EchoProps } from './echo.js';
 export {
   Raster2D,
   fontString,

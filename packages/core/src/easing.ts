@@ -10,6 +10,36 @@ export type EaseSpec =
   | { kind: 'cubicBezier'; pts: [number, number, number, number] }
   | { kind: 'spring'; stiffness: number; damping: number; mass: number };
 
+/**
+ * Time-mirror of an ease, so a segment played BACKWARD eases identically to the
+ * forward segment (used by `retime`'s reverse/pingpong). The built-in eases pair
+ * exactly — `easeInX ↔ easeOutX`, and `easeInOutX`/`linear` self-mirror — and a
+ * `cubicBezier` mirrors by point reflection (`[x1,y1,x2,y2] → [1−x2,1−y2,1−x1,1−y1]`,
+ * the analytic reverse of a bézier ease). Springs are causal and a custom-named
+ * ease has no known inverse, so both throw fail-loud rather than mis-animate.
+ */
+export function mirrorEase(spec: EaseSpec | undefined): EaseSpec | undefined {
+  if (spec === undefined) return undefined; // linear self-mirror
+  if (typeof spec === 'string') {
+    if (spec === 'linear') return 'linear';
+    if (spec.startsWith('easeInOut')) return spec;
+    if (spec.startsWith('easeIn')) return `easeOut${spec.slice('easeIn'.length)}`;
+    if (spec.startsWith('easeOut')) return `easeIn${spec.slice('easeOut'.length)}`;
+    throw new Error(
+      `retime: cannot time-mirror the custom ease '${spec}' for reverse/pingpong — ` +
+        'reverse only the built-in eases or a cubicBezier, or retime with { speed } / { shift }',
+    );
+  }
+  if (spec.kind === 'cubicBezier') {
+    const [x1, y1, x2, y2] = spec.pts;
+    return { kind: 'cubicBezier', pts: [1 - x2, 1 - y2, 1 - x1, 1 - y1] };
+  }
+  throw new Error(
+    'retime: cannot reverse/pingpong a spring ease (springs are causal) — ' +
+      'retime the spring segment with { speed } / { shift }, or author the reverse explicitly',
+  );
+}
+
 const c1 = 1.70158;
 const c2 = c1 * 1.525;
 const c3 = c1 + 1;
