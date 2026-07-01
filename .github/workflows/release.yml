@@ -31,6 +31,7 @@ jobs:
       - run: pnpm test
       - run: node scripts/check-deps.mjs
       - run: node scripts/check-size.mjs
+      - run: node scripts/api-report.mjs # keep release gated on the same surface checks as ci.yml (this drifted silently across 0.26-0.32)
       # changesets@2.31.0 (the latest) can crash in its POST-publish
       # isAlreadyPublishedError check (`error.message.includes` on undefined)
       # AFTER packages actually published — reddening a successful release.
