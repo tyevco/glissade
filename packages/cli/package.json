@@ -28,11 +28,12 @@
     "@glissade/core": "workspace:*",
     "@glissade/interact": "workspace:*",
     "@glissade/lottie": "workspace:*",
-    "@glissade/svg": "workspace:*",
     "@glissade/narrate": "workspace:*",
     "@glissade/player": "workspace:*",
     "@glissade/scene": "workspace:*",
     "@glissade/sfx": "workspace:*",
+    "@glissade/svg": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@napi-rs/canvas": "^0.1.65",
     "esbuild": "0.28.0",
     "jiti": "^2.4.2"

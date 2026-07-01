@@ -34,6 +34,7 @@ const USAGE = `usage:
   gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>] [--locale <code>]
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
+  gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -125,7 +126,7 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -195,6 +196,17 @@ async function main(): Promise<void> {
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
   if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json|asset.svg>' : '<scene-module>'}\n${USAGE}`);
+
+  if (command === 'mcp') {
+    // the AI-native write layer: a stdio MCP server for this scene (author→render→verify)
+    const { startMcpServer } = await import('./mcp.js');
+    try {
+      await startMcpServer(modulePath);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
 
   if (command === 'narrate') {
     const { narrateCommand } = await import('./narrate.js');
