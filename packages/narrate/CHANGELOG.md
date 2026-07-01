@@ -1,5 +1,16 @@
 # @glissade/narrate
 
+## 0.26.0
+
+### Patch Changes
+
+- Updated dependencies [b3218c9]
+- Updated dependencies [bfadc4a]
+- Updated dependencies [b3218c9]
+- Updated dependencies [b3218c9]
+  - @glissade/scene@0.26.0
+  - @glissade/core@0.26.0
+
 ## 0.26.0-pre.1
 
 ### Patch Changes
