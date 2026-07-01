@@ -3,10 +3,10 @@
 Mesh-heavy or blur-heavy frames are expensive to rasterize. Because `evaluate(scene, timeline, t)` is a **pure function of time**, a frame whose visual inputs haven't changed is byte-identical to a prior render — so it never needs re-rasterizing. `gs render --cache` turns that guarantee into a persistent, content-addressed cache.
 
 ```sh
-gs render e07.ts --out out/e07.mp4 --cache .gscache
+gs render e07.ts --out out/e07.mp4 --cache=.gscache
 ```
 
-The cache is **opt-in** (default off — the exact no-cache baseline is preserved) and lives on disk, so it spans runs, edits, and `--workers` shards.
+The cache is **opt-in** (default off — the exact no-cache baseline is preserved) and lives on disk, so it spans runs, edits, and `--workers` shards. Pass `--cache` bare for the default directory, or `--cache=<dir>` (the `=` form — a space-separated `--cache .gscache` is **not** parsed as a directory).
 
 ## The whole-frame cache
 
@@ -16,7 +16,7 @@ Each frame's cache key is a SHA-256 of the frame's entire DisplayList snapshot �
 - Bump the glissade version, edit an asset's bytes, or change the backend and every affected key changes — a stale frame is never served.
 
 ```sh
-gs render e07.ts --out out/e07.mp4 --cache .gscache --cache-max-size 2GB
+gs render e07.ts --out out/e07.mp4 --cache=.gscache --cache-max-size 2GB
 #   cache (read-write): 236 hits, 4 misses, 4 stored → .gscache
 ```
 
@@ -29,7 +29,7 @@ The whole-frame cache skips *rasterizing* unchanged frames — but re-encoding t
 So a cached video render also writes a small **manifest** (`<out>.gsrender.json`) recording the ordered digest of every frame's cache key. On a re-render, a cheap **key-only pre-pass** (evaluate + hash, no rasterizing) recomputes that digest. If it matches the prior manifest — and the output file and encode parameters are unchanged — glissade skips the frame loop entirely and `ffmpeg -c:v copy` remuxes just the new audio:
 
 ```sh
-gs render e07.ts --out out/e07.mp4 --cache .gscache
+gs render e07.ts --out out/e07.mp4 --cache=.gscache
 #   cache: 240/240 frames unchanged (audio-only) — video copy + remux → out/e07.mp4
 ```
 

@@ -24,7 +24,7 @@
     fill: colorRamp(["#39e0ff", "#ff5ca8"]), // colour bars by value
   });
   // scene children: [chart.node]
-  tl.stagger(chart.targets("height"), { from: 0 }, { each: 0.08 }); // bars rise in
+  tl.stagger(chart.targets("height"), { from: 0, to: (i) => chart.bars[i].height() }, { each: 0.08 }); // bars rise in
   ```
 
   Each bar is anchored at its **base** (`anchor: 'bottom'`) and pinned to the axis, so animating its `height` grows the bar _upward_ from the axis — a bar-chart reveal or race is just a `height` track per bar (or a `fill` track for a colour sweep). `chart.targets(prop)` yields the ready-to-bind target ids in row order (`${id}/bars/${i}/${prop}`), the same shape as `splitText().targets(...)`.
@@ -77,7 +77,7 @@
     fill: colorRamp(["#39e0ff", "#ff5ca8"]), // colour bars by value
   });
   // scene children: [chart.node]
-  tl.stagger(chart.targets("height"), { from: 0 }, { each: 0.08 }); // bars rise in
+  tl.stagger(chart.targets("height"), { from: 0, to: (i) => chart.bars[i].height() }, { each: 0.08 }); // bars rise in
   ```
 
   Each bar is anchored at its **base** (`anchor: 'bottom'`) and pinned to the axis, so animating its `height` grows the bar _upward_ from the axis — a bar-chart reveal or race is just a `height` track per bar (or a `fill` track for a colour sweep). `chart.targets(prop)` yields the ready-to-bind target ids in row order (`${id}/bars/${i}/${prop}`), the same shape as `splitText().targets(...)`.

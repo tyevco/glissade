@@ -18,7 +18,7 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import type { Timeline } from '@glissade/core';
+import { validateTrack, type Timeline } from '@glissade/core';
 import { emptySidecar, mergeSidecar, type SidecarDoc } from '@glissade/core/sidecar';
 import { applyPatches, type BaselineLookup, type PatchResult, type TimelinePatch } from '@glissade/core/studio-host';
 import { evaluate, type Scene, type SceneModule } from '@glissade/scene';
@@ -103,6 +103,24 @@ export class McpSession {
     }
     const r = applyPatches(this.sidecar, patches, this.baseline);
     if (r.ok) {
+      // fail-loud on VALUES too, still at the write boundary: a keyframe of
+      // 'oops' / Infinity (JSON 1e999 parses to Infinity) on a numeric track
+      // would otherwise only detonate at the NEXT render_frame — poisoning the
+      // sidecar so every later render errors until the agent figures out undo.
+      // Validate the tracks this batch touched before committing (on key copies:
+      // validateTrack canonicalizes hold keys in place, and the doc must stay
+      // untouched on rejection).
+      for (const p of patches) {
+        if (!('target' in p)) continue;
+        const tlId = 'timelineId' in p && typeof p.timelineId === 'string' ? p.timelineId : 'main';
+        const entry = r.doc.timelines[tlId]?.tracks[p.target];
+        if (entry === undefined) continue; // track removed — nothing to validate
+        try {
+          validateTrack({ target: p.target, type: entry.type, keys: entry.keys.map((k) => ({ ...k })) });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
       this.sidecar = r.doc;
       this.undoStack.push(r.inverse);
     }

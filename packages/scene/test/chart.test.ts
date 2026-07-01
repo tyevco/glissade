@@ -133,6 +133,54 @@ describe('Chart', () => {
     expect(chart.bars[2]!.fill()).toBe('#808080'); // value 90 = midpoint
   });
 
+  it('re-domains a default-domain colorRamp over [0, max] so "colour by value" just works', () => {
+    // the header-example shape: colorRamp with NO domain (default [0,1]) over
+    // data way past 1 — previously every bar clamped to the last stop (uniform).
+    const chart = Chart({
+      id: 'c',
+      data,
+      xKey: 'm',
+      yKey: 'v',
+      width: 600,
+      height: 300,
+      fill: colorRamp(['#000000', '#ffffff']),
+    });
+    expect(chart.bars[1]!.fill()).toBe('#ffffff'); // 180 = max → last stop
+    expect(chart.bars[2]!.fill()).toBe('#808080'); // 90 = midpoint
+    expect(chart.bars[0]!.fill()).not.toBe(chart.bars[2]!.fill()); // NOT uniform
+    // an EXPLICIT domain is respected verbatim (values past it clamp, as documented)
+    const explicit = Chart({
+      id: 'e',
+      data,
+      xKey: 'm',
+      yKey: 'v',
+      width: 600,
+      height: 300,
+      fill: colorRamp(['#000000', '#ffffff'], [0, 90]),
+    });
+    expect(explicit.bars[0]!.fill()).toBe('#ffffff'); // 120 clamps to domain max
+    // genuinely-normalized data in [0,1] keeps the default domain untouched
+    const norm = Chart({
+      id: 'n',
+      data: [{ m: 'a', v: 0 }, { m: 'b', v: 0.5 }, { m: 'c', v: 1 }],
+      xKey: 'm',
+      yKey: 'v',
+      width: 300,
+      height: 100,
+      fill: colorRamp(['#000000', '#ffffff']),
+    });
+    expect(norm.bars[1]!.fill()).toBe('#808080');
+  });
+
+  it('fails loud on negative values (bottom-anchored bars cannot draw them)', () => {
+    expect(() =>
+      Chart({ id: 'neg', data: [{ m: 'a', v: -50 }, { m: 'b', v: -30 }], xKey: 'm', yKey: 'v', width: 300, height: 100 }),
+    ).toThrow(/negative/);
+    expect(() =>
+      Chart({ id: 'mix', data: [{ m: 'a', v: 50 }, { m: 'b', v: -30 }], xKey: 'm', yKey: 'v', width: 300, height: 100 }),
+    ).toThrow(ChartError);
+  });
+
   it('is a pure function of its inputs (same table → identical layout)', () => {
     const a = Chart({ id: 'x', data, xKey: 'm', yKey: 'v', width: 640, height: 360 });
     const b = Chart({ id: 'x', data, xKey: 'm', yKey: 'v', width: 640, height: 360 });

@@ -101,7 +101,7 @@ If you don't pass one, `splitText` falls back through the source's injected meas
 
 - pass `{ measurer: backend }` to `splitText` (the backend is a `TextMeasurer`), or
 - call `splitText` **after** the scene's `setTextMeasurer()` runs (the source's `measurerSource` then resolves the real measurer), or
-- register a process-wide measurer up front with `setDefaultMeasurer(createMeasurer({ fonts }))` (`@glissade/backend-skia`) — the Node factory-time pattern.
+- register a process-wide measurer up front with `setDefaultMeasurer(createMeasurer({ fonts }))` (`setDefaultMeasurer` from `@glissade/scene`, `createMeasurer` from `@glissade/backend-skia`) — the Node factory-time pattern.
 
 When `splitText` does fall back to the estimate, it emits a one-shot dev-warning (`splitText: no text measurer available …`) so the drift is never silent.
 
@@ -171,8 +171,9 @@ To drive **sibling UI off the same edit script** — an attempts counter, a step
 ```ts
 // a chip that counts the cold-open's drafts as each attempt completes
 track('counter/text', 'string', tw.steps
-  .filter((s) => s.value === '')                 // each retype begins after an empty
+  .filter((s, i, all) => s.value.length > (all[i - 1]?.value.length ?? 0)) // each `type` step (the text grew)
   .map((s, i) => key(s.end, String(i + 1), { interp: 'hold' })));
+// script above → two keys: "1" as 'make it pop' completes, "2" as 'make it sing' does
 ```
 
 ## Keystroke sync (the SFX contract)
@@ -205,7 +206,14 @@ new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontVariationSettings: '"wg
 new Text({ text: 'Fraunces', fontFamily: 'Fraunces', fontWeight: 700 });
 ```
 
-Axes are **static only** in 0.20 — the value is fixed for the node's lifetime. **Animatable axes** — a `wght` track, `opsz` driven by `fontSize`, a `slnt` ramp — are deferred to **1.0** (an opaque CSS string isn't interpolatable). `fontVariationSettings` is not a bindable target, so a timeline track on `<id>/fontVariationSettings` hard-throws `UnboundTargetError` rather than silently dropping. For a weight that changes over time, animate between discrete `fontWeight` named instances, or wait for the 1.0 axis tracks.
+**Animatable axes shipped in 0.23** via the structured **`fontAxes`** prop — a `{ wght: 700, opsz: 14 }` map registered as its own value type, so a `wght` ramp is an ordinary track:
+
+```ts
+new Text({ id: 'hero', text: 'Fraunces', fontFamily: 'Fraunces', fontAxes: { wght: 400 } });
+track('hero/fontAxes', 'fontAxes', [key(0, { wght: 400 }), key(1, { wght: 900 }, 'easeInOutCubic')]);
+```
+
+It interpolates per-axis, then formats to the CSS `font-variation-settings` string at draw. Both keyframes must declare the same axis tags (a mismatched set snaps + warns). The opaque `fontVariationSettings` **string** remains static (a non-empty `fontAxes` overrides it) and is not a bindable target — a track on `<id>/fontVariationSettings` hard-throws `UnboundTargetError`; animate `<id>/fontAxes` instead.
 
 For perfect cross-backend (browser↔Skia) parity, instance the variable face to a static sfnt at a fixed axis tuple at ingest time (the `font-instanced` golden) — that renders byte-identically everywhere, where live axis passthrough is a Skia/export-path feature.
 

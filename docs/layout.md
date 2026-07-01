@@ -18,7 +18,7 @@ import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 await loadYogaLayoutEngine(); // idempotent; do this once at startup
 ```
 
-If a layout node is evaluated with no engine registered, glissade throws a `LayoutEngineMissingError` pointing you back here. (The `gs` CLI calls `loadYogaLayoutEngine()` for you during `render` and `dev`.)
+If a layout node is evaluated with no engine registered, glissade throws a `LayoutEngineMissingError` pointing you back here. (The `gs` CLI calls `loadYogaLayoutEngine()` for you during `render` and `mcp`; `gs dev` does **not** — your page/scene code loads it.)
 
 ## `Stack` — the ergonomic column/row
 
@@ -176,7 +176,7 @@ Because Yoga is loaded lazily (and can't be inlined into the single-file IIFE), 
 
 Use the version of `yoga-layout` glissade is built against (`3.2.x`). Under a bundler (or in npm code), neither is needed — the bare `loadYogaLayoutEngine()` resolves `yoga-layout` from `node_modules` as usual.
 
-If you'd rather not load Yoga in a no-build page at all, reach for [`Grid`](#grid-build-time-track-layout) below — it is a pure build-time layout with **no engine dependency at all**.
+If you'd rather not load Yoga in a no-build page at all, reach for `Grid` (next section) — it is a pure build-time layout with **no engine dependency at all**.
 
 ## `Grid` — build-time track layout
 
@@ -209,7 +209,7 @@ Grid({
 });
 ```
 
-`Grid` is **position-only** in v1: it places each child at the center of its cell but does not resize children to fill their cells (cell `stretch` / sizing is deferred). Children keep their own intrinsic size. A grid with `fr` columns needs an explicit `width` to resolve fractions against; a grid spanning more than one row needs `cellHeight` (the row pitch).
+By default `Grid` is position-only: it places each child at the center of its cell and children keep their own intrinsic size. Pass **`stretch: true`** (shipped in 0.25) to also size each child to its cell — the resolved column-track width becomes the child's `width` and `cellHeight` its `height` (only for children with settable size signals, i.e. `Rect`/`Image`; others are just positioned). A grid with `fr` columns needs an explicit `width` to resolve fractions against; a grid spanning more than one row needs `cellHeight` (the row pitch).
 
 ## Tree-shakeable subpaths
 

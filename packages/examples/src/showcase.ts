@@ -147,3 +147,11 @@ scrub.addEventListener('input', () => {
 
 const initial = location.hash.slice(1);
 show(initial in gallery ? initial : 'spinners');
+
+// back/forward + hand-edited hashes switch scenes without a reload
+window.addEventListener('hashchange', () => {
+  const name = location.hash.slice(1);
+  if (name in gallery && !picker.querySelector(`button[data-scene="${name}"]`)?.classList.contains('active')) {
+    show(name);
+  }
+});

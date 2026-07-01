@@ -73,8 +73,9 @@ const scene = glissade.createScene({
 
 const tl = glissade.timeline((t) => {
   // the animatable transform target is the vec2 `box/position` (there is no scalar `box/x`);
-  // the tween option is `ease` (NOT `easing`)
-  t.to('box/position', [480, 140], { duration: 1, ease: 'easeOutCubic' });
+  // the tween option is `ease` (NOT `easing`); a string-target tween has no live
+  // from-value to read, so anchor the FIRST tween on a target with `from:`
+  t.to('box/position', [480, 140], { duration: 1, ease: 'easeOutCubic', from: [80, 140] });
 });
 
 const mounted = glissade.mount(scene, tl, document.querySelector('canvas'));
@@ -105,7 +106,7 @@ glissade has two render backends; they are for different jobs:
 | For | playback + **export** | **edit / preview / a11y** |
 | Fidelity | byte-exact (the `gs render` master) | preview / **non-parity** |
 | Output | pixels (opaque to DOM tools) | real HTML/SVG elements (selectable, screenshotter-visible) |
-| Identity | — | `data-node-id` → `scene.nodes.get(id).set(…)` (click-to-edit) |
+| Identity | — | `data-node-id` → per-prop signals, e.g. `scene.nodes.get(id).position.set([x, y])` (click-to-edit) |
 
 Same scene, same `DisplayList` IR, different sink. Export stays on the raster path;
 reach for the DOM tier when you need to inspect, edit, or DOM-screenshot.

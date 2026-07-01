@@ -14,6 +14,16 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
+/** Validate --fps: a non-positive fps silently renders the WRONG frame
+ *  (t = frame/0 = Infinity clamps to the timeline end) — fail loud instead. */
+function parseFpsOrFail(raw: string): number {
+  const fps = Number(raw);
+  if (!Number.isFinite(fps) || fps <= 0) {
+    fail(`--fps must be a positive number, got '${raw}'`);
+  }
+  return fps;
+}
+
 function parseCaptionsModeOrFail(raw: string | undefined): CaptionsMode {
   try {
     return parseCaptionsMode(raw);
@@ -39,6 +49,7 @@ const USAGE = `usage:
   gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
   gs migrate <baseline-api.json> [--json]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; never rewrites your files)
+  gs --version   print the engine version
 
 render options:
   --out <path>     output directory for a PNG sequence, or .mp4/.webm (needs ffmpeg). default: ./out
@@ -130,6 +141,13 @@ narration-lint options (lint the committed *.narration.timing.json + the real ca
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  // gs --version / gs version — answer from the live scene registry (the same
+  // source describe() reports), so a stale dist can't misreport the engine.
+  if (command === '--version' || command === '-v' || command === 'version') {
+    const { describe } = await import('@glissade/scene/describe');
+    process.stdout.write(`${describe().version}\n`);
+    return;
+  }
   if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
@@ -211,7 +229,7 @@ async function main(): Promise<void> {
         modulePath: sceneModule,
         ...(cvRange ? { frameRange: cvRange } : {}),
         ...(sampleFlag !== undefined ? { sample: Number(sampleFlag) } : {}),
-        ...(cvFpsFlag ? { fps: parseInt(cvFpsFlag, 10) } : {}),
+        ...(cvFpsFlag ? { fps: parseFpsOrFail(cvFpsFlag) } : {}),
       });
       process.stdout.write(`${result.report}\n`);
       if (!result.ok) process.exit(1);
@@ -463,7 +481,7 @@ async function main(): Promise<void> {
         ...(frameRange ? { frameRange } : {}),
         ...(flags.has('bisect') ? { bisect: true } : {}),
         ...(flags.has('emit') ? { emit: flags.get('emit')! } : {}),
-        ...(fpsFlag ? { fps: parseInt(fpsFlag, 10) } : {}),
+        ...(fpsFlag ? { fps: parseFpsOrFail(fpsFlag) } : {}),
       });
       process.stdout.write(`${result.report}\n`);
       if (!result.ok) process.exit(1);
@@ -582,7 +600,7 @@ async function main(): Promise<void> {
     const sharedOpts = {
       modulePath,
       out: flags.get('out') ?? 'out',
-      ...(fpsFlag ? { fps: parseInt(fpsFlag, 10) } : {}),
+      ...(fpsFlag ? { fps: parseFpsOrFail(fpsFlag) } : {}),
       ...(frame !== undefined ? { frame } : {}),
       ...(frameRange ? { frameRange } : {}),
       ...(formatFlag === 'png-seq' ? { format: 'png-seq' as const } : {}),

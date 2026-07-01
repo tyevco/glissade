@@ -43,6 +43,11 @@ export async function importCommand(opts: ImportOptions): Promise<ImportCommandR
   const outDir = resolve(opts.out);
   mkdirSync(outDir, { recursive: true });
 
+  if (!/\.(svg|json)$/i.test(inputAbs)) {
+    throw new Error(
+      `${opts.input}: unsupported input — gs import expects a Lottie .json or an .svg`,
+    );
+  }
   if (/\.svg$/i.test(inputAbs)) {
     let svg: string;
     try {

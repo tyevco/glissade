@@ -10,10 +10,10 @@ const mod: SceneModule = {
       children: [new Circle({ id: 'dot', radius: 40, fill: '#e6a700', position: [120, 180], opacity: 0 })],
     }),
   timeline: timeline((tl) => {
-    tl.to('dot/opacity', 1, { duration: 0.5 })
-      .to('dot/position.x', 520, { ease: spring({ stiffness: 170, damping: 14 }) })
+    tl.to('dot/opacity', 1, { duration: 0.5, from: 0 })
+      .to('dot/position.x', 520, { from: 120, ease: spring({ stiffness: 170, damping: 14 }) })
       .label('arrived')
-      .to('dot/fill', '#7c4dff', { duration: 0.6, at: 'arrived' });
+      .to('dot/fill', '#7c4dff', { duration: 0.6, at: 'arrived', from: '#e6a700' });
   }),
 };
 ```
@@ -45,10 +45,11 @@ One contract underneath everything: `evaluate(scene, timeline, t)` is a **pure f
 ## What works today
 
 - **`@glissade/core`** — pull-based signals (lazy, cached, dependency-tracked, equal-value-pruned), keyframe tracks with pluggable value types (OKLab color, vec2, …), the Timeline document with nesting, closed-form springs, the fluent builder, `bake()`/`bakeCheckpointed()` for physics, seeded RNG, sidecar merging. Zero DOM/Node deps.
-- **`@glissade/scene`** — Group/Rect/Circle/Text/Image/Video nodes with signal props, computed transform matrices, and a flat serializable DisplayList IR; `evaluate()`.
+- **`@glissade/scene`** — Group/Rect/Circle/Path/Text/Image/Video nodes with signal props, computed transform matrices, and a flat serializable DisplayList IR; `evaluate()`.
 - **`@glissade/backend-canvas2d` / `@glissade/backend-skia`** — the same command stream rasterized in the browser and headless (both Skia-family; SSIM-gated parity suite).
 - **`@glissade/player`** — time-based Player (reverse = negative rate, drop-safe), Driver seam (rAF clock, scroll), `mount()`.
-- **`@glissade/cli`** — `gs render` to PNG sequences or mp4/webm with mixed audio; FFmpeg-extracted video assets.
+- **`@glissade/cli`** — `gs render` to PNG sequences or mp4/webm with mixed audio (plus a persistent frame cache and an audio-only remux fast path); FFmpeg-extracted video assets; `gs build` / `gs mcp` / `gs migrate` / `gs describe` for tooling and agents.
+- **Motion craft** — `orientToPath`/`lookAt` rotation drivers, `retime` (speed ramps, reverse, ping-pong), `Echo` motion trails, per-subtree motion blur, and `Chart()` + serializable scales (bind a table to an animatable bar chart).
 - **`@glissade/export-web`** — WebCodecs + Mediabunny export with feature-detected codecs; Mediabunny video decode with bidirectional scrub.
 - **`@glissade/studio` + `@glissade/vite-plugin` + `@glissade/react`** — viewport, transport, timeline panel with draggable keys, live inspector; GUI edits persist to `*.edits.json` sidecars and survive code edits (code owns structure, the editor owns the keys you touch).
 
@@ -68,7 +69,7 @@ pnpm --filter @glissade/examples dev   # the showcase is the landing page; minim
 
 ## Status
 
-Pre-release (`0.x`, unpublished): APIs may move, the Timeline document schema is versioned and stable-intentioned. Packages version in lockstep; in `0.x` a minor bump may break — see [BREAKING.md](BREAKING.md) for the policy and change log. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
+Pre-release (`0.x`, published to npm — latest stable `0.32.0`): APIs may move, the Timeline document schema is versioned and stable-intentioned. Packages version in lockstep; in `0.x` a minor bump may break — see [BREAKING.md](BREAKING.md) for the policy and change log. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
 
 ## License
 

@@ -11,7 +11,7 @@ Serve the file from anywhere (it's fully offline — one file, no network deps) 
 ```html
 <script src="glissade.browser.js"></script>
 <script>
-  const G = window.glissade; // ~197 names: evaluate, createScene, timeline, mount, Canvas2DBackend, GsPlayerElement, …
+  const G = window.glissade; // 220+ names: evaluate, createScene, timeline, mount, Canvas2DBackend, GsPlayerElement, …
 </script>
 ```
 
@@ -29,7 +29,7 @@ https://cdn.jsdelivr.net/npm/@glissade/browser@latest/dist/glissade.browser.js
 https://cdn.jsdelivr.net/npm/@glissade/browser@pre/dist/glissade.browser.js
 
 # PIN an exact version (fully reproducible)
-https://cdn.jsdelivr.net/npm/@glissade/browser@0.17.1/dist/glissade.browser.js
+https://cdn.jsdelivr.net/npm/@glissade/browser@0.32.0/dist/glissade.browser.js
 ```
 
 `unpkg.com/@glissade/browser@<tag-or-version>/dist/glissade.browser.js` works identically. Each GitHub Release also attaches the file as an asset (`https://github.com/tyevco/glissade/releases/download/v<version>/glissade.browser.js`) — note that asset URL is **version-specific** (the tag is in the path), and `/releases/latest/download/` follows the latest **stable** release only (not pre-releases). For a single URL that tracks pre-releases, use the CDN `@pre` tag above. *(CDN dist-tag resolution caches briefly, so a brand-new publish can take a few minutes to appear on the `@latest`/`@pre` URLs.)*
@@ -61,7 +61,7 @@ scene.setTextMeasurer(backend); // the backend supplies text metrics to scene
 // Options are strict: an unknown opts key throws a TimelineValidationError naming it.
 // See the per-method known-key reference in ./timeline.md ("Options are strict").
 const timeline = G.timeline((tl) => {
-  tl.fromTo('box/position', [80, 140], [480, 140], { duration: 2, ease: G.easings.cubicInOut });
+  tl.fromTo('box/position', [80, 140], [480, 140], { duration: 2, ease: G.easings.easeInOutCubic });
 });
 
 function frame(tMs) {
@@ -148,7 +148,7 @@ On the single-file `window.glissade` bundle this is just `G.renderToDataURL`. Wi
 import { renderToDataURL, snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 ```
 
-If you already hold a `Canvas2DBackend` over a live canvas, `await snapshotCanvas(backend)` captures whatever it last rendered (same `{ type, quality }` args; you can also pass a raw `HTMLCanvasElement`/`OffscreenCanvas`). Both are **async** (offscreen serialization is `OffscreenCanvas.convertToBlob`, falling back to `HTMLCanvasElement.toDataURL`).
+If you already hold a `Canvas2DBackend` over a live canvas, `await snapshotCanvas(backend)` captures whatever it last rendered — note its extra args are **positional**, `snapshotCanvas(canvasOrBackend, type?, quality?)` (e.g. `snapshotCanvas(backend, 'image/webp', 0.9)`), not an options bag; you can also pass a raw `HTMLCanvasElement`/`OffscreenCanvas`. Both are **async** (offscreen serialization is `OffscreenCanvas.convertToBlob`, falling back to `HTMLCanvasElement.toDataURL`).
 
 > **Browser-only.** `renderToDataURL` / `snapshotCanvas` rely on the browser canvas (`OffscreenCanvas` / `toDataURL`); they are not for Node. The headless, byte-exact path is the Skia backend / `gs render` CLI — see the export docs.
 
@@ -184,7 +184,7 @@ scene.setTextMeasurer(backend);
 
 const DURATION = 2; // seconds
 const timeline = G.timeline((tl) => {
-  tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.cubicInOut });
+  tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.easeInOutCubic });
 });
 
 async function recordWebm() {
@@ -297,7 +297,7 @@ A single self-contained file — a `<canvas>`, a tiny scene + timeline in plain 
       // Builder: to(target, value, opts) and fromTo(target, from, to, opts); `ease` is a FUNCTION.
       var DURATION = 2;
       var timeline = G.timeline(function (tl) {
-        tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.cubicInOut });
+        tl.fromTo('box/position', [80, 140], [480, 140], { duration: DURATION, ease: G.easings.easeInOutCubic });
       });
 
       // FOUT: on the lean own-rAF path YOU repaint when fonts arrive (only mount() auto-repaints).

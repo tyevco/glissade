@@ -1,6 +1,6 @@
 # @glissade/scene
 
-The scene graph and the **DisplayList IR**: nodes (Group, Rect, Circle, Text, Image, Video) whose every animatable property is a signal, `createScene`, and the canonical `evaluate(scene, timeline, t) → DisplayList`. Text layout (explicit fonts, Intl.Segmenter line breaking) is deterministic across browser and headless render. Yoga flexbox lives behind the LayoutEngine seam at the separate `@glissade/scene/layout` entry — the base path never pays for wasm — including `width/height: 'auto'` content sizing and `computedSize()`.
+The scene graph and the **DisplayList IR**: nodes (Group, Rect, Circle, Path, Text, Image, Video) whose every animatable property is a signal, `createScene`, and the canonical `evaluate(scene, timeline, t) → DisplayList`. Text layout (explicit fonts, Intl.Segmenter line breaking) is deterministic across browser and headless render. Yoga flexbox lives behind the LayoutEngine seam at the separate `@glissade/scene/layout` entry — the base path never pays for wasm — including `width/height: 'auto'` content sizing and `computedSize()`. Other tree-shaken subpaths carry `splitText` (`./type`), `Grid` (`./grid`), motion-path drivers (`./motion`), the SVG `d` parser (`./path`), and `Chart()` + serializable scales (`./chart`).
 
 ```sh
 npm i @glissade/scene @glissade/core

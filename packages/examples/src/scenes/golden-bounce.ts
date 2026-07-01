@@ -50,7 +50,10 @@ const mod: SceneModule = {
   timeline: timeline(
     (tl) => {
       tl.add(timeline({ tracks: baked }), 0)
-        .to('ball/fill', '#ff5d73', { duration: 3, at: 0, ease: 'easeInOutSine' })
+        // string targets have no builder-visible base — anchor the sweep with { from }
+        // (matching the ctor fill) or the track sits at its END state for the whole
+        // timeline (the ball rendered red from frame 0 until this fix)
+        .to('ball/fill', '#ff5d73', { from: '#4ea1ff', duration: 3, at: 0, ease: 'easeInOutSine' })
         .fromTo('floor/opacity', 0, 1, { duration: 0.5, at: 0, ease: 'easeOutQuad' });
     },
     { fps: 60, duration: 3 },

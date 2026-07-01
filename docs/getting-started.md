@@ -23,10 +23,10 @@ const mod: SceneModule = {
       ],
     }),
   timeline: timeline((tl) => {
-    tl.to('dot/opacity', 1, { duration: 0.5 })
-      .to('dot/position.x', 520, { ease: spring({ stiffness: 170, damping: 14 }) })
+    tl.to('dot/opacity', 1, { duration: 0.5, from: 0 })
+      .to('dot/position.x', 520, { from: 120, ease: spring({ stiffness: 170, damping: 14 }) })
       .label('arrived')
-      .to('dot/fill', '#7c4dff', { duration: 0.6, at: 'arrived' });
+      .to('dot/fill', '#7c4dff', { duration: 0.6, at: 'arrived', from: '#e6a700' });
   }),
 };
 
@@ -97,4 +97,4 @@ Scrub, inspect live signal values, and drag keyframes — GUI edits persist to a
 
 - [Core concepts](concepts.md) — signals, tracks, the evaluate contract
 - [Migrating from Motion Canvas](migrating-from-motion-canvas.md)
-- [Architecture & design](DESIGN.md) — the full spec, with every decision and its rejected alternatives
+- [Architecture & design](https://github.com/tyevco/glissade/blob/main/docs/DESIGN.md) — the full spec, with every decision and its rejected alternatives

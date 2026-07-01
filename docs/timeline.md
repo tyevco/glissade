@@ -4,7 +4,7 @@ A `Timeline` document is the serializable source of truth: tracks, labels, marke
 
 A "sub" is just a built `Timeline` — the output of `timeline(tl => …)`. Author it from time 0; the parent decides where it lands.
 
-> **Options are strict.** `to` / `fromTo` / `set` / `stagger` validate their options object against a known-key allow-list and **throw a `TimelineValidationError`** naming any unknown key — a misspelled or wrong option (`{ esae: … }`, `{ dur: … }`) fails loudly at build time instead of being silently ignored. The known keys are: `to`/`fromTo` → `duration`, `ease`, `at`, `from`; `set` → `at`; `stagger` spec → `to`, `from`, `duration`, `ease`; `stagger` opts → `each`, `anchor`, `at`.
+> **Options are strict.** `to` / `fromTo` / `set` / `stagger` validate their options object against a known-key allow-list and **throw a `TimelineValidationError`** naming any unknown key — a misspelled or wrong option (`{ esae: … }`, `{ dur: … }`) fails loudly at build time instead of being silently ignored. The known keys are: `to`/`fromTo` → `duration`, `ease`, `at`, `from`, `type`; `set` → `at`, `type`; `stagger` spec → `to`, `from`, `duration`, `ease`; `stagger` opts → `each`, `anchor`, `at`.
 
 ```ts
 const intro = timeline((tl) => {
@@ -92,12 +92,12 @@ A **per-target-destination** cascade — cards dealt where each flies from its o
 
 ## Composing build-time tracks — `presence` / `clip` / `each` / `morph`
 
-The clip tier on `@glissade/core/clips` (`presence`, `clip`, `clipList`, `each`, `morph`) is **not** part of the fluent builder — those are functions that **return `{ tracks, … }`**, and you compose their tracks into a **Timeline document** directly:
+The clip tier on `@glissade/core/clips` (`presence`, `clip`, `clipList`, `morph` — plus `each` on the `@glissade/scene` base index) is **not** part of the fluent builder — those are functions that **return `{ tracks, … }`**, and you compose their tracks into a **Timeline document** directly:
 
 ```ts
 import { presence, clip } from '@glissade/core/clips';
 
-const card  = presence('card',  { window: [1, 5], enter: { opacity: [0, 1], offset: 16, dur: 0.5 }, exit: {} });
+const card  = presence('card',  { window: [1, 5], enter: { opacity: [0, 1], offset: 16, dur: 0.5 } });
 const label = presence('label', { show: card.hiddenAt, hide: 6 });
 
 const doc = {

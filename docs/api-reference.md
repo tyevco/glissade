@@ -554,6 +554,81 @@ Import from `@glissade/scene/motion`.
 followPath(target: Node, path: Node, opts?: { id?, orient?: boolean }): FollowPath  —  drive '<id>/progress' with a track
 ```
 
+### `orientToPath`
+
+The rotation-only sibling of followPath: owns a target's rotation, banking it to the path tangent at progress, while POSITION is left to whatever drives it (keyframes, layout, a sibling followPath). Pure, tree-shakeable.
+
+Import from `@glissade/scene/motion`.
+
+```ts
+orientToPath(target: Node, path: PathValue | Path, opts?: { id?, progress?, offset?: number }): OrientToPath  —  drive '<id>/progress' with a track
+```
+
+```ts
+import { Rect } from '@glissade/scene';
+import { orientToPath } from '@glissade/scene/motion';
+import { pathFromSvg } from '@glissade/scene/path';
+// rotation-only sibling of followPath: banks the target to the path tangent while its
+// POSITION comes from elsewhere. Drive '<id>/progress' with a track; `offset` if it rests facing up.
+const sprite = new Rect({ id: 'sprite', width: 12, height: 12 });
+orientToPath(sprite, pathFromSvg('M0 0 L100 0 L100 100'), { id: 'bank', progress: 0.5 });
+```
+
+### `lookAt`
+
+A driver node that owns a target's rotation, aiming its local +x axis at another node's world origin — a turret tracking a mover, an arrow pointing at a label. Re-derives from both positions each frame; no stored state.
+
+Import from `@glissade/scene/motion`.
+
+```ts
+lookAt(target: Node, at: Node, opts?: { id?, offset?: number }): LookAt
+```
+
+```ts
+import { Rect, Circle } from '@glissade/scene';
+import { lookAt } from '@glissade/scene/motion';
+// aim the target's local +x axis at another node's world origin (a turret tracking a mover)
+const turret = new Rect({ id: 'turret', width: 12, height: 12, position: [0, 0] });
+const mover = new Circle({ id: 'mover', radius: 6, position: [40, 20] });
+lookAt(turret, mover);
+```
+
+### `echo`
+
+Motion trails / onion-skin: wrap a child so it renders at K past playhead offsets (t − i·spacing), each trailing copy fading by decay. A pure multi-time re-eval (the playhead is re-addressed per copy and restored), byte-stable in the golden corpus. Add the returned Echo to the scene.
+
+Import from `@glissade/scene`.
+
+```ts
+echo(child: Node, opts?: { id?, count?: number, spacing?: number, decay?: number }): Echo
+```
+
+```ts
+import { Circle, echo } from '@glissade/scene';
+// motion trail / onion-skin: renders the child at K past playhead offsets, each fading by `decay`.
+// Add the returned Echo to the scene; drive the child however you like (its ghosts re-derive at each offset).
+const dot = new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' });
+const trail = echo(dot, { count: 6, spacing: 0.05, decay: 0.7 });
+```
+
+### `motionBlur`
+
+Real sampled motion blur: wrap a child so it renders at N sub-frame times across a shutter interval (centered on the frame) and AVERAGES them — tracks every animated prop, not a faked directional blur. A pure multi-time re-eval (playhead re-addressed per sample, running-mean opacity, restored), byte-exact on Skia; browser↔Skia is perceptual-tier for blur.
+
+Import from `@glissade/scene`.
+
+```ts
+motionBlur(child: Node, opts?: { id?, shutter?: number, samples?: number }): MotionBlur
+```
+
+```ts
+import { Circle, motionBlur } from '@glissade/scene';
+// real sampled motion blur: renders the child at N sub-frame times across `shutter` (seconds) and averages them.
+// Wrap the MOVING content; its background stays crisp. Byte-exact on Skia, perceptual browser↔Skia.
+const dot = new Circle({ id: 'dot', radius: 16, fill: '#ffcf3f' });
+const blurred = motionBlur(dot, { shutter: 0.06, samples: 16 });
+```
+
 ### `clip`
 
 A reusable, target-agnostic motion captured once as a relative-time key schedule, then applied to a node at a wall-clock start time. Build-time sugar: clip.apply() compiles to ordinary Track[].
@@ -572,6 +647,24 @@ Import from `@glissade/core/clips`.
 
 ```ts
 clipList(clip: Clip, targets: string[], startT: number, opts?: { stagger?: number }): { tracks }
+```
+
+### `retime`
+
+Retime a set of tracks by remapping their key TIMES — speed (slow-mo/fast), shift (delay/advance), reverse, or pingpong — as a pure build-time transform to ordinary retimed Track[]. Reverse/pingpong time-mirror each ease exactly (built-ins + cubicBezier); springs/holds fail loud.
+
+Import from `@glissade/core`.
+
+```ts
+retime(tracks: Track[], { speed?, shift?, reverse?, pingpong? }): Track[]
+```
+
+```ts
+import { retime, track, key } from '@glissade/core';
+// pure key-time transform → ordinary retimed tracks (speed / shift / reverse / pingpong)
+const move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];
+const slow = retime(move, { speed: 0.5 });    // half speed
+const back = retime(move, { reverse: true }); // play it backward
 ```
 
 ### `renderToDataURL`
@@ -626,6 +719,56 @@ import { Grid } from '@glissade/scene/grid';
 // build-time fan-out into a column grid (no Yoga) — children move to cell centers.
 // fr columns (`columns: 3`) need a `width` to resolve against; `cellHeight` is the row pitch
 Grid({ columns: 3, width: 360, gap: 16, cellHeight: 80, children: [new Rect({ width: 80, height: 60 }), new Rect({ width: 80, height: 60 })] });
+```
+
+### `Chart`
+
+Build-time bar chart: bind a table (rows) → positioned+sized Rect bars, each pinned to the axis and grown from its base, returning a Group. Pure fan-out (like Grid) — animate a reveal with tl.stagger(chart.targets("height"), …) or a colour sweep on "fill". Tree-shaken off the base scene index.
+
+Import from `@glissade/scene/chart`.
+
+```ts
+Chart({ id, data: Row[], xKey, yKey, width, height, yScale?, bandPadding?, fill?: string | ColorScale }): { node: Group, bars: Rect[], targets(prop): string[] }
+```
+
+### `linearScale`
+
+A serializable linear scale (value axis): maps a numeric domain onto a pixel/unit range. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.
+
+Import from `@glissade/scene/chart`.
+
+```ts
+linearScale(domain: [number, number], range: [number, number]): Scale
+```
+
+### `logScale`
+
+A serializable base-10 log scale (strictly-positive domain; throws otherwise) for a value axis. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.
+
+Import from `@glissade/scene/chart`.
+
+```ts
+logScale(domain: [number, number], range: [number, number]): Scale
+```
+
+### `bandScale`
+
+A categorical band scale: N equal bands across a range with a padding gap, each with a bandwidth. Chart uses this internally for the x axis; exposed for custom layouts. On the @glissade/scene/chart subpath.
+
+Import from `@glissade/scene/chart`.
+
+```ts
+bandScale(count: number, range: [number, number], padding?: number): BandScale
+```
+
+### `colorRamp`
+
+A serializable colour ramp (>=2 hex stops, sRGB-interpolated) over a numeric domain → a #rrggbb string. Pass as Chart({ fill }) to colour bars by value. On the @glissade/scene/chart subpath.
+
+Import from `@glissade/scene/chart`.
+
+```ts
+colorRamp(stops: string[], domain?: [number, number]): ColorScale
 ```
 
 ### `Stack`

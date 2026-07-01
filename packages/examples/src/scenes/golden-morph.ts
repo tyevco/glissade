@@ -8,18 +8,28 @@
  * frame stays a pure function of time and byte-compares on Skia.
  */
 
-import { timeline, type Track } from '@glissade/core';
+import { key, timeline, track, type Track } from '@glissade/core';
 import { morph, type Box } from '@glissade/core/clips';
 import { Rect, createScene, type SceneModule } from '@glissade/scene';
 
 const chipBox: Box = { x: 150, y: 180, w: 120, h: 36 };
 const docBox: Box = { x: 320, y: 180, w: 420, h: 240 };
 
+// crossfade 0.25: the chip drops out fast and the document only fades in over
+// the LAST quarter of the FLIP — while the carrier nearly covers it (an earlier
+// fade-in let the full-size document peek out around the still-scaling carrier)
 const { tracks } = morph(
   chipBox,
   docBox,
   { morphNode: 'morphFx', fromNode: 'chip', toNode: 'document' },
-  { at: 0.5, duration: 1.2, ease: 'easeInOutCubic' },
+  { at: 0.5, duration: 1.2, ease: 'easeInOutCubic', crossfade: 0.25 },
+);
+// FLIP completion swap: the carrier vanishes as the morph lands, REVEALING the
+// real document underneath (before this, morphFx sat on top forever and the
+// promised cross-fade to the document was never visible)
+const morphEnd = 0.5 + 1.2;
+tracks.push(
+  track('morphFx/opacity', 'number', [key(morphEnd, 1), key(morphEnd + 0.15, 0, 'easeOutQuad')]),
 );
 
 const mod: SceneModule = {

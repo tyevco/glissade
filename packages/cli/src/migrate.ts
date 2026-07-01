@@ -147,9 +147,12 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
         action: `import { ${name} } from '${toPath}'`,
       });
     }
-    for (const p of keys(a.props)) {
-      const pa = a.props[p];
-      const pb = b.props[p];
+    // props too can be absent on a very old node entry — same missing⇒empty rule
+    const aProps = a.props ?? {};
+    const bProps = b.props ?? {};
+    for (const p of keys(aProps)) {
+      const pa = aProps[p];
+      const pb = bProps[p];
       if (pa === undefined) continue;
       if (pb === undefined) {
         out.push({
@@ -164,14 +167,14 @@ export function diffManifests(from: ApiManifest, to: ApiManifest): MigrationRepo
       }
       diffProp(name, p, pa, pb, out);
     }
-    for (const p of keys(b.props)) {
-      if (a.props[p] === undefined) {
+    for (const p of keys(bProps)) {
+      if (aProps[p] === undefined) {
         out.push({
           kind: 'added',
           category: 'prop',
           name: `${name}.${p}`,
           breaking: false,
-          detail: `new prop (${b.props[p]?.animatable ? 'animatable' : 'construction-only'})`,
+          detail: `new prop (${bProps[p]?.animatable ? 'animatable' : 'construction-only'})`,
         });
       }
     }

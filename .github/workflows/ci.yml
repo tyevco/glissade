@@ -25,6 +25,7 @@ jobs:
       - run: node scripts/check-size.mjs
       - run: node scripts/check-types.mjs # attw: published type resolution (esm-only profile)
       - run: node scripts/api-report.mjs # api-extractor: committed *.api.md surface is current
+      - run: pnpm check:docs-api # generated docs/api-reference.md is current (drifted 6 minors before this gate)
 
   browser-suites:
     runs-on: ubuntu-latest

@@ -16,8 +16,9 @@ player.seek(1.5); // pure: identical to having played there
 ### Custom render backend
 
 `mount()` rasterizes through `Canvas2DBackend` by default. To drive a different
-`RenderBackend` (e.g. a future `@glissade/backend-dom` preview renderer), pass a
-factory as `opts.backend` — it receives the mount target and returns the backend:
+`RenderBackend` (e.g. the `@glissade/backend-dom` preview renderer, shipped in
+0.21), pass a factory as `opts.backend` — it receives the mount target and
+returns the backend:
 
 ```ts
 mount(scene, doc, canvas, { backend: (target) => new MyBackend(target) });

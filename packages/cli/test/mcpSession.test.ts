@@ -65,6 +65,28 @@ describe('McpSession — apply / undo (validated, reversible)', () => {
     expect(s.editCount()).toBe(0); // nothing applied
   });
 
+  it('FAILS LOUD on garbage keyframe VALUES — doc untouched (write boundary, not next-render)', async () => {
+    // 'oops' / Infinity (JSON 1e999) on a number track used to apply ok:true and
+    // only detonate at the NEXT render_frame — poisoning every later render.
+    const s = await McpSession.load(FIXTURE);
+    const str = s.applyPatch([
+      { op: 'setTrackKeys', timelineId: 'main', target: 'box/opacity', type: 'number', keys: [{ t: 0, value: 'oops' as unknown as number }] },
+    ]);
+    expect(str.ok).toBe(false);
+    if (!str.ok) expect(str.error).toMatch(/finite number/);
+    const inf = s.applyPatch([
+      { op: 'setTrackKeys', timelineId: 'main', target: 'box/opacity', type: 'number', keys: [{ t: 0, value: Infinity }] },
+    ]);
+    expect(inf.ok).toBe(false);
+    expect(s.editCount()).toBe(0); // nothing committed, undo stack clean
+    expect(s.mergedTimeline().tracks.some((t) => t.target === 'box/opacity')).toBe(false);
+    // a valid patch still applies after the rejections (session not wedged)
+    const good = s.applyPatch([
+      { op: 'setTrackKeys', timelineId: 'main', target: 'box/opacity', type: 'number', keys: [{ t: 0, value: 1 }, { t: 1, value: 0 }] },
+    ]);
+    expect(good.ok).toBe(true);
+  });
+
   it('undo with nothing on the stack reports cleanly', async () => {
     const s = await McpSession.load(FIXTURE);
     expect(s.undo()).toEqual({ ok: false, error: 'nothing to undo' });

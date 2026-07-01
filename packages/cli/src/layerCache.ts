@@ -74,6 +74,13 @@ function decodeEntry(buf: Buffer): LayerCacheEntry {
     off += BOUNDS_BYTES;
   }
   const raw = inflateSync(buf.subarray(off));
+  // A corrupted header (wrong w/h) with an intact payload would otherwise escape
+  // as a "hit" carrying the wrong pixel count — make EVERY corruption a clean miss.
+  if (raw.byteLength !== w * h * 4) {
+    throw new Error(
+      `corrupt .gsl layer entry (payload ${raw.byteLength} bytes ≠ ${w}×${h}×4)`,
+    );
+  }
   return {
     rgba: new Uint8ClampedArray(raw.buffer, raw.byteOffset, raw.byteLength),
     w,

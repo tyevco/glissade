@@ -19,7 +19,7 @@
  *     fill: colorRamp(['#39e0ff', '#ffcf3f']),   // ramp over the value domain
  *   });
  *   // scene children: [chart.node]
- *   tl.stagger(chart.targets('height'), { from: 0 }, { each: 0.08 }); // bars rise in
+ *   tl.stagger(chart.targets('height'), { from: 0, to: (i) => chart.bars[i]!.height() }, { each: 0.08 }); // bars rise in
  *
  * SEPARATE entry point with its own budget (mirrors `grid`/`type`/`motion`) — the
  * base embed never pays for it; re-exported onto the `@glissade/browser` IIFE so
@@ -213,7 +213,10 @@ export interface ChartSpec extends NodeProps {
   bandPadding?: number;
   /**
    * Bar fill: a solid colour string, or a `ColorScale` evaluated at each bar's
-   * VALUE (a colour ramp over the data). Default `'#4f8cff'`.
+   * VALUE (a colour ramp over the data). A ramp still on colorRamp's DEFAULT
+   * `[0, 1]` domain is automatically re-domained over `[0, max(y)]` when the
+   * data ranges past 1 (so `colorRamp(['#39e0ff', '#ffcf3f'])` "just works");
+   * pass an explicit domain to opt out. Default `'#4f8cff'`.
    */
   fill?: string | ColorScale;
 }
@@ -260,10 +263,32 @@ export function Chart(spec: ChartSpec): ChartResult {
       throw new ChartError(`Chart row ${i}: missing xKey '${xKey}'`);
     }
   });
+  // Bottom-anchored bars grow UP from the axis — a negative value would emit a
+  // negative height (and with an all-negative table, the [0,1] fallback domain
+  // makes it absurdly so). Fail loud rather than draw garbage geometry.
+  values.forEach((v, i) => {
+    if (v < 0) {
+      throw new ChartError(
+        `Chart row ${i}: ${yKey}=${v} is negative — the bar MVP draws from a zero baseline; ` +
+          'offset your data or pass an explicit yScale that maps your domain to positive heights',
+      );
+    }
+  });
 
   const yMax = Math.max(...values, 0);
   const yScale = spec.yScale ?? linearScale([0, yMax === 0 ? 1 : yMax], [0, height]);
   const bands = bandScale(data.length, [0, width], bandPadding);
+
+  // "Colour bars by value": a ramp built with colorRamp's DEFAULT domain [0, 1]
+  // can't have meant literal 0..1 when the data ranges past it — every bar would
+  // clamp to the last stop (a uniform chart). Re-domain such a ramp over the
+  // same [0, max] the default yScale uses; an explicit ramp domain is respected.
+  const fillScale =
+    typeof fill === 'string'
+      ? undefined
+      : fill.domain[0] === 0 && fill.domain[1] === 1 && yMax > 1
+        ? colorRamp(fill.stops, [0, yMax])
+        : fill;
 
   // center the content box on the group origin (like Grid): left edge at -w/2,
   // axis baseline at the bottom (+h/2). Bars are bottom-anchored, so a `height`
@@ -273,7 +298,7 @@ export function Chart(spec: ChartSpec): ChartResult {
 
   const bars: Rect[] = data.map((row, i) => {
     const h = yScale.map(values[i]!);
-    const barFill = typeof fill === 'string' ? fill : fill.map(values[i]!);
+    const barFill = fillScale === undefined ? (fill as string) : fillScale.map(values[i]!);
     return new Rect({
       id: `${id}/bars/${i}`,
       anchor: 'bottom',

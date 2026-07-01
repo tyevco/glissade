@@ -36,4 +36,4 @@ new Rect({ id: 'a', width: 100, height: 60, sketch: { kind: 'crayon' }, sketchSe
 
 Invalid styles throw at construction (`validateSketch`, mirroring `validateFilters`): unknown `kind`, non-positive `width`, negative `roughness`, `passes < 1`.
 
-The pure helpers are exported for custom work — `roughen(segs, style, rng)`, `flatten(segs, tolerance)` (de Casteljau + arc sampling → polylines), and `arcLength(polyline)`.
+The pure helpers are exported for custom work — `roughen(segs, style, rng)`, `flatten(segs, steps)` (de Casteljau + arc sampling → polylines; `steps` is the sample count per curved segment, default 16), and `arcLength(polyline)`.

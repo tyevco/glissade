@@ -2,6 +2,8 @@
 
 `gs` — headless rendering and the dev/capture loop. `gs render` evaluates every frame, rasterizes on Skia (no browser anywhere), writes a PNG sequence or muxes mp4/webm via FFmpeg with sample-accurate audio. v2: `gs dev --record` serves a scene with its state machines mounted and writes input-trace sidecars; `gs render --trace/--state` are the deterministic export routes for interactive scenes.
 
+The full command set: `render`, `dev`, `import` (Lottie `.json` / `.svg`), `build`, `mcp` (an MCP server over the engine), `describe`, `migrate`, `narrate`, `sfx`, `prepare`, `measure-loudness`, `fonts`, `cache`, `diff`, and `verify-determinism`.
+
 ```sh
 npm i -D @glissade/cli
 ```

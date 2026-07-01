@@ -172,7 +172,10 @@ export interface RetimeSpec {
   shift?: number;
   /** play the schedule BACKWARD in place — same [start,end] span, values reversed, eases time-mirrored. */
   reverse?: boolean;
-  /** forward THEN reversed as one there-and-back track (roughly doubles the active span). */
+  /** forward THEN reversed as one there-and-back track (roughly doubles the active
+   *  span). PER-TRACK: each track mirrors about its OWN last key, so tracks with
+   *  different spans return at different times — pad shorter tracks with an end
+   *  key first if a multi-track group must turn around together. */
   pingpong?: boolean;
 }
 

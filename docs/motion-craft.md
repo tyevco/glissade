@@ -34,9 +34,11 @@ retime(move, { pingpong: true }); // forward then back, as one track
 `echo(child, opts)` (and the `Echo` node) render their subtree at the playhead **plus K−1 earlier offsets** — `t`, `t − spacing`, `t − 2·spacing`, … — each trailing copy fading by `decay`. The leading copy is the live frame; the ghosts are the subtree *as it was* a few slices ago.
 
 ```ts
-import { echo } from '@glissade/scene';
+import { echo, createScene } from '@glissade/scene';
+import { followPath } from '@glissade/scene/motion';
 
 createScene({
+  size: { w: 640, h: 360 },
   children: [
     echo(mover, { count: 6, spacing: 0.05, decay: 0.7 }), // mover leaves a fading trail
     followPath(mover, route, { id: 'orbit' }),            // …however its motion is driven

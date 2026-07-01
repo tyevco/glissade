@@ -3,13 +3,15 @@
 A `Path` node draws and morphs geometry; **`followPath`** is the companion that makes another node *travel* that geometry — a cursor gliding a route, a dot running a chart line, an arrow tracing a diagram.
 
 ```ts
-import { Path, Rect, followPath } from '@glissade/scene';
+import { Path, Rect, createScene } from '@glissade/scene';
+import { followPath } from '@glissade/scene/motion';
 import { key, track } from '@glissade/core';
 
 const route = new Path({ id: 'route', data: routeContours, stroke: '#4ea1ff', strokeWidth: 3 });
 const cursor = new Rect({ id: 'cursor', width: 12, height: 12, fill: '#ff5d73' });
 
 createScene({
+  size: { w: 640, h: 360 },
   children: [route, cursor, followPath(cursor, route, { id: 'cf', orient: true })],
 });
 
@@ -36,7 +38,7 @@ followPath(arrow, route, { id: 'cf', orient: true, orientOffset: -90 }); // spri
 For custom wiring, the pure sampler is exported — bind anything you like, or read points without a node:
 
 ```ts
-import { motionPath, pointAtLength, pathLength } from '@glissade/scene';
+import { motionPath, pointAtLength, pathLength } from '@glissade/scene/motion';
 
 const m = motionPath(routeContours);          // { length, at(s), tangentAt(s), atProgress(u), tangentAtProgress(u) }
 const half = m.atProgress(0.5);               // point at the half-way distance
@@ -53,7 +55,10 @@ Pass `followPath` the **Path node** (not a snapshot of its data) to follow it *l
 ```ts
 const route = new Path({ id: 'route', data: flatLine, stroke: '#ffb454', strokeWidth: 3 });
 const cursor = new Path({ id: 'cursor', data: arrow });
-createScene({ children: [route, cursor, followPath(cursor, route, { id: 'cf', orient: true })] });
+createScene({
+  size: { w: 640, h: 360 },
+  children: [route, cursor, followPath(cursor, route, { id: 'cf', orient: true })],
+});
 
 track('route/d', 'path', [key(0, flatLine), key(2.2, arch, 'easeInOutCubic')]); // bend it
 track('cf/progress', 'number', [key(0, 0), key(2.6, 1)]);                        // sweep it

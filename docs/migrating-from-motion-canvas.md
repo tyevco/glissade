@@ -29,7 +29,7 @@ tl.to(circle.position.x, 300, { duration: 1 })
   .to(circle.scale, [2, 2], { duration: 1, at: '<' });
 ```
 
-**`chain` / `sequence`** are just consecutive `.to()` calls (the default position is "after previous end"). Staggers are `at: '<+0.1'` offsets in a loop.
+**`chain` / `sequence`** are just consecutive `.to()` calls (the default position is "after previous end"). Staggers are first-class: `tl.stagger(targets, { from: 0, to: 1 }, { each: 0.1 })` (or numeric `at` offsets in an explicit loop).
 
 **`waitFor(0.5)`** → `at: '+=0.5'` on the next tween. **`waitUntil('event')`** → `.label('event')` + `at: 'event'` (labels are also draggable in the studio, persisted to the sidecar — the `.meta` file idea, generalized).
 

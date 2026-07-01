@@ -55,6 +55,11 @@ const mod: SceneModule = {
       track('needle/rotation', 'number', [key(0, 0), key(2.6, -90, 'easeInOutCubic')]),
       track('hl/progress', 'number', [key(0.5, 0), key(2.5, 1)]),
     ],
+    // asset id IS the family name (§3.6): registers the face for the browser
+    // player + gs render standalone, so the showcase draws the SAME glyphs CI
+    // byte-compares (and the font-validation warning stays quiet). The Skia
+    // golden harness already registers this face globally — pixels unchanged.
+    assets: { 'DejaVu Sans': { kind: 'font', url: '../../assets/fonts/DejaVuSans.ttf' } },
   }),
 };
 

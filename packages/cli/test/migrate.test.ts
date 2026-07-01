@@ -150,6 +150,27 @@ vdescribe('diffManifests', () => {
     expect(r.summary.breaking).toBe(0);
   });
 
+  it('does not throw on a baseline NODE that lacks props (the added-props loop)', () => {
+    // an old node entry may predate per-prop manifests: nodes:{Rect:{subpath:''}}
+    // crashed the "added props" loop (a.props[p] on undefined) — the same
+    // missing⇒empty contract must cover node.props too.
+    const legacy = {
+      version: '0.18.0',
+      nodes: { Circle: { subpath: '' } },
+    } as unknown as ApiManifest;
+    const current = manifest();
+    expect(() => diffManifests(legacy, current)).not.toThrow();
+    const r = diffManifests(legacy, current);
+    // the current node's props all surface as additive
+    expect(find(r.changes, 'prop', 'Circle.radius')).toMatchObject({ kind: 'added', breaking: false });
+    // and the reverse direction (current node stripped of props) is safe too
+    expect(() => diffManifests(current, legacy)).not.toThrow();
+    expect(find(diffManifests(current, legacy).changes, 'prop', 'Circle.radius')).toMatchObject({
+      kind: 'removed',
+      breaking: true,
+    });
+  });
+
   it('is symmetric-safe: a current engine MISSING a field the baseline had does not throw', () => {
     const from = manifest();
     const stripped = { version: '0.40.0', nodes: from.nodes } as unknown as ApiManifest;

@@ -280,6 +280,14 @@ export async function loadSceneModule(modulePath: string, locale?: string): Prom
   }
 
   const abs = isAbsolute(modulePath) ? modulePath : resolve(process.cwd(), modulePath);
+  // pre-flight the path so a typo'd module fails with ONE clean line instead of
+  // Node's module-not-found + a phantom `_index.js` require stack. jiti resolves
+  // ESM-style `.js` specifiers to `.ts` sources (and extensionless paths), so
+  // accept any variant that exists on disk.
+  const candidates = [abs, abs.replace(/\.js$/, '.ts'), abs.replace(/\.ts$/, '.js'), `${abs}.ts`, `${abs}.js`];
+  if (!candidates.some((c) => existsSync(c))) {
+    throw new SceneModuleError(modulePath, 'scene module not found (check the path)');
+  }
   const jiti = createJiti(pathToFileURL(process.cwd() + '/').href);
   const loaded = (await jiti.import(pathToFileURL(abs).href, { default: true })) as Partial<SceneModule>;
   if (typeof loaded?.createScene !== 'function' || loaded?.timeline === undefined) {
@@ -350,11 +358,27 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     lastFrame = Math.max(firstFrame, Math.ceil(to * fps) - 1);
   }
   const total = lastFrame - firstFrame + 1;
+  // a range past the timeline end renders the frozen last frame per extra frame —
+  // legit as freeze-tail padding, but usually a typo'd range, so say so loudly.
+  const lastTimelineFrame = Math.max(0, Math.ceil(duration * fps) - 1);
+  if (lastFrame > lastTimelineFrame) {
+    process.stderr.write(
+      `warning: frame range ends at ${lastFrame} but the timeline ends at frame ${lastTimelineFrame} ` +
+        `(${duration}s @ ${fps}fps) — the ${lastFrame - lastTimelineFrame} extra frame(s) repeat the frozen last frame\n`,
+    );
+  }
 
   // --format png-seq forces a PNG sequence even if `out` looks like a video name
   const isVideo = opts.format !== 'png-seq' && /\.(mp4|webm)$/i.test(opts.out);
   // a single frame to a *.png path writes THAT one file, not a directory of frames
   const singleFile = !isVideo && total === 1 && /\.png$/i.test(opts.out);
+  // multiple frames can't land in one .png — that used to silently mkdir 'foo.png/'
+  if (!isVideo && !singleFile && total > 1 && /\.png$/i.test(opts.out)) {
+    throw new Error(
+      `--out '${opts.out}' is a .png path but the render covers ${total} frames — ` +
+        'pass --frame <n> for one still, or use a directory / .mp4 out',
+    );
+  }
   if (isVideo && !ffmpegAvailable()) {
     throw new Error(
       `'${opts.out}' needs FFmpeg on PATH and none was found. ` +
@@ -747,6 +771,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
  * render/shard path) and `buildMixWav` (the measure-loudness path), so the mix
  * CONTENT measured at commit-time is byte-for-byte the mix rendered later.
  */
+// informational mix notes print ONCE per CLI process — the planner legitimately
+// runs twice in one `gs measure-loudness` (build the wav + hash the mix inputs),
+// which used to double every note.
+const mixNotesSeen = new Set<string>();
+function mixNote(line: string): void {
+  if (mixNotesSeen.has(line)) return;
+  mixNotesSeen.add(line);
+  process.stderr.write(`${line}\n`);
+}
+
 export async function collectAudioClips(
   opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>,
   timelineClips: AudioClip[],
@@ -763,7 +797,7 @@ export async function collectAudioClips(
       if (voice) {
         const wired = voice.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
         if (wired) {
-          process.stderr.write('note: narration already in the timeline audio — auto-mix skipped\n');
+          mixNote('note: narration already in the timeline audio — auto-mix skipped');
         } else {
           audioClips.push(...voice.clips);
           process.stderr.write(`note: auto-mixing ${voice.note}\n`);
@@ -779,7 +813,7 @@ export async function collectAudioClips(
       const bed = buildMusicClip(musicPath, timingPathFor(opts.modulePath, opts.locale));
       if (bed) {
         if (bedAlreadyReferenced(audioClips, bed.clip.asset.url, opts.modulePath)) {
-          process.stderr.write('note: music bed already in the timeline audio — auto-mix skipped\n');
+          mixNote('note: music bed already in the timeline audio — auto-mix skipped');
         } else {
           audioClips.push(bed.clip);
           process.stderr.write(`note: auto-mixing ${bed.note}\n`);
@@ -797,7 +831,7 @@ export async function collectAudioClips(
       if (fx) {
         const wired = fx.clips.some((c) => bedAlreadyReferenced(audioClips, c.asset.url, opts.modulePath));
         if (wired) {
-          process.stderr.write('note: sfx already in the timeline audio — auto-mix skipped\n');
+          mixNote('note: sfx already in the timeline audio — auto-mix skipped');
         } else {
           audioClips.push(...fx.clips);
           process.stderr.write(`note: auto-mixing ${fx.note}\n`);

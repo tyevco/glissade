@@ -1,7 +1,7 @@
 # What's on `window.glissade` beyond the basics
 
 The [single-file browser bundle](./browser) exposes the whole realtime authoring
-surface as one global — roughly **219 names** on `window.glissade`. Most guides
+surface as one global — **220+ names** on `window.glissade`. Most guides
 only show the headline three (`evaluate`, `createScene`, `timeline`), so the rest
 is easy to miss. This page is a map of the **high-value names beyond the basics**:
 one line plus a minimal, verified snippet for each. Everything here is on the IIFE
@@ -47,7 +47,7 @@ You then render by reading the playhead (`G.evaluate(scene, timeline, player.pla
 on its change. `mount()` does exactly this plumbing, so prefer it unless you need
 the seams.
 
-npm: `import { createPlayer, mount, createPlayhead } from '@glissade/player'` (`createPlayhead` is re-exported from `@glissade/core`).
+npm: `import { createPlayer, mount } from '@glissade/player'` and `import { createPlayhead } from '@glissade/core'`.
 
 `<gs-player>` is auto-registered when the bundle loads. If you need to register the
 element under a **custom tag name**, call `defineGsPlayer('my-player')` (idempotent;
@@ -81,10 +81,10 @@ it owns the target's `position` (and `rotation` with `orient`) and exposes a
 const cursor = new G.Rect({ id: 'cursor', width: 12, height: 12, fill: '#ff5d73' });
 const route = new G.Path({ id: 'route', data: G.pathFromSvg('M0 0 C 80 -120 240 120 320 0'), stroke: '#4ea1ff' });
 const scene = G.createScene({ children: [route, cursor, G.followPath(cursor, route, { id: 'cf', orient: true })] });
-const timeline = G.timeline((tl) => tl.to('cf/progress', 1, { duration: 2.6, ease: G.easings.cubicInOut }));
+const timeline = G.timeline((tl) => tl.to('cf/progress', 1, { duration: 2.6, ease: G.easings.easeInOutCubic }));
 ```
 
-npm: `import { motionPath, followPath, pointAtLength, pathLength } from '@glissade/scene'`.
+npm: `import { motionPath, followPath, pointAtLength, pathLength } from '@glissade/scene/motion'` (the tree-shaken motion subpath, not the base index).
 
 ## Motion clips: `clip()` / `clipList()` (reusable keyframe-channel literals)
 
@@ -156,7 +156,8 @@ new G.Circle({
 
 new G.Rect({
   id: 'panel',
-  size: [240, 170],
+  width: 240,
+  height: 170,
   fill: { kind: 'linear', stops: [{ offset: 0, color: '#4ea1ff' }, { offset: 1, color: '#ffb86b' }], from: [-120, -85], to: [120, 85] },
 });
 ```
@@ -179,14 +180,13 @@ npm: `import { type Paint } from '@glissade/core'` (gradient fills are plain JSO
 - [In-browser webm export](./browser#exporting-video-capturing-frames) — `MediaRecorder` + `captureStream` recipe.
 - `splitText` — split a `Text` node into per-word/char parts you can animate (kinetic typography). See [Typewriter & text reveal](./typewriter).
 
-## Known gap: `describe()` doesn't list these (follow-up)
+## `describe()` lists all of these
 
-`glissade.describe()` returns a machine-readable API manifest, but it currently
-surfaces only **nodes**, their **props**, **value types**, **easings**, the
-**builder methods**, and **createScene** — it does **not** list the broader
-builder/helper API documented on this page: `createPlayer`, `motionPath` /
-`followPath`, `clip` / `clipList`, `renderToDataURL` / `snapshotCanvas`, or
-`splitText`. An AI/agent consumer that discovers the API only by introspecting
-`describe()` will not find them. Extending the manifest to enumerate these helpers
-is **deferred follow-up work** (tracked separately) — recorded here so the gap is
-visible.
+`glissade.describe()` returns a machine-readable API manifest covering **nodes**
+(with their props), **value types**, **easings**, the **builder methods**, and a
+**`helpers` section** that enumerates the broader helper API documented on this
+page — `createPlayer`, `motionPath` / `followPath`, `clip` / `clipList`,
+`renderToDataURL` / `snapshotCanvas`, `splitText`, and the rest — each with its
+usage string and the import (subpath) it lives on. An AI/agent consumer can
+discover everything here by introspecting `describe()` alone; see
+[glissade for AI agents](./for-agents).
