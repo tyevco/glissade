@@ -1,6 +1,6 @@
 {
   "name": "@glissade/element",
-  "version": "0.27.1-pre.0",
+  "version": "0.27.1",
   "description": "glissade <gs-player> custom element: zero-framework embedding with minimal, CSS-part themable controls.",
   "license": "Apache-2.0",
   "engines": {
