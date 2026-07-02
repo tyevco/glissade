@@ -157,6 +157,27 @@ describe('computeMixHash (binds measurement to mix CONTENT, not mtime)', () => {
     expect(computeMixHash(mod)).not.toBe(a); // invalidates loudly
   });
 
+  it('is INVOCATION-PATH-INVARIANT: rel == abs == ./-form (the gs build vs standalone mismatch)', () => {
+    // a consumer's gs build (absolute modulePath) and standalone gs render
+    // (relative) produced DIFFERENT hashes over byte-identical mixes — the
+    // committed measurement then read as stale with zero input changes.
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(tmp);
+      const abs = computeMixHash(mod); // mod is absolute
+      const rel = computeMixHash('scene.ts');
+      const dot = computeMixHash('./scene.ts');
+      expect(rel).toBe(abs);
+      expect(dot).toBe(abs);
+      // extraInputs are label-normalized the same way
+      const clip = join(tmp, 'v.wav');
+      writeFileSync(clip, 'RIFF');
+      expect(computeMixHash('scene.ts', ['./v.wav'])).toBe(computeMixHash(mod, [clip]));
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
   it('changes when a previously-absent manifest appears', () => {
     const fresh = join(tmp, 'other.ts');
     const before = computeMixHash(fresh);
@@ -413,9 +434,16 @@ describe.runIf(ffmpegAvailable())('measure → render determinism + publish guar
     const committed = JSON.parse(readFileSync(loudnessPathFor(modulePath), 'utf8'));
     committed.mixHash = 'sha256:0000';
     writeFileSync(loudnessPathFor(modulePath), JSON.stringify(committed));
-    await expect(render({ modulePath, out: join(outDir, 'stale.mp4'), fps: 30 })).rejects.toThrow(
+    const staleOut = join(outDir, 'stale.mp4');
+    const before = Date.now();
+    await expect(render({ modulePath, out: staleOut, fps: 30 })).rejects.toThrow(
       /stale|measure-loudness/,
     );
+    // 0.33: the guard PREFLIGHTS — it must throw BEFORE frame 1, never after a
+    // full doomed frame loop (a consumer burned ~2.5 h on exactly that). No
+    // output artifacts, and the failure is near-instant relative to a render.
+    expect(existsSync(staleOut)).toBe(false);
+    expect(Date.now() - before).toBeLessThan(20_000); // a full render takes far longer
   }, 60_000);
 
   it('--loudness off renders the un-gained mix even with a committed measurement', async () => {

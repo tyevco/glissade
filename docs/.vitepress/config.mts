@@ -40,6 +40,7 @@ export default defineConfig({
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'SVG import', link: '/svg' },
           { text: 'Render caching & remux', link: '/caching' },
+          { text: 'Building a project (gs build)', link: '/build' },
           { text: 'Migrating between versions', link: '/migrating' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },
         ],

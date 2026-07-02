@@ -32,7 +32,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 export class LoudnessError extends Error {
   constructor(detail: string) {
@@ -153,7 +153,15 @@ export function peakClampBinds(profile: PublishProfile, inputI: number, inputTp:
  * hash. The scene module path itself is excluded.
  */
 export function computeMixHash(modulePath: string, extraInputs: readonly string[] = []): string {
-  const base = modulePath.replace(/\.[jt]sx?$/, '');
+  // Fold each input under a path-INVARIANT label — its path RELATIVE to the scene
+  // module's directory — never the invocation-form string. The hash used to fold
+  // the verbatim paths (siblings derive from modulePath, so `gs build` invoking
+  // with an ABSOLUTE path and a standalone `gs measure-loudness <rel>` produced
+  // DIFFERENT hashes over byte-identical mixes, and the render-side guard read a
+  // valid measurement as stale). A content hash must not be invocation-sensitive.
+  const abs = resolve(modulePath);
+  const sceneDir = dirname(abs);
+  const base = abs.replace(/\.[jt]sx?$/, '');
   const siblings = [
     `${base}.narration.timing.json`,
     `${base}.music.timing.json`,
@@ -161,7 +169,7 @@ export function computeMixHash(modulePath: string, extraInputs: readonly string[
   ];
   const h = createHash('sha256');
   for (const path of [...siblings, ...extraInputs]) {
-    h.update(path);
+    h.update(relative(sceneDir, resolve(path)));
     h.update('\0');
     if (existsSync(path)) {
       h.update(readFileSync(path));

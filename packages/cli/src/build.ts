@@ -24,7 +24,73 @@ export interface ProjectConfig {
   /** output dir for rendered videos (default: alongside each scene as `<base>.mp4`). */
   out?: string;
   /** per-scene render/cache defaults. */
-  defaults?: { fps?: number; cache?: string };
+  defaults?: {
+    fps?: number;
+    /** persistent frame-cache dir (speed only — NEVER changes output, so it is
+     *  excluded from the staleness hash). */
+    cache?: string;
+    /** captions mode for every render (0.33, consumer-pulled): a series that
+     *  ships SOFT captions sets `captions: 'sidecar'` here — before this, gs
+     *  build always used render's `burn` default and baked captions into the
+     *  masters. Folded into the render staleness hash, so flipping it re-renders. */
+    captions?: 'burn' | 'sidecar' | 'off';
+    /** narration/music/sfx auto-mix modes ('auto' default). Threaded into BOTH
+     *  render and measure-loudness so the measured mix always matches the
+     *  rendered mix (a mismatch would trip render's stale-mixHash guard). */
+    narration?: 'auto' | 'off';
+    music?: 'auto' | 'off';
+    sfx?: 'auto' | 'off';
+    /** apply the committed publish gain at render ('auto' default). */
+    loudness?: 'auto' | 'off';
+  };
+}
+
+/** The defaults that change a RENDER's output — folded into its staleness hash
+ *  (a captions/mix-mode flip must re-run render, never serve a stale cached
+ *  master) and spread into the render call. `cache` is deliberately absent
+ *  (byte-identical speed knob). */
+export function renderDefaults(cfg: ProjectConfig): {
+  fps?: number;
+  captions?: 'burn' | 'sidecar' | 'off';
+  narration?: 'auto' | 'off';
+  music?: 'auto' | 'off';
+  sfx?: 'auto' | 'off';
+  loudness?: 'auto' | 'off';
+} {
+  const d = cfg.defaults ?? {};
+  return {
+    ...(d.fps !== undefined ? { fps: d.fps } : {}),
+    ...(d.captions !== undefined ? { captions: d.captions } : {}),
+    ...(d.narration !== undefined ? { narration: d.narration } : {}),
+    ...(d.music !== undefined ? { music: d.music } : {}),
+    ...(d.sfx !== undefined ? { sfx: d.sfx } : {}),
+    ...(d.loudness !== undefined ? { loudness: d.loudness } : {}),
+  };
+}
+
+/** The mix-mode defaults measure-loudness shares with render (measured mix ==
+ *  rendered mix, or render's stale-mixHash guard trips). */
+export function mixDefaults(cfg: ProjectConfig): {
+  narration?: 'auto' | 'off';
+  music?: 'auto' | 'off';
+  sfx?: 'auto' | 'off';
+} {
+  const d = cfg.defaults ?? {};
+  return {
+    ...(d.narration !== undefined ? { narration: d.narration } : {}),
+    ...(d.music !== undefined ? { music: d.music } : {}),
+    ...(d.sfx !== undefined ? { sfx: d.sfx } : {}),
+  };
+}
+
+/** Per-step staleness salt: the engine version PLUS any config options that
+ *  change the step's OUTPUT. Options ride the salt (not stepInputs) because
+ *  they aren't files; a flipped option changes the hash exactly like an edited
+ *  input, so the step re-runs instead of serving a stale artifact. */
+export function stepSalt(step: BuildStep, cfg: ProjectConfig, version: string): string {
+  if (step === 'render') return `${version}\0render:${JSON.stringify(renderDefaults(cfg))}`;
+  if (step === 'measure-loudness') return `${version}\0mix:${JSON.stringify(mixDefaults(cfg))}`;
+  return version;
 }
 
 /** Identity helper for a typed `glissade.config.ts` default export. */
@@ -35,7 +101,9 @@ export function defineProject(config: ProjectConfig): ProjectConfig {
 // ── config + scene resolution ────────────────────────────────────────────────
 export async function loadConfig(configPath: string): Promise<ProjectConfig> {
   const { createJiti } = await import('jiti');
-  const jiti = createJiti(pathToFileURL(`${process.cwd()}/`).href);
+  // moduleCache off: always read the config fresh from disk — a long-lived
+  // process (tests, a future watch mode) must see edits, and configs are tiny
+  const jiti = createJiti(pathToFileURL(`${process.cwd()}/`).href, { moduleCache: false });
   const cfg = (await jiti.import(pathToFileURL(resolve(configPath)).href, { default: true })) as ProjectConfig;
   if (!cfg || !Array.isArray(cfg.scenes)) {
     throw new Error(`${configPath}: config must default-export { scenes: string[] } — use defineProject({ scenes: [...] })`);
@@ -211,7 +279,7 @@ export async function buildCommand(opts: BuildOptions, deps: BuildDeps = { runSt
     const videoPath = outputVideo(scene, cfg, root);
     const steps = applicableSteps(scene);
     const plans = planScene(key, steps, {
-      currentHash: (step) => hashInputs(stepInputs(scene, step), version),
+      currentHash: (step) => hashInputs(stepInputs(scene, step), stepSalt(step, cfg, version)),
       recordedHash: (step) => rec[step],
       outputExists: (step) => existsSync(stepOutput(scene, step, videoPath)),
     });
@@ -225,7 +293,7 @@ export async function buildCommand(opts: BuildOptions, deps: BuildDeps = { runSt
       if (!opts.explain) {
         await deps.runStep(scene, plan.step, cfg, videoPath);
         // record the input hash AFTER the step ran (upstream outputs are now fresh)
-        rec[plan.step] = hashInputs(stepInputs(scene, plan.step), version);
+        rec[plan.step] = hashInputs(stepInputs(scene, plan.step), stepSalt(plan.step, cfg, version));
       }
     }
     manifest.scenes[key] = rec;
@@ -250,7 +318,8 @@ async function defaultRunStep(scene: string, step: BuildStep, cfg: ProjectConfig
     }
     case 'measure-loudness': {
       const { measureLoudnessCommand } = await import('./loudness.js');
-      await measureLoudnessCommand({ modulePath: scene });
+      // share the mix modes with render — the measured mix must BE the rendered mix
+      await measureLoudnessCommand({ modulePath: scene, ...mixDefaults(cfg) });
       return;
     }
     case 'render': {
@@ -258,7 +327,7 @@ async function defaultRunStep(scene: string, step: BuildStep, cfg: ProjectConfig
       await render({
         modulePath: scene,
         out: videoPath,
-        ...(cfg.defaults?.fps !== undefined ? { fps: cfg.defaults.fps } : {}),
+        ...renderDefaults(cfg),
         ...(cfg.defaults?.cache ? { cache: { dir: cfg.defaults.cache, mode: 'read-write' as const } } : {}),
       });
       return;

@@ -595,6 +595,12 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     const { pickEncoder } = await import('./encoders.js');
     const enc = pickEncoder('video', container);
     videoOut = { outAbs, container, encName: enc.name, ...(enc.note ? { encNote: enc.note } : {}) };
+    // PREFLIGHT the stale-loudness guard (0.33): every input it reads exists at
+    // t=0, but it used to first run inside planFinalAudio — AFTER the whole frame
+    // loop — so a stale mixHash surfaced only after ~30 min of doomed rendering
+    // (a consumer lost ~2.5 h across six episodes to exactly this). Resolve — and
+    // throw — here, before frame 1; planFinalAudio re-resolves cheaply later.
+    await resolveLoudnessGainDb(opts, [...compiled.audio]);
     if (frameCache && keyCtx && opts.cache!.mode !== 'off') {
       const prev = readRenderManifest(outAbs);
       if (prev && existsSync(outAbs)) {
@@ -950,7 +956,9 @@ export async function resolveLoudnessGainDb(
     throw new Error(
       `loudness: ${path} is stale — the mix inputs changed since it was measured ` +
         `(committed mixHash ${measurement.mixHash.slice(0, 23)}…, current ${actual.slice(0, 23)}…). ` +
-        `Re-run \`${reRun}\` (or pass --loudness off to render without normalization).`,
+        `Re-run \`${reRun}\` (or pass --loudness off to render without normalization). ` +
+        `Note: 0.33 made the mixHash invocation-path-independent — if your mix inputs ` +
+        `did NOT change, one re-measure migrates the committed hash.`,
     );
   }
   return measurement.gain;

@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildCommand, hashInputs, stepInputs, stepOutput, type BuildDeps } from '../src/build.js';
+import { buildCommand, hashInputs, mixDefaults, renderDefaults, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
 
 let root: string;
 let calls: string[];
@@ -85,5 +85,70 @@ describe('gs build — DAG runner', () => {
     const r = await buildCommand({ config: config(), only: ['e01'] }, recorder);
     expect(r.scenes).toBe(1);
     expect(calls.every((c) => c.startsWith('e01'))).toBe(true);
+  });
+});
+
+describe('gs build — render-option defaults (0.33, the burned-captions gap)', () => {
+  const writeConfig = (defaults: string) =>
+    writeFileSync(join(root, 'glissade.config.ts'), `export default { scenes: ['e01.ts', 'e02.ts'], defaults: ${defaults} };\n`);
+
+  it('renderDefaults extracts the output-affecting options and EXCLUDES cache', () => {
+    expect(
+      renderDefaults({ scenes: [], defaults: { fps: 30, cache: '.gscache', captions: 'sidecar', music: 'off' } }),
+    ).toEqual({ fps: 30, captions: 'sidecar', music: 'off' });
+    expect(renderDefaults({ scenes: [] })).toEqual({});
+  });
+
+  it('mixDefaults carries only the modes measure-loudness shares with render', () => {
+    expect(
+      mixDefaults({ scenes: [], defaults: { captions: 'sidecar', narration: 'auto', sfx: 'off', fps: 24 } }),
+    ).toEqual({ narration: 'auto', sfx: 'off' });
+  });
+
+  it('stepSalt folds render options into render (and mix modes into measure-loudness) ONLY', () => {
+    const base = { scenes: [] };
+    const sidecar = { scenes: [], defaults: { captions: 'sidecar' as const } };
+    expect(stepSalt('render', sidecar, 'v')).not.toBe(stepSalt('render', base, 'v'));
+    expect(stepSalt('narrate', sidecar, 'v')).toBe(stepSalt('narrate', base, 'v'));
+    expect(stepSalt('measure-loudness', sidecar, 'v')).toBe(stepSalt('measure-loudness', base, 'v')); // captions ≠ mix
+    const noMusic = { scenes: [], defaults: { music: 'off' as const } };
+    expect(stepSalt('measure-loudness', noMusic, 'v')).not.toBe(stepSalt('measure-loudness', base, 'v'));
+    // cache is a speed knob — NEVER in any salt
+    const cached = { scenes: [], defaults: { cache: '.gscache' } };
+    expect(stepSalt('render', cached, 'v')).toBe(stepSalt('render', base, 'v'));
+  });
+
+  it('flipping defaults.captions re-runs ONLY render (never serves the stale burned master)', async () => {
+    await buildCommand({ config: config() }, recorder);
+    calls = [];
+    writeConfig(`{ captions: 'sidecar' }`);
+    const r = await buildCommand({ config: config() }, recorder);
+    // the exact canary failure mode: without the salt fold this skipped as "fresh"
+    expect(calls.sort()).toEqual(['e01.ts:render', 'e02.ts:render']);
+    expect(r.ran).toBe(2);
+    calls = [];
+    // and it settles: same config again → all fresh
+    const again = await buildCommand({ config: config() }, recorder);
+    expect(again.ran).toBe(0);
+  });
+
+  it('flipping a MIX mode re-runs measure-loudness AND render (measured mix == rendered mix)', async () => {
+    await buildCommand({ config: config() }, recorder);
+    calls = [];
+    writeConfig(`{ music: 'off' }`);
+    await buildCommand({ config: config() }, recorder);
+    expect(calls.sort()).toEqual([
+      'e01.ts:measure-loudness', 'e01.ts:render',
+      'e02.ts:measure-loudness', 'e02.ts:render',
+    ]);
+  });
+
+  it('changing only the cache dir re-runs NOTHING (speed knob, not an output input)', async () => {
+    await buildCommand({ config: config() }, recorder);
+    calls = [];
+    writeConfig(`{ cache: '.other-cache' }`);
+    const r = await buildCommand({ config: config() }, recorder);
+    expect(calls).toEqual([]);
+    expect(r.ran).toBe(0);
   });
 });

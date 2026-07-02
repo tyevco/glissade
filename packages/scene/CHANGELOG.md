@@ -1,5 +1,15 @@
 # @glissade/scene
 
+## 0.33.0-pre.0
+
+### Patch Changes
+
+- 157c3f6: Chart: colour-by-value ramps just work + fail loud on negative data (audit fixes)
+
+  Two 0.32 sharp edges found by the full-app audit: (1) a `colorRamp` built with the DEFAULT `[0, 1]` domain passed as `Chart({ fill })` clamped every real-world value to the last stop — a uniform chart for anyone following the header example. Chart now re-domains a default-domain ramp over `[0, max(y)]` when the data ranges past 1 (explicit domains are respected verbatim; genuinely-normalized data keeps `[0,1]`). (2) All-negative data silently produced bars ~50× the chart height (the `[0,1]` fallback domain mapped `-50` to `-5000px`); negative values now throw a `ChartError` explaining the zero-baseline bar MVP and the explicit-`yScale` escape hatch.
+
+  - @glissade/core@0.33.0-pre.0
+
 ## 0.32.0
 
 ### Minor Changes
@@ -24,7 +34,11 @@
     fill: colorRamp(["#39e0ff", "#ff5ca8"]), // colour bars by value
   });
   // scene children: [chart.node]
-  tl.stagger(chart.targets("height"), { from: 0, to: (i) => chart.bars[i].height() }, { each: 0.08 }); // bars rise in
+  tl.stagger(
+    chart.targets("height"),
+    { from: 0, to: (i) => chart.bars[i].height() },
+    { each: 0.08 }
+  ); // bars rise in
   ```
 
   Each bar is anchored at its **base** (`anchor: 'bottom'`) and pinned to the axis, so animating its `height` grows the bar _upward_ from the axis — a bar-chart reveal or race is just a `height` track per bar (or a `fill` track for a colour sweep). `chart.targets(prop)` yields the ready-to-bind target ids in row order (`${id}/bars/${i}/${prop}`), the same shape as `splitText().targets(...)`.
@@ -77,7 +91,11 @@
     fill: colorRamp(["#39e0ff", "#ff5ca8"]), // colour bars by value
   });
   // scene children: [chart.node]
-  tl.stagger(chart.targets("height"), { from: 0, to: (i) => chart.bars[i].height() }, { each: 0.08 }); // bars rise in
+  tl.stagger(
+    chart.targets("height"),
+    { from: 0, to: (i) => chart.bars[i].height() },
+    { each: 0.08 }
+  ); // bars rise in
   ```
 
   Each bar is anchored at its **base** (`anchor: 'bottom'`) and pinned to the axis, so animating its `height` grows the bar _upward_ from the axis — a bar-chart reveal or race is just a `height` track per bar (or a `fill` track for a colour sweep). `chart.targets(prop)` yields the ready-to-bind target ids in row order (`${id}/bars/${i}/${prop}`), the same shape as `splitText().targets(...)`.
