@@ -1,5 +1,52 @@
 # @glissade/cli
 
+## 0.33.0
+
+### Minor Changes
+
+- af2e9d1: `gs build`: render-option defaults in the project config + two loudness-pipeline fixes (the burned-captions batch, end to end)
+
+  A consumer's first full-series `gs build` (49 steps, 310 min) burned captions into 8 episode masters that ship soft captions — and the hand re-render batch that followed surfaced two more pipeline defects. All three are fixed:
+
+  **1. `defaults` now carries render options.** `ProjectConfig.defaults` was `{ fps, cache }` only, so every `gs build` render used the `--captions burn` default with no way to say otherwise:
+
+  ```ts
+  export default defineProject({
+    scenes: ["episodes/**/*.ts"],
+    out: "dist",
+    defaults: { captions: "sidecar", fps: 30 }, // narration/music/sfx/loudness too
+  });
+  ```
+
+  The new options (`captions`, `narration`, `music`, `sfx`, `loudness`) thread into render, the mix modes ALSO thread into `measure-loudness` (the measured mix must be the rendered mix), and — critically — they **fold into the per-step staleness hash**: flipping `captions: 'sidecar'` re-runs render instead of serving the stale burned master from a fresh-looking cache. `cache` stays out of the hash (a speed knob, never an output input). Verified end to end: flip re-runs ONLY render; burn vs sidecar masters differ; the sidecar master carries no baked-in caption pixels.
+
+  **2. `mixHash` is now invocation-path-independent.** `computeMixHash` folded verbatim path strings (siblings derive from `modulePath`), so `gs build` (absolute path) and a standalone `gs measure-loudness <relative>` produced different hashes over byte-identical mixes — a `gs build`-committed measurement then read as _stale_ from any standalone render. Inputs are now folded under scene-relative labels: `rel == abs == ./`-form, while content changes still invalidate. **Migration note:** committed `*.loudness.json` hashes from ≤0.32.0 will read stale once — the error message says so; one `gs measure-loudness` re-run migrates each (same measured numbers, new hash format).
+
+  **3. The stale-loudness guard now PREFLIGHTS.** It used to first run inside audio planning — _after_ the entire frame loop — so a stale mixHash surfaced only after ~30 min of doomed rendering per episode (~2.5 h lost across the batch). Every input the guard reads exists at t=0; it now resolves (and throws) before frame 1, and the regression test asserts no output artifact is written on a stale render.
+
+### Patch Changes
+
+- 157c3f6: Audit hardening sweep: migrate props crash, --fps validation, MCP write-boundary values, and CLI fail-loud polish
+
+  Fixes from the 2026-07-01 full-app audit:
+
+  - **`gs migrate`**: an old baseline NODE lacking `props` crashed the added-props diff loop (`Cannot read properties of undefined`) — the 0.31 missing⇒empty contract now covers `node.props` on both sides (old-side missing ⇒ additive, new-side missing ⇒ breaking).
+  - **`--fps 0` / negative** was silently accepted and rendered the WRONG frame with exit 0 (`t = frame/0 = Infinity` clamps to the timeline end). All three fps-consuming commands now fail loud.
+  - **`gs mcp apply_patch`** validated targets but not VALUES: a keyframe of `'oops'` / `Infinity` (JSON `1e999`) applied `ok:true` and detonated at the next `render_frame`, poisoning the session. Values are now validated at the write boundary — the doc is untouched on rejection.
+  - **Layer cache**: a corrupted entry header with an intact payload could escape as a false "hit"; the decoder now rejects any payload whose length ≠ w×h×4, so every corruption is a clean miss.
+  - **Polish**: `gs --version`; `gs import` rejects non-`.json`/`.svg` inputs with a clear message; a typo'd scene path fails with one clean line (no phantom require stack); a multi-frame render to a `.png` path errors instead of silently creating a directory named `foo.png`; a frame range past the timeline end warns (frozen-tail padding stays possible); `gs measure-loudness` no longer prints its mix notes twice.
+
+- Updated dependencies [157c3f6]
+  - @glissade/scene@0.33.0
+  - @glissade/backend-skia@0.33.0
+  - @glissade/interact@0.33.0
+  - @glissade/lottie@0.33.0
+  - @glissade/narrate@0.33.0
+  - @glissade/player@0.33.0
+  - @glissade/svg@0.33.0
+  - @glissade/core@0.33.0
+  - @glissade/sfx@0.33.0
+
 ## 0.33.0-pre.0
 
 ### Minor Changes

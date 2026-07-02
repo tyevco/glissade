@@ -1,6 +1,6 @@
 {
   "name": "@glissade/browser",
-  "version": "0.33.0-pre.0",
+  "version": "0.33.0",
   "description": "glissade single-file IIFE bundle: the realtime browser embed path (core + scene + canvas2d + player + element) for <script src> / no-build use — window.glissade.*, auto-registers <gs-player>.",
   "license": "Apache-2.0",
   "engines": {
