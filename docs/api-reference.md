@@ -790,7 +790,7 @@ Build-time radial gauge (data-viz, like Chart): a spec → N categorical stroked
 Import from `@glissade/scene/gauge`.
 
 ```ts
-Gauge({ id, radius, zones: { extent: [start,end], color, label? }[], thickness?, gap?, needle?, needleAngle?, value?, domain?, sweep?, ticks?, glow?, position? }): { node: Group, id, childId(sub?), targets(sub, prop): string[] }
+Gauge({ id, radius, zones: { extent: [start,end], color, label?, labelStyle?: { family?, size?, fill?, weight? } }[], thickness?, gap?, needle?, needleAngle?, value?, domain?, sweep?, ticks?, apexEmphasis?: boolean | number, glow?, position? }): { node: Group, id, childId(sub?), targets(sub, prop): string[] }
 ```
 
 ### `Meter`

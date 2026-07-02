@@ -26,6 +26,10 @@ const mod: SceneModule = {
           thickness: 20,
           gap: 2.5,
           position: [320, 250], // center low so the 180° arc fills the upper frame
+          // the repo-pinned face (registered in the golden harness) — a golden
+          // with text MUST use it, not 'sans-serif', to stay byte-portable across
+          // machines (local ↔ CI); text rendering isn't portable otherwise.
+          fontFamily: 'DejaVu Sans',
           zones: [
             { extent: [-90, -30], color: '#e6a700', label: 'BLIND' },
             { extent: [-30, 30], color: '#3ddc97', label: 'CALIBRATED' },

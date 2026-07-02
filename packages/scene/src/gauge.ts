@@ -53,6 +53,17 @@ export interface GaugeZone {
   readonly color: string;
   /** optional label drawn at the zone's mid-angle (its own addressable node). */
   readonly label?: string;
+  /**
+   * per-label style override (family / size / fill / weight) — layered OVER the
+   * computed default (uniform size/fill + the apex size-up). Lets a consumer keep
+   * a per-episode text override AND restyle any single `label-{i}`.
+   */
+  readonly labelStyle?: {
+    readonly family?: string;
+    readonly size?: number;
+    readonly fill?: string;
+    readonly weight?: number;
+  };
 }
 
 export interface GaugeSpec {
@@ -88,6 +99,14 @@ export interface GaugeSpec {
   labelFill?: string;
   /** label font family. Default `sans-serif`. */
   fontFamily?: string;
+  /**
+   * emphasize the apex zone's label (the one straddling straight-up): `true`
+   * (default) = ×1.18 size + bold; `false` = no size-up (portrait-safe — the
+   * narrower stage can't afford the bump); a number = a custom size scale + bold.
+   * Gauge is a build-time factory and can't see the stage aspect, so gate this on
+   * your own `isPortrait(size)`.
+   */
+  apexEmphasis?: boolean | number;
   /** add a center glow Circle (`glow` sub-id, opacity 0 — author animates it). */
   glow?: boolean | { color?: string; radius?: number };
   /** where to place the gauge center in the parent (default the parent origin). */
@@ -222,11 +241,18 @@ export function Gauge(spec: GaugeSpec): GaugeResult {
   const labelSize = spec.labelSize ?? radius * 0.13;
   const labelFill = spec.labelFill ?? '#eaf1ff';
   const fontFamily = spec.fontFamily ?? 'sans-serif';
+  // apex emphasis: true → ×1.18 + bold; false → none (portrait-safe); number → custom scale + bold
+  const apex = spec.apexEmphasis ?? true;
+  const apexScale = apex === false ? 1 : apex === true ? 1.18 : apex;
+  const apexWeight = apex === false ? 400 : 700;
   spec.zones.forEach((z, i) => {
     if (z.label === undefined) return;
     const mid = (z.extent[0] + z.extent[1]) / 2;
+    // offset uses the BASE labelSize (not the per-label size) so the apex size-up
+    // and per-label overrides don't shift label placement.
     const [x, y] = pointAt(radius + thickness / 2 + labelSize * 0.9, mid);
     const isApex = z.extent[0] < 0 && z.extent[1] > 0; // straddles straight-up
+    const st = z.labelStyle ?? {};
     children.push(
       new Text({
         id: cid(`label-${i}`),
@@ -234,10 +260,10 @@ export function Gauge(spec: GaugeSpec): GaugeResult {
         position: [x, y],
         anchor: 'center',
         align: 'center',
-        fill: labelFill,
-        fontFamily,
-        fontSize: isApex ? labelSize * 1.18 : labelSize,
-        fontWeight: isApex ? 700 : 400,
+        fill: st.fill ?? labelFill,
+        fontFamily: st.family ?? fontFamily,
+        fontSize: st.size ?? (isApex ? labelSize * apexScale : labelSize),
+        fontWeight: st.weight ?? (isApex ? apexWeight : 400),
         box: { valign: 'center' },
       }),
     );

@@ -75,6 +75,40 @@ describe('Gauge fan-out', () => {
   });
 });
 
+describe('label styling escape hatches (0.38.0-pre.1, ai-training consumer)', () => {
+  it('apexEmphasis:false disables the size-up (portrait-safe): apex == sides', () => {
+    const g = Gauge({ id: 'tr', radius: 100, zones: ZONES, apexEmphasis: false });
+    const mid = byId(g.node, 'tr/label-1') as Text;
+    const side = byId(g.node, 'tr/label-0') as Text;
+    expect(mid.fontSize()).toBe(side.fontSize());
+    expect(mid.fontWeight).toBe(400);
+  });
+
+  it('apexEmphasis:<number> sets a custom apex size scale', () => {
+    const g = Gauge({ id: 'tr', radius: 100, zones: ZONES, labelSize: 20, apexEmphasis: 1.5 });
+    expect((byId(g.node, 'tr/label-1') as Text).fontSize()).toBeCloseTo(30, 6); // 20 * 1.5
+  });
+
+  it('per-zone labelStyle overrides family/size/fill/weight (text override keeps working)', () => {
+    const g = Gauge({
+      id: 'tr',
+      radius: 100,
+      zones: [
+        { extent: [-90, -30], color: '#e6a700', label: 'BLIND', labelStyle: { fill: '#ff0000', size: 33, weight: 600, family: 'Serif' } },
+        { extent: [-30, 30], color: '#3ddc97', label: 'CALIBRATED' },
+        { extent: [30, 90], color: '#ff5d73', label: 'REJECT' }, // per-episode text override
+      ],
+    });
+    const overridden = byId(g.node, 'tr/label-0') as Text;
+    expect(overridden.fill()).toBe('#ff0000');
+    expect(overridden.fontSize()).toBe(33);
+    expect(overridden.fontWeight).toBe(600);
+    expect(overridden.fontFamily).toBe('Serif');
+    // the per-episode text override lands on its own node
+    expect((byId(g.node, 'tr/label-2') as Text).text()).toBe('REJECT');
+  });
+});
+
 describe('needle angle', () => {
   it('authored mode: needleAngle sets the needle rotation directly (0 = up)', () => {
     const g = Gauge({ id: 'tr', radius: 100, zones: ZONES, needleAngle: -70 });
