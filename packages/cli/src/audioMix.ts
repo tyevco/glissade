@@ -69,21 +69,34 @@ export interface AudioMixPlan {
 }
 
 /**
- * Append a PURE scalar publish-loudness gain to a mix's `-filter_complex`: the
- * graph's final `[aout]` label is renamed and a `volume=<gain>dB` node feeds the
- * new `[aout]`. This is a single multiply on the FINAL mix node — NOT a second
- * ffmpeg pass — and is bit-deterministic (verified) + golden-hashable. A gain of
- * exactly 0 dB is a no-op (returned unchanged) so an at-target source preserves
- * the prior, un-gained bytes.
+ * Append the publish-loudness stage to a mix's `-filter_complex`: the graph's
+ * final `[aout]` label is renamed and a `volume=<gain>dB` node (plus, for a
+ * `gs master` measurement, an `alimiter` holding the true peak at `ceilingDb`)
+ * feeds the new `[aout]`. The gain is a single multiply on the FINAL mix node —
+ * NOT a second ffmpeg pass — bit-deterministic + golden-hashable. A gain of
+ * exactly 0 dB with NO limiter is a no-op (returned unchanged) so an at-target
+ * source preserves the prior, un-gained bytes. The limiter is the ONLY non-linear
+ * stage; it's baked from committed params so it stays deterministic.
  */
-export function applyMixGainDb(filterComplex: string, gainDb: number): string {
-  if (gainDb === 0) return filterComplex;
+export function applyMixGainDb(
+  filterComplex: string,
+  gainDb: number,
+  limiter?: { readonly ceilingDb: number },
+): string {
+  const chain: string[] = [];
+  if (gainDb !== 0) chain.push(`volume=${gainDb}dB`);
+  if (limiter) {
+    // brickwall the true peak at the ceiling (linear threshold). level=disabled →
+    // no auto-leveling, just the ceiling hold. Deterministic on a pinned ffmpeg.
+    const limit = Math.pow(10, limiter.ceilingDb / 20).toFixed(6);
+    chain.push(`alimiter=limit=${limit}:level=disabled`);
+  }
+  if (chain.length === 0) return filterComplex; // 0 dB, no limiter → byte-identical no-op
   const marker = '[aout]';
   const at = filterComplex.lastIndexOf(marker);
   if (at < 0) throw new AudioMixError('mix filter graph has no [aout] to apply the loudness gain to');
-  // rename the existing terminal label, then add the gain node → [aout]
   const head = filterComplex.slice(0, at) + '[apreg]' + filterComplex.slice(at + marker.length);
-  return `${head};[apreg]volume=${gainDb}dB[aout]`;
+  return `${head};[apreg]${chain.join(',')}[aout]`;
 }
 
 /** Build the FFmpeg mix plan for clips that intersect [0, duration]. */

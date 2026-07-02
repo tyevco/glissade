@@ -43,6 +43,7 @@ const USAGE = `usage:
   gs sfx <scene-module|script.sfx.json> [--verbose]
   gs prepare <scene-module>  [--provider <id>] [--align <id>] [--force]
   gs measure-loudness <scene-module> [--profile <youtube|shorts|podcast|broadcast|ebu>] [--locale <code>]
+  gs master <glissade.master.json>   SERIES loudness: measure all members, pick the loudest shared LUFS target the set hits under a shared true-peak ceiling, ship the brickwall limiter, write <scene>.loudness.json ×N (applies as a mix-only remux; mixHash unchanged)
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
@@ -149,7 +150,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -195,6 +196,28 @@ async function main(): Promise<void> {
       process.stderr.write(
         `gs build: ${r.ran} step${r.ran === 1 ? '' : 's'} ${explain ? 'WOULD run' : 'ran'}, ${r.skipped} fresh, across ${r.scenes} scene${r.scenes === 1 ? '' : 's'}${explain ? ' (--explain: nothing executed)' : ''}\n`,
       );
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // gs master <glissade.master.json> — SERIES-level loudness (shared target +
+  // brickwall limiter). Self-contained: its positional is a config path, not a
+  // scene module, so it parses before the generic <scene-module> requirement.
+  if (command === 'master') {
+    const { positional: mp } = parseArgs(rest);
+    const configPath = mp[0] || 'glissade.master.json';
+    const { masterCommand } = await import('./master.js');
+    try {
+      const r = await masterCommand({
+        configPath,
+        onLog: (line) => process.stderr.write(`${line}\n`),
+      });
+      process.stderr.write(`${r.report}\n`);
+      // a member whose verified output true-peak still exceeds the ceiling is a
+      // failure to master safely — exit non-zero so a pipeline notices.
+      if (r.members.some((m) => m.overCeiling)) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

@@ -87,6 +87,20 @@ export function resolveProfile(id: string): PublishProfile {
 
 export const LOUDNESS_SCHEMA_VERSION = 1 as const;
 
+/**
+ * The brickwall true-peak limiter a `gs master` pass commits (0.39). Absent on a
+ * plain `gs measure-loudness` measurement (that stays a pure peak-clamped scalar
+ * gain, byte-identical). Present, render/remux applies `volume=<gain>dB` THEN an
+ * `alimiter` holding the true peak at `ceilingDb` — the non-linear stage that lets
+ * a peaky member reach the target instead of landing LUs low. Applied in the mix
+ * filter graph (deterministic ffmpeg), NOT a render-time per-frame scalar.
+ */
+export interface CommittedLimiter {
+  readonly mode: 'truepeak';
+  /** the true-peak ceiling the limiter holds, dBTP. */
+  readonly ceilingDb: number;
+}
+
 /** The committed `<scene>.loudness.json`. */
 export interface LoudnessMeasurement {
   loudnessVersion: typeof LOUDNESS_SCHEMA_VERSION;
@@ -111,6 +125,13 @@ export interface LoudnessMeasurement {
    * invalidates the measurement loudly instead of silently mis-normalizing.
    */
   mixHash: string;
+  /**
+   * the true-peak limiter to apply after the gain (0.39 `gs master`). Absent on a
+   * plain `gs measure-loudness` measurement (gain-only, byte-identical). When
+   * present, `gain` may exceed the raw peak clamp (the limiter shaves the
+   * overshoot to `limiter.ceilingDb`).
+   */
+  limiter?: CommittedLimiter;
 }
 
 // ---- the gain formula ----

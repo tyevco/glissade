@@ -16,7 +16,9 @@ import { Timeline } from '@glissade/core';
 import { VideoFrameSource } from '@glissade/scene';
 
 // @public
-export function applyMixGainDb(filterComplex: string, gainDb: number): string;
+export function applyMixGainDb(filterComplex: string, gainDb: number, limiter?: {
+    readonly ceilingDb: number;
+}): string;
 
 // @public
 export function atempoChain(rate: number): string[];
@@ -106,6 +108,13 @@ export function clearFrameCache(dir: string): void;
 export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
 
 // @public
+export interface CommittedLimiter {
+    readonly ceilingDb: number;
+    // (undocumented)
+    readonly mode: 'truepeak';
+}
+
+// @public
 export function computeGainDb(profile: PublishProfile, inputI: number, inputTp: number): number;
 
 // @public
@@ -119,6 +128,9 @@ export const DEFAULT_FPS = 60;
 
 // @public
 export const DEFAULT_FRAMES: number[];
+
+// @public
+export const DEFAULT_MAX_GR_DB = 6;
 
 // @public (undocumented)
 export const DEFAULT_PROFILE_ID = "youtube";
@@ -313,6 +325,7 @@ export interface LoudnessMeasurement {
     inputI: number;
     inputLra: number;
     inputTp: number;
+    limiter?: CommittedLimiter;
     // (undocumented)
     loudnessVersion: typeof LOUDNESS_SCHEMA_VERSION;
     mixHash: string;
@@ -335,6 +348,84 @@ export interface MachineRenderFlags {
     state?: string;
     // (undocumented)
     trace?: string;
+}
+
+// @public
+export function masterAfChain(gainDb: number, limiter: CommittedLimiter | null): string;
+
+// Warning: (ae-forgotten-export) The symbol "MasterCommandOptions" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function masterCommand(opts: MasterCommandOptions): Promise<MasterResult>;
+
+// @public
+export interface MasterConfig {
+    readonly consistency?: 'shared-target' | 'per-asset';
+    readonly limiter?: MasterLimiter | false;
+    readonly members: readonly string[];
+    readonly profile?: string;
+}
+
+// @public (undocumented)
+export class MasterError extends Error {
+    constructor(message: string);
+}
+
+// @public
+export interface MasterLimiter {
+    readonly ceilingDb?: number;
+    readonly lookaheadMs?: number;
+    readonly maxGrDb?: number;
+    readonly mode: 'truepeak';
+}
+
+// @public (undocumented)
+export interface MasterMemberResult {
+    // (undocumented)
+    readonly gain: number;
+    // (undocumented)
+    readonly grDb: number;
+    // (undocumented)
+    readonly id: string;
+    readonly inputI: number;
+    // (undocumented)
+    readonly inputTp: number;
+    // (undocumented)
+    readonly loudnessPath: string;
+    // (undocumented)
+    readonly measurement: LoudnessMeasurement;
+    readonly outI: number;
+    // (undocumented)
+    readonly outTp: number;
+    readonly overCeiling: boolean;
+}
+
+// @public (undocumented)
+export interface MasterPlan {
+    // (undocumented)
+    readonly ceilingDb: number;
+    readonly limiter: boolean;
+    // (undocumented)
+    readonly maxGrDb: number;
+    // (undocumented)
+    readonly members: readonly MemberPlan[];
+    // (undocumented)
+    readonly profileTarget: number;
+    readonly sharedTarget: number;
+}
+
+// @public (undocumented)
+export interface MasterResult {
+    // (undocumented)
+    readonly ceilingDb: number;
+    // (undocumented)
+    readonly limiter: boolean;
+    // (undocumented)
+    readonly members: readonly MasterMemberResult[];
+    // (undocumented)
+    readonly report: string;
+    // (undocumented)
+    readonly sharedTarget: number;
 }
 
 // @public
@@ -372,6 +463,23 @@ export interface MeasureLoudnessResult {
 }
 
 // @public
+export interface MemberMeasure {
+    // (undocumented)
+    readonly id: string;
+    readonly inputI: number;
+    readonly inputTp: number;
+}
+
+// @public
+export interface MemberPlan extends MemberMeasure {
+    readonly gain: number;
+    readonly grDb: number;
+    readonly predOutTp: number;
+    readonly reachable: boolean;
+    readonly target: number;
+}
+
+// @public
 export function narrationLintCommand(opts: NarrationLintOptions): Promise<NarrationLintResult>;
 
 // @public (undocumented)
@@ -403,6 +511,12 @@ export class NoEncoderError extends Error {
 }
 
 // @public
+export function normalizeMasterConfig(raw: unknown): Required<Pick<MasterConfig, 'members' | 'consistency'>> & {
+    profile: string;
+    limiter: MasterLimiter | null;
+};
+
+// @public
 export function parseCacheMaxSize(flag: string): number;
 
 // @public
@@ -432,6 +546,12 @@ export function planFinalAudio(opts: RenderOptions, timelineClips: AudioClip[], 
     audioInputs: string[];
     audioArgs: string[];
 }>;
+
+// @public
+export function planMaster(measures: readonly MemberMeasure[], profile: PublishProfile, opts: {
+    limiter: MasterLimiter | null;
+    consistency: 'shared-target' | 'per-asset';
+}): MasterPlan;
 
 // @public
 export function probeEntryHeader(file: string): {
@@ -603,7 +723,10 @@ export type RepinStatus = 'identical' | 'changed' | 'new' | 'missing';
 export function resolveAssetPath(url: string, modulePath: string): string;
 
 // @public
-export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips?: AudioClip[]): Promise<number | null>;
+export function resolveLoudnessGainDb(opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips?: AudioClip[]): Promise<{
+    gainDb: number;
+    limiter?: CommittedLimiter;
+} | null>;
 
 // @public
 export function resolveProfile(id: string): PublishProfile;

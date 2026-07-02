@@ -45,6 +45,7 @@ export default defineConfig({
           { text: 'SVG import', link: '/svg' },
           { text: 'Render caching & remux', link: '/caching' },
           { text: 'Building a project (gs build)', link: '/build' },
+          { text: 'Series mastering (gs master)', link: '/mastering' },
           { text: 'Reviewing goldens (gs repin)', link: '/golden-review' },
           { text: 'Migrating between versions', link: '/migrating' },
           { text: 'Migrating from Motion Canvas', link: '/migrating-from-motion-canvas' },

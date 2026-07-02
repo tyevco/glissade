@@ -30,9 +30,25 @@ export {
   LoudnessError,
   type PublishProfile,
   type LoudnessMeasurement,
+  type CommittedLimiter,
   type MeasureLoudnessOptions,
   type MeasureLoudnessResult,
 } from './loudness.js';
+export {
+  masterCommand,
+  planMaster,
+  normalizeMasterConfig,
+  masterAfChain,
+  MasterError,
+  DEFAULT_MAX_GR_DB,
+  type MasterConfig,
+  type MasterLimiter,
+  type MasterResult,
+  type MasterMemberResult,
+  type MemberMeasure,
+  type MemberPlan,
+  type MasterPlan,
+} from './master.js';
 export {
   renderSharded,
   splitFrameRange,

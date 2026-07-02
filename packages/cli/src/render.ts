@@ -925,7 +925,7 @@ export async function collectMixAudioInputs(
 export async function resolveLoudnessGainDb(
   opts: Pick<RenderOptions, 'modulePath' | 'loudness' | 'narration' | 'music' | 'sfx' | 'locale'>,
   timelineClips?: AudioClip[],
-): Promise<number | null> {
+): Promise<{ gainDb: number; limiter?: import('./loudness.js').CommittedLimiter } | null> {
   if ((opts.loudness ?? 'auto') === 'off') return null;
   const { readLoudness, computeMixHash, loudnessPathFor } = await import('./loudness.js');
   const hasLocale = opts.locale !== undefined && opts.locale !== '';
@@ -961,7 +961,7 @@ export async function resolveLoudnessGainDb(
         `did NOT change, one re-measure migrates the committed hash.`,
     );
   }
-  return measurement.gain;
+  return { gainDb: measurement.gain, ...(measurement.limiter ? { limiter: measurement.limiter } : {}) };
 }
 
 /**
@@ -995,10 +995,12 @@ export async function planFinalAudio(
   }
   if (!mix) return { audioInputs: [], audioArgs: [] };
 
-  const gainDb = await resolveLoudnessGainDb(opts, timelineClips);
-  const filterComplex = gainDb !== null ? applyMixGainDb(mix.filterComplex, gainDb) : mix.filterComplex;
-  if (gainDb !== null) {
-    process.stderr.write(`note: applying committed publish loudness gain ${gainDb.toFixed(2)} dB (single-pass scalar)\n`);
+  const loud = await resolveLoudnessGainDb(opts, timelineClips);
+  const filterComplex = loud !== null ? applyMixGainDb(mix.filterComplex, loud.gainDb, loud.limiter) : mix.filterComplex;
+  if (loud !== null) {
+    process.stderr.write(
+      `note: applying committed publish loudness gain ${loud.gainDb.toFixed(2)} dB${loud.limiter ? ` + true-peak limiter @ ${loud.limiter.ceilingDb} dBTP` : ' (single-pass scalar)'}\n`,
+    );
   }
 
   const audioEnc = pickEncoder('audio', container);

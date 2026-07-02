@@ -233,7 +233,7 @@ describe('computeMixHash (binds measurement to mix CONTENT, not mtime)', () => {
       }),
     );
     // sanity: the gate passes against the unmodified stem
-    expect(await resolveLoudnessGainDb({ modulePath: stemMod })).toBe(7);
+    expect((await resolveLoudnessGainDb({ modulePath: stemMod }))?.gainDb).toBe(7);
 
     // now EDIT the stem bytes in place → the render-time gate must hard-throw
     writeFileSync(stemPath, Buffer.from('EDITED-STEM-bytes'));
@@ -274,7 +274,7 @@ describe('resolveLoudnessGainDb (render-time read + mixHash gate)', () => {
     // AUDIO inputs), so the render-time gate matches.
     const extra = await collectMixAudioInputs({ modulePath: mod });
     commit(computeMixHash(mod, extra));
-    expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(10);
+    expect((await resolveLoudnessGainDb({ modulePath: mod }))?.gainDb).toBe(10);
   });
 
   it('HARD-THROWS when the mixHash is stale (mix inputs changed)', async () => {
@@ -329,7 +329,7 @@ describe('resolveLoudnessGainDb: localized loudness (FIX 2)', () => {
         mixHash: computeMixHash(mod, extra),
       }),
     );
-    expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(5);
+    expect((await resolveLoudnessGainDb({ modulePath: mod }))?.gainDb).toBe(5);
     // loudnessPathFor with no locale is byte-identical to before
     expect(loudnessPathFor(mod)).toBe(join(tmp, 'scene.loudness.json'));
     expect(loudnessPathFor(mod, 'zh')).toBe(join(tmp, 'scene.zh.loudness.json'));
@@ -366,9 +366,9 @@ describe('resolveLoudnessGainDb: localized loudness (FIX 2)', () => {
         mixHash: computeMixHash(mod, extraZh),
       }),
     );
-    expect(await resolveLoudnessGainDb({ modulePath: mod, locale: 'zh' })).toBe(3);
+    expect((await resolveLoudnessGainDb({ modulePath: mod, locale: 'zh' }))?.gainDb).toBe(3);
     // the base render still reads the BASE measurement — untouched by the per-locale one
-    expect(await resolveLoudnessGainDb({ modulePath: mod })).toBe(5);
+    expect((await resolveLoudnessGainDb({ modulePath: mod }))?.gainDb).toBe(5);
   });
 
   it('a scene with NO base measurement and a --locale renders without normalization (no dead-end)', async () => {
