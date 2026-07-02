@@ -1,5 +1,11 @@
 # @glissade/sfx
 
+## 0.38.0-pre.0
+
+### Patch Changes
+
+- @glissade/core@0.38.0-pre.0
+
 ## 0.37.0
 
 ### Patch Changes
