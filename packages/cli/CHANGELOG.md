@@ -1,5 +1,69 @@
 # @glissade/cli
 
+## 0.39.0
+
+### Minor Changes
+
+- e80a82f: 0.39: `gs master` — series-consistent loudness + the true-peak limiter
+
+  `gs measure-loudness` gains one asset at a time and clamps the gain against the
+  source peak (no limiter), so a peaky short lands LUs below target and a series ends
+  up inconsistent (−14 episodes / −16 shorts). `gs master glissade.master.json`:
+
+  - measures **all** members together (globs, like `gs build`'s `scenes`), picks the
+    loudest shared LUFS target the whole set can reach under a shared true-peak
+    ceiling, and ships the deferred brickwall **true-peak limiter** so a peaky member
+    recovers headroom instead of landing low;
+  - **verifies** each member (applies gain+limiter, re-measures the output) and
+    reports the real `out` LUFS/dBTP — exits non-zero if any verified peak still
+    exceeds the ceiling;
+  - writes the ordinary `<scene>.loudness.json` sidecar + a `limiter` block, so it
+    **composes with the render-time mixHash preflight** (a re-narrate still
+    invalidates it loudly before frame 1) and **applies as a mix-only remux** (~20 s/
+    asset) — `render` copies the video stream and re-muxes audio through
+    `volume=<gain>dB, alimiter=…`, never re-rendering frames.
+
+  `consistency: 'shared-target'` (default) normalizes every member to one LUFS;
+  `'per-asset'` drives each to its own max. `limiter: false` keeps the legacy
+  peak-clamp. The limiter is the one non-linear stage, baked from committed params in
+  the audio graph (deterministic on a pinned ffmpeg) — a mastered render stays
+  byte-identical run-to-run. Visual determinism untouched (audio-only). `render`'s
+  `resolveLoudnessGainDb` now returns `{ gainDb, limiter? }` instead of a bare number.
+
+### Patch Changes
+
+- e33b136: 0.39.0-pre.1: gs master — make `truepeak` an ACTUAL true-peak limiter (canary defect mIoSZoacbuHM)
+
+  ai-training's real-audio read (corroborated structurally by video-canary) caught
+  that `mode:'truepeak'` wasn't true-peak: `alimiter=limit=10^(ceilingDb/20)` is a
+  **sample-peak** brickwall fed a dBFS number — it holds the sample peak at −1 but
+  the inter-sample / TRUE peak leaked to +1.0 dBTP (clipping over the ceiling), and
+  `gs master`'s own verify pass then `exit 1`'d on the documented youtube/−1 config.
+
+  Fix: the limiter now **oversamples 4×** (`aresample` up → `alimiter` → `aresample`
+  down) so it sees and holds the inter-sample peaks, with an ~0.8 dB guard for the
+  downsample residue. Empirically the worst case (clipped-noise, +5.64 dBTP raw)
+  lands at −1.3 dBTP; a quiet source is untouched. The verify pass now passes (no
+  self-inflicted `exit 1`) and stays a real gate for a genuine over-ceiling.
+
+  The gain/limiter chain is shared (`loudnessFilterNodes`) between the `gs master`
+  verify pass and the render `filter_complex`, so the committed limiter and the
+  rendered output are the identical deterministic chain. Added a peaky-source
+  regression test asserting rendered true-peak ≤ ceiling (the fixture gap that let
+  the defect through: with-audio is quiet, so the limiter never engaged). The other
+  three mechanics (shared-target, mix-only remux, mixHash preflight) were verified
+  green by both seats. `masterAfChain` is now async.
+
+  - @glissade/backend-skia@0.39.0
+  - @glissade/core@0.39.0
+  - @glissade/interact@0.39.0
+  - @glissade/lottie@0.39.0
+  - @glissade/narrate@0.39.0
+  - @glissade/player@0.39.0
+  - @glissade/scene@0.39.0
+  - @glissade/sfx@0.39.0
+  - @glissade/svg@0.39.0
+
 ## 0.39.0-pre.1
 
 ### Patch Changes
