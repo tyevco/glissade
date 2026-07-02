@@ -48,7 +48,7 @@ const USAGE = `usage:
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
   gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
-  gs migrate <baseline-api.json> [--json]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; never rewrites your files)
+  gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs --version   print the engine version
 
 render options:
@@ -284,6 +284,9 @@ async function main(): Promise<void> {
     } else {
       process.stdout.write(`${formatReport(report)}\n`);
     }
+    // --check: a CI gate — exit non-zero when the bump has breaking changes, so
+    // a pipeline can fail the build on an un-migrated engine (advisory by default)
+    if (mf.has('check') && report.summary.breaking > 0) process.exit(1);
     return;
   }
 

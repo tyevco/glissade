@@ -180,6 +180,7 @@ Default `position` anchor: `baseline-left`.
 | `lineHeight` | `number` | no | — |
 | `fontVariationSettings` | `string` | no | — |
 | `letterSpacing` | `number` | no | — |
+| `box` | `{ valign: 'center'\|'top'\|'bottom', h? }` | no | — |
 
 ```ts
 import { Text } from '@glissade/scene';
@@ -712,6 +713,26 @@ splitText(text: Text | TextProps, opts?: { by?: 'word'|'line'|'grapheme', id?: s
 import { splitText } from '@glissade/scene/type';
 // the source needs an `id` — parts bind tracks against `<id>/<i>`. sp.targets('opacity') gives the reveal-recipe targets
 const sp = splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme' });
+```
+
+### `fitText`
+
+Shrink-to-fit: set a Text's fontSize to the largest that wraps within maxW to <= maxLines / <= maxH (a build-time binary search over the measurer, like Grid/splitText). Fails loud if it can't fit even at minPx (or pass onOverflow:'clamp'). Pass { measurer } for exact fit. Tree-shaken off the base scene index.
+
+Import from `@glissade/scene/type`.
+
+```ts
+fitText(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?: 'throw'|'clamp', measurer? }): Text
+```
+
+### `fitTextGroup`
+
+Fit several Texts to ONE shared fontSize (the largest at which every one fits its box) so a row/list of labels renders uniformly — kills the ragged 'same list, three sizes' bug. Returns the shared size. On the @glissade/scene/type subpath.
+
+Import from `@glissade/scene/type`.
+
+```ts
+fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer? }): number
 ```
 
 ### `Grid`

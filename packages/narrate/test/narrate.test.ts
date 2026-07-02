@@ -26,8 +26,18 @@ const TIMING: NarrationTiming = {
   providerVersion: 'fake-1',
   totalDuration: 5.5,
   segments: [
-    { id: 'a', text: 'First beat.', start: 0.25, duration: 1.5, file: 'a-11111111.wav' },
-    { id: 'b', text: 'Second beat.', start: 2.1, duration: 2.0, file: 'b-22222222.wav' },
+    {
+      id: 'a',
+      text: 'First beat.',
+      start: 0.25,
+      duration: 1.5,
+      file: 'a-11111111.wav',
+      words: [
+        { word: 'First', start: 0.25, end: 0.9 },
+        { word: 'beat.', start: 0.9, end: 1.75 },
+      ],
+    },
+    { id: 'b', text: 'Second beat.', start: 2.1, duration: 2.0, file: 'b-22222222.wav' }, // no words[]
     { id: 'c', text: 'Done.', start: 4.5, duration: 1.0, file: 'c-33333333.wav' },
   ],
 };
@@ -45,6 +55,45 @@ describe('narration() anchors', () => {
   it('an unknown id fails loudly, listing what exists', () => {
     expect(() => beats.start('nope')).toThrow(NarrationError);
     expect(() => beats.start('nope')).toThrow(/a, b, c/);
+  });
+
+  it('word()/wordEnd() return per-word timestamps, punctuation/case-normalized', () => {
+    expect(beats.word('a', 'First')).toBe(0.25);
+    expect(beats.word('a', 'beat')).toBe(0.9); // matches 'beat.' (punct-normalized)
+    expect(beats.word('a', 'BEAT')).toBe(0.9); // case-insensitive
+    expect(beats.wordEnd('a', 'beat')).toBe(1.75);
+  });
+
+  it('word() disambiguates a repeated word by nth (0-based)', () => {
+    const rep = narration({
+      timingVersion: 1,
+      provider: 'fake',
+      providerVersion: 'fake-1',
+      totalDuration: 3,
+      segments: [
+        {
+          id: 's',
+          text: 'go go go',
+          start: 0,
+          duration: 3,
+          file: 's.wav',
+          words: [
+            { word: 'go', start: 0, end: 0.5 },
+            { word: 'go', start: 0.5, end: 1.0 },
+            { word: 'go', start: 1.0, end: 3.0 },
+          ],
+        },
+      ],
+    });
+    expect(rep.word('s', 'go')).toBe(0); // 1st (nth default 0)
+    expect(rep.word('s', 'go', 1)).toBe(0.5); // 2nd
+    expect(rep.word('s', 'go', 2)).toBe(1.0); // 3rd
+    expect(() => rep.word('s', 'go', 3)).toThrow(/occurrence 3 not found/);
+  });
+
+  it('word() fails loud: no word timings, missing word', () => {
+    expect(() => beats.word('b', 'Second')).toThrow(/no word timings/); // seg b has none
+    expect(() => beats.word('a', 'absent')).toThrow(/not found in beat 'a'/);
   });
 
   it('labels() yields <id>.start / <id>.end for every segment', () => {

@@ -1294,6 +1294,10 @@ class Text_2 extends Node_2 {
     constructor(props?: TextProps);
     // (undocumented)
     readonly align: 'left' | 'center' | 'right';
+    readonly box?: {
+        valign: 'center' | 'top' | 'bottom';
+        h?: number;
+    };
     get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
@@ -1397,6 +1401,10 @@ export interface TextMetricsLite {
 // @public (undocumented)
 export interface TextProps extends NodeProps {
     align?: 'left' | 'center' | 'right';
+    box?: {
+        valign: 'center' | 'top' | 'bottom';
+        h?: number;
+    };
     // (undocumented)
     fill?: PropInit<string>;
     fontAxes?: PropInit<FontAxes>;

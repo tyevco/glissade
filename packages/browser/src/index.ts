@@ -36,6 +36,9 @@ export * from '@glissade/scene/path';
 // `G.splitText(props, { by:'word', measurer: backend })`. +0.44 kB, within the
 // browser budget.
 export { splitText } from '@glissade/scene/type';
+// 0.35 fitText (shrink-to-fit + wrap-to-max-lines) — same /type subpath, same
+// measurer plumbing as splitText; a no-build author reaches for window.glissade.fitText.
+export { fitText, fitTextSize, fitTextGroup, type FitTextOpts } from '@glissade/scene/type';
 // 0.20 no-build layout split: the Yoga-FREE node ctors (Layout/Stack/Row/Column)
 // live on `@glissade/scene/layout-ctors` — they touch the LayoutEngine seam only
 // at compute time, never `import('yoga-layout/load')` at construction. So they

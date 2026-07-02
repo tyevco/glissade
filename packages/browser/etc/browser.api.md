@@ -9,6 +9,10 @@ import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { Chart } from '@glissade/scene/chart';
 import { colorRamp } from '@glissade/scene/chart';
 import { Column } from '@glissade/scene/layout-ctors';
+import { fitText } from '@glissade/scene/type';
+import { fitTextGroup } from '@glissade/scene/type';
+import { FitTextOpts } from '@glissade/scene/type';
+import { fitTextSize } from '@glissade/scene/type';
 import { FollowPath } from '@glissade/scene/motion';
 import { followPath } from '@glissade/scene/motion';
 import { Grid } from '@glissade/scene/grid';
@@ -39,6 +43,14 @@ export { Chart }
 export { colorRamp }
 
 export { Column }
+
+export { fitText }
+
+export { fitTextGroup }
+
+export { FitTextOpts }
+
+export { fitTextSize }
 
 export { FollowPath }
 

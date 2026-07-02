@@ -353,6 +353,7 @@ vdescribe('describe() construction props', () => {
       'SketchStyle': { kind: 'pencil' },
       'HachureSpec': { gap: 4 },
       '{ w, h, r?, x?, y? } | PathSeg[]': { w: 10, h: 10 }, // 0.34 Group clip — rect sugar form
+      "{ valign: 'center'|'top'|'bottom', h? }": { valign: 'center' }, // 0.35 Text box-valign
       "'normal'|'italic'": 'normal',
       "'left'|'center'|'right'": 'center',
       "'row'|'column'": 'row',

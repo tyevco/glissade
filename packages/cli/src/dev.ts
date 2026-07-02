@@ -28,6 +28,14 @@ import { mount } from '@glissade/player';
 import { createMachine, recordTrace } from '@glissade/interact';
 
 const scene = mod.createScene();
+// Load the Yoga layout engine when the scene uses Layout nodes — parity with
+// gs render / gs mcp (render.ts / mcpSession.ts do the same hasLayout check).
+// Without it a Stack/Row/Column/Layout scene throws LayoutEngineMissingError
+// under gs dev (top-level await is fine: this harness is an ESM bundle).
+if ([...scene.nodes.values()].some((n) => n.constructor.isLayoutNode === true)) {
+  const { loadYogaLayoutEngine } = await import('@glissade/scene/layout');
+  await loadYogaLayoutEngine();
+}
 const canvas = document.getElementById('stage');
 canvas.width = scene.size.w;
 canvas.height = scene.size.h;

@@ -805,6 +805,16 @@ export interface TextProps extends NodeProps {
   fontAxes?: PropInit<FontAxes>;
   /** Horizontal alignment about the node position; default 'left'. */
   align?: 'left' | 'center' | 'right';
+  /**
+   * VERTICAL anchoring in a box (0.35). Text is baseline-anchored by default;
+   * `box: { valign: 'center' }` instead centers the text's real INK (ascent +
+   * descent from the measurer, single- AND multi-line) on the node position —
+   * killing the `fontSize * 0.35` fudge every boxed-text component hand-rolls.
+   * `'top'`/`'bottom'` frame the ink at the top/bottom of an `h`-tall box
+   * centered on the position (pass `h`). OMITTED ⇒ baseline (byte-identical
+   * default). Construction-only; needs the scene measurer (like wrapping).
+   */
+  box?: { valign: 'center' | 'top' | 'bottom'; h?: number };
   /** Wrap width in px; unset = no wrapping (explicit \n still breaks). */
   width?: PropInit<number>;
   /** Line height as a multiple of fontSize; default 1.25. */
@@ -866,6 +876,8 @@ export class Text extends Node {
    *  When non-empty, overrides {@link fontVariationSettings} in the FontSpec. */
   readonly fontAxes: BindableSignal<FontAxes>;
   readonly align: 'left' | 'center' | 'right';
+  /** vertical box anchoring (0.35); undefined = baseline-anchored (default). */
+  readonly box?: { valign: 'center' | 'top' | 'bottom'; h?: number };
   readonly width: BindableSignal<number>;
   readonly lineHeight: number;
   /** Static letter-spacing (tracking) in px; undefined = none. */
@@ -889,6 +901,7 @@ export class Text extends Node {
     this.fontVariationSettings = props.fontVariationSettings;
     this.fontAxes = initProp(signal<FontAxes>({}), props.fontAxes);
     this.align = props.align ?? 'left';
+    if (props.box !== undefined) this.box = props.box;
     this.width = initProp(signal(0), props.width);
     this.lineHeight = props.lineHeight ?? 1.25;
     this.letterSpacing = props.letterSpacing;
@@ -972,6 +985,34 @@ export class Text extends Node {
   }
 
   /**
+   * 0.35 box-valign: the y offset added to the fillText line grid so the text's
+   * real INK (ascent+descent, single- OR multi-line) anchors vertically per
+   * `box.valign` — the ink-metric answer to the `fontSize * 0.35` fudge. 0 when
+   * no `box` is set, so the default draw is byte-identical. Shared by draw() and
+   * lineBoxes() so highlights/reveals follow the shifted text.
+   */
+  private valignOffset(m: TextMeasurer): number {
+    if (this.box === undefined) return 0;
+    const font = this.fontSpec();
+    const lines = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, m);
+    const step = quantize(font.size * this.lineHeight);
+    let inkTop = Infinity;
+    let inkBottom = -Infinity;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const met = m.measureText(line, font);
+      inkTop = Math.min(inkTop, i * step - met.ascent);
+      inkBottom = Math.max(inkBottom, i * step + met.descent);
+    }
+    if (!Number.isFinite(inkTop)) return 0; // no ink (blank text)
+    const h = this.box.h ?? inkBottom - inkTop;
+    if (this.box.valign === 'center') return -(inkTop + inkBottom) / 2; // ink center on position
+    if (this.box.valign === 'top') return -h / 2 - inkTop; // ink top at position − h/2
+    return h / 2 - inkBottom; // bottom: ink bottom at position + h/2
+  }
+
+  /**
    * The wrapped box {w, h}, measured with the scene's active measurer — the
    * same numbers Layout flows with, public so bindings never hand-calculate
    * text dimensions (e.g. underline width = () => title.measuredSize().w).
@@ -998,6 +1039,7 @@ export class Text extends Node {
     const maxWidth = this.width();
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
     const step = quantize(font.size * this.lineHeight);
+    const vy = this.valignOffset(m); // 0.35: box-valign shifts the grid (0 by default)
     const boxes: LineBox[] = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1005,7 +1047,7 @@ export class Text extends Node {
       const met = m.measureText(line, font);
       const w = quantize(met.width);
       const x = this.align === 'left' ? 0 : this.align === 'center' ? -w / 2 : -w;
-      boxes.push({ text: line, x, y: i * step - met.ascent, w, h: met.ascent + met.descent });
+      boxes.push({ text: line, x, y: i * step - met.ascent + vy, w, h: met.ascent + met.descent });
     }
     return boxes;
   }
@@ -1165,6 +1207,8 @@ export class Text extends Node {
     // line breaking is ours (§3.6), measured by the injected backend measurer
     const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, ctx.measurer);
     const step = quantize(font.size * this.lineHeight);
+    // 0.35 box-valign: 0 when no `box` (the default draw stays byte-identical)
+    const vy = this.valignOffset(ctx.measurer);
     // Reveal masking: Infinity (the default) takes the original emit path
     // untouched, so any scene without a reveal track is byte-identical. A
     // finite reveal breaks lines on the FULL text (no reflow) and draws the
@@ -1184,7 +1228,7 @@ export class Text extends Node {
           font,
           paint: { kind: 'color', color: this.fill() },
           x: 0,
-          y: i * step,
+          y: i * step + vy,
           ...(this.align !== 'left' ? { align: this.align } : {}),
         });
         continue;
@@ -1200,7 +1244,7 @@ export class Text extends Node {
           font,
           paint: { kind: 'color', color: this.fill() },
           x: 0,
-          y: i * step,
+          y: i * step + vy,
           ...(this.align !== 'left' ? { align: this.align } : {}),
         });
       } else {
@@ -1215,7 +1259,7 @@ export class Text extends Node {
           font,
           paint: { kind: 'color', color: this.fill() },
           x: lineX,
-          y: i * step,
+          y: i * step + vy,
         });
       }
     }

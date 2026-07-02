@@ -38,6 +38,7 @@ export default defineConfig({
           { text: 'Retiming & motion trails', link: '/motion-craft' },
           { text: 'Data-driven charts', link: '/charts' },
           { text: 'Clipping & track mattes', link: '/compositing' },
+          { text: 'Fitting & anchoring text', link: '/text-fitting' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'SVG import', link: '/svg' },
           { text: 'Render caching & remux', link: '/caching' },

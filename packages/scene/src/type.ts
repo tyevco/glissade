@@ -21,7 +21,8 @@
  */
 
 import { Group, Text, type GraphemeBox, type LineBox, type TextProps, type WordBox } from './nodes.js';
-import { fallbackMeasurer, quantize, warnIfEstimating, type TextMeasurer } from './text.js';
+import type { FontSpec } from './displayList.js';
+import { fallbackMeasurer, measureWrappedText, quantize, warnIfEstimating, type TextMeasurer } from './text.js';
 
 export type SplitBy = 'word' | 'line' | 'grapheme';
 
@@ -189,6 +190,117 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
   const targets = (prop: string): string[] => parts.map((p) => `${p.id}/${prop}`);
 
   return { node, children, parts, targets };
+}
+
+// ── fitText: shrink-to-fit + wrap-to-max-lines (0.35) ────────────────────────
+
+export interface FitTextOpts {
+  /** wrap/measure width (px). Required — text wraps to this and never exceeds it. */
+  maxW: number;
+  /** cap the wrapped height (px). Optional — combine with maxLines. */
+  maxH?: number;
+  /** cap the number of wrapped lines. Optional. */
+  maxLines?: number;
+  /** never shrink below this (px). Default 6. Below it, fitText throws (fail loud). */
+  minPx?: number;
+  /** if the text can't fit even at minPx: 'throw' (default) or 'clamp' to minPx. */
+  onOverflow?: 'throw' | 'clamp';
+  /** measurer for exact fit — pass one (or call setTextMeasurer first), else the
+   *  estimating fallback is used with a one-time dev warning (the splitText footgun). */
+  measurer?: TextMeasurer;
+}
+
+/** Build a measurement FontSpec for `text` at a candidate size (public fields only). */
+function fontAt(text: Text, size: number): FontSpec {
+  return {
+    family: text.fontFamily,
+    size,
+    weight: text.fontWeight,
+    ...(text.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    ...(text.letterSpacing !== undefined ? { letterSpacing: text.letterSpacing } : {}),
+  };
+}
+
+/** True if `text` wraps within maxW to ≤ maxLines and ≤ maxH at this fontSize. */
+function fits(text: Text, size: number, opts: FitTextOpts, m: TextMeasurer): boolean {
+  const font = fontAt(text, size);
+  const met = measureWrappedText(text.text(), font, opts.maxW, text.lineHeight, m);
+  if (opts.maxLines !== undefined && met.lines.length > opts.maxLines) return false;
+  if (opts.maxH !== undefined && met.height > opts.maxH) return false;
+  // breakLines can't split a single long word, so a one-line result can still
+  // overflow maxW — measureWrappedText reports `width: maxW`, hiding it. Check
+  // each line's real ink width so an unbreakable token forces a smaller size.
+  for (const line of met.lines) {
+    if (m.measureText(line, font).width > opts.maxW + 0.5) return false;
+  }
+  return true;
+}
+
+/**
+ * The largest integer-px fontSize ≤ the text's current size at which it fits the
+ * box — via a binary search over `measureWrappedText` (pure, no runtime state).
+ * The build-time answer to "shrink this to fit its container" the hand-rolled
+ * shrink loops re-implemented per component.
+ */
+export function fitTextSize(text: Text, opts: FitTextOpts): number {
+  const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
+  warnIfEstimating(m, 'fitText');
+  const minPx = opts.minPx ?? 6;
+  const hi = Math.max(minPx, Math.floor(text.fontSize()));
+  if (fits(text, hi, opts, m)) return hi; // already fits at its authored size
+  if (!fits(text, minPx, opts, m)) {
+    if (opts.onOverflow === 'clamp') return minPx;
+    throw new Error(
+      `fitText: '${text.text().slice(0, 40)}${text.text().length > 40 ? '…' : ''}' does not fit ${opts.maxW}px` +
+        `${opts.maxLines !== undefined ? ` in ${opts.maxLines} line(s)` : ''} even at minPx=${minPx} — ` +
+        'raise maxW/maxLines/maxH, lower minPx, or pass { onOverflow: \'clamp\' }',
+    );
+  }
+  // binary-search the largest fitting integer px in [minPx, hi]
+  let lo = minPx;
+  let best = minPx;
+  let hiN = hi;
+  while (lo <= hiN) {
+    const mid = (lo + hiN) >> 1;
+    if (fits(text, mid, opts, m)) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hiN = mid - 1;
+    }
+  }
+  return best;
+}
+
+/**
+ * Shrink `text` to fit its box: sets its `fontSize` to `fitTextSize(...)` and
+ * returns it (a plain `signal.set`, so a later explicit bind still wins — the
+ * Grid()/splitText() mutate-and-return convention). Also sets `width` to maxW so
+ * the node wraps to the same box it was fitted against.
+ */
+export function fitText(text: Text, opts: FitTextOpts): Text {
+  const size = fitTextSize(text, opts);
+  text.fontSize.set(size);
+  text.width.set(opts.maxW);
+  return text;
+}
+
+/**
+ * Fit several texts to ONE shared size — the largest px at which EVERY text fits
+ * its box — so a row/list of labels renders uniformly (kills the "same list, three
+ * different sizes" ragged-headers bug). Each text may carry its own maxW; a single
+ * `maxW` applies to all. Returns the shared size.
+ */
+export function fitTextGroup(texts: readonly Text[], opts: FitTextOpts): number {
+  if (texts.length === 0) throw new Error('fitTextGroup needs at least one text');
+  // the group size is the MIN of each text's individual max-fit (clamp so one
+  // un-fittable text pins the group to minPx rather than throwing mid-scan)
+  const shared = Math.min(...texts.map((t) => fitTextSize(t, { ...opts, onOverflow: 'clamp' })));
+  for (const t of texts) {
+    t.fontSize.set(shared);
+    t.width.set(opts.maxW);
+  }
+  return shared;
 }
 
 // re-export the unit-box types so consumers of this entry can name part geometry

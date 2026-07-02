@@ -151,6 +151,8 @@ export interface NarrationAnchors {
     start(id: string): number;
     // (undocumented)
     readonly totalDuration: number;
+    word(segId: string, word: string, nth?: number): number;
+    wordEnd(segId: string, word: string, nth?: number): number;
 }
 
 // @public

@@ -241,6 +241,17 @@ export interface NarrationAnchors {
   /** start + offset — a sub-beat inside a segment or pause window */
   at(id: string, offset?: number): number;
   /**
+   * The absolute start (seconds) of a WORD inside a segment — the provider's
+   * per-word timestamp (`words[]` in the timing manifest), so a visual can land
+   * ON the spoken word instead of a whole segment early/late. `nth` (0-based)
+   * disambiguates a repeated word. Throws if the segment has no word timings
+   * (the provider didn't supply them) or the word/occurrence isn't found —
+   * fail-loud, so a stale ref can't silently drift to segment.start.
+   */
+  word(segId: string, word: string, nth?: number): number;
+  /** Like `word` but the word's END second (its `end` timestamp). */
+  wordEnd(segId: string, word: string, nth?: number): number;
+  /**
    * Assert every id exists in the manifest — a build-time fast-fail that lists
    * ALL unknown ids at once (vs. discovering stale refs one render at a time
    * after rewiring). Returns the anchors, so chain it: `narration(t).require([...])`.
@@ -264,25 +275,52 @@ export interface NarrationAnchors {
 
 export function narration(timing: NarrationTiming): NarrationAnchors {
   // segments and pauses share one id namespace — both are addressable beats
-  const byId = new Map<string, { start: number; duration: number }>();
+  const byId = new Map<string, { start: number; duration: number; words?: readonly TimedWord[] }>();
   for (const s of timing.segments) {
     if (byId.has(s.id)) throw new NarrationError(`duplicate narration id '${s.id}'`);
-    byId.set(s.id, { start: s.start, duration: s.duration });
+    byId.set(s.id, { start: s.start, duration: s.duration, ...(s.words ? { words: s.words } : {}) });
   }
   for (const p of timing.pauses ?? []) {
     if (byId.has(p.id)) throw new NarrationError(`duplicate narration id '${p.id}' (segment and pause collide)`);
     byId.set(p.id, { start: p.start, duration: p.duration });
   }
-  const beat = (id: string): { start: number; duration: number } => {
+  const beat = (id: string): { start: number; duration: number; words?: readonly TimedWord[] } => {
     const b = byId.get(id);
     if (!b) throw new NarrationError(`no narration beat '${id}' (have: ${[...byId.keys()].join(', ')})`);
     return b;
+  };
+  /** locate the nth (0-based) occurrence of `word` in a segment's word timings,
+   *  matching on a punctuation/case-normalized token so 'busy' finds 'busy.' */
+  const findWord = (segId: string, word: string, nth: number): TimedWord => {
+    const b = beat(segId);
+    if (!b.words || b.words.length === 0) {
+      throw new NarrationError(
+        `narration beat '${segId}' has no word timings (the provider supplied none) — use .at('${segId}', offset) instead`,
+      );
+    }
+    const norm = (w: string): string => w.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+    const target = norm(word);
+    const matches = b.words.filter((w) => norm(w.word) === target);
+    if (matches.length === 0) {
+      throw new NarrationError(
+        `narration word '${word}' not found in beat '${segId}' (words: ${b.words.map((w) => w.word).join(' ')})`,
+      );
+    }
+    const hit = matches[nth];
+    if (hit === undefined) {
+      throw new NarrationError(
+        `narration word '${word}' occurrence ${nth} not found in beat '${segId}' (only ${matches.length} occurrence${matches.length > 1 ? 's' : ''})`,
+      );
+    }
+    return hit;
   };
   const anchors: NarrationAnchors = {
     start: (id) => beat(id).start,
     end: (id) => beat(id).start + beat(id).duration,
     duration: (id) => beat(id).duration,
     at: (id, offset = 0) => beat(id).start + offset,
+    word: (segId, w, nth = 0) => findWord(segId, w, nth).start,
+    wordEnd: (segId, w, nth = 0) => findWord(segId, w, nth).end,
     require: (ids) => {
       const missing = ids.filter((id) => !byId.has(id));
       if (missing.length > 0) {

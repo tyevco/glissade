@@ -205,6 +205,7 @@ const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: Constructi
     fontWeight: { type: 'number' },
     fontStyle: { type: "'normal'|'italic'" },
     align: { type: "'left'|'center'|'right'" },
+    box: { type: "{ valign: 'center'|'top'|'bottom', h? }" },
     lineHeight: { type: 'number' },
     // Letter-spacing (tracking) in px, threaded to every backend. Set at
     // construction (static — not a track target in 0.21).
@@ -513,6 +514,20 @@ const HELPERS: DescribedHelper[] = [
     import: '@glissade/scene/type',
     usage:
       "splitText(text: Text | TextProps, opts?: { by?: 'word'|'line'|'grapheme', id?: string, measurer?: TextMeasurer }): { node: Group, children: Text[], parts: SplitPart[], targets(prop): string[] }",
+  },
+  {
+    name: 'fitText',
+    summary:
+      'Shrink-to-fit: set a Text\'s fontSize to the largest that wraps within maxW to <= maxLines / <= maxH (a build-time binary search over the measurer, like Grid/splitText). Fails loud if it can\'t fit even at minPx (or pass onOverflow:\'clamp\'). Pass { measurer } for exact fit. Tree-shaken off the base scene index.',
+    import: '@glissade/scene/type',
+    usage: "fitText(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?: 'throw'|'clamp', measurer? }): Text",
+  },
+  {
+    name: 'fitTextGroup',
+    summary:
+      'Fit several Texts to ONE shared fontSize (the largest at which every one fits its box) so a row/list of labels renders uniformly — kills the ragged \'same list, three sizes\' bug. Returns the shared size. On the @glissade/scene/type subpath.',
+    import: '@glissade/scene/type',
+    usage: 'fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer? }): number',
   },
   {
     name: 'Grid',
