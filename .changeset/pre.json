@@ -27,6 +27,7 @@
   },
   "changesets": [
     "cli-smalls",
+    "fittextsize-describe",
     "text-fit-anchor"
   ]
 }

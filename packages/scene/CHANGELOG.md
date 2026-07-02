@@ -1,5 +1,15 @@
 # @glissade/scene
 
+## 0.35.0-pre.1
+
+### Patch Changes
+
+- `describe()`: list `fitTextSize` alongside `fitText`/`fitTextGroup`
+
+  `fitTextSize` (the size-returning primitive `fitText`/`fitTextGroup` build on) resolved and worked but was missing from `describe().helpers`, so a no-build author reading the manifest couldn't discover it. Added — the three fit helpers now all appear. (edcc canary nit `slkgussGtv1A`.)
+
+  - @glissade/core@0.35.0-pre.1
+
 ## 0.35.0-pre.0
 
 ### Minor Changes

@@ -725,6 +725,16 @@ Import from `@glissade/scene/type`.
 fitText(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?: 'throw'|'clamp', measurer? }): Text
 ```
 
+### `fitTextSize`
+
+Like fitText but returns just the fitted fontSize (number) — apply it yourself instead of mutating the Text. The primitive fitText/fitTextGroup build on. On the @glissade/scene/type subpath.
+
+Import from `@glissade/scene/type`.
+
+```ts
+fitTextSize(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?, measurer? }): number
+```
+
 ### `fitTextGroup`
 
 Fit several Texts to ONE shared fontSize (the largest at which every one fits its box) so a row/list of labels renders uniformly — kills the ragged 'same list, three sizes' bug. Returns the shared size. On the @glissade/scene/type subpath.
