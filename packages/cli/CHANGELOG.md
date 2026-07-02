@@ -1,5 +1,26 @@
 # @glissade/cli
 
+## 0.35.0
+
+### Patch Changes
+
+- 9bd7523: Two authoring-loop papercuts: `gs migrate --check` and `gs dev` layout parity
+
+  - **`gs migrate --check`** exits non-zero when the diff has any breaking change — a CI gate for engine bumps (default stays advisory, exit 0). Pairs with committed per-release manifests from `gs describe --out`.
+  - **`gs dev`** now loads the Yoga layout engine when the scene uses `Layout`/`Stack`/`Row`/`Column` (the same `hasLayout` check `gs render`/`gs mcp` already do) — a layout scene under `gs dev` used to throw `LayoutEngineMissingError`.
+
+- Updated dependencies [c60b039]
+- Updated dependencies [9bd7523]
+  - @glissade/scene@0.35.0
+  - @glissade/narrate@0.35.0
+  - @glissade/backend-skia@0.35.0
+  - @glissade/interact@0.35.0
+  - @glissade/lottie@0.35.0
+  - @glissade/player@0.35.0
+  - @glissade/svg@0.35.0
+  - @glissade/core@0.35.0
+  - @glissade/sfx@0.35.0
+
 ## 0.35.0-pre.1
 
 ### Patch Changes

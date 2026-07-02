@@ -1,5 +1,18 @@
 # @glissade/browser
 
+## 0.35.0
+
+### Patch Changes
+
+- Updated dependencies [c60b039]
+- Updated dependencies [9bd7523]
+  - @glissade/scene@0.35.0
+  - @glissade/backend-canvas2d@0.35.0
+  - @glissade/backend-dom@0.35.0
+  - @glissade/element@0.35.0
+  - @glissade/player@0.35.0
+  - @glissade/core@0.35.0
+
 ## 0.35.0-pre.1
 
 ### Patch Changes
