@@ -20,6 +20,9 @@ export function createMeasurer(opts?: {
     fonts?: Record<string, string>;
 }): TextMeasurer;
 
+// @public
+export function heatmapRgba(map: SsimMap, width: number, height: number): Uint8ClampedArray;
+
 // @public (undocumented)
 export class SkiaBackend implements RenderBackend {
     constructor(width: number, height: number, opts?: {
@@ -43,6 +46,27 @@ export class SkiaBackend implements RenderBackend {
     // (undocumented)
     setVideoAsset(assetId: string, source: VideoFrameSource): void;
 }
+
+// @public
+export function ssim(a: Uint8ClampedArray, b: Uint8ClampedArray, width: number, height: number): number;
+
+// @public
+export interface SsimMap {
+    readonly cols: number;
+    readonly mean: number;
+    readonly min: number;
+    readonly minTile: {
+        readonly tx: number;
+        readonly ty: number;
+    };
+    // (undocumented)
+    readonly rows: number;
+    readonly tiles: Float64Array;
+    readonly win: number;
+}
+
+// @public
+export function ssimMap(a: Uint8ClampedArray, b: Uint8ClampedArray, width: number, height: number): SsimMap;
 
 export { TextMetricsLite }
 

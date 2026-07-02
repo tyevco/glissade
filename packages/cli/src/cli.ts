@@ -49,6 +49,7 @@ const USAGE = `usage:
   gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
+  gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
   gs --version   print the engine version
 
 render options:
@@ -148,7 +149,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -287,6 +288,52 @@ async function main(): Promise<void> {
     // --check: a CI gate — exit non-zero when the bump has breaking changes, so
     // a pipeline can fail the build on an un-migrated engine (advisory by default)
     if (mf.has('check') && report.summary.breaking > 0) process.exit(1);
+    return;
+  }
+
+  // gs repin <scene-module> --golden <dir> — the narration-aware golden reviewer.
+  // Self-contained (needs --golden + its own comma-list flags); default is a
+  // dry-run report, --write re-pins, --floor refuses a bigger-than-expected drop.
+  if (command === 'repin') {
+    const { positional: rp, flags: rf } = parseArgs(rest);
+    const sceneModule = rp[0];
+    if (!sceneModule) fail(`gs repin needs <scene-module>\n${USAGE}`);
+    const goldenDir = rf.get('golden');
+    if (!goldenDir) fail(`gs repin needs --golden <dir> (the committed golden PNG directory)\n${USAGE}`);
+    const nums = (raw: string | undefined): number[] | undefined =>
+      raw === undefined ? undefined : raw.split(',').map((s) => {
+        const n = Number(s.trim());
+        if (!Number.isInteger(n) || n < 0) fail(`repin: '${s}' is not a frame number (expected comma-separated non-negative integers)`);
+        return n;
+      });
+    const floorRaw = rf.get('floor');
+    let floor: number | undefined;
+    if (floorRaw !== undefined) {
+      floor = Number(floorRaw);
+      if (!(floor >= -1 && floor <= 1)) fail(`repin: --floor must be an SSIM in [-1, 1], got '${floorRaw}'`);
+    }
+    const { repinCommand } = await import('./repin.js');
+    try {
+      const result = await repinCommand({
+        modulePath: sceneModule,
+        goldenDir,
+        ...(rf.get('name') ? { name: rf.get('name')! } : {}),
+        ...(nums(rf.get('frames')) ? { frames: nums(rf.get('frames'))! } : {}),
+        ...(rf.get('fps') ? { fps: parseFpsOrFail(rf.get('fps')!) } : {}),
+        ...(rf.get('since') ? { since: rf.get('since')! } : {}),
+        ...(rf.has('write') ? { write: true } : {}),
+        ...(nums(rf.get('only')) ? { only: nums(rf.get('only'))! } : {}),
+        ...(rf.get('heatmap') ? { heatmapDir: rf.get('heatmap')! } : {}),
+        ...(floor !== undefined ? { floor } : {}),
+        ...(rf.has('force') ? { force: true } : {}),
+      });
+      process.stdout.write(`${result.report}\n`);
+      // exit non-zero when a write was refused below floor (a real regression),
+      // or on any staleness in a dry-run (so CI catches un-repinned goldens).
+      if (result.blocked > 0 || (!rf.has('write') && result.changed > 0)) process.exit(1);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
     return;
   }
 

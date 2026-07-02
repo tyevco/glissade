@@ -48,6 +48,7 @@ export { resolveRenderDoc, MachineExportError, type MachineRenderFlags } from '.
 export { dev, type DevOptions, type DevServer } from './dev.js';
 export { importCommand, type ImportOptions, type ImportCommandResult } from './import.js';
 export { diffCommand, snapshotAt, evaluateAt, type DiffOptions, type DiffResult } from './diff.js';
+export { repinCommand, DEFAULT_FRAMES, DEFAULT_FPS, type RepinOptions, type RepinResult, type RepinFrame, type RepinStatus } from './repin.js';
 export {
   lintNarration,
   hasErrors,

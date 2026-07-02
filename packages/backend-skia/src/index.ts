@@ -30,6 +30,10 @@ type Drawable = Canvas | Image;
 
 export type { TextMetricsLite } from '@glissade/scene';
 
+// Perceptual golden tier (0.37) — SSIM scalar + per-tile map + heat-map, shared
+// by the PARITY suite and `gs repin`. The headless twin's metric, never on the embed path.
+export { ssim, ssimMap, heatmapRgba, type SsimMap } from './perceptual.js';
+
 /**
  * Factory-time measurement (§3.6): component factories run before any scene
  * exists, so give the process a real measurer up front —

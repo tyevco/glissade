@@ -115,6 +115,12 @@ export function computeMixHash(modulePath: string, extraInputs?: readonly string
 export const DEFAULT_CACHE_MAX_SIZE: number;
 
 // @public (undocumented)
+export const DEFAULT_FPS = 60;
+
+// @public
+export const DEFAULT_FRAMES: number[];
+
+// @public (undocumented)
 export const DEFAULT_PROFILE_ID = "youtube";
 
 // @public (undocumented)
@@ -539,6 +545,59 @@ export interface RenderShardedArgs {
     // (undocumented)
     writeCueSidecars: (target: string, markers: CompiledTimeline['markers'], duration: number, chapters: boolean, chapterKinds?: ReadonlySet<string>) => string[];
 }
+
+// @public (undocumented)
+export function repinCommand(opts: RepinOptions): Promise<RepinResult>;
+
+// @public (undocumented)
+export interface RepinFrame {
+    blocked?: boolean;
+    cause?: string;
+    // (undocumented)
+    frame: number;
+    heatmap?: string;
+    minSsim?: number;
+    ssim?: number;
+    // (undocumented)
+    status: RepinStatus;
+    // (undocumented)
+    t: number;
+    wrote: boolean;
+}
+
+// @public (undocumented)
+export interface RepinOptions {
+    floor?: number;
+    force?: boolean;
+    fps?: number;
+    frames?: number[];
+    goldenDir: string;
+    heatmapDir?: string;
+    // (undocumented)
+    modulePath: string;
+    name?: string;
+    only?: number[];
+    since?: string;
+    write?: boolean;
+}
+
+// @public (undocumented)
+export interface RepinResult {
+    // (undocumented)
+    blocked: number;
+    causeSource: string | null;
+    // (undocumented)
+    changed: number;
+    // (undocumented)
+    frames: RepinFrame[];
+    // (undocumented)
+    report: string;
+    // (undocumented)
+    wrote: number;
+}
+
+// @public (undocumented)
+export type RepinStatus = 'identical' | 'changed' | 'new' | 'missing';
 
 // @public
 export function resolveAssetPath(url: string, modulePath: string): string;
