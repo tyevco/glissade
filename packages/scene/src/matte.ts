@@ -50,6 +50,12 @@ export class TrackMatte extends Group {
     // world transforms and scene registration behave like any group's children.
     const { content, matte, mode, ...rest } = props;
     super({ ...rest, children: [content, matte] });
+    // fail loud at construction (the trackMatte/Chart/logScale discipline): a
+    // typo'd mode would otherwise ride into pushGroup.matte and reach a backend
+    // as an unknown compositing operation — a silently-broken matte.
+    if (mode !== undefined && mode !== 'alpha' && mode !== 'luma') {
+      throw new Error(`trackMatte mode must be 'alpha' or 'luma', got ${JSON.stringify(mode)}`);
+    }
     this.content = content;
     this.matte = matte;
     this.mode = mode ?? 'alpha';

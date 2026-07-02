@@ -113,6 +113,16 @@ describe('TrackMatte (0.34)', () => {
     if (marked?.op === 'pushGroup') expect(marked.matte).toBe('luma');
   });
 
+  it("fails loud on an invalid mode (the fail-loud discipline; edcc nit)", () => {
+    const c = () => new Rect({ id: 'c', width: 8, height: 8, fill: '#0f0' });
+    const m = () => new Circle({ id: 'm', radius: 4, fill: '#fff' });
+    // @ts-expect-error — a typo'd mode must throw, not silently reach the backend
+    expect(() => trackMatte(c(), m(), { mode: 'bogus' })).toThrow(/must be 'alpha' or 'luma'/);
+    expect(() => trackMatte(c(), m(), { mode: 'alpha' })).not.toThrow();
+    expect(() => trackMatte(c(), m(), { mode: 'luma' })).not.toThrow();
+    expect(() => trackMatte(c(), m())).not.toThrow(); // default
+  });
+
   it('content + matte are real parented children (ids registered, world transforms live)', () => {
     const content = new Rect({ id: 'c', width: 8, height: 8, fill: '#0f0' });
     const matte = new Circle({ id: 'm', radius: 4, fill: '#fff' });

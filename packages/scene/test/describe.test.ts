@@ -352,7 +352,7 @@ vdescribe('describe() construction props', () => {
       "'center'|'top-left'|'top'|'top-right'|'left'|'right'|'bottom-left'|'bottom'|'bottom-right'|[ax,ay]": 'center',
       'SketchStyle': { kind: 'pencil' },
       'HachureSpec': { gap: 4 },
-      'ClipRegion': { w: 10, h: 10 }, // 0.34 Group clip — rect sugar form
+      '{ w, h, r?, x?, y? } | PathSeg[]': { w: 10, h: 10 }, // 0.34 Group clip — rect sugar form
       "'normal'|'italic'": 'normal',
       "'left'|'center'|'right'": 'center',
       "'row'|'column'": 'row',

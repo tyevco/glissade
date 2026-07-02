@@ -29,7 +29,7 @@ Default `position` anchor: `none (no intrinsic box — anchor warns and is ignor
 | `anchor` | `'center'\|'top-left'\|'top'\|'top-right'\|'left'\|'right'\|'bottom-left'\|'bottom'\|'bottom-right'\|[ax,ay]` | no | — |
 | `cache` | `boolean` | no | — |
 | `children` | `Node[]` | no | — |
-| `clip` | `ClipRegion` | no | — |
+| `clip` | `{ w, h, r?, x?, y? } \| PathSeg[]` | no | — |
 
 ```ts
 import { Group, Rect, Text } from '@glissade/scene';

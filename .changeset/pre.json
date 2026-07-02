@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.33.0"
   },
   "changesets": [
+    "compositing-nits",
     "compositing"
   ]
 }

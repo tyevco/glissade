@@ -182,7 +182,7 @@ const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: Constructi
     children: { type: 'Node[]' },
     // 0.34 clip region — LOCAL-space rounded rect ({w,h,r?,x?,y?}) or PathSeg[];
     // construction-only (children paint only inside it)
-    clip: { type: 'ClipRegion' },
+    clip: { type: '{ w, h, r?, x?, y? } | PathSeg[]' },
   },
   Rect: {
     // hand-drawn look (sketch.ts) — geometry-time, not animatable
