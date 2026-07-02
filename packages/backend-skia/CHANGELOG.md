@@ -1,5 +1,64 @@
 # @glissade/backend-skia
 
+## 0.37.0
+
+### Minor Changes
+
+- 001364b: 0.37: `gs repin` — the narration-aware golden reviewer, on a shipped perceptual tier
+
+  The lived pain: one re-narration re-flows every beat, so all of a project's
+  golden PNGs go stale at once and get re-pinned blind with `vitest -u` — the exact
+  thing that makes a re-narration batch un-landable.
+
+  - **`gs repin <scene-module> --golden <dir>`** renders the current scene
+    frame-by-frame against the committed goldens and, for every changed frame,
+    reports a perceptual delta (mean SSIM + the worst 8×8 tile — _where_ it
+    changed) and a one-line **cause** by diffing the scene's
+    `*.narration.timing.json` sibling against a git ref: `seg-4 moved +0.21s:
+re-narration` (a downstream beat is attributed to its upstream shift). Default
+    is a **dry run**; `--write` re-pins, `--only` gates per-frame, `--floor <ssim>`
+    **refuses** a bigger-than-expected drop until `--force`, and `--heatmap <dir>`
+    emits a thermal review PNG. Byte-equality stays the acceptance test — SSIM only
+    explains and gates a divergence, never silently accepts one.
+  - **Perceptual golden tier**: the SSIM metric is promoted from the test-only
+    PARITY helper to a shipped `@glissade/backend-skia` export — `ssim` (scalar,
+    bit-identical to before), `ssimMap` (per-tile grid + worst tile), and
+    `heatmapRgba`. Headless-twin only; never on the browser embed path.
+
+  Determinism hash and all existing goldens are unchanged (no `core`/`scene`/node
+  draw touched).
+
+### Patch Changes
+
+- f6ac53c: 0.37.0-pre.1: gs repin cause-line — attribute the edit site + trace downstream to root (ai-training canary evidence)
+
+  The ai-training canary's real e01-short re-narration found the flagship's headline
+  half-delivered: a re-narration changes the edited segment's **duration** (not its
+  start) and pushes every later beat, but `causeFor()` only attributed _start_
+  shifts — so the actually-edited segment got no cause line, and each downstream
+  beat claimed its own derived shift instead of tracing to the root.
+
+  - **Edit-site attribution**: `diffTiming` now tracks per-segment `deltaDuration`;
+    the edited segment is named by its duration change (`s2 re-narrated (+0.53s
+duration): re-narration`) even though its start didn't move.
+  - **Downstream → root**: a purely-shifted beat is attributed `downstream of s2
+(+0.53s)` — traced to the nearest upstream re-narration — instead of naming its
+    own pushed start.
+  - **Culprit marker**: the report flags the lowest-SSIM changed frame `◀ likely
+edit-site` (a content edit drops SSIM hard; a pure time-shift barely dents it) —
+    works even with no timing sibling.
+  - **`ssimMap` sub-8×8 guard**: an image smaller than one 8×8 tile returns a
+    vacuous mean 1 instead of NaN (0/0).
+  - **Discoverability**: `@glissade/cli`'s shipped README now documents `gs repin`
+    - points to the guide (both canaries flagged that docs/golden-review.md isn't in
+      the npm tarball).
+
+  Determinism/goldens unchanged; the SSIM scalar stays bit-identical for all real
+  (≥8×8) frames.
+
+  - @glissade/core@0.37.0
+  - @glissade/scene@0.37.0
+
 ## 0.37.0-pre.1
 
 ### Patch Changes
