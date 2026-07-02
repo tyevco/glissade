@@ -162,6 +162,15 @@ describe('animation integration', () => {
     expect(glow).toBeDefined();
     expect(g.node.children[0]!.id).toBe('tr/glow'); // first child = lowest z
     expect((glow as { opacity(): number }).opacity()).toBe(0);
+    // default glow is a HARD disc — no blur filter
+    expect((glow as { filters(): unknown[] }).filters()).toEqual([]);
+  });
+
+  it('glow:{blur} adds a Gaussian blur filter for a soft falloff (ai-training nit)', () => {
+    const g = Gauge({ id: 'tr', radius: 100, zones: ZONES, glow: { blur: 12, color: '#3ddc97' } });
+    const glow = byId(g.node, 'tr/glow') as { filters(): { kind: string; radius: number }[]; fill(): string };
+    expect(glow.filters()).toEqual([{ kind: 'blur', radius: 12 }]);
+    expect(glow.fill()).toBe('#3ddc97');
   });
 });
 

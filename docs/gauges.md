@@ -78,7 +78,7 @@ of them with `g.targets(sub, prop)` → `['<id>/<sub>/<prop>']` or
 | `value` / `domain` / `sweep` | Meter mode: value (or signal) → angle across the sweep |
 | `ticks` | boundary ticks at each distinct edge (default true) |
 | `labelSize` / `labelFill` / `fontFamily` | label styling; the apex zone's label is a size up + bold |
-| `glow` | add a center `glow` Circle (opacity 0 — you animate it) |
+| `glow` | add a center `glow` Circle (opacity 0 — you animate it). Hard-edged by default; pass `{ blur }` for a soft Gaussian falloff (a real center-glow) |
 | `position` | where to place the gauge center in the parent |
 
 The zones don't need to be a continuous domain — they're **categorical**, each its

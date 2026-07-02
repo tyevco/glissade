@@ -20,6 +20,7 @@
     "api:update": "node scripts/api-report.mjs --local",
     "docs:api": "node scripts/gen-api-docs.mjs",
     "check:docs-api": "node scripts/gen-api-docs.mjs --check",
+    "check:readme": "node scripts/check-readme-subpaths.mjs",
     "lint": "eslint packages/core/src packages/scene/src"
   },
   "devDependencies": {

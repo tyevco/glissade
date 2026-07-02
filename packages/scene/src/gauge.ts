@@ -107,8 +107,12 @@ export interface GaugeSpec {
    * your own `isPortrait(size)`.
    */
   apexEmphasis?: boolean | number;
-  /** add a center glow Circle (`glow` sub-id, opacity 0 — author animates it). */
-  glow?: boolean | { color?: string; radius?: number };
+  /**
+   * add a center glow Circle (`glow` sub-id, opacity 0 — author animates it).
+   * By default it's a HARD-edged disc; pass `{ blur }` for a soft falloff (a
+   * Gaussian blur filter, stdDeviation px) so it reads as a real center-glow.
+   */
+  glow?: boolean | { color?: string; radius?: number; blur?: number };
   /** where to place the gauge center in the parent (default the parent origin). */
   position?: readonly [number, number];
 }
@@ -188,7 +192,14 @@ export function Gauge(spec: GaugeSpec): GaugeResult {
   if (spec.glow) {
     const g = typeof spec.glow === 'object' ? spec.glow : {};
     children.push(
-      new Circle({ id: cid('glow'), radius: g.radius ?? radius * 0.5, fill: g.color ?? '#ffffff', opacity: 0 }),
+      new Circle({
+        id: cid('glow'),
+        radius: g.radius ?? radius * 0.5,
+        fill: g.color ?? '#ffffff',
+        opacity: 0,
+        // a soft falloff on request (a real center-glow, not a hard disc)
+        ...(g.blur !== undefined && g.blur > 0 ? { filters: [{ kind: 'blur' as const, radius: g.blur }] } : {}),
+      }),
     );
   }
 
