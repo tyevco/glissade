@@ -26,6 +26,7 @@ import motionblur from './scenes/golden-motionblur.js';
 import chart from './scenes/golden-chart.js';
 import compositing from './scenes/golden-compositing.js';
 import boxtext from './scenes/golden-boxtext.js';
+import component from './scenes/golden-component.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
@@ -62,6 +63,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   chart: { mod: chart, blurb: 'The data-motion stack: Chart() binds a table → bar chart as a pure build-time fan-out (like Grid), each bar a Rect pinned to the axis and grown from its base. The bars rise in staggered, then RACE to a second dataset — all from ordinary per-bar height tracks, colours from a value ramp. Byte-compared on Skia in CI.' },
   compositing: { mod: compositing, blurb: 'The compositing pair: a Group clipped to a rounded card (tiles slide through, pixels bitten at the edge), an alpha-matte IRIS revealing art through an animated circle, and a LUMA wipe — brightness becomes alpha via one deterministic CPU kernel, byte-exact on Skia.' },
   boxtext: { mod: boxtext, blurb: 'Text box-valign: the top row is baseline-anchored (labels ride high/low in their pills — the fontSize*0.35 bug), the bottom row uses box:{valign:\'center\'} so each label\'s real ink centers in its pill — single-line, descenders, and multi-line alike. Byte-compared on Skia.' },
+  component: { mod: component, blurb: 'defineComponent: a reusable typed LowerThird (accent bar + clipped name/title) defined ONCE and instanced three times — each instance namespaces its children under its own id, so the three stagger in independently from one definition. describe().components lists its prop surface. Byte-compared on Skia.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
 };
 

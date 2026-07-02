@@ -33,6 +33,7 @@ import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
 import goldenCompositing from '../../examples/src/scenes/golden-compositing.js';
 import goldenBoxText from '../../examples/src/scenes/golden-boxtext.js';
+import goldenComponent from '../../examples/src/scenes/golden-component.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
@@ -178,6 +179,8 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'compositing', mod: goldenCompositing },
   // 0.35 Text box-valign: baseline-anchored vs ink-centered pills
   { name: 'boxtext', mod: goldenBoxText },
+  // 0.36 defineComponent: one LowerThird component instanced 3× (independent namespaces)
+  { name: 'component', mod: goldenComponent },
   // following a morphing path live (re-sample as 'route/d' bends)
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)

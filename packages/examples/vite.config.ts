@@ -25,6 +25,7 @@ export default defineConfig({
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene/grid': src('scene').replace('index.ts', 'grid.ts'),
       '@glissade/scene/chart': src('scene').replace('index.ts', 'chart.ts'),
+      '@glissade/scene/component': src('scene').replace('index.ts', 'component.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),
       '@glissade/scene/diagnostics': src('scene').replace('index.ts', 'diagnostics.ts'),
       '@glissade/scene/tokens': src('scene').replace('index.ts', 'tokens.ts'),

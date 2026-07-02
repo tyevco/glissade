@@ -773,6 +773,16 @@ Import from `@glissade/scene/chart`.
 Chart({ id, data: Row[], xKey, yKey, width, height, yScale?, bandPadding?, fill?: string | ColorScale }): { node: Group, bars: Rect[], targets(prop): string[] }
 ```
 
+### `defineComponent`
+
+Define a reusable, typed, describe()-legible animated subscene — the user-defined generalization of Grid/Chart. Returns a factory (props & { id }) => { node, childId, targets }; each instance namespaces its children under the required id so N instances never collide track targets. Pure build-time. describe().components lists every one defined. On the @glissade/scene/component subpath.
+
+Import from `@glissade/scene/component`.
+
+```ts
+defineComponent({ name, props: { <p>: { type, required? } }, build(props, childId): Group }): (props & { id }) => { node: Group, id, childId(sub?), targets(child, prop) }
+```
+
 ### `linearScale`
 
 A serializable linear scale (value axis): maps a numeric domain onto a pixel/unit range. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.

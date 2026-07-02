@@ -24,6 +24,7 @@ import { easings, listValueTypes } from '@glissade/core';
 import { Group, Rect, Circle, Path, Text, ImageNode, Video } from './nodes.js';
 import { type Node } from './node.js';
 import { BASE_CONSTRUCTION_PROP_NAMES, NODE_CONSTRUCTION_PROP_NAMES } from './constructionProps.js';
+import { listComponents } from './component.js';
 
 // Lockstep `0.x` versioning bumps every @glissade package together, so scene's
 // own version IS the glissade version. The `__GLISSADE_VERSION__` sentinel below
@@ -88,6 +89,17 @@ export interface DescribedNode {
   subpath?: string;
 }
 
+/**
+ * One user-defined `defineComponent()` in the manifest (0.36) — a reusable
+ * animated subscene's public prop surface, so an agent/studio sees what it
+ * accepts. Generated from the LIVE component registry, so it can't drift.
+ */
+export interface DescribedComponent {
+  name: string;
+  /** the component's public props: name → { type, required? } (construction-time). */
+  props: { [prop: string]: { type: string; required?: boolean } };
+}
+
 export interface DescribedBuilderMethod {
   name: string;
   signature: string;
@@ -131,6 +143,9 @@ export interface ApiManifest {
    * `name` is also a `window.glissade.<name>` global on the IIFE.
    */
   helpers: DescribedHelper[];
+  /** user-defined components registered via defineComponent() (0.36); present
+   *  from describe() (possibly empty), absent on manifests captured before 0.36. */
+  components?: DescribedComponent[];
   createScene: string;
   subpaths: { [entry: string]: string };
 }
@@ -553,6 +568,14 @@ const HELPERS: DescribedHelper[] = [
       "Chart({ id, data: Row[], xKey, yKey, width, height, yScale?, bandPadding?, fill?: string | ColorScale }): { node: Group, bars: Rect[], targets(prop): string[] }",
   },
   {
+    name: 'defineComponent',
+    summary:
+      'Define a reusable, typed, describe()-legible animated subscene — the user-defined generalization of Grid/Chart. Returns a factory (props & { id }) => { node, childId, targets }; each instance namespaces its children under the required id so N instances never collide track targets. Pure build-time. describe().components lists every one defined. On the @glissade/scene/component subpath.',
+    import: '@glissade/scene/component',
+    usage:
+      'defineComponent({ name, props: { <p>: { type, required? } }, build(props, childId): Group }): (props & { id }) => { node: Group, id, childId(sub?), targets(child, prop) }',
+  },
+  {
     name: 'linearScale',
     summary:
       'A serializable linear scale (value axis): maps a numeric domain onto a pixel/unit range. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.',
@@ -645,6 +668,16 @@ export function registerExamples(corpus: { readonly [key: string]: readonly stri
   exampleCorpus = corpus;
 }
 
+function mapComponentProps(props: { readonly [prop: string]: { type: string; required?: boolean } }): {
+  [prop: string]: { type: string; required?: boolean };
+} {
+  const out: { [prop: string]: { type: string; required?: boolean } } = {};
+  for (const [k, v] of Object.entries(props)) {
+    out[k] = { type: v.type, ...(v.required ? { required: true } : {}) };
+  }
+  return out;
+}
+
 export function describe(opts: DescribeOptions = {}): ApiManifest {
   // examples attach only when explicitly requested AND a corpus is registered;
   // otherwise the manifest is byte-identical to the legacy zero-arg form.
@@ -678,6 +711,8 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     // snapshot, splitText) — several live above scene in the dep graph, so this
     // is a hand-kept literal, drift-guarded by @glissade/browser's smoke test.
     helpers: withEx ? HELPERS.map((h) => ({ ...h, ...ex(h.name) })) : HELPERS,
+    // 0.36: user-defined components from the live registry (empty by default)
+    components: listComponents().map((c) => ({ name: c.name, props: mapComponentProps(c.props) })),
     // The full construct-a-scene surface: the size + children AND the asset
     // manifest (so Image/Video `assetId` resolves to a real media URL). An
     // `assetId` on a node names an entry in this `assets` map.

@@ -19,6 +19,7 @@ export default defineConfig({
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),
       '@glissade/scene/grid': src('scene').replace('index.ts', 'grid.ts'),
       '@glissade/scene/chart': src('scene').replace('index.ts', 'chart.ts'),
+      '@glissade/scene/component': src('scene').replace('index.ts', 'component.ts'),
       '@glissade/scene/path': src('scene').replace('index.ts', 'path.ts'),
       '@glissade/scene/describe': src('scene').replace('index.ts', 'describe.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),

@@ -62,6 +62,10 @@ export { Grid } from '@glissade/scene/grid';
 // data-viz author reaches for `window.glissade.Chart` + the scale factories, so
 // the convenience bundle re-exports them here (same rationale as Grid/splitText).
 export { Chart, linearScale, logScale, bandScale, colorRamp } from '@glissade/scene/chart';
+// 0.36 defineComponent (reusable typed subscenes) — a build-time factory like Grid/
+// Chart on the tree-shakeable /component subpath; the no-build author reaches for
+// window.glissade.defineComponent to build a component library.
+export { defineComponent, childId, ComponentError, type ComponentDef, type ComponentInstance, type ComponentPropSpec } from '@glissade/scene/component';
 // `motionPath` / `followPath` (the §3 motion-path follow helper) moved to the
 // tree-shakeable `@glissade/scene/motion` subpath in the 0.20 budget review (off
 // the base scene index, off the base-embed budget). It is a USER-FACING helper
