@@ -351,7 +351,7 @@ export interface MachineRenderFlags {
 }
 
 // @public
-export function masterAfChain(gainDb: number, limiter: CommittedLimiter | null): string;
+export function masterAfChain(gainDb: number, limiter: CommittedLimiter | null): Promise<string>;
 
 // Warning: (ae-forgotten-export) The symbol "MasterCommandOptions" needs to be exported by the entry point index.d.ts
 //

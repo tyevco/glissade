@@ -5,13 +5,14 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { resolveProfile, loudnessPathFor, parseLoudnormJson } from '../src/loudness.js';
 import { ffmpegAvailable, render } from '../src/render.js';
+import { loudnessFilterNodes } from '../src/audioMix.js';
 import { planMaster, normalizeMasterConfig, masterCommand, MasterError, DEFAULT_MAX_GR_DB } from '../src/master.js';
 
 const youtube = resolveProfile('youtube'); // target -14, ceiling -1
@@ -93,6 +94,27 @@ describe('planMaster — shared target + limiter', () => {
   });
 });
 
+describe('loudnessFilterNodes — the true-peak limiter chain (0.39.0-pre.1 fix)', () => {
+  it('emits an OVERSAMPLED limiter (real true-peak), not a bare sample-peak limit', () => {
+    const nodes = loudnessFilterNodes(8, { ceilingDb: -1 });
+    // oversample up → alimiter → downsample: the pre.0 bug was a bare `alimiter`
+    // (sample-peak) that left the inter-sample/true peak clipping over the ceiling.
+    expect(nodes.filter((n) => n.startsWith('aresample=')).length).toBe(2);
+    expect(nodes).toContain('aresample=192000');
+    expect(nodes).toContain('aresample=48000');
+    expect(nodes.some((n) => n.startsWith('alimiter=limit='))).toBe(true);
+    // the limit is set BELOW the ceiling (the TP guard), not at it
+    const lim = nodes.find((n) => n.startsWith('alimiter='))!;
+    const limit = Number(lim.match(/limit=([\d.]+)/)![1]);
+    expect(limit).toBeLessThan(Math.pow(10, -1 / 20)); // below -1 dBFS sample-limit
+  });
+
+  it('gain-only (no limiter) stays a pure scalar — byte-identical to before', () => {
+    expect(loudnessFilterNodes(5)).toEqual(['volume=5dB']);
+    expect(loudnessFilterNodes(0)).toEqual([]); // 0 dB, no limiter → no-op
+  });
+});
+
 describe('normalizeMasterConfig', () => {
   it('limiter is ON by default (the whole point); profile defaults to youtube', () => {
     const c = normalizeMasterConfig({ members: ['e*.ts'] });
@@ -117,11 +139,18 @@ describe('normalizeMasterConfig', () => {
 // ---- end-to-end gs master (ffmpeg-gated) ----
 
 describe.runIf(ffmpegAvailable())('gs master end-to-end', () => {
-  const scene = 'packages/examples/src/scenes/with-audio.ts';
-  const abs = fileURLToPath(new URL('../../examples/src/scenes/with-audio.ts', import.meta.url));
+  // ISOLATION: use a sibling COPY of with-audio.ts (same dir → its `./golden-bounce`
+  // import + `../../assets/tone-440.wav` asset still resolve) so its committed
+  // `.loudness.json` lands at a distinct path — loudness.test.ts also uses
+  // with-audio.ts, and both files run in parallel; sharing the sidecar races.
+  const scenesDir = fileURLToPath(new URL('../../examples/src/scenes/', import.meta.url));
+  const abs = join(scenesDir, 'with-audio.__mastertest__.ts');
+  const scene = relative(process.cwd(), abs);
+  cpSync(join(scenesDir, 'with-audio.ts'), abs);
   const outDir = mkdtempSync(join(tmpdir(), 'glissade-master-e2e-'));
   afterAll(() => {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(abs, { force: true });
     rmSync(loudnessPathFor(abs), { force: true });
   });
 
@@ -167,4 +196,19 @@ describe.runIf(ffmpegAvailable())('gs master end-to-end', () => {
     expect(r.limiter).toBe(false);
     expect(r.members[0]!.measurement.limiter).toBeUndefined();
   }, 120_000);
+
+  it('REGRESSION (card mIoSZoacbuHM): the limiter holds a HOT peaky source under the true-peak ceiling', () => {
+    // reproduce the pre.0 defect scenario: clipped broadband noise has huge
+    // inter-sample peaks — a SAMPLE-peak limiter (the bug) leaves the TRUE peak
+    // clipping over the ceiling; the oversampled limiter holds it under.
+    const src = join(outDir, 'hot.wav');
+    spawnSync('ffmpeg', ['-hide_banner', '-y', '-f', 'lavfi', '-i', 'anoisesrc=d=1.5:c=white:a=0.9:r=48000', '-af', 'volume=18dB,alimiter=limit=0.999:level=disabled', '-c:a', 'pcm_s16le', src]);
+    expect(truePeak(src)).toBeGreaterThan(0); // the source really does overshoot (ISP)
+    // apply the SAME committed chain a render applies (gain + the true-peak limiter)
+    const af = loudnessFilterNodes(6, { ceilingDb: -1 }).join(',');
+    const out = join(outDir, 'hot.mastered.wav');
+    spawnSync('ffmpeg', ['-hide_banner', '-y', '-i', src, '-af', af, '-c:a', 'pcm_s16le', out]);
+    // the rendered TRUE peak lands under the ceiling (was +4.65 dBTP with the bug)
+    expect(truePeak(out)).toBeLessThanOrEqual(-1 + 0.05);
+  }, 60_000);
 });

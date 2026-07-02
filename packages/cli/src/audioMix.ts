@@ -68,35 +68,62 @@ export interface AudioMixPlan {
   hasEasedGain: boolean;
 }
 
+/** The mix sample rate the limiter oversamples around (glissade mixes at 48 kHz). */
+const MIX_RATE = 48000;
+/** 4× oversampling for the true-peak limiter — reconstructs inter-sample peaks. */
+const TP_OVERSAMPLE = MIX_RATE * 4;
+/**
+ * True-peak guard (dB): the sample-peak limit is set this far BELOW the ceiling so
+ * the downsample-reconstructed TRUE peak lands under `ceilingDb`. Empirically the
+ * 4× oversample→limit→downsample residue is ~0.5 dB on worst-case (clipped-noise)
+ * content; 0.8 gives a comfortable margin (worst case measured −1.31 dBTP for a −1
+ * ceiling) without over-attenuating real beds. WITHOUT the oversample, `alimiter`
+ * is a SAMPLE-peak brickwall that leaves the true peak clipping over the ceiling
+ * (the 0.39.0-pre.0 defect — mode:'truepeak' didn't hold dBTP).
+ */
+const TP_GUARD_DB = 0.8;
+
+/**
+ * The publish-loudness filter nodes: a `volume=<gain>dB` multiply, and — for a
+ * `gs master` measurement — a REAL true-peak limiter (oversample 4× → `alimiter`
+ * at `ceilingDb − guard` → downsample) that actually holds the inter-sample /
+ * true peak under `ceilingDb`. Shared by the render `filter_complex` apply and the
+ * `gs master` verify pass so the committed limiter and the rendered output are the
+ * identical deterministic chain. Empty (a no-op) at 0 dB with no limiter.
+ */
+export function loudnessFilterNodes(gainDb: number, limiter?: { readonly ceilingDb: number }): string[] {
+  const nodes: string[] = [];
+  if (gainDb !== 0) nodes.push(`volume=${gainDb}dB`);
+  if (limiter) {
+    const limit = Math.pow(10, (limiter.ceilingDb - TP_GUARD_DB) / 20).toFixed(6);
+    nodes.push(
+      `aresample=${TP_OVERSAMPLE}`,
+      `alimiter=limit=${limit}:level=disabled`,
+      `aresample=${MIX_RATE}`,
+    );
+  }
+  return nodes;
+}
+
 /**
  * Append the publish-loudness stage to a mix's `-filter_complex`: the graph's
- * final `[aout]` label is renamed and a `volume=<gain>dB` node (plus, for a
- * `gs master` measurement, an `alimiter` holding the true peak at `ceilingDb`)
- * feeds the new `[aout]`. The gain is a single multiply on the FINAL mix node —
- * NOT a second ffmpeg pass — bit-deterministic + golden-hashable. A gain of
- * exactly 0 dB with NO limiter is a no-op (returned unchanged) so an at-target
- * source preserves the prior, un-gained bytes. The limiter is the ONLY non-linear
- * stage; it's baked from committed params so it stays deterministic.
+ * final `[aout]` label is renamed and the {@link loudnessFilterNodes} (gain +,
+ * for a master, the true-peak limiter) feed the new `[aout]`. Bit-deterministic +
+ * golden-hashable. A 0 dB gain with NO limiter is a no-op (returned unchanged) so
+ * an at-target source preserves the prior, un-gained bytes.
  */
 export function applyMixGainDb(
   filterComplex: string,
   gainDb: number,
   limiter?: { readonly ceilingDb: number },
 ): string {
-  const chain: string[] = [];
-  if (gainDb !== 0) chain.push(`volume=${gainDb}dB`);
-  if (limiter) {
-    // brickwall the true peak at the ceiling (linear threshold). level=disabled →
-    // no auto-leveling, just the ceiling hold. Deterministic on a pinned ffmpeg.
-    const limit = Math.pow(10, limiter.ceilingDb / 20).toFixed(6);
-    chain.push(`alimiter=limit=${limit}:level=disabled`);
-  }
-  if (chain.length === 0) return filterComplex; // 0 dB, no limiter → byte-identical no-op
+  const nodes = loudnessFilterNodes(gainDb, limiter);
+  if (nodes.length === 0) return filterComplex; // 0 dB, no limiter → byte-identical no-op
   const marker = '[aout]';
   const at = filterComplex.lastIndexOf(marker);
   if (at < 0) throw new AudioMixError('mix filter graph has no [aout] to apply the loudness gain to');
   const head = filterComplex.slice(0, at) + '[apreg]' + filterComplex.slice(at + marker.length);
-  return `${head};[apreg]${chain.join(',')}[aout]`;
+  return `${head};[apreg]${nodes.join(',')}[aout]`;
 }
 
 /** Build the FFmpeg mix plan for clips that intersect [0, duration]. */

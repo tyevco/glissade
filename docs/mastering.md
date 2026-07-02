@@ -60,9 +60,12 @@ block) with the same **mixHash** binding to the mix content. So:
   invalidates the master loudly, before frame 1), and
 - because the mix *content* didn't change, applying a master is a **mix-only remux
   (~20 s/asset)** — `gs render` copies the existing video stream and re-muxes the
-  audio through `volume=<gain>dB, alimiter=…`, never re-rendering frames.
+  audio through the committed gain + limiter, never re-rendering frames.
 
-The limiter is the one non-linear stage; it's baked from the committed params in
-the audio filter graph (deterministic on a pinned ffmpeg), so a mastered render is
-still byte-identical run-to-run. Visual determinism is untouched — this is an
+The limiter is a **real true-peak** brickwall: it oversamples 4× so the `alimiter`
+sees and holds the inter-sample peaks, then downsamples — a plain sample-peak
+`alimiter` at a dBFS threshold would leave the true peak clipping over the ceiling.
+It's the one non-linear stage, baked from the committed params in the audio filter
+graph (deterministic on a pinned ffmpeg), so a mastered render is byte-identical
+run-to-run. Visual determinism is untouched — this is an
 audio-only pass.

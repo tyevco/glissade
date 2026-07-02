@@ -158,12 +158,15 @@ function round2(n: number): number {
 
 // ── the ffmpeg shell + command ───────────────────────────────────────────────
 
-/** The `-af` chain that applies a master's gain + (optional) limiter to a WAV. */
-export function masterAfChain(gainDb: number, limiter: CommittedLimiter | null): string {
-  const chain: string[] = [];
-  if (gainDb !== 0) chain.push(`volume=${gainDb}dB`);
-  if (limiter) chain.push(`alimiter=limit=${Math.pow(10, limiter.ceilingDb / 20).toFixed(6)}:level=disabled`);
-  return chain.length ? chain.join(',') : 'anull';
+/**
+ * The `-af` chain that applies a master's gain + (optional) TRUE-peak limiter to a
+ * WAV — the SAME {@link loudnessFilterNodes} the render `filter_complex` applies,
+ * so the `gs master` verify pass measures exactly what a render will produce.
+ */
+export async function masterAfChain(gainDb: number, limiter: CommittedLimiter | null): Promise<string> {
+  const { loudnessFilterNodes } = await import('./audioMix.js');
+  const nodes = loudnessFilterNodes(gainDb, limiter ?? undefined);
+  return nodes.length ? nodes.join(',') : 'anull';
 }
 
 export interface MasterMemberResult {
@@ -247,7 +250,7 @@ export async function masterCommand(opts: MasterCommandOptions): Promise<MasterR
       const p = plan.members[i]!;
       // apply gain+limiter to a temp WAV and re-measure — the honest OUTPUT number
       const outWav = join(tmp, `${i}.out.wav`);
-      const af = masterAfChain(p.gain, committedLimiter);
+      const af = await masterAfChain(p.gain, committedLimiter);
       const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-y', '-i', meas.wavPath, '-af', af, '-c:a', 'pcm_s16le', '-ar', '48000', outWav], { encoding: 'utf8' });
       if (r.status !== 0) throw new MasterError(`ffmpeg master apply failed for ${meas.id} (exit ${r.status}):\n${(r.stderr ?? '').slice(-800)}`);
       const out = measureFile(outWav);
