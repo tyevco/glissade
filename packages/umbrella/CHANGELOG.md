@@ -1,5 +1,13 @@
 # glissade
 
+## 0.37.0-pre.0
+
+### Patch Changes
+
+- @glissade/core@0.37.0-pre.0
+- @glissade/player@0.37.0-pre.0
+- @glissade/scene@0.37.0-pre.0
+
 ## 0.36.0
 
 ### Patch Changes
