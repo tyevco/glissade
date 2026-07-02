@@ -20,6 +20,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
+      '@glissade/core/expr': src('core').replace('index.ts', 'expr.ts'),
       '@glissade/core': src('core'),
       '@glissade/scene/layout-ctors': src('scene').replace('index.ts', 'layoutCtors.ts'),
       '@glissade/scene/layout': src('scene').replace('index.ts', 'layout.ts'),

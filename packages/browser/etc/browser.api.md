@@ -10,11 +10,17 @@ import { Chart } from '@glissade/scene/chart';
 import { childId } from '@glissade/scene/component';
 import { colorRamp } from '@glissade/scene/chart';
 import { Column } from '@glissade/scene/layout-ctors';
+import { CompiledExpr } from '@glissade/core/expr';
+import { compileExpr } from '@glissade/core/expr';
 import { ComponentDef } from '@glissade/scene/component';
 import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
 import { defineComponent } from '@glissade/scene/component';
+import { EXPR_CONSTANTS } from '@glissade/core/expr';
+import { EXPR_FUNCTIONS } from '@glissade/core/expr';
+import { ExprError } from '@glissade/core/expr';
+import { exprTrack } from '@glissade/core/expr';
 import { fitText } from '@glissade/scene/type';
 import { fitTextGroup } from '@glissade/scene/type';
 import { FitTextOpts } from '@glissade/scene/type';
@@ -58,6 +64,10 @@ export { colorRamp }
 
 export { Column }
 
+export { CompiledExpr }
+
+export { compileExpr }
+
 export { ComponentDef }
 
 export { ComponentError }
@@ -67,6 +77,14 @@ export { ComponentInstance }
 export { ComponentPropSpec }
 
 export { defineComponent }
+
+export { EXPR_CONSTANTS }
+
+export { EXPR_FUNCTIONS }
+
+export { ExprError }
+
+export { exprTrack }
 
 export { fitText }
 

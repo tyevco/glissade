@@ -499,7 +499,7 @@ export interface ResolvedFace {
     weight: number;
 }
 
-// @public (undocumented)
+// @public
 export function resolveEase(spec: EaseSpec | undefined): EasingFn;
 
 // @public
@@ -776,6 +776,7 @@ export class TimelineValidationError extends Error {
 export interface Track<T = unknown> {
     additive?: boolean;
     editable?: boolean;
+    expr?: string;
     keys: Key<T>[];
     target: string;
     // (undocumented)

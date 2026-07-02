@@ -22,6 +22,11 @@ export * from '@glissade/core';
 // surface, so re-export it here (NOT from the core base index, which would pull
 // it into the core/index size budget).
 export * from '@glissade/core/clips';
+// Expr (0.40): the formula evaluator + exprTrack live on `@glissade/core/expr`
+// (off the base embed). The convenience bundle exposes the whole authoring surface,
+// so re-export it here — this also registers the compiler seam, so a no-build
+// author's `window.glissade.exprTrack('x/y', 'sin(t)')` just works.
+export { exprTrack, compileExpr, ExprError, EXPR_FUNCTIONS, EXPR_CONSTANTS, type CompiledExpr } from '@glissade/core/expr';
 export * from '@glissade/scene';
 // The SVG `d`-string parser lives on the tree-shaken `@glissade/scene/path`
 // subpath (off the base scene index for the scene budget). The single-file

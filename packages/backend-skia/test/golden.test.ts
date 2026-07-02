@@ -32,6 +32,7 @@ import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
 import goldenGauge from '../../examples/src/scenes/golden-gauge.js';
+import goldenExpr from '../../examples/src/scenes/golden-expr.js';
 import goldenCompositing from '../../examples/src/scenes/golden-compositing.js';
 import goldenBoxText from '../../examples/src/scenes/golden-boxtext.js';
 import goldenComponent from '../../examples/src/scenes/golden-component.js';
@@ -179,6 +180,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // (build-time fan-out), a scripted needle swing that settles center while the
   // extreme zones dim independently of their full-brightness labels
   { name: 'gauge', mod: goldenGauge },
+  // the Expr authoring stack: every prop a formula of t (Lissajous orbits +
+  // pulsing radii/opacity) via tl.expr — no keyframes, pure function of time
+  { name: 'expr', mod: goldenExpr },
   // the compositing pair (0.34): clip-on-Group (sliding tiles bitten by a card
   // region) + alpha-matte iris + luma gradient wipe — all plain tracks
   { name: 'compositing', mod: goldenCompositing },

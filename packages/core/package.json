@@ -21,6 +21,10 @@
       "types": "./dist/clips.d.ts",
       "default": "./dist/clips.js"
     },
+    "./expr": {
+      "types": "./dist/expr.d.ts",
+      "default": "./dist/expr.js"
+    },
     "./sidecar": {
       "types": "./dist/sidecar.d.ts",
       "default": "./dist/sidecar.js"

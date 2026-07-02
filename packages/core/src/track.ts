@@ -17,6 +17,19 @@ import { spring as springFactory, springEasing, springEasingDerivative, type Spr
 import { emitDevWarning } from './devWarning.js';
 import { getValueType, type ValueTypeId } from './valueTypes.js';
 
+// ── Expr seam (0.40) ─────────────────────────────────────────────────────────
+// The formula evaluator lives OFF the base embed on `@glissade/core/expr` (it's a
+// ~1.4 kB parser). Importing that entry registers the compiler here; the base
+// sampler only carries this tiny seam, so a scene that never uses an expr track
+// pays nothing. sampleTrack/validateTrack call the registered compiler.
+type ExprEvalFn = (t: number) => number;
+let exprCompiler: ((src: string) => ExprEvalFn) | null = null;
+/** Register the expr compiler (called on `@glissade/core/expr` import). */
+export function setExprCompiler(fn: (src: string) => ExprEvalFn): void {
+  exprCompiler = fn;
+}
+const NO_EXPR = "expr tracks need `import '@glissade/core/expr'`";
+
 export interface Key<T = unknown> {
   t: number;
   value: T;
@@ -37,6 +50,14 @@ export interface Track<T = unknown> {
   type: ValueTypeId;
   /** Sorted by t; enforced by validateTrack(). */
   keys: Key<T>[];
+  /**
+   * Expr (0.40): a serializable math-formula of the playhead `t`
+   * (e.g. `'100 + 50*sin(t*2)'`). When set, the track is sampled by evaluating the
+   * formula at `t` instead of interpolating `keys` (which may be empty). `type`
+   * must be 'number'. Compiled once + cached; a pure function of `t` (+ seeded
+   * `rand`), so the SAME time channel + determinism as keyframes.
+   */
+  expr?: string;
   /** Studio may own this track's keys via sidecar (§6.2). */
   editable?: boolean;
   /** Reserved (§2.2/§B.6): v2 additive blending. v1 accepts but ignores it (coalesce stays last-wins). */
@@ -50,8 +71,29 @@ export class TrackValidationError extends Error {
   }
 }
 
+const TARGET_SHAPE = /^[^/]+\/.+$/;
+const TARGET_MSG = "target must be '<nodeId>/<prop.path>' (e.g. 'circle/opacity')";
+
 export function validateTrack(track: Track): void {
   const vt = getValueType(track.type); // throws on unknown type
+  if (!TARGET_SHAPE.test(track.target)) throw new TrackValidationError(track.target, TARGET_MSG);
+  // Expr (0.40): a formula track is validated by compiling its expression (fail
+  // loud on bad syntax / unknown fn / arity) — it needs no keys, but MUST be
+  // numeric. Compile-validated eagerly when `@glissade/core/expr` is imported
+  // (compiler registered); otherwise checked at first sample.
+  if (track.expr !== undefined) {
+    if (track.type !== 'number') {
+      throw new TrackValidationError(track.target, `an expr track must be type 'number' (got '${track.type}')`);
+    }
+    if (exprCompiler) {
+      try {
+        exprCompiler(track.expr);
+      } catch (e) {
+        throw new TrackValidationError(track.target, `invalid expr: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return;
+  }
   if (track.keys.length === 0) {
     throw new TrackValidationError(track.target, 'must have at least one key');
   }
@@ -103,12 +145,6 @@ export function validateTrack(track: Track): void {
         `keys must be strictly increasing in t (key[${i}] at t=${cur.t} after t=${prev.t})`,
       );
     }
-  }
-  if (!/^[^/]+\/.+$/.test(track.target)) {
-    throw new TrackValidationError(
-      track.target,
-      "target must be '<nodeId>/<prop.path>' (e.g. 'circle/opacity')",
-    );
   }
 }
 
@@ -259,6 +295,18 @@ export function track<T>(
   return tr;
 }
 
+/**
+ * Expr (0.40): build a raw formula-driven numeric track — `{ target, type:
+ * 'number', keys: [], expr }`. The public `exprTrack()` (on `@glissade/core/expr`,
+ * which also registers the evaluator) wraps this + validates. Kept here (base) so
+ * `tl.expr` can emit a track without dragging the evaluator onto the embed.
+ */
+export function makeExprTrack(target: string, formula: string): Track<number> {
+  const tr: Track<number> = { target, type: 'number', keys: [], expr: formula };
+  validateTrack(tr as Track);
+  return tr;
+}
+
 // --- sampling ---
 
 export function resolveEase(spec: EaseSpec | undefined): EasingFn {
@@ -300,6 +348,8 @@ interface SamplerState {
   easeCache: (EasingFn | undefined)[];
   /** True once we've warned that a non-extrapolating type clamped an out-of-range eased value. */
   warnedClamp?: boolean;
+  /** Expr (0.40): the compiled formula evaluator, lazily compiled on first sample + cached. */
+  exprEval?: ExprEvalFn;
 }
 
 const samplerStates = new WeakMap<Track, SamplerState>();
@@ -376,6 +426,15 @@ export function velocityAt<T>(tr: Track<T>, t: number): T | null {
 
 /** Pure sample of a track at time t (§2.4). */
 export function sampleTrack<T>(tr: Track<T>, t: number): T {
+  // Expr (0.40): a formula-driven track evaluates its compiled expression at the
+  // playhead `t` instead of interpolating keys. Compiled once, cached on the
+  // per-track state — pure in `t`, same channel as keyframes.
+  if (tr.expr !== undefined) {
+    const s = state(tr as Track);
+    if (!exprCompiler) throw new TrackValidationError(tr.target, NO_EXPR);
+    s.exprEval ??= exprCompiler(tr.expr);
+    return s.exprEval(t) as T;
+  }
   const keys = tr.keys as Key<T>[];
   const n = keys.length;
   const s = state(tr as Track);

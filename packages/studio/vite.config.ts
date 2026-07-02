@@ -27,6 +27,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
+      '@glissade/core/expr': src('core').replace('index.ts', 'expr.ts'),
       '@glissade/core/studio-host': src('core').replace('index.ts', 'studioHost.ts'),
       '@glissade/core/sidecar': src('core').replace('index.ts', 'sidecar.ts'),
       '@glissade/core': src('core'),

@@ -783,6 +783,16 @@ Import from `@glissade/scene/component`.
 defineComponent({ name, props: { <p>: { type, required? } }, build(props, childId): Group }): (props & { id }) => { node: Group, id, childId(sub?), targets(child, prop) }
 ```
 
+### `exprTrack`
+
+Expr (0.40): drive a numeric prop by a FORMULA of the playhead t instead of keyframes — exprTrack("orb/position.y", "200 + 80*sin(t*2)"), fed via tl.tracks(...). Pure function of t: constants (PI/TAU/E), a math whitelist (sin/cos/clamp/lerp/smoothstep/min/max/mod/floor/…), and seeded rand(x) — no Date/Math.random. Compile-validated, byte-identical determinism to keyframes. On the tree-shakeable @glissade/core/expr subpath (off the base embed).
+
+Import from `@glissade/core/expr`.
+
+```ts
+exprTrack(target: string, formula: string): Track  //  tl.tracks([exprTrack("orb/opacity", "0.5 + 0.5*cos(t)")])
+```
+
 ### `Gauge`
 
 Build-time radial gauge (data-viz, like Chart): a spec → N categorical stroked-arc zones + boundary ticks + a needle + separate labels, returning a Group. Angle deg: 0=up, +=clockwise. Needle takes AUTHORED keys (tl on targets("needle","rotation")) OR value→angle (Meter mode). Zones/ticks/needle/labels are each addressable sub-ids (zone-{i}, tick-{i}, needle, label-{i}, glow); labels draw z-above zones so a zone dim never crushes a label. Tree-shaken off the base scene index.

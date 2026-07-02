@@ -39,6 +39,7 @@ export default defineConfig({
           { text: 'Data-driven charts', link: '/charts' },
           { text: 'Reusable components', link: '/components' },
           { text: 'Radial gauges', link: '/gauges' },
+          { text: 'Formula animation (Expr)', link: '/expr' },
           { text: 'Clipping & track mattes', link: '/compositing' },
           { text: 'Fitting & anchoring text', link: '/text-fitting' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },

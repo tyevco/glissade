@@ -11,6 +11,7 @@ export default defineConfig({
       // greedily prefix-matches, so '@glissade/scene' would otherwise swallow
       // '@glissade/scene/layout'. Mirror this ordering for any new subentry.
       '@glissade/core/clips': src('core').replace('index.ts', 'clips.ts'),
+      '@glissade/core/expr': src('core').replace('index.ts', 'expr.ts'),
       '@glissade/core/i18n': src('core').replace('index.ts', 'i18n.ts'),
       '@glissade/core/studio-host': src('core').replace('index.ts', 'studioHost.ts'),
       '@glissade/core/font-ingest': src('core').replace('index.ts', 'font-ingest.ts'),

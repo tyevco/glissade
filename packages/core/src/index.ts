@@ -109,6 +109,10 @@ export {
   type Track,
   type RetimeSpec,
 } from './track.js';
+// Expr (0.40): the evaluator + exprTrack live on the tree-shakeable
+// `@glissade/core/expr` subpath (OFF the base embed — it's a ~1.4 kB parser).
+// `tl.expr` is on the base builder; importing `@glissade/core/expr` (anywhere)
+// activates it. NOT re-exported here so the evaluator can't leak onto the embed.
 
 export {
   compileTimeline,
