@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.39.0"
   },
   "changesets": [
+    "expr-base-budget-review",
     "expr"
   ]
 }
