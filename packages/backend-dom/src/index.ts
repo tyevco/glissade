@@ -606,6 +606,13 @@ export class DomBackend implements RenderBackend {
           const blend = blendToCss(cmd.blend);
           this.#setStyle(o, wrap, 'mixBlendMode', blend !== 'normal' ? blend : undefined);
           this.#setStyle(o, wrap, 'filter', cmd.filters.length > 0 ? filtersToCanvasFilter(cmd.filters) : undefined);
+          // 0.34 track-matte: destination-in has no faithful CSS analogue on a
+          // retained tree (mask-image needs the matte pre-rasterized). Preview
+          // tier degrades HONESTLY: the matte layer is hidden (rendering it
+          // normally would paint the mask ON TOP of the content) and stamped
+          // data-approx — the content shows unmasked. Never on gs render.
+          this.#setStyle(o, wrap, 'display', cmd.matte !== undefined ? 'none' : undefined);
+          if (cmd.matte !== undefined) wrap.setAttribute('data-approx', 'true');
           // cacheKey is IGNORED (no raster cache in a DOM tree — just render).
           if (cmd.shader !== undefined && !this.#warnedShader) {
             emitDevWarning('@glissade/backend-dom: a ShaderEffect (pushGroup.shader) has no DOM analogue — ignored (caps.shaders=false).');

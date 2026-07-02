@@ -31,7 +31,7 @@ const SKETCH = ['sketch', 'sketchFill', 'sketchSeed'];
 const LAYOUT = ['direction', 'justify', 'align', 'children'];
 
 export const NODE_CONSTRUCTION_PROP_NAMES: { readonly [typeName: string]: readonly string[] } = {
-  Group: ['children'],
+  Group: ['children', 'clip'],
   Rect: SKETCH,
   Circle: SKETCH,
   Path: SKETCH,

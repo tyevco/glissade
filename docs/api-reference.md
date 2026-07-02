@@ -29,6 +29,7 @@ Default `position` anchor: `none (no intrinsic box — anchor warns and is ignor
 | `anchor` | `'center'\|'top-left'\|'top'\|'top-right'\|'left'\|'right'\|'bottom-left'\|'bottom'\|'bottom-right'\|[ax,ay]` | no | — |
 | `cache` | `boolean` | no | — |
 | `children` | `Node[]` | no | — |
+| `clip` | `ClipRegion` | no | — |
 
 ```ts
 import { Group, Rect, Text } from '@glissade/scene';
@@ -627,6 +628,16 @@ import { Circle, motionBlur } from '@glissade/scene';
 // Wrap the MOVING content; its background stays crisp. Byte-exact on Skia, perceptual browser↔Skia.
 const dot = new Circle({ id: 'dot', radius: 16, fill: '#ffcf3f' });
 const blurred = motionBlur(dot, { shutter: 0.06, samples: 16 });
+```
+
+### `trackMatte`
+
+Track-matte: mask CONTENT by a MATTE layer's alpha (default) or luminance ('luma'). Content renders into an isolated layer, then the matte composites destination-in — pixels survive only where the matte is opaque. Both subtrees animate like ordinary nodes (a sliding shape wipes text in, a scaling blob irises a photo). Byte-exact on Skia; browser-vs-Skia pixel parity is perceptual at anti-aliased matte edges; backend-dom (preview tier) degrades with data-approx.
+
+Import from `@glissade/scene`.
+
+```ts
+trackMatte(content: Node, matte: Node, opts?: { id?, mode?: 'alpha' | 'luma' }): TrackMatte
 ```
 
 ### `clip`

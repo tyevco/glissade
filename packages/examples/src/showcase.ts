@@ -24,6 +24,7 @@ import orient from './scenes/golden-orient.js';
 import echoTrail from './scenes/golden-echo.js';
 import motionblur from './scenes/golden-motionblur.js';
 import chart from './scenes/golden-chart.js';
+import compositing from './scenes/golden-compositing.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 
@@ -58,6 +59,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   echo: { mod: echoTrail, blurb: 'Echo motion trails: a dot orbits leaving six fading ghost copies at earlier playhead offsets — Echo re-addresses the scene playhead per copy and restores it, so the whole comet trail is a PURE function of the current time (byte-compared on Skia in CI).' },
   motionblur: { mod: motionblur, blurb: 'Sampled motion blur: a fast dot is rendered at 16 sub-frame times across the shutter and AVERAGED (running-mean), so it smears like a real analog shutter while the crisp reference dot stays sharp — a pure multi-time re-eval, byte-exact on Skia.' },
   chart: { mod: chart, blurb: 'The data-motion stack: Chart() binds a table → bar chart as a pure build-time fan-out (like Grid), each bar a Rect pinned to the axis and grown from its base. The bars rise in staggered, then RACE to a second dataset — all from ordinary per-bar height tracks, colours from a value ramp. Byte-compared on Skia in CI.' },
+  compositing: { mod: compositing, blurb: 'The compositing pair: a Group clipped to a rounded card (tiles slide through, pixels bitten at the edge), an alpha-matte IRIS revealing art through an animated circle, and a LUMA wipe — brightness becomes alpha via one deterministic CPU kernel, byte-exact on Skia.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
 };
 

@@ -131,6 +131,8 @@ export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './asset
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';
 export { Echo, echo, type EchoProps } from './echo.js';
 export { MotionBlur, motionBlur, type MotionBlurProps } from './motionBlur.js';
+export { TrackMatte, trackMatte, type TrackMatteProps } from './matte.js';
+export { type ClipRegion } from './nodes.js';
 export {
   Raster2D,
   fontString,

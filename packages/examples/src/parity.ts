@@ -13,6 +13,7 @@ import goldenFilters from './scenes/golden-filters.js';
 import goldenPaths from './scenes/golden-paths.js';
 import goldenMesh from './scenes/golden-mesh.js';
 import goldenFontInstanced from './scenes/golden-font-instanced.js';
+import goldenCompositing from './scenes/golden-compositing.js';
 
 const corpus: Record<string, SceneModule> = {
   shapes: goldenShapes,
@@ -21,6 +22,9 @@ const corpus: Record<string, SceneModule> = {
   paths: goldenPaths,
   mesh: goldenMesh,
   'font-instanced': goldenFontInstanced,
+  // 0.34 compositing: clip is geometry-only (near-exact); the matte's anti-
+  // aliased edges + luma kernel are the perceptual part the SSIM floor covers
+  compositing: goldenCompositing,
 };
 
 const scenes = new Map<string, ReturnType<SceneModule['createScene']>>();

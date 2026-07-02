@@ -113,6 +113,15 @@ export class Circle extends Shape {
 }
 
 // @public
+export type ClipRegion = {
+    w: number;
+    h: number;
+    r?: number;
+    x?: number;
+    y?: number;
+} | PathSeg[];
+
+// @public
 export function coercePathData(data: unknown): PathValue;
 
 // @public (undocumented)
@@ -295,6 +304,7 @@ export type DrawCommand = {
     filters: FilterSpec[];
     shader?: ShaderRef;
     cacheKey?: string;
+    matte?: 'alpha' | 'luma';
 } | {
     op: 'popGroup';
 };
@@ -544,15 +554,18 @@ export interface GraphemeBox {
 export class Group extends Node_2 {
     constructor(props?: NodeProps & {
         children?: Node_2[];
+        clip?: ClipRegion;
     });
     // (undocumented)
     add(child: Node_2): this;
     // (undocumented)
     readonly children: Node_2[];
+    readonly clip?: ClipRegion;
     get describeType(): string;
     // (undocumented)
     protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
     remove(child: Node_2): this;
+    protected requiresGroup(): boolean;
     protected trackStructure(): void;
 }
 
@@ -1402,6 +1415,32 @@ export interface TextProps extends NodeProps {
     // (undocumented)
     text?: PropInit<string>;
     width?: PropInit<number>;
+}
+
+// @public (undocumented)
+export class TrackMatte extends Group {
+    constructor(props: TrackMatteProps);
+    // (undocumented)
+    readonly content: Node_2;
+    // (undocumented)
+    get describeType(): string;
+    // (undocumented)
+    protected draw(out: DisplayListBuilder, ctx: EvalContext): void;
+    // (undocumented)
+    readonly matte: Node_2;
+    // (undocumented)
+    readonly mode: 'alpha' | 'luma';
+    protected requiresGroup(): boolean;
+}
+
+// @public
+export function trackMatte(content: Node_2, matte: Node_2, props?: Omit<TrackMatteProps, 'content' | 'matte'>): TrackMatte;
+
+// @public (undocumented)
+export interface TrackMatteProps extends NodeProps {
+    content: Node_2;
+    matte: Node_2;
+    mode?: 'alpha' | 'luma';
 }
 
 // @public

@@ -31,6 +31,7 @@ import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
+import goldenCompositing from '../../examples/src/scenes/golden-compositing.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
 import goldenSketch from '../../examples/src/scenes/golden-sketch.js';
 import goldenSketchHachure from '../../examples/src/scenes/golden-sketch-hachure.js';
@@ -171,6 +172,9 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // the data-motion stack: a table → bar chart (build-time fan-out), a staggered
   // rise-in then a bar-chart race from ordinary per-bar height tracks
   { name: 'chart', mod: goldenChart },
+  // the compositing pair (0.34): clip-on-Group (sliding tiles bitten by a card
+  // region) + alpha-matte iris + luma gradient wipe — all plain tracks
+  { name: 'compositing', mod: goldenCompositing },
   // following a morphing path live (re-sample as 'route/d' bends)
   { name: 'motionpath-morph', mod: goldenMotionPathMorph },
   // hand-drawn sketch styles (geometric roughening, multi-pass)

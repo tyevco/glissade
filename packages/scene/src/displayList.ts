@@ -206,7 +206,25 @@ export type DrawCommand =
   // exhaustive backend / raster2d switch). Deferred to post-1.0 — this comment is
   // the reservation the spec calls for; no type or runtime surface is added.
   | { op: 'drawImage'; image: ResourceId; src?: Rect; dst: Rect; smoothing?: boolean }
-  | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[]; shader?: ShaderRef; cacheKey?: string }
+  | {
+      op: 'pushGroup';
+      opacity: number;
+      blend: BlendMode;
+      filters: FilterSpec[];
+      shader?: ShaderRef;
+      cacheKey?: string;
+      /**
+       * 0.34 track-matte: this layer is a MATTE for the layer it composites
+       * onto — 'alpha' keeps destination pixels where this layer is opaque
+       * (native destination-in, byte-exact); 'luma' first converts this
+       * layer's luminance to alpha via the shared straight-alpha CPU kernel
+       * (the mesh-kernel discipline), then applies destination-in. Emitted
+       * by trackMatte() inside its isolated outer group; an optional field
+       * on the shader?/cacheKey? extension precedent — BlendMode stays a
+       * closed union.
+       */
+      matte?: 'alpha' | 'luma';
+    }
   | { op: 'popGroup' };
 
 export interface DisplayList {

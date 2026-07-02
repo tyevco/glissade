@@ -205,6 +205,7 @@ interface Layer<TPath extends PathLike, TDrawable, TCanvas extends CanvasLike> {
   filter?: string; // compiled canvas filter for the composite draw (§3.4)
   filters?: FilterSpec[]; // the specs behind `filter`, for outset computation
   shader?: ShaderRef; // §3.7 effect pass, applied before the composite
+  matte?: 'alpha' | 'luma'; // 0.34: composite this layer as a matte (destination-in)
   /** device-space box of everything painted into this layer; null = nothing yet */
   bounds: Bounds | null;
   /** true once content can't be conservatively boxed → never clip, parent inherits */
@@ -560,6 +561,29 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
    * the cache entry (hit); the composite params (opacity/blend/filters) always
    * come from the LIVE pushGroup command, never the cache.
    */
+  /**
+   * 0.34 luma matte: convert a layer's LUMINANCE to its alpha, in place —
+   * `a' = round(luma(r,g,b) × a / 255)` with Rec.709 integer coefficients over
+   * STRAIGHT (non-premultiplied) RGBA, the same discipline as the mesh kernel,
+   * so both backends run one deterministic CPU pass and the result byte-compares.
+   */
+  private lumaToAlpha(ctx: Ctx2DLike<TPath, TDrawable>, w: number, h: number): void {
+    // put/getImageData are spec'd transform-independent, but @napi-rs applies
+    // the CURRENT transform to putImageData — the matte layer carries the
+    // node's CTM, so an un-reset write-back lands SHIFTED (the disk-cache hit
+    // path learned the same lesson: resetTransform before putImageData).
+    const t = ctx.getTransform();
+    ctx.resetTransform();
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const luma = (d[i]! * 2126 + d[i + 1]! * 7152 + d[i + 2]! * 722) / 2550000;
+      d[i + 3] = Math.round(luma * d[i + 3]!);
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.setTransform(t);
+  }
+
   private composite(
     parent: Ctx2DLike<TPath, TDrawable>,
     parentLayer: { bounds: Bounds | null; unbounded: boolean },
@@ -795,7 +819,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
                 hit.unbounded,
                 false,
                 cmd.opacity,
-                cmd.blend,
+                cmd.matte !== undefined ? 'destination-in' : cmd.blend,
                 filtersToCanvasFilter(cmd.filters),
                 cmd.filters,
                 w,
@@ -830,7 +854,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
                 disk.unbounded,
                 false,
                 cmd.opacity,
-                cmd.blend,
+                cmd.matte !== undefined ? 'destination-in' : cmd.blend,
                 filtersToCanvasFilter(cmd.filters),
                 cmd.filters,
                 w,
@@ -859,6 +883,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             filter: filtersToCanvasFilter(cmd.filters),
             filters: cmd.filters,
             ...(cmd.shader !== undefined ? { shader: cmd.shader } : {}),
+            ...(cmd.matte !== undefined ? { matte: cmd.matte } : {}),
             bounds: null,
             unbounded: false,
             ...(lruKey !== undefined ? { cacheStoreKey: lruKey } : {}),
@@ -892,6 +917,14 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             }
           }
 
+          // 0.34 track-matte: a matte layer keeps the DESTINATION (the content
+          // already painted into the parent layer) only where THIS layer is
+          // opaque — native destination-in, byte-exact on both canvases. Luma
+          // mode first converts the layer's luminance to alpha via the shared
+          // straight-alpha CPU kernel (no native luma operator exists on either
+          // backend — the mesh-kernel precedent). Runs BEFORE any LRU store, so
+          // a cached matte layer is stored post-kernel and replays correctly.
+          if (layer.matte === 'luma' && !shaderReplaced) this.lumaToAlpha(layer.ctx, w, h);
           this.composite(
             parent,
             top(),
@@ -900,7 +933,7 @@ export class Raster2D<TCanvas extends CanvasLike, TPath extends PathLike, TDrawa
             layer.unbounded,
             shaderReplaced,
             layer.opacity,
-            layer.blend,
+            layer.matte !== undefined ? 'destination-in' : layer.blend,
             layer.filter,
             layer.filters,
             w,

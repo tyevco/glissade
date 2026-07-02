@@ -398,6 +398,7 @@ type DrawCommand =
   | { op: 'drawImage';  image: ResourceId; src?: Rect; dst: Rect; smoothing?: boolean }
   // Compositing group ≙ Skia saveLayer / temp canvas in Canvas 2D:
   | { op: 'pushGroup'; opacity: number; blend: BlendMode; filters: FilterSpec[];
+      matte?: 'alpha' | 'luma';  // 0.34: composite this layer as a matte (destination-in) onto its parent layer
       cacheKey?: string; shader?: ShaderRef /* future, §3.7 */ }
   | { op: 'popGroup' };
 
@@ -453,6 +454,8 @@ interface RenderBackend extends TextMeasurer {
 ### 3.5 Subtree caching
 
 Motion Canvas precedent: `requiresCache()` is true when `opacity < 1`, blend ≠ `source-over`, filters, or shadows apply — the subtree is drawn to a memoized cache canvas and blitted. We adopt the predicate but express it **in the IR**: such a node emits `pushGroup`/`popGroup` around its subtree. The backend realizes a group as `saveLayer` (Skia) or a pooled temporary canvas (Canvas 2D), applying opacity/blend/filter on composite — which is what makes *group* opacity correct (children don't individually fade and overlap) and masking via blend modes possible.
+
+**0.34 decision — clip & track-matte (the compositing pair).** Clip on `Group` reuses the EXISTING `clip` op *inside* the group's layer (save/clip/children/restore — the sketch-fill discipline; layer canvases are pooled, so an unbalanced clip leaks into the next layer that reuses the canvas), which also keeps the region inside the §3.5 cacheKey'd draw slice — a changed region can never serve a stale cached raster. Track-matte adds ONE optional field, `matte?: 'alpha' | 'luma'`, to `pushGroup` (the `shader?`/`cacheKey?` extension precedent): the marked layer composites onto its parent layer with `destination-in` — `'luma'` first runs a shared straight-alpha CPU kernel (Rec.709; the mesh-kernel discipline) since neither rasterizer has a native luma operator. The `BlendMode` union stays CLOSED — `destination-in` is an internal compositor operation selected by `matte`, never an authorable blend (it erases destination pixels outside the source, which only the isolated `trackMatte()` layer structure makes safe). Skia byte-exact (golden `compositing`); browser↔Skia perceptual at AA matte edges; backend-dom expresses clip via SVG `clipPath` and degrades matte with `data-approx` (preview tier). Toolchain note: @napi-rs applies the current transform to `putImageData` (spec says it must not) — every kernel that writes pixels back must `resetTransform` first (the disk-cache path already does).
 
 **Cross-frame caching:** `pushGroup.cacheKey` is a hash of the group's command slice + referenced resources, computed during emission from the signal cache (a clean subtree hashes for free). The backend keeps an LRU of rasterized group bitmaps keyed by `cacheKey`; an unchanged subtree under a changing parent transform re-blits instead of re-rasterizing. Nodes may hint `cache: true` for expensive static subtrees. The cache is a pure performance layer — semantics are identical with it disabled (it is on the §2.1 sanctioned-memoization list, and the dev harness verifies it cache-cold).
 

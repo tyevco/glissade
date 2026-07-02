@@ -58,6 +58,17 @@ export function roundedRectSegs(x: number, y: number, w: number, h: number, r: n
   ];
 }
 
+/**
+ * A Group clip region (0.34), in the group's LOCAL coordinates: a (rounded)
+ * rect centered on `[x ?? 0, y ?? 0]` — matching the center-anchor convention —
+ * or an explicit `PathSeg[]` outline (`pathFromSvg(...)` output works directly).
+ * Children paint only inside the region; it clips the group's own layer, so a
+ * rounded corner anti-aliases in LOCAL space and the whole subtree byte-compares
+ * on Skia. Construction-only (not a track target); clipping is render-time only
+ * — hit-testing is unaffected in v1 (a clipped child still hits).
+ */
+export type ClipRegion = { w: number; h: number; r?: number; x?: number; y?: number } | PathSeg[];
+
 export class Group extends Node {
   /**
    * Taxonomy name pinned as a STRING LITERAL (not the inherited
@@ -73,14 +84,17 @@ export class Group extends Node {
     return 'Group';
   }
   readonly children: Node[];
+  /** Clip region for this group's children (0.34) — see {@link ClipRegion}. */
+  readonly clip?: ClipRegion;
   /** Version bumped on structural child mutation, so a dependency-tracked memo
    * (e.g. Layout's computed) re-runs when the child SET changes — not only when
    * a participating prop signal does. */
   readonly #structure = signal(0);
 
-  constructor(props: NodeProps & { children?: Node[] } = {}) {
+  constructor(props: NodeProps & { children?: Node[]; clip?: ClipRegion } = {}) {
     super(props);
     this.children = props.children ?? [];
+    if (props.clip !== undefined) this.clip = props.clip;
     for (const child of this.children) child.parent = this;
     // Validate ONLY a plain Group — subclasses (Layout) run their own check with
     // their fuller target set; see Node.checkProps.
@@ -111,13 +125,43 @@ export class Group extends Node {
     return this;
   }
 
+  /** A clip demands a group layer: children must rasterize into an isolated
+   *  layer the region applies to (and the clip op lands INSIDE the cacheKey'd
+   *  draw slice, so a changed region correctly misses the layer cache). */
+  protected override requiresGroup(): boolean {
+    return this.clip !== undefined || super.requiresGroup();
+  }
+
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
+    // 0.34 clip: emitted FIRST inside the group's layer — the existing `clip`
+    // DrawCommand, already honored by Raster2D (ctx.clip) and backend-dom
+    // (SVG clipPath). Emitting it here (not as a pushGroup field) keeps it
+    // inside the hashed draw slice, so the layer cache can't serve a stale
+    // raster across a region change.
+    if (this.clip !== undefined) {
+      const segs = Array.isArray(this.clip)
+        ? this.clip
+        : roundedRectSegs(
+            (this.clip.x ?? 0) - this.clip.w / 2,
+            (this.clip.y ?? 0) - this.clip.h / 2,
+            this.clip.w,
+            this.clip.h,
+            this.clip.r ?? 0,
+          );
+      // save/restore BRACKETS the clip (the sketch-clip discipline): layer
+      // canvases are POOLED and clip state survives resetTransform/clearRect —
+      // an unbalanced clip would leak the region into whichever layer reuses
+      // this canvas next (it clipped sibling composites to this card in dev).
+      out.push({ op: 'save' });
+      out.push({ op: 'clip', path: out.resource({ kind: 'path', segs }), rule: 'nonzero' });
+    }
     // Paint order: child-array order, locally reordered by zIndex (stable, §3.1)
     const sorted = this.children
       .map((node, i) => ({ node, i }))
       .sort((a, b) => a.node.zIndex() - b.node.zIndex() || a.i - b.i)
       .map((e) => e.node);
     for (const child of sorted) child.emit(out, ctx);
+    if (this.clip !== undefined) out.push({ op: 'restore' });
   }
 }
 

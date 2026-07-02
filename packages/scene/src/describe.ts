@@ -180,6 +180,9 @@ interface ConstructionProp {
 const CONSTRUCTION_PROP_META: { [typeName: string]: { [prop: string]: ConstructionProp } } = {
   Group: {
     children: { type: 'Node[]' },
+    // 0.34 clip region — LOCAL-space rounded rect ({w,h,r?,x?,y?}) or PathSeg[];
+    // construction-only (children paint only inside it)
+    clip: { type: 'ClipRegion' },
   },
   Rect: {
     // hand-drawn look (sketch.ts) — geometry-time, not animatable
@@ -335,6 +338,10 @@ function describeLayoutNode(): DescribedNode {
   // inherited base transform targets (position/rotation/scale/opacity/zIndex)
   const props = describeNode(new Group(), 'Group').props;
   delete props.children; // Layout declares its own children construction prop below
+  // Layout overrides draw() wholesale (flex placement) and does not emit the
+  // Group clip — don't advertise a prop it would reject (0.34; Layout clip is a
+  // possible follow-up once its draw path brackets a region)
+  delete props['clip'];
   for (const [prop, spec] of Object.entries(LAYOUT_ANIMATABLE)) {
     const arity = arityOf(spec.type);
     props[prop] = { type: spec.type, animatable: true, target: `<id>/${prop}`, ...(arity !== undefined ? { arity } : {}) };
@@ -458,6 +465,13 @@ const HELPERS: DescribedHelper[] = [
       'Real sampled motion blur: wrap a child so it renders at N sub-frame times across a shutter interval (centered on the frame) and AVERAGES them — tracks every animated prop, not a faked directional blur. A pure multi-time re-eval (playhead re-addressed per sample, running-mean opacity, restored), byte-exact on Skia; browser↔Skia is perceptual-tier for blur.',
     import: '@glissade/scene',
     usage: 'motionBlur(child: Node, opts?: { id?, shutter?: number, samples?: number }): MotionBlur',
+  },
+  {
+    name: 'trackMatte',
+    summary:
+      "Track-matte: mask CONTENT by a MATTE layer's alpha (default) or luminance ('luma'). Content renders into an isolated layer, then the matte composites destination-in — pixels survive only where the matte is opaque. Both subtrees animate like ordinary nodes (a sliding shape wipes text in, a scaling blob irises a photo). Byte-exact on Skia; browser-vs-Skia pixel parity is perceptual at anti-aliased matte edges; backend-dom (preview tier) degrades with data-approx.",
+    import: '@glissade/scene',
+    usage: "trackMatte(content: Node, matte: Node, opts?: { id?, mode?: 'alpha' | 'luma' }): TrackMatte",
   },
   {
     name: 'clip',
