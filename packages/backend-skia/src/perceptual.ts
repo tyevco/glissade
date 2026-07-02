@@ -107,7 +107,11 @@ export function ssimMap(
       }
     }
   }
-  return { mean: total / windows, min: windows ? min : 1, minTile, cols, rows, win: WIN, tiles };
+  // An image smaller than one 8×8 window has no full tiles (windows === 0). Rather
+  // than a NaN mean (0/0), report a vacuous 1 (nothing measurable differs at tile
+  // granularity) with an empty grid — real frames are always ≥8×8, and repin's
+  // byte-equal fast-path catches identical frames before they reach here.
+  return { mean: windows ? total / windows : 1, min: windows ? min : 1, minTile, cols, rows, win: WIN, tiles };
 }
 
 /**

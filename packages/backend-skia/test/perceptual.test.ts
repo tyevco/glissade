@@ -67,6 +67,17 @@ describe('ssim / ssimMap', () => {
   it('rejects mismatched buffer dimensions', () => {
     expect(() => ssimMap(new Uint8ClampedArray(4), solid(0, 0, 0), W, H)).toThrow(/identical dimensions/);
   });
+
+  it('an image smaller than one 8×8 tile yields no NaN (vacuous mean 1, empty grid)', () => {
+    const tiny = new Uint8ClampedArray(5 * 5 * 4);
+    const map = ssimMap(tiny, tiny, 5, 5);
+    expect(map.cols).toBe(0);
+    expect(map.rows).toBe(0);
+    expect(map.tiles.length).toBe(0);
+    expect(Number.isNaN(map.mean)).toBe(false);
+    expect(map.mean).toBe(1);
+    expect(ssim(tiny, tiny, 5, 5)).toBe(1);
+  });
 });
 
 describe('heatmapRgba', () => {

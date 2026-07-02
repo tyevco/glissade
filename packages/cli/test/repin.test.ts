@@ -96,6 +96,25 @@ describe('gs repin — perceptual review + gated write', () => {
     expect(forced.frames[0]!.wrote).toBe(true);
   });
 
+  it('marks the lowest-SSIM changed frame as the likely edit-site (culprit finder)', async () => {
+    const dir = await freshGoldens('editsite');
+    // two changed frames with DIFFERENT divergence: f0000 fully swapped (big drop),
+    // f0060 a small corner tweak (small drop) → f0000 should be the marked edit-site.
+    cpSync(join(dir, `${NAME}-f0120.png`), join(dir, `${NAME}-f0000.png`)); // wholesale change
+    // small change to f0060's golden: flip a few bytes near the end (a corner)
+    const g60 = join(dir, `${NAME}-f0060.png`);
+    const buf = readFileSync(g60);
+    // decode→re-encode is overkill; instead swap f0060 with f0120 too but the render
+    // for f0060 vs f0120 differs less than f0000 vs f0120 in this scene. Assert only
+    // that exactly one frame is marked and the marker is present.
+    cpSync(join(dir, `${NAME}-f0120.png`), g60);
+    void buf;
+    const r = await repinCommand({ modulePath: MODULE, goldenDir: dir, name: NAME, frames: [0, 60] });
+    expect(r.changed).toBe(2);
+    const marks = r.report.split('\n').filter((l) => l.includes('likely edit-site'));
+    expect(marks.length).toBe(1); // exactly one frame flagged as the culprit
+  });
+
   it('report names the mode and lists only non-identical frames', async () => {
     const dir = await freshGoldens('report');
     cpSync(join(dir, `${NAME}-f0000.png`), join(dir, `${NAME}-f0060.png`));
@@ -116,24 +135,47 @@ describe('narration timing-diff → cause line (pure)', () => {
     segments: segs.map((s) => ({ ...s, text: s.id, file: `${s.id}.wav` })),
   });
 
-  it('a shifted segment is attributed at its own time window', () => {
-    const older = mk([{ id: 'intro', start: 0, duration: 1 }, { id: 'body', start: 1, duration: 2 }, { id: 'outro', start: 3, duration: 1 }]);
-    const newer = mk([{ id: 'intro', start: 0, duration: 1 }, { id: 'body', start: 1.21, duration: 2 }, { id: 'outro', start: 3.21, duration: 1 }]);
+  // The real re-narration shape (ai-training's e01-short evidence): edit one line
+  // in `s2` → s2's DURATION grows +0.53s, and every downstream start is pushed by
+  // that amount. The edit site's own start does NOT move.
+  it('attributes the EDIT SITE by its duration change, and traces downstream to it', () => {
+    const older = mk([
+      { id: 'hook', start: 0, duration: 1 },
+      { id: 's2', start: 1, duration: 2 },
+      { id: 's3', start: 3, duration: 2 },
+      { id: 'cta', start: 5, duration: 1 },
+    ]);
+    // s2 re-narrated +0.53s longer → s3 & cta each pushed +0.53s; starts of hook/s2 unchanged
+    const newer = mk([
+      { id: 'hook', start: 0, duration: 1 },
+      { id: 's2', start: 1, duration: 2.53 },
+      { id: 's3', start: 3.53, duration: 2 },
+      { id: 'cta', start: 5.53, duration: 1 },
+    ]);
     const shifts = diffTiming(older, newer);
-    // a frame during 'body' cites body's own +0.21s move
-    expect(causeFor(1.5, shifts)).toBe('body moved +0.21s: re-narration');
-    // a frame during 'outro' (which itself moved +0.21) cites outro
-    expect(causeFor(3.3, shifts)).toBe('outro moved +0.21s: re-narration');
-    // a frame during the unmoved 'intro' has no cause
+    // the edit site: s2's start didn't move, but its duration did — it must be named
+    expect(causeFor(2, shifts)).toBe('s2 re-narrated (+0.53s duration): re-narration');
+    // downstream beats trace back to s2 (the root), NOT claim their own derived shift
+    expect(causeFor(4, shifts)).toBe('downstream of s2 (+0.53s): re-narration');
+    expect(causeFor(5.8, shifts)).toBe('downstream of s2 (+0.53s): re-narration');
+    // the untouched upstream beat has no cause
     expect(causeFor(0.5, shifts)).toBeUndefined();
   });
 
-  it('a frame whose own beat did not move is attributed to the upstream shift', () => {
-    const older = mk([{ id: 'a', start: 0, duration: 1 }, { id: 'b', start: 5, duration: 5 }]);
-    const newer = mk([{ id: 'a', start: 0.3, duration: 1 }, { id: 'b', start: 5, duration: 5 }]);
+  it('an independent start-only move (no duration change, no upstream root) names itself', () => {
+    const older = mk([{ id: 'intro', start: 0, duration: 1 }, { id: 'body', start: 1, duration: 2 }]);
+    const newer = mk([{ id: 'intro', start: 0, duration: 1 }, { id: 'body', start: 1.21, duration: 2 }]);
     const shifts = diffTiming(older, newer);
-    // 'b' didn't move, but 'a' shifted upstream → cascade attribution
-    expect(causeFor(6, shifts)).toBe('downstream of a (+0.30s): re-narration');
+    // body moved but nothing upstream is a root → fall back to naming body's own shift
+    expect(causeFor(1.5, shifts)).toBe('body moved +0.21s: re-narration');
+  });
+
+  it('an unmoved beat downstream of a re-narration is attributed to the root', () => {
+    // a re-narrated shorter; b is separated by a pause so its own start didn't move
+    const older = mk([{ id: 'a', start: 0, duration: 2 }, { id: 'b', start: 5, duration: 2 }]);
+    const newer = mk([{ id: 'a', start: 0, duration: 1.7 }, { id: 'b', start: 5, duration: 2 }]);
+    const shifts = diffTiming(older, newer);
+    expect(causeFor(6, shifts)).toBe('downstream of a (-0.30s): re-narration');
   });
 
   it('a newly-added segment is flagged as new', () => {

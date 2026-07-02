@@ -94,6 +94,10 @@ export interface SegShift {
   id: string;
   start: number; // new start (absolute s)
   deltaStart: number;
+  /** change in the segment's OWN duration — the fingerprint of a re-narration at
+   *  the EDIT SITE (its content got longer/shorter). A pure downstream beat has
+   *  deltaDuration≈0 and only a deltaStart pushed by an upstream edit. */
+  deltaDuration: number;
   added: boolean;
   removed: boolean;
 }
@@ -127,13 +131,14 @@ export function diffTiming(a: NarrationTiming, b: NarrationTiming): SegShift[] {
       id: s.id,
       start: s.start,
       deltaStart: prev ? s.start - prev.start : 0,
+      deltaDuration: prev ? s.duration - prev.duration : 0,
       added: !prev,
       removed: false,
     });
     old.delete(s.id);
   }
   for (const [id, s] of old) {
-    shifts.push({ id, start: s.start, deltaStart: 0, added: false, removed: true });
+    shifts.push({ id, start: s.start, deltaStart: 0, deltaDuration: 0, added: false, removed: true });
   }
   return shifts.sort((x, y) => x.start - y.start);
 }
@@ -141,18 +146,40 @@ export function diffTiming(a: NarrationTiming, b: NarrationTiming): SegShift[] {
 const EPS = 1e-4;
 const sign = (n: number): string => `${n >= 0 ? '+' : ''}${n.toFixed(2)}s`;
 
-/** One-line cause for a frame at time `t`, from the timing shifts. */
+/** Is this shift a re-narration ROOT — a segment whose own content changed
+ *  (duration moved) or that was newly added, i.e. an EDIT SITE that pushes
+ *  everything downstream of it? */
+function isRoot(s: SegShift): boolean {
+  return s.added || Math.abs(s.deltaDuration) > EPS;
+}
+
+/**
+ * One-line cause for a frame at time `t`. A re-narration that re-records one line
+ * changes that segment's DURATION (not its start) and pushes every later segment's
+ * start by the same amount — so attribution has two jobs:
+ *   • name the EDIT SITE by its duration change (its start doesn't move), and
+ *   • trace a purely-shifted downstream beat back to the ROOT that pushed it,
+ *     rather than letting it claim its own (derived) shift.
+ */
 export function causeFor(t: number, shifts: SegShift[]): string | undefined {
-  // the segment active at t = the last one starting at-or-before t
   const before = shifts.filter((s) => s.start <= t + EPS && !s.removed);
   const active = before[before.length - 1];
-  if (active && active.added) return `${active.id}: new segment`;
-  if (active && Math.abs(active.deltaStart) > EPS) {
-    return `${active.id} moved ${sign(active.deltaStart)}: re-narration`;
+  if (!active) return undefined;
+  if (active.added) return `${active.id}: new segment`;
+  // the edit site: this segment's OWN duration changed (it was re-narrated). Its
+  // start may not have moved, so duration — not start — is what identifies it.
+  if (Math.abs(active.deltaDuration) > EPS) {
+    return `${active.id} re-narrated (${sign(active.deltaDuration)} duration): re-narration`;
   }
-  // active beat didn't move, but an earlier shift cascaded down to it
-  const upstream = before.filter((s) => Math.abs(s.deltaStart) > EPS).pop();
-  if (upstream) return `downstream of ${upstream.id} (${sign(upstream.deltaStart)}): re-narration`;
+  // the nearest upstream edit that explains a downstream shift (before `active`)
+  const root = before.slice(0, -1).reverse().find(isRoot);
+  if (Math.abs(active.deltaStart) > EPS) {
+    // start moved but own duration didn't → it's downstream of an earlier edit
+    if (root) return `downstream of ${root.id} (${sign(active.deltaStart)}): re-narration`;
+    return `${active.id} moved ${sign(active.deltaStart)}: re-narration`; // independent move, no clear root
+  }
+  // active is unmoved, but an upstream edit may still reflow into this frame
+  if (root) return `downstream of ${root.id} (${sign(root.deltaDuration)}): re-narration`;
   return undefined;
 }
 
@@ -281,6 +308,18 @@ function formatReport(
   lines.push(`gs repin '${name}' — ${r.frames.length} frames, ${r.changed} changed [${mode}]`);
   if (r.causeSource) lines.push(`  cause ← ${r.causeSource} vs ${opts.since ?? 'HEAD'}`);
   else lines.push(`  (no narration timing sibling diffed — perceptual delta only)`);
+  // the lowest-SSIM changed frame is the likely EDIT SITE / root: a content edit
+  // drops SSIM hard, while a pure downstream time-shift barely dents it. Mark it —
+  // it's the culprit-finder even when no timing sibling can name a cause.
+  let worstFrame = -1;
+  let worstSsim = Infinity;
+  for (const f of r.frames) {
+    if ((f.status === 'changed') && f.ssim !== undefined && f.ssim < worstSsim) {
+      worstSsim = f.ssim;
+      worstFrame = f.frame;
+    }
+  }
+  const marked = r.changed > 1 && worstFrame >= 0;
   for (const f of r.frames) {
     if (f.status === 'identical') continue;
     const fno = `f${String(f.frame).padStart(4, '0')}`;
@@ -297,7 +336,8 @@ function formatReport(
       : f.wrote
         ? '→ re-pinned'
         : '(dry-run)';
-    lines.push(`  ${fno}  ${perc}  ${f.cause ? `— ${f.cause}  ` : ''}${tail}`);
+    const editMark = marked && f.frame === worstFrame ? '◀ likely edit-site (lowest SSIM)  ' : '';
+    lines.push(`  ${fno}  ${perc}  ${f.cause ? `— ${f.cause}  ` : ''}${editMark}${tail}`);
   }
   if (!opts.write && r.changed > 0) {
     lines.push(`  ${r.changed} stale — re-run with --write to re-pin${opts.floor !== undefined ? ` (floor ${opts.floor})` : ''}`);

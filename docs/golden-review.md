@@ -28,15 +28,24 @@ For each frame it prints one of `identical` (PNG bytes match — the contract ho
   over 8×8 luma tiles, plus the single worst tile, so a one-pixel nudge and a
   wholesale reflow don't read the same;
 - **a cause** — `gs repin` diffs the scene's `*.narration.timing.json` sibling
-  against a git ref (default `HEAD`) and attributes the frame:
+  against a git ref (default `HEAD`) and attributes each changed frame. A
+  re-narration re-records one line, so that segment's **duration** changes and
+  every *later* segment's start is pushed by the same amount. Attribution names
+  the edit site by its duration change and traces the pushed beats back to it:
 
   ```
-  f0090  ssim 0.9971 (min 0.812)  — seg-4 moved +0.21s: re-narration  → re-pinned
+  f0648  ssim 0.9400 (min -0.822)  — s2 re-narrated (+0.53s duration): re-narration  ◀ likely edit-site (lowest SSIM)
+  f0954  ssim 0.9976  — downstream of s2 (+0.53s): re-narration
+  f1176  ssim 0.9998  — downstream of s2 (+0.53s): re-narration
   ```
 
-  A frame whose own beat didn't move but sits after one that did is attributed
-  `downstream of seg-4 (+0.21s)`. No timing sibling (or not a git repo) → the
-  cause column is simply omitted and you get the perceptual delta alone.
+  Note the **edit site's own start doesn't move** — only its content (duration)
+  does — so it's named by the duration delta, while the downstream beats cite the
+  root that pushed them rather than their own derived shift. And because a content
+  edit drops SSIM hard while a pure time-shift barely dents it, the lowest-SSIM
+  changed frame is flagged `◀ likely edit-site` — the culprit-finder that works
+  **even with no timing sibling** (or not a git repo), where the cause column is
+  omitted and you get the perceptual delta alone.
 
 ## Gated re-pinning
 
