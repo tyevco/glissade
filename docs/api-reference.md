@@ -783,6 +783,26 @@ Import from `@glissade/scene/component`.
 defineComponent({ name, props: { <p>: { type, required? } }, build(props, childId): Group }): (props & { id }) => { node: Group, id, childId(sub?), targets(child, prop) }
 ```
 
+### `Gauge`
+
+Build-time radial gauge (data-viz, like Chart): a spec → N categorical stroked-arc zones + boundary ticks + a needle + separate labels, returning a Group. Angle deg: 0=up, +=clockwise. Needle takes AUTHORED keys (tl on targets("needle","rotation")) OR value→angle (Meter mode). Zones/ticks/needle/labels are each addressable sub-ids (zone-{i}, tick-{i}, needle, label-{i}, glow); labels draw z-above zones so a zone dim never crushes a label. Tree-shaken off the base scene index.
+
+Import from `@glissade/scene/gauge`.
+
+```ts
+Gauge({ id, radius, zones: { extent: [start,end], color, label? }[], thickness?, gap?, needle?, needleAngle?, value?, domain?, sweep?, ticks?, glow?, position? }): { node: Group, id, childId(sub?), targets(sub, prop): string[] }
+```
+
+### `Meter`
+
+The Gauge value preset: a value (or () => value signal) mapped through domain across the sweep → the needle angle. Same result shape + sub-ids as Gauge. A function value binds live (the needle follows the signal). On the @glissade/scene/gauge subpath.
+
+Import from `@glissade/scene/gauge`.
+
+```ts
+Meter({ id, radius, zones, value: number | (() => number), domain?, sweep?, … }): { node: Group, id, childId, targets }
+```
+
 ### `linearScale`
 
 A serializable linear scale (value axis): maps a numeric domain onto a pixel/unit range. Pair with Chart({ yScale }). On the @glissade/scene/chart subpath.

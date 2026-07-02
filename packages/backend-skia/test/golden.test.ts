@@ -31,6 +31,7 @@ import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
+import goldenGauge from '../../examples/src/scenes/golden-gauge.js';
 import goldenCompositing from '../../examples/src/scenes/golden-compositing.js';
 import goldenBoxText from '../../examples/src/scenes/golden-boxtext.js';
 import goldenComponent from '../../examples/src/scenes/golden-component.js';
@@ -174,6 +175,10 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // the data-motion stack: a table → bar chart (build-time fan-out), a staggered
   // rise-in then a bar-chart race from ordinary per-bar height tracks
   { name: 'chart', mod: goldenChart },
+  // the radial data-viz stack: a spec → arc zones + ticks + needle + labels
+  // (build-time fan-out), a scripted needle swing that settles center while the
+  // extreme zones dim independently of their full-brightness labels
+  { name: 'gauge', mod: goldenGauge },
   // the compositing pair (0.34): clip-on-Group (sliding tiles bitten by a card
   // region) + alpha-matte iris + luma gradient wipe — all plain tracks
   { name: 'compositing', mod: goldenCompositing },

@@ -62,6 +62,10 @@ export { Grid } from '@glissade/scene/grid';
 // data-viz author reaches for `window.glissade.Chart` + the scale factories, so
 // the convenience bundle re-exports them here (same rationale as Grid/splitText).
 export { Chart, linearScale, logScale, bandScale, colorRamp } from '@glissade/scene/chart';
+// 0.38 Gauge/Meter (radial data-viz) — a build-time fan-out on the tree-shakeable
+// `@glissade/scene/gauge` subpath, off the base embed. The no-build data-viz author
+// reaches for `window.glissade.Gauge`/`Meter` (value→needle or authored angle).
+export { Gauge, Meter, GaugeError, type GaugeSpec, type GaugeZone, type GaugeResult } from '@glissade/scene/gauge';
 // 0.36 defineComponent (reusable typed subscenes) — a build-time factory like Grid/
 // Chart on the tree-shakeable /component subpath; the no-build author reaches for
 // window.glissade.defineComponent to build a component library.

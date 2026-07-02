@@ -21,6 +21,11 @@ import { FitTextOpts } from '@glissade/scene/type';
 import { fitTextSize } from '@glissade/scene/type';
 import { FollowPath } from '@glissade/scene/motion';
 import { followPath } from '@glissade/scene/motion';
+import { Gauge } from '@glissade/scene/gauge';
+import { GaugeError } from '@glissade/scene/gauge';
+import { GaugeResult } from '@glissade/scene/gauge';
+import { GaugeSpec } from '@glissade/scene/gauge';
+import { GaugeZone } from '@glissade/scene/gauge';
 import { Grid } from '@glissade/scene/grid';
 import { Layout } from '@glissade/scene/layout-ctors';
 import { linearScale } from '@glissade/scene/chart';
@@ -28,6 +33,7 @@ import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 import { logScale } from '@glissade/scene/chart';
 import { LookAt } from '@glissade/scene/motion';
 import { lookAt } from '@glissade/scene/motion';
+import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
 import { OrientToPath } from '@glissade/scene/motion';
 import { orientToPath } from '@glissade/scene/motion';
@@ -74,6 +80,16 @@ export { FollowPath }
 
 export { followPath }
 
+export { Gauge }
+
+export { GaugeError }
+
+export { GaugeResult }
+
+export { GaugeSpec }
+
+export { GaugeZone }
+
 export { Grid }
 
 export { Layout }
@@ -87,6 +103,8 @@ export { logScale }
 export { LookAt }
 
 export { lookAt }
+
+export { Meter }
 
 export { motionPath }
 

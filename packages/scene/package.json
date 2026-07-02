@@ -31,6 +31,10 @@
       "types": "./dist/chart.d.ts",
       "default": "./dist/chart.js"
     },
+    "./gauge": {
+      "types": "./dist/gauge.d.ts",
+      "default": "./dist/gauge.js"
+    },
     "./component": {
       "types": "./dist/component.d.ts",
       "default": "./dist/component.js"
