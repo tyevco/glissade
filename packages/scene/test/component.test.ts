@@ -101,4 +101,17 @@ vdescribe('defineComponent', () => {
     });
     expect(() => bad({ id: 'inst' })).toThrow(/build must return a Group with id/);
   });
+
+  it('fails loud on a malformed prop spec (the no-build string-shorthand footgun)', () => {
+    // a no-build author (unguarded by TS) passing `{ x: 'string' }` used to
+    // silently lose the type in describe().components (→ {}); now it throws.
+    expect(() =>
+      // @ts-expect-error — a string is not a ComponentPropSpec
+      defineComponent({ name: uniq(), props: { x: 'string' }, build: (_p, cid) => new Group({ id: cid() }) }),
+    ).toThrow(/must be \{ type: string/);
+    // the canonical form is unaffected
+    expect(() =>
+      defineComponent({ name: uniq(), props: { x: { type: 'string' } }, build: (_p, cid) => new Group({ id: cid() }) }),
+    ).not.toThrow();
+  });
 });

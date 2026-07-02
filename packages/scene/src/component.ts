@@ -115,6 +115,16 @@ export function defineComponent<P extends Record<string, unknown> = Record<strin
   if (registry.has(def.name)) {
     throw new ComponentError(`a component named '${def.name}' is already defined`);
   }
+  // fail loud on a malformed prop spec (a no-build author, unguarded by TS, can
+  // pass a string shorthand `{ x: 'string' }` — which silently lost its type in
+  // the manifest). Every spec must be `{ type: string, required? }`.
+  for (const [prop, spec] of Object.entries(def.props)) {
+    if (spec === null || typeof spec !== 'object' || typeof (spec as ComponentPropSpec).type !== 'string') {
+      throw new ComponentError(
+        `${def.name}: prop '${prop}' must be { type: string, required? }, got ${JSON.stringify(spec)}`,
+      );
+    }
+  }
   registry.set(def.name, { name: def.name, props: def.props });
 
   return (props: P & ComponentBaseProps): ComponentInstance => {

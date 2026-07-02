@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.35.0"
   },
   "changesets": [
+    "component-propspec-guard",
     "components"
   ]
 }

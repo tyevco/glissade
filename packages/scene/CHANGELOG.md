@@ -1,5 +1,15 @@
 # @glissade/scene
 
+## 0.36.0-pre.1
+
+### Patch Changes
+
+- `defineComponent`: fail loud on a malformed prop spec
+
+  A no-build author (unguarded by TypeScript) passing a string shorthand like `props: { x: 'string' }` used to be silently accepted and lose the type in `describe().components` (it became `{}`). `defineComponent` now validates each prop spec is `{ type: string, required? }` and throws a `ComponentError` naming the bad prop otherwise. (edcc canary nit `NcGk24ytSkNx`.)
+
+  - @glissade/core@0.36.0-pre.1
+
 ## 0.36.0-pre.0
 
 ### Minor Changes
