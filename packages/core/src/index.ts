@@ -97,7 +97,6 @@ export {
   track,
   springTo,
   stagger,
-  retime,
   sampleTrack,
   velocityAt,
   validateTrack,
@@ -107,8 +106,13 @@ export {
   type Key,
   type KeyOpts,
   type Track,
-  type RetimeSpec,
 } from './track.js';
+// `retime` (0.40 base-budget review): the pure build-time key-time transform +
+// its private reversedKeys/mirrorEase helpers (string-heavy) moved OFF the base
+// index onto `@glissade/core/clips` — never on the hot path (sampleTrack/evaluate
+// never call it), so this recovers base-embed headroom for the Expr sampler seam
+// and keeps the SACRED base embed ≤ 39. window.glissade keeps it via the IIFE's
+// `export * from '@glissade/core/clips'`.
 // Expr (0.40): the evaluator + exprTrack live on the tree-shakeable
 // `@glissade/core/expr` subpath (OFF the base embed — it's a ~1.4 kB parser).
 // `tl.expr` is on the base builder; importing `@glissade/core/expr` (anywhere)

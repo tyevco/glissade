@@ -17,7 +17,8 @@
  * pattern) — describe never imports examples, so the base embed + IIFE stay lean.
  */
 
-import { key, retime, timeline, track } from '@glissade/core';
+import { key, timeline, track } from '@glissade/core';
+import { retime } from '@glissade/core/clips'; // relocated off the base index (0.40 budget review)
 import { registerExamples } from './describe.js';
 import { type Node } from './node.js';
 import { Circle, Group, ImageNode, Path, Rect, Text } from './nodes.js';
@@ -175,7 +176,7 @@ export const EXAMPLES: readonly ApiExample[] = [
   },
   {
     key: 'retime',
-    code: "import { retime, track, key } from '@glissade/core';\n// pure key-time transform → ordinary retimed tracks (speed / shift / reverse / pingpong)\nconst move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];\nconst slow = retime(move, { speed: 0.5 });    // half speed\nconst back = retime(move, { reverse: true }); // play it backward",
+    code: "import { retime } from '@glissade/core/clips';\nimport { track, key } from '@glissade/core';\n// pure key-time transform → ordinary retimed tracks (speed / shift / reverse / pingpong)\nconst move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];\nconst slow = retime(move, { speed: 0.5 });    // half speed\nconst back = retime(move, { reverse: true }); // play it backward",
     run: () => {
       const move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];
       void retime(move, { speed: 0.5 });

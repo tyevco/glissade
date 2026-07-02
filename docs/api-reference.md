@@ -672,7 +672,8 @@ retime(tracks: Track[], { speed?, shift?, reverse?, pingpong? }): Track[]
 ```
 
 ```ts
-import { retime, track, key } from '@glissade/core';
+import { retime } from '@glissade/core/clips';
+import { track, key } from '@glissade/core';
 // pure key-time transform → ordinary retimed tracks (speed / shift / reverse / pingpong)
 const move = [track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')])];
 const slow = retime(move, { speed: 0.5 });    // half speed

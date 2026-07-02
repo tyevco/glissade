@@ -518,17 +518,6 @@ export interface RetargetSpring {
 }
 
 // @public
-export function retime<T>(tracks: readonly Track<T>[], spec: RetimeSpec): Track<T>[];
-
-// @public (undocumented)
-export interface RetimeSpec {
-    pingpong?: boolean;
-    reverse?: boolean;
-    shift?: number;
-    speed?: number;
-}
-
-// @public
 export interface Rgba {
     // (undocumented)
     a: number;

@@ -101,7 +101,7 @@ function* distFiles(dir) {
 // kB (gzipped) per §4.4 sub-budgets
 const BUDGETS = {
   core: 17, // raised 8→10→11→12→14→15→16→17 (v2 §B.6 derivative/retarget math; 0.7 correctness: sync-unit ids, audio-offset helper, clamp + sidecar-label warnings; 0.9 §3.6 FontRegistry + hand-rolled cmap reader (formats 4/12) + font validation — DEV/export-path only, never in evaluate(), tree-shaken out of real embeds; 0.10.1 §2.2 paint value type: gradient (linear/radial) Paint + keyframe interpolation (lerp/lift/snap) — a first-class animatable value like path/color, registered so it can't tree-shake, ~0.5 kB; 0.14 §2.2 scalar→vec2 bind-time guard — BindTypeMismatchError + the per-track type check in bindTimeline that hard-throws a scalar-on-vec2 / type↔shape mismatch instead of silently NaN-ing the matrix, ~0.1 kB. A runtime correctness FLOOR for the silent-NaN class — on the synchronous embed path (bindTimeline runs at bind), so it can't tree-shake; base embed path stays ~37/38; 16→17 in 0.19 for the builder authoring sugar — unknown-option guard (rejectUnknownOpts) + per-target stagger fn-form + tl.tracks clip-tier bridge, ~0.1 kB additive builder API. NOTE: CI minifies ~0.1 kB heavier than local (16.07 > 16 in CI, 15.98 locally); the binding base-embed 39 ceiling is the real embed guard and stays 38.4, unaffected by this sub-budget raise)
-  'core/clips': 8, // §2 motion clips: build-time authoring sugar (clip/clipList + the popIn/slideIn/pulse/driftLoop literals + 0.13 morph (shared-element box-FLIP) + 0.13 presence (enter/exit scheduling)) on a tree-shakeable sub-path, never in the base index. Standalone bundle inlines the same-package track/valueTypes/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared compile path, not the literals; base core stays ~15.4/16 with clips fully tree-shaken out. Raised 6→7 for the 0.13 clip tier (morph + presence). Raised 7→8 in 0.18 for the presence inline-literal sugar (PresenceTransition + transitionToClip: the opacity/offset+edge/scale→clip compiler that lets authors spell enter/exit as a terse literal instead of hand-building clip() channels — PURE build-time sugar, compiles to the same tracks, ~0.25 kB)
+  'core/clips': 9, // §2 motion clips: build-time authoring sugar (clip/clipList + the popIn/slideIn/pulse/driftLoop literals + 0.13 morph (shared-element box-FLIP) + 0.13 presence (enter/exit scheduling)) on a tree-shakeable sub-path, never in the base index. Standalone bundle inlines the same-package track/valueTypes/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured size is mostly that shared compile path, not the literals; base core stays ~15.4/16 with clips fully tree-shaken out. Raised 6→7 for the 0.13 clip tier (morph + presence). Raised 7→8 in 0.18 for the presence inline-literal sugar (PresenceTransition + transitionToClip: the opacity/offset+edge/scale→clip compiler that lets authors spell enter/exit as a terse literal instead of hand-building clip() channels — PURE build-time sugar, compiles to the same tracks, ~0.25 kB). 8->9 in 0.40: `retime` + its reversedKeys/mirrorEase helpers relocated here off the base core index (the Expr base-budget review) — pure build-time key transforms, string-heavy, ~0.5 kB gz; keeps the SACRED base embed <= 39 (38.44) without a base bump.
   'core/expr': 7, // 0.40 Expr: the deterministic math-formula evaluator (tokenizer + precedence-climbing parser → closure + a pure Math/constant whitelist + seeded rand) behind exprTrack. Tree-shakeable subpath OFF the base embed — a ~1.4 kB parser that must not ride every scene's render path; the base sampler carries only a tiny compiler-register seam (sampleTrack's tr.expr branch + setExprCompiler), and importing @glissade/core/expr activates it. Standalone bundle inlines the same-package track/valueTypes helpers exprTrack builds through (the @glissade/* external only catches CROSS-package deps), so the measured ~2.9 kB is mostly that shared construction path, not the evaluator's own surface; base core stays expr-free (asserted by the metafile guard below). 6->7 in 0.40: CI minified 6.03 > 6.00 local (the recurring ~0.16 kB CI-heavier delta) — bumped to 7 for the delta + headroom.
   'core/sidecar': 6, // 0.20: the §6.2 editor sidecar (merge/migrate/orphan/key-id machinery) — STUDIO-only, never on the evaluate/embed path. Relocated off the base core index in the 0.20 budget review onto this tree-shakeable subpath (~1 kB gz recovered on base core). The standalone bundle inlines the same-package track/spring/targetRef helpers it compiles through (the @glissade/* external only catches CROSS-package deps), so the measured ~5 kB is mostly that shared path, not the sidecar's own surface; base core stays sidecar-free (asserted by the metafile guard below).
   'core/i18n': 2, // 0.14 localization core: requireParity (pure id-set diff) + localize (pure doc→doc resolver) + t() (ambient-table build-time sugar). Tree-shakeable sub-path off the base index — the resolver bytes never touch the embed budget. timeline/track are TYPE-only imports, so the standalone bundle is essentially just these three functions.
@@ -213,23 +213,16 @@ for (const [pkg, budgetKb] of Object.entries(BUDGETS)) {
   }
 }
 
-// 39→40 in 0.40 (Expr) — FLAGGED FOR TYLER'S REVIEW. The 0.40 flagship Expr adds a
-// formula-of-t Track kind. Its EVALUATOR (the ~1.4 kB tokenizer/parser) is on the
-// tree-shakeable @glissade/core/expr subpath, OFF the base (a metafile guard asserts
-// `base core excludes expr`). But sampling a formula-track is IRREDUCIBLY a base-path
-// cost: sampleTrack must branch on tr.expr, compileTimeline's validateTrack must skip
-// the keys-check for expr tracks, and the compiler-register seam lives in track.ts —
-// none of which can move off base. That seam is ~0.17 kB local; the base was already
-// at its documented limit (38.83/39, the acknowledged 35→39 creep "flagged for the 1.0
-// budget review"), so 38.83 + seam = 39.00 local → 39.14 CI (the +0.16 CI-minify
-// delta), over 39. This is the 6th base bump for a legitimate base-PATH feature
-// (35→36→37→38→39→40), consistent with the prior five. The truly-sacred invariants —
-// the determinism hash b4e6060006… and the byte-exact goldens — are UNCHANGED. If a
-// base-budget REVIEW (the 0.20 relocation playbook) later recovers headroom, drop back
-// to 39. Tyler: revert Expr if you'd rather hold the base at 39.
-const baseOk = baseTotal <= 40;
+// 0.40 (Expr) — base HELD AT 39 via a budget-review relocation (the 0.20 playbook).
+// Expr adds an irreducible base sampler seam (~0.17 kB: sampleTrack's tr.expr branch
+// + compileTimeline's validateTrack skip-keys). To fit it under 39 rather than bump
+// the SACRED ceiling, `retime` + its private reversedKeys/mirrorEase helpers (pure
+// build-time key transforms, never on the hot path, string-heavy) were relocated OFF
+// the base core index onto @glissade/core/clips — recovering ~0.4-0.6 kB gz. Net:
+// base embed stays <= 39 WITH Expr's seam. Determinism hash + goldens unchanged.
+const baseOk = baseTotal <= 39;
 if (!baseOk) failed = true;
-console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 40 kB)`);
+console.log(`${baseOk ? 'ok  ' : 'FAIL'} base embed path     ${baseTotal.toFixed(2).padStart(6)} kB gz  (budget 39 kB)`);
 
 // §3.2 guard: the BASE scene bundle must NOT pull in Yoga — flexbox layout is a
 // separately-budgeted entry (@glissade/scene/layout). A static import would

@@ -2,6 +2,12 @@
 // to ordinary keyed Track[] (DESIGN.md §2). Tree-shakeable sub-path so the
 // keyframe literals stay off the base embed budget.
 
+// `retime` (0.40 base-budget review): the pure build-time key-time transform
+// (speed/shift/reverse/pingpong) relocated here off the base core index — it's
+// authoring sugar (never on the sampleTrack/evaluate hot path), so it belongs
+// with the clip tier and its bytes leave the SACRED base embed.
+export { retime, type RetimeSpec } from './track.js';
+
 export {
   clip,
   clipList,

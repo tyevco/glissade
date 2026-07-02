@@ -5,7 +5,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { key, retime, sampleTrack, track, TrackValidationError } from '../src/index.js';
+import { key, sampleTrack, track, TrackValidationError } from '../src/index.js';
+import { retime } from '../src/clips.js'; // relocated off the base index (0.40 budget review)
 
 const move = () => track('box/position.x', 'number', [key(0, 0), key(1, 100, 'easeInCubic')]);
 
