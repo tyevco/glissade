@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.38.0"
   },
   "changesets": [
+    "gs-master-truepeak-fix",
     "gs-master"
   ]
 }
