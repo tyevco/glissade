@@ -51,7 +51,7 @@ const USAGE = `usage:
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
-  gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json
+  gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--strict] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json (re-localize CARRIES existing translations over — never clobbers); --strict refuses to write on a preflight failure
   gs --version   print the engine version
 
 render options:
@@ -382,11 +382,12 @@ async function main(): Promise<void> {
         ...(lf.get('from') ? { from: lf.get('from')! } : {}),
         ...(lf.has('write') ? { write: true } : {}),
         ...(lf.has('keep-voice') ? { keepVoice: true } : {}),
+        ...(lf.has('strict') ? { strict: true } : {}),
       });
       process.stdout.write(lf.has('json') ? `${JSON.stringify(report, null, 2)}\n` : `${formatLocalizeReport(report)}\n`);
-      // drift is a CI-failing signal on a dry run (parity/localize issue an un-run
-      // render would hit); --write is the fix-forward, so it doesn't gate.
-      if (!lf.has('write') && report.preflight.issues.length > 0) process.exit(1);
+      // drift is a CI-failing signal: on a dry run always, and on --write only under
+      // --strict (which also REFUSED the write). Plain --write is the fix-forward (exit 0).
+      if (report.preflight.issues.length > 0 && (!lf.has('write') || lf.has('strict'))) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

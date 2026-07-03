@@ -40,6 +40,19 @@ describe('forkNarrationScript', () => {
   it('keepVoice retains the voice', () => {
     expect(forkNarrationScript(baseScript, { keepVoice: true }).voice).toBe('af_heart');
   });
+  it('carries over an existing locale translation by id (0.42.1 — no silent wipe on re-localize)', () => {
+    const existing: NarrationScript = {
+      narrationVersion: 1,
+      segments: [
+        { id: 'intro', text: '你好翻译' }, // a real translation → carried
+        { id: 'beat', pause: 0.5 },
+        { id: 'outro', text: '' }, // still-blank → re-stub the base source, don't carry the blank
+      ],
+    };
+    const zh = forkNarrationScript(baseScript, { existing });
+    expect((zh.segments[0] as { text: string }).text).toBe('你好翻译'); // carried, NOT wiped
+    expect((zh.segments[2] as { text: string }).text).toBe('Goodbye'); // blank existing → base placeholder
+  });
   it('is pure — the input script is never mutated', () => {
     const snap = JSON.stringify(baseScript);
     forkNarrationScript(baseScript);

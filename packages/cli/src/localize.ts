@@ -34,11 +34,25 @@ export class LocalizeError extends Error {
  * locale picks its own (an English voice on translated text is a mistake) unless
  * `keepVoice` is set.
  */
-export function forkNarrationScript(base: NarrationScript, opts: { keepVoice?: boolean } = {}): NarrationScript {
+export function forkNarrationScript(
+  base: NarrationScript,
+  opts: { keepVoice?: boolean; existing?: NarrationScript } = {},
+): NarrationScript {
+  // Carry over a translator's already-localized segment text BY ID (0.42.1 — the
+  // fix for the silent-wipe footgun: a re-localize must never clobber translated
+  // narration). A base segment reuses the existing locale's text when the id
+  // matches AND that text differs from the base (a real translation, not a
+  // still-placeholder copy); a NEW base segment re-stubs the source text.
+  const existingText = new Map<string, string>();
+  for (const el of opts.existing?.segments ?? []) {
+    if (!isPause(el) && el.text !== '') existingText.set(el.id, el.text);
+  }
   const segments: NarrationElement[] = base.segments.map((el) => {
     if (isPause(el)) return { ...el };
-    if (opts.keepVoice) return { ...el };
-    const { voice: _voice, ...rest } = el; // drop the segment voice for the new locale
+    const carried = existingText.get(el.id);
+    const withText = carried !== undefined && carried !== el.text ? { ...el, text: carried } : { ...el };
+    if (opts.keepVoice) return withText;
+    const { voice: _voice, ...rest } = withText; // drop the segment voice for the new locale
     return rest;
   });
   const forked: NarrationScript = { ...base, segments };
@@ -178,7 +192,14 @@ async function harvestMessageIds(
   const ids = new Set<string>(tIds);
   const doc = mod.timeline;
   for (const tr of doc.tracks ?? []) {
-    if (tr.type === 'string') ids.add(nodeIdOf(tr.target));
+    if (tr.type !== 'string') continue;
+    // Skip MULTI-CUE string tracks (>1 distinct keyed value — e.g. a 72-cue caption
+    // /typewriter node): `localize()` can't table-localize them (it throws), so
+    // offering the node-id as a table target only ever keeps the preflight red. A
+    // per-locale multi-cue track comes from a re-narration, not the message table.
+    const distinct = new Set((tr.keys ?? []).map((k) => k.value));
+    if (distinct.size > 1) continue;
+    ids.add(nodeIdOf(tr.target));
   }
   return { ids: [...ids], tIds, doc };
 }
@@ -189,9 +210,13 @@ export interface LocalizeReport {
   readonly messageIds: readonly string[];
   /** the forked narration beat ids (preserved from the base) */
   readonly beatIds: readonly string[];
+  /** segment translations carried over from an existing locale narration (re-localize) */
+  readonly carriedSegments: number;
   readonly preflight: LocalizePreflight;
-  /** files written under --write (empty on a dry run) */
+  /** files written under --write (empty on a dry run, or when --strict refuses on drift) */
   readonly wrote: readonly string[];
+  /** true when --strict refused to write because the preflight had issues */
+  readonly refusedWrite: boolean;
   /** the target paths a --write would produce */
   readonly narrationPath: string;
   readonly messagesPath: string;
@@ -207,7 +232,7 @@ export interface LocalizeReport {
  */
 export async function localizeCommand(
   modulePath: string,
-  opts: { to: string; from?: string; write?: boolean; keepVoice?: boolean },
+  opts: { to: string; from?: string; write?: boolean; keepVoice?: boolean; strict?: boolean },
 ): Promise<LocalizeReport> {
   const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
   const { scriptPathFor } = await import('@glissade/narrate/providers');
@@ -235,16 +260,24 @@ export async function localizeCommand(
     narrationSource = 'timing';
   }
 
-  const forked = baseScript ? forkNarrationScript(baseScript, { keepVoice: opts.keepVoice ?? false }) : undefined;
-  const beatIds = baseScript ? scriptBeatIds(baseScript) : [];
-
-  // 3) manifests — base beats vs the EXISTING locale's beats (drift), or the fork (fresh)
+  // 3) the EXISTING locale narration (a re-localize) — read ONCE, drives both drift
+  //    detection AND the translated-text carry-over (never wipe a translator's work).
   const narrationPath = moduleStemOf(modulePath) + `.${to}.narration.json`;
-  let localeBeatIds = beatIds; // a fresh fork mirrors the base
-  if (existsSync(narrationPath)) {
-    const existing = JSON.parse(readFileSync(narrationPath, 'utf8')) as NarrationScript;
-    localeBeatIds = scriptBeatIds(existing);
-  }
+  const existingLocale =
+    baseScript && existsSync(narrationPath)
+      ? (JSON.parse(readFileSync(narrationPath, 'utf8')) as NarrationScript)
+      : undefined;
+
+  const forked = baseScript
+    ? forkNarrationScript(baseScript, { keepVoice: opts.keepVoice ?? false, ...(existingLocale ? { existing: existingLocale } : {}) })
+    : undefined;
+  const beatIds = baseScript ? scriptBeatIds(baseScript) : [];
+  const localeBeatIds = existingLocale ? scriptBeatIds(existingLocale) : beatIds; // fresh fork mirrors base
+  // how many segments carried a real translation over (vs re-stubbed from the base)
+  const carriedSegments =
+    baseScript && forked
+      ? forked.segments.filter((el, i) => !isPause(el) && (el as { text: string }).text !== (baseScript.segments[i] as { text?: string }).text).length
+      : 0;
 
   // 4) message table stub — base placeholders (--from) + carry existing target translations
   const base = opts.from ? loadMessageTable(modulePath, opts.from) : undefined;
@@ -267,18 +300,23 @@ export async function localizeCommand(
     consumedIds: tIds,
   });
 
-  // 6) write (opt-in)
+  // 6) write (opt-in). --strict refuses to emit on a preflight failure (CI gate,
+  //    mirroring the dry-run exit-1). A no-message repo (no t() + no single-cue
+  //    string tracks) skips messages.<locale>.json entirely — nothing to localize.
   const wrote: string[] = [];
-  if (opts.write) {
+  const refusedWrite = !!(opts.write && opts.strict && !preflight.ok);
+  if (opts.write && !refusedWrite) {
     if (forked) {
       writeFileSync(narrationPath, JSON.stringify(forked, null, 2) + '\n');
       wrote.push(narrationPath);
     }
-    writeFileSync(messagesPath, JSON.stringify(stubTable, null, 2) + '\n');
-    wrote.push(messagesPath);
+    if (messageIds.length > 0) {
+      writeFileSync(messagesPath, JSON.stringify(stubTable, null, 2) + '\n');
+      wrote.push(messagesPath);
+    }
   }
 
-  return { locale: to, messageIds: messageIds.sort(), beatIds, preflight, wrote, narrationPath, messagesPath, narrationSource };
+  return { locale: to, messageIds: messageIds.sort(), beatIds, carriedSegments, preflight, wrote, refusedWrite, narrationPath, messagesPath, narrationSource };
 }
 
 /** Human-readable report (migrate.ts style). */
@@ -286,16 +324,22 @@ export function formatLocalizeReport(r: LocalizeReport): string {
   const lines: string[] = [];
   lines.push(`gs localize → ${r.locale}`);
   lines.push(
-    `  narration: ${r.narrationSource === 'none' ? 'none found' : `${r.beatIds.length} beat(s) from the ${r.narrationSource} (ids preserved)`}`,
+    `  narration: ${r.narrationSource === 'none' ? 'none found' : `${r.beatIds.length} beat(s) from the ${r.narrationSource} (ids preserved)`}` +
+      (r.carriedSegments > 0 ? `; ${r.carriedSegments} translation(s) carried over` : ''),
   );
-  lines.push(`  messages:  ${r.messageIds.length} id(s) harvested, ${r.preflight.untranslated} still untranslated`);
+  lines.push(
+    r.messageIds.length === 0
+      ? '  messages:  none localizable (no t() ids / no single-cue string tracks) — narration only'
+      : `  messages:  ${r.messageIds.length} id(s) harvested, ${r.preflight.untranslated} still untranslated`,
+  );
   if (r.preflight.issues.length === 0) {
     lines.push('  preflight: ✓ parity + localize clean (safe to translate + narrate)');
   } else {
     lines.push(`  preflight: ✗ ${r.preflight.issues.length} issue(s) — fix before narrating:`);
     for (const i of r.preflight.issues) lines.push(`    [${i.kind}] ${i.message.replace(/\n/g, '\n      ')}`);
   }
-  if (r.wrote.length) lines.push(`  wrote: ${r.wrote.join(', ')}`);
-  else lines.push(`  (dry run — re-run with --write to emit ${r.narrationPath} + ${r.messagesPath})`);
+  if (r.refusedWrite) lines.push('  --strict: refused to write (preflight failed); fix the drift above, then re-run');
+  else if (r.wrote.length) lines.push(`  wrote: ${r.wrote.join(', ')}`);
+  else lines.push(`  (dry run — re-run with --write to emit ${r.narrationPath}${r.messageIds.length ? ` + ${r.messagesPath}` : ''})`);
   return lines.join('\n');
 }

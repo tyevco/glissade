@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.41.1"
   },
   "changesets": [
+    "gs-localize-nits",
     "gs-localize"
   ]
 }
