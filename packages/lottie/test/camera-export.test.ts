@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { key, track, type Timeline } from '@glissade/core';
 import { Circle, createScene, evaluate, type SceneModule } from '@glissade/scene';
-import { camera } from '@glissade/scene/motion';
+import { camera, shake } from '@glissade/scene/motion';
 import { SkiaBackend, ssim, createMeasurer } from '@glissade/backend-skia';
 import { exportLottie } from '../src/export.js';
 import { importLottie } from '../src/index.js';
@@ -94,6 +94,30 @@ describe('Camera pose → Lottie null-parent ks', () => {
       const b = await renderPixels(roundTripped, t);
       expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
     }
+  });
+
+  it('a STANDALONE shake(node) is honestly WARNED (render-only), never silently dropped', () => {
+    const warnings: string[] = [];
+    const mod: SceneModule = {
+      createScene: () => {
+        const dot = new Circle({ id: 'dot', radius: 30, position: [120, 120], fill: '#3366cc' });
+        return createScene({ size: { w: W, h: H }, children: [shake(dot, { seed: 4, translate: 6 })] });
+      },
+      timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+    };
+    exportLottie(mod, { width: W, height: H, fps: FPS, onWarn: (m) => warnings.push(m) });
+    const shakeWarns = warnings.filter((w) => /shake.*render-only/i.test(w));
+    expect(shakeWarns).toHaveLength(1); // exactly once, per shaken node
+  });
+
+  it('a NO-shake scene emits NO shake warn (no false positive)', () => {
+    const warnings: string[] = [];
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: W, h: H }, children: [new Circle({ id: 'd', radius: 20, position: [120, 120], fill: '#3366cc' })] }),
+      timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+    };
+    exportLottie(mod, { width: W, height: H, fps: FPS, onWarn: (m) => warnings.push(m) });
+    expect(warnings.some((w) => /shake/i.test(w))).toBe(false);
   });
 
   it('a whole-frame camera shake is honestly WARNED (render-only), never silently dropped', () => {

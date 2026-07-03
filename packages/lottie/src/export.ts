@@ -68,7 +68,7 @@ import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, R
 // the per-layer inverse pose into the Lottie null-parent hierarchy (else the whole
 // camera move vanishes silently on export). `cameraLayerMatrix` is the SAME pure
 // pose math Camera.draw uses, so export and render agree by construction.
-import { Camera, cameraLayerMatrix } from '@glissade/scene/motion';
+import { Camera, cameraLayerMatrix, shakenSpec } from '@glissade/scene/motion';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
@@ -263,6 +263,13 @@ function walkChildren(
 ): void {
   for (let i = children.length - 1; i >= 0; i--) {
     const node = children[i]!;
+    // 0.55 standalone shake(): a render-only jitter (wraps emit, not a track) — warn
+    // ONCE per shaken node, never a silent drop (matches the camera-shake warn).
+    if (shakenSpec(node) !== undefined) {
+      ctx.warn(
+        `${describe(node)}: shake() jitter is render-only — NOT exported to Lottie (it is a closed-form jitter, not a keyframe track)`,
+      );
+    }
     const kind = classify(node);
     if (kind === 'drop') {
       ctx.warn(`${describe(node)} is not exportable (MVP: Group / Rect / Circle / Path / Text) — dropped`);

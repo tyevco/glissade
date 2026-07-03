@@ -27,6 +27,7 @@
   },
   "changesets": [
     "camera-pose-lottie-export",
-    "camera-rig"
+    "camera-rig",
+    "shake-export-warn"
   ]
 }

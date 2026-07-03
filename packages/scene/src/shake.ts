@@ -44,6 +44,21 @@ function snoise(seed: number, t: number): number {
 }
 
 /**
+ * Render-INVISIBLE marker: which nodes a {@link shake} driver is applied to, and
+ * with what spec. The render path NEVER reads this (shake works purely by wrapping
+ * `emit`), so it is byte-neutral for goldens — it exists ONLY so an EXPORTER
+ * (which reads signals, not `emit`) can detect the render-only jitter and warn
+ * honestly instead of silently dropping it. A WeakMap keeps it off the Node type.
+ */
+const SHAKEN = new WeakMap<Node, ShakeSpec>();
+
+/** The shake spec applied to `node` via {@link shake}, or undefined — the seam an
+ *  exporter uses to emit an honest "shake is render-only" warn (never a silent drop). */
+export function shakenSpec(node: Node): ShakeSpec | undefined {
+  return SHAKEN.get(node);
+}
+
+/**
  * The pure per-time shake offset for a spec: `{ dx, dy }` px + `dr` degrees, each
  * a deterministic function of `(seed, t)`. Both the {@link shake} node driver and
  * the Camera whole-frame shake fold this in.
@@ -90,6 +105,7 @@ export function shake(node: Node, spec: ShakeSpec): Node {
       "shake(): pass a nonzero `translate` (px) or `rotate` (deg) amplitude — both are 0/omitted, so nothing would move.",
     );
   }
+  SHAKEN.set(node, spec); // render-invisible export marker (see shakenSpec)
   const origEmit = node.emit.bind(node);
   node.emit = (out, ctx: EvalContext): void => {
     const { dx, dy, dr } = shakeOffset(spec, ctx.time);

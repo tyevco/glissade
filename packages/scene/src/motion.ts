@@ -31,4 +31,4 @@ export {
 // 0.55 Camera rig + the standalone shake driver — cinematic camera moves
 // (push-in/pan/roll/parallax) + deterministic pose jitter. Off the base embed.
 export { Camera, camera, CameraError, cameraLayerMatrix, type CameraLayer, type CameraProps } from './camera.js';
-export { shake, shakeOffset, type ShakeSpec } from './shake.js';
+export { shake, shakeOffset, shakenSpec, type ShakeSpec } from './shake.js';
