@@ -23,6 +23,8 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'allow-degraded',
   'bisect',
   'watch',
+  'write',
+  'keep-voice',
 ]);
 
 export interface ParsedArgs {

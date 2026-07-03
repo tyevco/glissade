@@ -331,13 +331,20 @@ function warnOnVersionSkew(scenePath: string): void {
   );
 }
 
-export async function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule> {
+export async function loadSceneModule(
+  modulePath: string,
+  locale?: string,
+  messageTableOverride?: import('@glissade/core/i18n').MessageTable,
+): Promise<SceneModule> {
   // 0.14 localization core: install the ambient message table BEFORE the module
   // is imported — `t('id')` runs at module-eval / createScene() time, so the
   // table must be set first. No --locale leaves the ambient table unset, so
   // `t(id)` returns `id` verbatim → the base path is byte-identical to today.
+  // 0.42: a caller (gs localize's id-harvest) may inject a recording table override.
   const { setMessageTable } = await import('@glissade/core/i18n');
-  if (locale !== undefined && locale !== '') {
+  if (messageTableOverride !== undefined) {
+    setMessageTable(messageTableOverride);
+  } else if (locale !== undefined && locale !== '') {
     const { loadMessageTable } = await import('./locale.js');
     setMessageTable(loadMessageTable(modulePath, locale));
   } else {

@@ -7,6 +7,7 @@
 import { AudioClip } from '@glissade/core';
 import { CompiledTimeline } from '@glissade/core';
 import { DisplayList } from '@glissade/scene';
+import * as _glissade_core_i18n0 from '@glissade/core/i18n';
 import { Image as Image_2 } from '@napi-rs/canvas';
 import { Key } from '@glissade/core';
 import { NarrationTiming } from '@glissade/narrate';
@@ -301,7 +302,7 @@ export type LintRule = 'reading-speed' | 'anchor-budget' | 'caption-fit' | 'beat
 export function lintTimingPathFor(input: string): Promise<string>;
 
 // @public
-export function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule>;
+export function loadSceneModule(modulePath: string, locale?: string, messageTableOverride?: _glissade_core_i18n0.MessageTable): Promise<SceneModule>;
 
 // @public
 export class LocaleArgsError extends Error {

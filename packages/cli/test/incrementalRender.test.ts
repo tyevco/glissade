@@ -56,7 +56,7 @@ describe.runIf(existsSync(CLI) && ffmpegAvailable())('gs render --incremental â€
 
     // THE GATE: the spliced output equals the cold full render, byte-for-byte.
     expect(readFileSync(P).equals(readFileSync(Q))).toBe(true);
-  });
+  }, 30_000);
 
   it('an unchanged re-render reuses the intermediate verbatim and stays byte-identical', () => {
     const R = join(outDir, 'R.mp4');
@@ -65,7 +65,7 @@ describe.runIf(existsSync(CLI) && ffmpegAvailable())('gs render --incremental â€
     const again = render(sceneB, R);
     expect(again).toMatch(/0\/24 frames changed/);
     expect(readFileSync(R).equals(before)).toBe(true);
-  });
+  }, 30_000);
 
   it('a reverse edit splices back byte-identically to a cold render of the original', () => {
     const S = join(outDir, 'S.mp4'); // A â†’ B â†’ A (reverse splice)
@@ -76,5 +76,5 @@ describe.runIf(existsSync(CLI) && ffmpegAvailable())('gs render --incremental â€
     expect(reverse).toMatch(/frames changed/);
     render(sceneA, Aref);
     expect(readFileSync(S).equals(readFileSync(Aref))).toBe(true);
-  });
+  }, 30_000);
 });

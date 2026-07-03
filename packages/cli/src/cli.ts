@@ -51,6 +51,7 @@ const USAGE = `usage:
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
+  gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json
   gs --version   print the engine version
 
 render options:
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master' && command !== 'localize') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -359,6 +360,33 @@ async function main(): Promise<void> {
       // exit non-zero when a write was refused below floor (a real regression),
       // or on any staleness in a dry-run (so CI catches un-repinned goldens).
       if (result.blocked > 0 || (!rf.has('write') && result.changed > 0)) process.exit(1);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // gs localize <scene-module> --to <locale> — fork a narration into a new locale,
+  // stub messages.<locale>.json from the scene's t() ids, and run the render path's
+  // parity + localize checks BEFORE any TTS. Dry-run by default; --write emits.
+  if (command === 'localize') {
+    const { positional: lp, flags: lf } = parseArgs(rest);
+    const sceneModule = lp[0];
+    if (!sceneModule) fail(`gs localize needs <scene-module>\n${USAGE}`);
+    const to = lf.get('to');
+    if (!to) fail(`gs localize needs --to <locale> (e.g. --to zh)\n${USAGE}`);
+    const { localizeCommand, formatLocalizeReport } = await import('./localize.js');
+    try {
+      const report = await localizeCommand(sceneModule, {
+        to,
+        ...(lf.get('from') ? { from: lf.get('from')! } : {}),
+        ...(lf.has('write') ? { write: true } : {}),
+        ...(lf.has('keep-voice') ? { keepVoice: true } : {}),
+      });
+      process.stdout.write(lf.has('json') ? `${JSON.stringify(report, null, 2)}\n` : `${formatLocalizeReport(report)}\n`);
+      // drift is a CI-failing signal on a dry run (parity/localize issue an un-run
+      // render would hit); --write is the fix-forward, so it doesn't gate.
+      if (!lf.has('write') && report.preflight.issues.length > 0) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

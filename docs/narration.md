@@ -277,3 +277,22 @@ const bed: AudioClip = {
 ```
 
 Gain envelopes are keys-only (`{ keys }`); a full `track()` still works but its target string carries no meaning on a clip.
+
+## Localizing to a new locale (`gs localize`)
+
+Render already fans out across locales (`gs render scene.ts --locales en,zh`): for each locale it loads `messages.<locale>.json` (the ambient table `t('id')` resolves against) and prefers the locale-tagged narration sibling `<base>.<locale>.narration.timing.json`. What it *doesn't* do is **create** those artifacts — and hand-forking a narration drifts silently: a missing beat id breaks a `.start()` anchor, an orphaned message id throws, and you only find out after a minute of TTS.
+
+`gs localize` does the fork up front and runs the render path's checks *before* any synthesis:
+
+```sh
+gs localize scene.ts --to zh            # dry run: report what it would fork + a parity/localize preflight
+gs localize scene.ts --to zh --write    # emit scene.zh.narration.json + messages.zh.json
+```
+
+It:
+
+- **Forks the narration** (`<base>.narration.json`, or the committed timing if that's all there is) into `<base>.<locale>.narration.json`, **preserving every segment and pause id** so your `.start('intro')` / `beats.at('beat', …)` anchors survive the translation. The per-segment text carries through as a translate-me placeholder; the voice is dropped so the locale picks its own (`--keep-voice` retains it).
+- **Stubs `messages.<locale>.json`** from the ids the scene actually uses — every `t()` id (harvested by loading the scene) plus every `type:'string'` track's node-id (the `localize()` keys). Keys are sorted for a diff-stable file. A re-localize **carries existing translations over** — it never blanks work already done — and `--from <locale>` seeds untranslated entries with a base-locale placeholder so you translate *from* the source.
+- **Preflights** with the same `requireParity` (beat-id parity between the base and the new locale) and a dry `localize()` (no orphaned/stale message keys) the render runs — as one non-throwing report, so every drift surfaces at once. A dry run **exits non-zero** on any issue (a CI gate); `--write` is the fix-forward.
+
+`gs localize` never synthesizes audio or renders — after it, you translate the two emitted files and run `gs narrate scene.zh.narration.json` (or `gs render --locales`) as usual.

@@ -1,0 +1,10 @@
+{
+  "narrationVersion": 1,
+  "voice": "af_heart",
+  "gap": 0.35,
+  "segments": [
+    { "id": "intro", "text": "Hello there", "voice": "af_heart" },
+    { "id": "beat", "pause": 0.5, "bed": "hold" },
+    { "id": "outro", "text": "Goodbye", "maxSec": 3 }
+  ]
+}
