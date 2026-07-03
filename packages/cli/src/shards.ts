@@ -22,14 +22,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ShaderEffect, type Scene } from '@glissade/scene';
+import { ShaderEffect, evaluate, withDeterminismGuards, type Scene } from '@glissade/scene';
 import type { CompiledTimeline } from '@glissade/core';
 import { pickEncoder } from './encoders.js';
 import { planFinalAudio, type RenderOptions } from './render.js';
+import { planIncremental, type SpliceSegment } from './incremental.js';
+import { readRenderManifest, writeRenderManifest, frameKeyDigest, type RenderManifest } from './renderManifest.js';
 
 /** Encoders that can't place a keyframe exactly on a forced boundary → not concat-copy-safe. */
 const IMPRECISE_KEYFRAME_ENCODERS = new Set(['mpeg4', 'libopenh264']);
@@ -306,6 +308,187 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
     opts.chapters === 'vtt',
     opts.chapterKinds,
   );
+  if (cueFiles.length) process.stderr.write(`cues: ${cueFiles.join(', ')}\n`);
+
+  return { frames: total, out: outAbs };
+}
+
+// ── 0.41 dirty-beat incremental ────────────────────────────────────────────
+
+/** The FFV1 lossless intermediate retained beside a `--incremental` output for the next splice. */
+export function intermediatePathFor(videoPath: string): string {
+  return `${videoPath}.gsintermediate.mkv`;
+}
+
+export interface RenderIncrementalArgs {
+  opts: RenderOptions;
+  scene: Scene;
+  /** the compiled timeline document passed to evaluate() */
+  doc: unknown;
+  compiled: CompiledTimeline;
+  /** the frameCacheKey context (version|caps|assets) — the same one the linear path builds */
+  keyCtx: unknown;
+  fps: number;
+  duration: number;
+  firstFrame: number;
+  lastFrame: number;
+  container: 'mp4' | 'webm';
+  timingPathFor: (modulePath: string) => string | null;
+  writeCaptionSidecars: (timingPath: string, target: string) => { srt: string; vtt: string };
+  writeCueSidecars: RenderShardedArgs['writeCueSidecars'];
+}
+
+/**
+ * Dirty-beat incremental render (0.41). Computes the per-frame key vector, diffs
+ * it against the prior manifest, and re-renders ONLY the changed frame runs —
+ * splicing the unchanged runs verbatim from the retained FFV1 intermediate.
+ *
+ * ONE pipeline for every outcome: each output segment becomes an FFV1 clip (a
+ * `render` segment from a fresh child render; a `keep` segment trimmed losslessly
+ * out of the prior intermediate), the clips concat-copy into the new intermediate,
+ * and a single final encode produces the output. A cold `--incremental` render is
+ * the degenerate all-`render` case, so a warm splice is byte-identical to a cold
+ * full render by construction: FFV1 is lossless and intra-only, so a kept segment
+ * decodes to the exact pixels a re-render would, and the final encode over the
+ * spliced stream is byte-for-byte the cold render. That IS the determinism
+ * contract, preserved THROUGH the optimization (the per-frame key is the same
+ * proof the frame cache and golden corpus trust).
+ */
+export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ frames: number; out: string }> {
+  const { opts, scene, doc, compiled, keyCtx, fps, duration, firstFrame, lastFrame, container } = a;
+  const outAbs = resolve(opts.out);
+  const total = lastFrame - firstFrame + 1;
+  const finalEnc = pickEncoder('video', container);
+  if (finalEnc.note) process.stderr.write(`note: ${finalEnc.note}\n`);
+
+  // 1) Key-only pre-pass (evaluate + hash, NO raster) → the new per-frame vector.
+  const { frameCacheKey } = await import('./frameCache.js');
+  const frameKeys: string[] = [];
+  for (let f = firstFrame; f <= lastFrame; f++) {
+    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc as never, f / fps));
+    frameKeys.push(frameCacheKey(dl, keyCtx as never));
+  }
+  const newDigest = frameKeyDigest(frameKeys);
+
+  // 2) Plan against the prior manifest + retained intermediate.
+  const intermediate = intermediatePathFor(outAbs);
+  const prev = readRenderManifest(outAbs);
+  const plan = planIncremental(prev, frameKeys, existsSync(intermediate), {
+    container, videoCodec: finalEnc.name, fps, firstFrame, frames: total,
+  });
+  const segments: SpliceSegment[] =
+    plan.kind === 'splice' ? [...plan.segments]
+    : plan.kind === 'unchanged' ? [{ start: 0, end: total - 1, kind: 'keep' }]
+    : [{ start: 0, end: total - 1, kind: 'render' }]; // 'full' (cold, or ineligible → render everything)
+
+  const renderFrames = segments.filter((s) => s.kind === 'render').reduce((n, s) => n + (s.end - s.start + 1), 0);
+  process.stderr.write(
+    plan.kind === 'splice'
+      ? `incremental: ${renderFrames}/${total} frames changed — re-rendering those, splicing ${total - renderFrames} from the intermediate\n`
+      : plan.kind === 'unchanged'
+        ? `incremental: 0/${total} frames changed — re-using the intermediate verbatim\n`
+        : `incremental: full render (${prev ? 'ineligible for splice' : 'no prior intermediate'}) — building the intermediate for next time\n`,
+  );
+
+  const work = mkdtempSync(join(tmpdir(), 'glissade-incr-'));
+  const segVideos: string[] = [];
+  let done = 0;
+  try {
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]!;
+      const segVideo = join(work, `seg-${String(i).padStart(3, '0')}.mkv`);
+      // FFV1 is pinned to rgb24 on BOTH sources so kept + rendered segments share an
+      // identical pixel format → the concat is byte-faithful and the final encode is stable.
+      if (seg.kind === 'keep') {
+        // Trim [start..end] out of the prior intermediate, losslessly, into an FFV1 clip.
+        const trimArgs = [
+          '-y', '-i', intermediate,
+          '-vf', `trim=start_frame=${seg.start}:end_frame=${seg.end + 1},setpts=PTS-STARTPTS`,
+          '-fps_mode', 'passthrough',
+          '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'rgb24',
+          segVideo,
+        ];
+        const t = spawnSync('ffmpeg', trimArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+        if (t.status !== 0) throw new ShardError(`incremental keep-trim [${seg.start}..${seg.end}] failed (exit ${t.status}):\n${t.stderr?.toString().slice(-2000)}`);
+      } else {
+        // Re-render the changed frames in a child `gs` process (absolute frame numbers).
+        const segFrames = join(work, `seg-${String(i).padStart(3, '0')}-frames`);
+        mkdirSync(segFrames, { recursive: true });
+        const first = firstFrame + seg.start;
+        const last = firstFrame + seg.end;
+        const childArgs = [
+          cliEntry(), 'render', opts.modulePath,
+          '--out', segFrames,
+          '--range', `${first}..${last}`,
+          '--format', 'png-seq',
+          '--fps', String(fps),
+          '--narration', 'off', '--music', 'off', '--sfx', 'off',
+          ...(opts.force ? ['--force'] : []),
+          ...(opts.strictFonts ? ['--strict'] : []),
+          ...(opts.allowSystemFonts ? ['--allow-system-fonts'] : []),
+        ];
+        const child = spawnSync(process.execPath, childArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+        if (child.status !== 0) throw new ShardError(`incremental render [${first}..${last}] failed (exit ${child.status}):\n${child.stderr?.toString().slice(-2000)}`);
+        const enc = spawnSync('ffmpeg', [
+          '-y', '-framerate', String(fps), '-start_number', String(first),
+          '-i', join(segFrames, 'frame-%05d.png'),
+          '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'rgb24',
+          segVideo,
+        ], { stdio: ['ignore', 'ignore', 'pipe'] });
+        if (enc.status !== 0) throw new ShardError(`incremental segment encode [${first}..${last}] failed (exit ${enc.status}):\n${enc.stderr?.toString().slice(-2000)}`);
+        rmSync(segFrames, { recursive: true, force: true });
+      }
+      segVideos.push(segVideo);
+      done += seg.end - seg.start + 1;
+      opts.onProgress?.(Math.min(done, total), total);
+    }
+
+    // 3) Concat-copy the FFV1 clips → the new retained intermediate (byte-faithful, no re-encode).
+    const listFile = join(work, 'concat.txt');
+    writeFileSync(listFile, segVideos.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n');
+    const newIntermediate = join(work, 'intermediate.mkv');
+    const concat = spawnSync('ffmpeg', [
+      '-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', newIntermediate,
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    if (concat.status !== 0) throw new ShardError(`incremental concat failed (exit ${concat.status}):\n${concat.stderr?.toString().slice(-2000)}`);
+
+    // 4) Single final encode of the spliced intermediate (+ the freshly mixed audio).
+    const { audioInputs, audioArgs } = await planFinalAudio(opts, [...compiled.audio], duration, container);
+    const finalArgs = [
+      '-y', '-i', newIntermediate,
+      ...audioInputs,
+      ...audioArgs,
+      '-c:v', finalEnc.name,
+      ...(VIDEO_QUALITY[finalEnc.name] ?? []),
+      ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
+      '-t', String(duration),
+      outAbs,
+    ];
+    const fin = spawnSync('ffmpeg', finalArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+    if (fin.status !== 0) throw new ShardError(`incremental final encode failed (exit ${fin.status}):\n${fin.stderr?.toString().slice(-2000)}`);
+
+    // 5) Retain the new intermediate beside the output + record the manifest with the key vector.
+    rmSync(intermediate, { force: true });
+    renameSync(newIntermediate, intermediate);
+    const manifest: RenderManifest = {
+      v: 1, frameKeyDigest: newDigest, frameKeys, container, videoCodec: finalEnc.name, fps, firstFrame, frames: total,
+    };
+    writeRenderManifest(outAbs, manifest);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+
+  // Sidecars / cues, once over the final output (mirrors the sharded path).
+  if ((opts.captions ?? 'burn') !== 'off') {
+    const timingPath = a.timingPathFor(opts.modulePath);
+    if (timingPath) {
+      const { srt, vtt } = a.writeCaptionSidecars(timingPath, outAbs);
+      process.stderr.write(`captions: ${srt}, ${vtt}\n`);
+    } else if (opts.captions === 'sidecar') {
+      process.stderr.write('note: --captions sidecar: no narration timing manifest found; run gs narrate first\n');
+    }
+  }
+  const cueFiles = a.writeCueSidecars(outAbs, compiled.markers, duration, opts.chapters === 'vtt', opts.chapterKinds);
   if (cueFiles.length) process.stderr.write(`cues: ${cueFiles.join(', ')}\n`);
 
   return { frames: total, out: outAbs };

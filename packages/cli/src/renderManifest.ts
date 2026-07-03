@@ -23,6 +23,13 @@ export interface RenderManifest {
   v: 1;
   /** sha256 over the ordered per-frame content-cache keys — the video proof */
   frameKeyDigest: string;
+  /**
+   * 0.41 dirty-beat: the ORDERED per-frame content-cache keys (the same keys the
+   * digest folds). Diffing this vector against a re-render's keys yields the exact
+   * changed frames, so only those re-render + splice into a retained lossless
+   * intermediate. Absent on pre-0.41 manifests → incremental unavailable (full render).
+   */
+  frameKeys?: readonly string[];
   /** 'mp4' | 'webm' — a container change must force a re-encode */
   container: string;
   /** the video encoder name (e.g. 'libx264') — a codec change forces a re-encode */
@@ -30,6 +37,12 @@ export interface RenderManifest {
   fps: number;
   firstFrame: number;
   frames: number;
+}
+
+/** A contiguous run of frame indices (0-based within the render range), inclusive. */
+export interface FrameRange {
+  readonly start: number;
+  readonly end: number;
 }
 
 /** sha256 of the ordered frame keys (NUL-separated so keys can't run together). */
@@ -40,6 +53,36 @@ export function frameKeyDigest(keys: readonly string[]): string {
     h.update('\0');
   }
   return h.digest('hex');
+}
+
+/**
+ * 0.41 dirty-beat: the changed frames between a prior render's key vector and this
+ * render's, as contiguous inclusive [start, end] index ranges (0-based within the
+ * range). `null` when incremental is impossible — no prior vector, or the frame
+ * COUNT differs (a duration change is a structural re-render, not a splice). An
+ * empty array means NOTHING changed (the remux/copy path). A returned range set
+ * names exactly the frames to re-render; every other frame is spliced verbatim
+ * from the retained lossless intermediate, so the final output is byte-identical
+ * to a full cold render (the determinism contract holds through the optimization).
+ */
+export function changedFrameRanges(
+  prev: readonly string[] | undefined,
+  now: readonly string[],
+): FrameRange[] | null {
+  if (prev === undefined || prev.length !== now.length) return null;
+  const ranges: FrameRange[] = [];
+  let runStart = -1;
+  for (let i = 0; i < now.length; i++) {
+    const changed = prev[i] !== now[i];
+    if (changed && runStart < 0) {
+      runStart = i;
+    } else if (!changed && runStart >= 0) {
+      ranges.push({ start: runStart, end: i - 1 });
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0) ranges.push({ start: runStart, end: now.length - 1 });
+  return ranges;
 }
 
 const manifestPathFor = (videoPath: string): string => `${videoPath}.gsrender.json`;

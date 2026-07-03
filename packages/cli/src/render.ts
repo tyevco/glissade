@@ -78,6 +78,17 @@ export interface RenderOptions {
    */
   losslessIntermediate?: boolean;
   /**
+   * --incremental (§8.1, 0.41 dirty-beat): re-render ONLY the frames whose per-frame
+   * content key changed since the last render, splicing the unchanged runs verbatim
+   * out of a retained FFV1 lossless intermediate. Kills the full re-render an edit
+   * that shifts timing (move one beat) otherwise forces — every downstream frame's
+   * DisplayList shifts, defeating both the whole-frame cache and the remux fast path.
+   * Implies the lossless-intermediate pipeline (FFV1 → single final encode); a warm
+   * splice is byte-identical to a cold `--incremental` render by construction. Video
+   * output only; requires the per-frame key (folds the same context the cache uses).
+   */
+  incremental?: boolean;
+  /**
    * --allow-gpu-shards (§5.6): sharded GPU/shader output isn't reproducible across
    * processes/machines, so a scene containing a ShaderEffect refuses to shard unless
    * this is set.
@@ -551,14 +562,12 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // and runs the IDENTICAL encodePng, so it is byte-identical to a cold render.
   let frameCache: import('./frameCache.js').FrameCache | undefined;
   let keyCtx: import('./frameCache.js').CacheKeyContext | undefined;
-  if (opts.cache && opts.cache.mode !== 'off') {
-    const { FrameCache, capsId, combineAssetDigests } = await import('./frameCache.js');
+  const cacheOn = !!(opts.cache && opts.cache.mode !== 'off');
+  // The per-frame key powers BOTH the cache and 0.41 incremental's diff, so build
+  // keyCtx whenever either is active (incremental doesn't need the raster cache).
+  if (cacheOn || opts.incremental) {
+    const { capsId, combineAssetDigests } = await import('./frameCache.js');
     const { glissadeVersion } = await import('./version.js');
-    frameCache = new FrameCache({
-      dir: opts.cache.dir,
-      mode: opts.cache.mode,
-      ...(opts.cache.maxSize !== undefined ? { maxSize: opts.cache.maxSize } : {}),
-    });
     const version = glissadeVersion();
     const caps = capsId(backend.caps);
     keyCtx = {
@@ -568,6 +577,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       // edit (same id/url) invalidates the key instead of serving stale pixels.
       assetsDigest: combineAssetDigests(assetDigests),
     };
+  }
+  if (cacheOn) {
+    const { FrameCache } = await import('./frameCache.js');
+    frameCache = new FrameCache({
+      dir: opts.cache!.dir,
+      mode: opts.cache!.mode,
+      ...(opts.cache!.maxSize !== undefined ? { maxSize: opts.cache!.maxSize } : {}),
+    });
+    const version = keyCtx!.version;
+    const caps = keyCtx!.capsId;
     // §3.5 disk layer-cache tier: persist cache:true group rasters across renders
     // so an expensive static subtree survives a re-narration (which flips the
     // whole-frame key but leaves the backdrop's sub-DisplayList untouched). Salt
@@ -575,8 +594,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     const { LayerCache } = await import('./layerCache.js');
     backend.setLayerStore(
       new LayerCache({
-        dir: join(opts.cache.dir, 'layers'),
-        mode: opts.cache.mode,
+        dir: join(opts.cache!.dir, 'layers'),
+        mode: opts.cache!.mode,
         salt: `${version}|${caps}|${scene.size.w}x${scene.size.h}`,
       }),
     );
@@ -589,6 +608,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // byte-identical — skip the frame loop and `-c:v copy` remux the new audio below.
   let videoOut: { outAbs: string; container: 'mp4' | 'webm'; encName: string; encNote?: string } | undefined;
   let remuxDigest: string | undefined;
+  let remuxKeys: string[] | undefined; // the pre-pass key vector (persisted so 0.41 incremental survives a remux)
   if (isVideo) {
     const outAbs = resolve(opts.out);
     const container: 'mp4' | 'webm' = /\.webm$/i.test(outAbs) ? 'webm' : 'mp4';
@@ -613,8 +633,28 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
         const digest = frameKeyDigest(keys);
         if (canRemux(prev, { frameKeyDigest: digest, container, videoCodec: enc.name, fps, firstFrame, frames: total }, true)) {
           remuxDigest = digest;
+          remuxKeys = keys;
         }
       }
+    }
+  }
+
+  // 0.41 dirty-beat incremental: if the video didn't collapse to a pure audio-only
+  // remux, hand off to the splice path — it re-renders only the changed frame runs
+  // and reuses the retained FFV1 intermediate for the rest. Needs the per-frame key
+  // (keyCtx) and a multi-frame video; a GPU/shader scene falls through (its output
+  // isn't reproducible across the child-process boundary the splice renders in).
+  if (opts.incremental && isVideo && !remuxDigest && keyCtx && total > 1 && videoOut) {
+    const { sceneHasGpuNodes, renderIncremental } = await import('./shards.js');
+    if (sceneHasGpuNodes(scene) && !opts.allowGpuShards) {
+      process.stderr.write('note: --incremental skipped — scene has GPU/shader nodes (not reproducible across the splice child process); pass --allow-gpu-shards to override\n');
+    } else {
+      backend.dispose();
+      for (const source of videoSources) source.close();
+      return renderIncremental({
+        opts, scene, doc, compiled, keyCtx, fps, duration, firstFrame, lastFrame,
+        container: videoOut.container, timingPathFor, writeCaptionSidecars, writeCueSidecars,
+      });
     }
   }
 
@@ -730,7 +770,10 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     renameSync(tmpOut, outAbs);
     rmSync(encodeDir, { recursive: true, force: true });
     // manifest digest is unchanged (video is identical) — rewrite so mtime tracks
-    writeRenderManifest(outAbs, { v: 1, frameKeyDigest: remuxDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total });
+    writeRenderManifest(outAbs, {
+      v: 1, frameKeyDigest: remuxDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total,
+      ...(remuxKeys && remuxKeys.length === total ? { frameKeys: remuxKeys } : {}),
+    });
     process.stderr.write(`cache: ${total}/${total} frames unchanged (audio-only) — video copy + remux → ${outAbs}\n`);
     return { frames: total, out: outAbs };
   }
@@ -765,8 +808,12 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     throw new Error(`ffmpeg failed (exit ${result.status}):\n${result.stderr?.toString().slice(-2000)}`);
   }
   // record the manifest so the next render of this output can remux (audio-only reuse)
+  // or 0.41 dirty-beat incremental (frameKeys = the per-frame vector to diff against).
   if (newDigest) {
-    writeRenderManifest(outAbs, { v: 1, frameKeyDigest: newDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total });
+    writeRenderManifest(outAbs, {
+      v: 1, frameKeyDigest: newDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total,
+      frameKeys,
+    });
   }
   return { frames: total, out: outAbs };
 }

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { canRemux, frameKeyDigest, readRenderManifest, writeRenderManifest, type RenderManifest } from '../src/renderManifest.js';
+import { canRemux, changedFrameRanges, frameKeyDigest, readRenderManifest, writeRenderManifest, type RenderManifest } from '../src/renderManifest.js';
 
 let dir: string;
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'gs-manifest-')); });
@@ -62,5 +62,75 @@ describe('canRemux — the fast-path gate (video-canary invariants)', () => {
   });
   it('NO remux with no prior manifest (first render)', () => {
     expect(canRemux(undefined, now, true)).toBe(false);
+  });
+});
+
+describe('changedFrameRanges (0.41 dirty-beat incremental)', () => {
+  it('returns null when there is no prior key vector (→ full render)', () => {
+    expect(changedFrameRanges(undefined, ['a', 'b', 'c'])).toBeNull();
+  });
+
+  it('returns null when the frame COUNT differs (a duration change → full render)', () => {
+    expect(changedFrameRanges(['a', 'b'], ['a', 'b', 'c'])).toBeNull();
+  });
+
+  it('returns an EMPTY array when nothing changed (→ remux/copy, no re-render)', () => {
+    expect(changedFrameRanges(['a', 'b', 'c'], ['a', 'b', 'c'])).toEqual([]);
+  });
+
+  it('names a single changed frame as a 1-frame range', () => {
+    expect(changedFrameRanges(['a', 'b', 'c'], ['a', 'X', 'c'])).toEqual([{ start: 1, end: 1 }]);
+  });
+
+  it('coalesces a contiguous changed run into one range', () => {
+    // frames 2,3,4 changed → one range (the edit-one-beat, downstream reflow case)
+    const prev = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const now = ['a', 'b', 'C', 'D', 'E', 'f'];
+    expect(changedFrameRanges(prev, now)).toEqual([{ start: 2, end: 4 }]);
+  });
+
+  it('reports multiple disjoint changed runs', () => {
+    const prev = ['a', 'b', 'c', 'd', 'e'];
+    const now = ['A', 'b', 'C', 'd', 'E']; // 0, 2, 4 changed
+    expect(changedFrameRanges(prev, now)).toEqual([
+      { start: 0, end: 0 },
+      { start: 2, end: 2 },
+      { start: 4, end: 4 },
+    ]);
+  });
+
+  it('handles a change running to the last frame', () => {
+    const prev = ['a', 'b', 'c', 'd'];
+    const now = ['a', 'b', 'X', 'Y'];
+    expect(changedFrameRanges(prev, now)).toEqual([{ start: 2, end: 3 }]);
+  });
+
+  it('the dirty-beat win: an edit that reflows every downstream frame re-renders ONLY those', () => {
+    // 100 frames; a beat edit at frame 40 shifts every downstream key → 40..99 changed,
+    // 0..39 identical (spliced from the intermediate). 60 re-render, 40 copied.
+    const prev = Array.from({ length: 100 }, (_, i) => `k${i}`);
+    const now = prev.map((k, i) => (i >= 40 ? `k${i}-shifted` : k));
+    const ranges = changedFrameRanges(prev, now)!;
+    expect(ranges).toEqual([{ start: 40, end: 99 }]);
+    const reRendered = ranges.reduce((n, r) => n + (r.end - r.start + 1), 0);
+    expect(reRendered).toBe(60); // only 60 of 100 re-rendered, 40 spliced verbatim
+  });
+});
+
+describe('RenderManifest frameKeys round-trip + backward-compat', () => {
+  it('persists + reads the per-frame key vector', () => {
+    const p = join(dir, 'withkeys.mp4');
+    const m = base({ frameKeys: ['a', 'b', 'c'] });
+    writeRenderManifest(p, m);
+    expect(readRenderManifest(p)?.frameKeys).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a pre-0.41 manifest with NO frameKeys still validates (incremental → falls back)', () => {
+    const p = join(dir, 'nokeys.mp4');
+    writeRenderManifest(p, base()); // no frameKeys
+    const read = readRenderManifest(p);
+    expect(read).toBeDefined();
+    expect(read?.frameKeys).toBeUndefined();
+    expect(changedFrameRanges(read?.frameKeys, ['a', 'b', 'c'])).toBeNull(); // → full render
   });
 });

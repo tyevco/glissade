@@ -66,6 +66,11 @@ render options:
   --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
                    (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
   --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)
+  --incremental    dirty-beat: re-render ONLY the frames whose per-frame key changed since the last render, splicing
+                   the rest verbatim from a retained FFV1 intermediate (video out only). WINS the re-narrate / move-one-
+                   beat edit that MISSES the whole-frame cache: a timing shift changes every downstream frame's key, so
+                   the cache re-renders all of them — incremental re-renders only the changed run. A warm splice is
+                   byte-identical to a cold --incremental render. First run builds the intermediate; edits splice it
   --cache[=<dir>]  persistent whole-frame raster cache in <dir> (default .gscache; §3.5). OFF by default — opting in
                    never changes output, only speed. A hit serves a stored frame byte-identical to a cold render.
                    WINS: repeated renders + the UNCHANGED-PREFIX of a single-segment edit. Does NOT win a re-narrate —
@@ -688,6 +693,7 @@ async function main(): Promise<void> {
       ...(flags.has('allow-system-fonts') ? { allowSystemFonts: true } : {}),
       ...(workers !== undefined ? { workers } : {}),
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
+      ...(flags.has('incremental') ? { incremental: true } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),

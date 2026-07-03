@@ -60,3 +60,30 @@ ffmpeg -i remuxed.mp4 -f rawvideo -pix_fmt rgb24 - | sha256sum
 ```
 
 A `psnr` of `inf` (MSE 0) on all frames is the pass: the video is pixel-for-pixel the cold render, and only the audio (and cosmetic container timestamps) changed.
+
+## Dirty-beat incremental — re-render only the frames that changed
+
+The remux fast path is all-or-nothing: it wins only when **every** frame is unchanged. But the common editing loop is the opposite — you change one thing in the middle and re-render. And the worst case for the whole-frame cache is a **timing** edit: move one beat, re-narrate a line, nudge a keyframe, and every *downstream* frame's DisplayList shifts. Every content key from the edit point onward misses the cache, the rolled-up remux digest flips, and a 35-minute episode re-renders in full for a three-second change.
+
+`--incremental` fixes exactly that. Instead of only the rolled-up digest, the manifest persists the **ordered per-frame key vector**. On a re-render, the key-only pre-pass recomputes that vector, diffs it against the prior one, and re-renders **only the contiguous runs of changed frames** — splicing the unchanged runs verbatim out of a retained FFV1 lossless intermediate kept beside the output (`<out>.gsintermediate.mkv`):
+
+```sh
+gs render episode.ts --out ep.mp4 --incremental   # first run: builds the intermediate
+# …move one beat in the middle…
+gs render episode.ts --out ep.mp4 --incremental
+#   incremental: 61/1530 frames changed — re-rendering those, splicing 1469 from the intermediate
+```
+
+### Determinism holds byte-exact *through* the optimization
+
+This is the contract that makes it safe: a warm splice is **byte-for-byte identical** to a cold `--incremental` render of the same edited scene. FFV1 is lossless and intra-only, so a kept segment decodes to the exact pixels a re-render would produce, and one final encode over the spliced stream *is* the cold render. A cold `--incremental` render is just the degenerate all-changed case of the same pipeline, so cold and warm can't diverge. The per-frame key is the same determinism proof the whole-frame cache and the golden corpus trust — an end-to-end test asserts splice ≡ cold-full byte-identity across a forward edit, an unchanged re-render, and a reverse edit.
+
+### When it falls back to a full render
+
+`--incremental` implies the lossless-intermediate pipeline (FFV1 shards → one final encode) and applies to **video output** only. It re-renders everything (and rebuilds the intermediate for next time) when:
+
+- **No prior intermediate** — the first `--incremental` render, or the retained `.gsintermediate.mkv` was deleted.
+- **A duration change** — a different frame count is a structural change, not a splice (the key vectors can't align frame-for-frame).
+- **An encode-param change** — a different codec, container, fps, or frame range; a kept segment is only byte-faithful under an identical surrounding encode.
+- **A GPU/shader scene** — its output isn't reproducible across the child-process boundary the splice re-renders in (pass `--allow-gpu-shards` to override, at your own risk).
+- **A pre-0.41 manifest** — one without the per-frame key vector; the next render adds it.
