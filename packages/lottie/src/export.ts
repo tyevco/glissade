@@ -46,6 +46,7 @@
  */
 
 import {
+  compileTimeline,
   parseColor,
   sampleTrack,
   type Key,
@@ -119,11 +120,21 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   const fr = opts.fps ?? mod.timeline.fps ?? 60;
   const warn = opts.onWarn ?? ((m: string) => console.warn(`gs export: ${m}`));
 
+  // COALESCE same-target tracks the SAME way the runtime does before grouping:
+  // `compileTimeline` merges multiple `track()` calls on one `<id>/<prop>` into a
+  // single effective Track (later insertion wins on overlap — timeline.ts coalesce,
+  // the exact rule evaluate() uses). Iterating the RAW `mod.timeline.tracks` here
+  // would last-write-WIN via `m.set(prop, …)`, silently dropping every track but
+  // the last on a channel (e.g. a fade-IN track lost to a fade-OUT track on the
+  // same opacity), so the export diverged from the rendered scene. One track per
+  // target now, so `m.set` can never drop a channel.
+  const compiled = compileTimeline(mod.timeline);
+
   // Group tracks by their resolved node id — the LONGEST registered-node-id
   // prefix owns the target (both node ids like `card/3` and prop paths like
   // `money/fill` carry slashes), mirroring scene.resolveTarget.
   const byNode = new Map<string, Map<string, Track>>();
-  for (const tr of mod.timeline.tracks) {
+  for (const tr of compiled.tracks.values()) {
     const resolved = resolveTrackNode(scene.nodes, tr.target);
     if (resolved === undefined) {
       warn(`track '${tr.target}' targets no node in the scene — dropped`);

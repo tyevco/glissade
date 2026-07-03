@@ -181,6 +181,79 @@ describe('exportLottie', () => {
     expect(build(1)).toBe(JSON.stringify({ a: 0, k: 100 }));
   });
 
+  it('COALESCES multiple tracks on one channel (fade-in + fade-out both export, not last-wins)', () => {
+    // Two separate track() calls drive box/opacity: a fade-IN (t0→0.5) and a
+    // fade-OUT (t1.5→2). The runtime coalesces same-target tracks (timeline.ts),
+    // so the export must too — a raw last-write-wins group would drop the fade-in
+    // and export ONLY the fade-out, leaking the entrance (ai-training e04 bug).
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: {
+        version: 1,
+        duration: 2,
+        fps: 60,
+        tracks: [
+          track('box/opacity', 'number', [key(0, 0), key(0.5, 1)]), // fade IN
+          track('box/opacity', 'number', [key(1.5, 1), key(2, 0)]), // fade OUT
+        ],
+      },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const o = doc.layers[0]!.ks!.o as LottieProp;
+    expect(o.a).toBe(1);
+    const keys = kf(o);
+    // BOTH runs present: rise 0→100 at frames 0/30 AND fall 100→0 at frames 90/120
+    expect(keys.map((k) => k.t)).toEqual([0, 30, 90, 120]);
+    expect(keys.map((k) => k.s)).toEqual([[0], [100], [100], [0]]);
+  });
+
+  it('COALESCES a multi-track POSITION channel too (the fix is general, not opacity-only)', () => {
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: {
+        version: 1,
+        duration: 2,
+        fps: 60,
+        tracks: [
+          track('box/position', 'vec2', [key(0, [0, 0]), key(0.5, [50, 50])]), // move A
+          track('box/position', 'vec2', [key(1.5, [50, 50]), key(2, [100, 100])]), // move B
+        ],
+      },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const p = doc.layers[0]!.ks!.p as LottieProp;
+    expect(p.a).toBe(1);
+    const keys = kf(p);
+    // all four keys from both tracks survive — not just move B
+    expect(keys.map((k) => k.t)).toEqual([0, 30, 90, 120]);
+    expect(keys.map((k) => k.s)).toEqual([[0, 0], [50, 50], [50, 50], [100, 100]]);
+  });
+
+  it('COALESCES a multi-track GROUP opacity for the bake accumulator (both runs reach the child)', () => {
+    const child = new Rect({ id: 'child', width: 10, height: 10, fill: '#fff' });
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Group({ id: 'g', children: [child] })] }),
+      timeline: {
+        version: 1,
+        duration: 2,
+        fps: 60,
+        tracks: [
+          track('g/opacity', 'number', [key(0, 0), key(0.5, 1)]), // group fade IN
+          track('g/opacity', 'number', [key(1.5, 1), key(2, 0)]), // group fade OUT
+        ],
+      },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const c = doc.layers.find((l: LottieLayer) => l.nm === 'child')!;
+    const o = c.ks!.o as LottieProp;
+    expect(o.a).toBe(1);
+    const keys = kf(o);
+    // the baked child opacity carries BOTH the group's fade-in AND fade-out
+    expect(keys[0]!.s).toEqual([0]); // hidden at t=0 (fade-in start)
+    expect(keys[keys.length - 1]!.s).toEqual([0]); // hidden again at t=2 (fade-out end)
+    expect(keys.some((k) => (k.s as number[])[0]! >= 99)).toBe(true); // fully visible mid-run
+  });
+
   it('is deterministic: same input → byte-identical JSON', () => {
     const a = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));
     const b = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));

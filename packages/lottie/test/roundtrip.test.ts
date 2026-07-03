@@ -168,6 +168,58 @@ function animatedGroupOpacityScene(): SceneModule {
   };
 }
 
+/**
+ * A Group whose opacity is driven by TWO separate track() calls — a fade-IN
+ * (t0.5→1.0) and a fade-OUT (t1.5→2.0) — wrapping two non-overlapping Rects.
+ * Before frame 0.5 the group is HIDDEN (opacity holds its first key = 0). The
+ * runtime coalesces the two tracks; a raw last-write-wins export would keep ONLY
+ * the fade-out (first key t1.5 = 1), so the re-imported card would LEAK — visible
+ * at frame 0 while the original is empty. This scene fails the SSIM gate before
+ * the coalesce fix and passes after (ai-training e04 leak regression).
+ */
+function multiTrackGroupOpacityScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 2,
+    fps: FPS,
+    tracks: [
+      track('card/opacity', 'number', [key(0.5, 0), key(1, 1)]), // fade IN
+      track('card/opacity', 'number', [key(1.5, 1), key(2, 0)]), // fade OUT
+    ],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [
+          new Group({
+            id: 'card',
+            children: [
+              new Rect({ id: 'a', width: 44, height: 44, fill: '#3366cc', position: [70, 70] }),
+              new Rect({ id: 'b', width: 44, height: 44, fill: '#cc6633', position: [170, 170] }),
+            ],
+          }),
+        ],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie multi-track coalesce export round-trip (Skia SSIM)', () => {
+  it('coalesces fade-in + fade-out group opacity — a pre-fade-in frame stays HIDDEN (SSIM ≥ 0.98)', async () => {
+    const original = multiTrackGroupOpacityScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    const roundTripped = importLottie(doc).toSceneModule();
+    // frame 0 (hidden, pre fade-in), frame 45 (t=0.75, mid fade-in), frame 105 (t=1.75, mid fade-out)
+    for (const frame of [0, 15, 45, 60, 105, 119]) {
+      const t = frame / FPS;
+      const a = await renderPixels(original, t);
+      const b = await renderPixels(roundTripped, t);
+      expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
+    }
+  });
+});
+
 describe('Lottie group-opacity export round-trip (Skia SSIM)', () => {
   it('static group opacity 0.5 bakes into children and matches perceptually (SSIM ≥ 0.98)', async () => {
     const original = staticGroupOpacityScene();
