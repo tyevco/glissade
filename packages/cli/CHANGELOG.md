@@ -1,5 +1,43 @@
 # @glissade/cli
 
+## 0.42.0
+
+### Minor Changes
+
+- 150b53b: `gs localize` — fork a narration into a new locale + preflight parity before TTS
+
+  Render already fans out across locales (`--locales en,zh`), but nothing _created_ the per-locale artifacts — hand-forking a narration drifts silently (a dropped beat id breaks a `.start()` anchor; an orphaned message id throws), and you only discover it after a minute of TTS. `gs localize scene.ts --to zh` does the fork up front and runs the render path's checks _before_ any synthesis:
+
+  ```sh
+  gs localize scene.ts --to zh            # dry run: fork plan + a parity/localize preflight (exits non-zero on drift)
+  gs localize scene.ts --to zh --write    # emit scene.zh.narration.json + messages.zh.json
+  ```
+
+  - **Forks the narration** (`<base>.narration.json`, or the committed timing when that's all there is) into `<base>.<locale>.narration.json`, **preserving every segment/pause id** so `.start()`/`beats.at()` anchors survive; the voice is dropped so the locale picks its own (`--keep-voice` retains it).
+  - **Stubs `messages.<locale>.json`** from the ids the scene actually uses — every `t()` id (harvested by loading the scene under a recording table) plus every `type:'string'` track node-id — sorted for a diff-stable file. A re-localize **carries existing translations over** (never blanks work done); `--from <locale>` seeds placeholders from a base locale.
+  - **Preflights** with the same `requireParity` + dry `localize()` the render runs, as one non-throwing report so all drift surfaces at once. Dry-run by default (non-zero exit on any issue — a CI gate); `--write` is the fix-forward.
+
+  CLI-only (no scene/embed surface, base embed unchanged); never synthesizes audio or calls `evaluate()`. Docs: `docs/narration.md` (Localizing to a new locale).
+
+### Patch Changes
+
+- 877d7f8: `gs localize`: carry over translated narration (no silent wipe) + `--strict` + a no-message fast-path
+
+  Three fixes from the 0.42 real-episode consumer read (ai-training):
+
+  - **Data-loss fix (top):** a re-localize `--write` used to re-fork the base narration text every time, silently wiping a translator's already-localized `<base>.<locale>.narration.json`. It now **carries the existing per-segment translation over by id** (symmetric with the message-table carry-over) — a re-localize preserves translated segments and re-stubs only NEW ones. The report shows the carried-over count.
+  - **`--strict`:** refuses to emit on a preflight failure (exit 1, no write), mirroring the dry-run gate — a CI-friendly "don't write drifted artifacts" mode. Plain `--write` stays the fix-forward (exit 0).
+  - **Multi-cue + no-`t()` fast-path:** the id harvest no longer offers **multi-cue** string tracks (a many-cue caption/typewriter node) as message-table targets — `localize()` can't table-localize them, so offering them only kept the preflight permanently red. And a scene with **no localizable messages** (no `t()` ids, no single-cue string tracks) now skips `messages.<locale>.json` entirely and reaches a clean parity-only preflight.
+  - @glissade/backend-skia@0.42.0
+  - @glissade/core@0.42.0
+  - @glissade/interact@0.42.0
+  - @glissade/lottie@0.42.0
+  - @glissade/narrate@0.42.0
+  - @glissade/player@0.42.0
+  - @glissade/scene@0.42.0
+  - @glissade/sfx@0.42.0
+  - @glissade/svg@0.42.0
+
 ## 0.42.0-pre.1
 
 ### Patch Changes
