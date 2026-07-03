@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.44.0-pre.1
+
+### Patch Changes
+
+- `gs types`: a polymorphic prop's value type is a UNION (fixes a false-positive)
+
+  The typed SDK emitted a polymorphic value type (the manifest's pipe-joined `'color|paint'` on `fill`) as a single string literal, so a valid `track('…/fill', 'color', …)` failed `TS2345` — the generated types red-lined _correct_ code (a real consumer counted ~16 valid `fill` call sites). `gs types` now splits an ambiguous value type on `|` and unions it: `TypeIdOf<…/fill> = 'color' | 'paint'` and `ValueOf` the value union (`string | Paint`), so passing either member type-checks while a genuinely-wrong type (`'number'` on `fill`) and a typo'd path still error. The same union covers a path that carries different types across node types. A `color|paint` regression test guards it so single-value-type coverage can't hide it again.
+
+  - @glissade/backend-skia@0.44.0-pre.1
+  - @glissade/core@0.44.0-pre.1
+  - @glissade/interact@0.44.0-pre.1
+  - @glissade/lottie@0.44.0-pre.1
+  - @glissade/narrate@0.44.0-pre.1
+  - @glissade/player@0.44.0-pre.1
+  - @glissade/scene@0.44.0-pre.1
+  - @glissade/sfx@0.44.0-pre.1
+  - @glissade/svg@0.44.0-pre.1
+
 ## 0.44.0-pre.0
 
 ### Minor Changes

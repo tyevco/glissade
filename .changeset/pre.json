@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.43.1"
   },
   "changesets": [
+    "gs-types-fill-union",
     "gs-types"
   ]
 }
