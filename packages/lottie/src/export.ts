@@ -23,9 +23,23 @@
  * (constant topology), and TEXT (ty:5): a Text node → a text layer with a font
  * reference (fonts.list) + a text-document keyframe stream (static = one doc;
  * animated text/fill/fontSize → doc keyframes sampled on the frame grid, held).
+ *
+ * GROUP OPACITY (baked into descendants): Lottie null-parent parenting inherits
+ * the transform MATRIX only, never opacity, so a `Group{opacity<1}` (or an
+ * animated `opacity` track) is composited by MULTIPLYING its opacity into every
+ * LEAF descendant's `ks.o` (static → a product; animated → the product sampled on
+ * the frame grid + decimated, the sampleComponentVec discipline) while the group
+ * null keeps its p/r/s and carries `o:{a:0,k:100}`. This is EXACT when a group's
+ * translucent descendants DON'T overlap (or the group is near-0/near-1 — the
+ * reported leak-through case: a group fading to ~0 hides its children since
+ * 0×anything≈0). LIMIT (warned, never silent): OVERLAPPING translucent siblings
+ * double-composite — glissade composites the subtree as a unit then applies the
+ * group alpha once, whereas per-child baking stacks the alphas (0.5 over 0.5 ≈
+ * 0.75, not the correct single 0.5). Same limitation the importer documents at
+ * convert.ts:470-475. A correct-for-overlap precomp (ty:0 + assets) is a later phase.
+ *
  * OUT (warned + dropped): Image/Video, gradient/mesh paint (solid only),
- * non-center anchors, group opacity compositing (Lottie parenting never inherits
- * opacity), text typewriter `reveal`/`revealFraction`, variable-font axes
+ * non-center anchors, text typewriter `reveal`/`revealFraction`, variable-font axes
  * (`fontAxes`/`fontVariationSettings` — no Lottie doc field), `box` valign
  * (baseline-approximated) and wrap `width` (the player self-reflows), TokenHighlight.
  * Animated primitive geometry (width/radius tracks) is SAMPLED, not channel-mapped.
@@ -85,6 +99,20 @@ const EMPTY_TRACKS: NodeTracks = new Map();
 
 type ShapeNode = Rect | Circle | Path;
 
+/**
+ * Accumulated ancestor-group opacity threaded down the walk so a leaf can bake
+ * `leaf_opacity × Π(ancestor group opacity)` into its `ks.o`. `factor` is the
+ * static product of ancestor groups WITHOUT an opacity track; `tracks` are the
+ * ancestor opacity TRACKS (sampled per-frame when anything is animated). The
+ * root walk starts from identity so an opacity-1 / track-free scene is
+ * byte-identical to before this feature.
+ */
+interface OpacityAccum {
+  factor: number;
+  tracks: readonly Track<number>[];
+}
+const IDENTITY_OPACITY: OpacityAccum = { factor: 1, tracks: [] };
+
 /** Convert a SceneModule to a Lottie document. Pure over (scene, timeline). */
 export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocument {
   const scene = mod.createScene();
@@ -112,7 +140,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
 
   const op = computeOp(mod.timeline, fr);
   const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map() };
-  walkChildren(ctx, scene.root.children, undefined, byNode);
+  walkChildren(ctx, scene.root.children, undefined, byNode, IDENTITY_OPACITY);
 
   // fonts.list is built by the walk (insertion order = deterministic first-seen)
   // and attached only when a Text node referenced a font — a text-free export is
@@ -163,7 +191,13 @@ function computeOp(tl: Timeline, fr: number): number {
  * node gets the SMALLER `ind` — the importer reconstructs paint order from
  * `zIndex = -ind`, so a descending ind per sibling group preserves it.
  */
-function walkChildren(ctx: Ctx, children: readonly Node[], parentInd: number | undefined, byNode: Map<string, Map<string, Track>>): void {
+function walkChildren(
+  ctx: Ctx,
+  children: readonly Node[],
+  parentInd: number | undefined,
+  byNode: Map<string, Map<string, Track>>,
+  opacity: OpacityAccum,
+): void {
   for (let i = children.length - 1; i >= 0; i--) {
     const node = children[i]!;
     const kind = classify(node);
@@ -177,11 +211,33 @@ function walkChildren(ctx: Ctx, children: readonly Node[], parentInd: number | u
       kind === 'group'
         ? buildNullLayer(ctx, node, myInd, parentInd, tracks)
         : kind === 'text'
-          ? buildTextLayer(ctx, node as Text, myInd, parentInd, tracks)
-          : buildShapeLayer(ctx, node as ShapeNode, kind, myInd, parentInd, tracks),
+          ? buildTextLayer(ctx, node as Text, myInd, parentInd, tracks, opacity)
+          : buildShapeLayer(ctx, node as ShapeNode, kind, myInd, parentInd, tracks, opacity),
     );
-    if (node instanceof Group) walkChildren(ctx, node.children, myInd, byNode);
+    if (node instanceof Group) walkChildren(ctx, node.children, myInd, byNode, childOpacity(node, tracks, opacity));
   }
+}
+
+/**
+ * The opacity accumulator for a group's children: a group WITH an opacity track
+ * contributes that track (sampled per-frame); one WITHOUT multiplies its static
+ * opacity into `factor`. The group's own opacity is thus pushed down onto its
+ * descendants (the null layer itself carries `o:100`).
+ */
+function childOpacity(group: Group, tracks: NodeTracks, parent: OpacityAccum): OpacityAccum {
+  const track = tracks.get('opacity') as Track<number> | undefined;
+  if (track) return { factor: parent.factor, tracks: [...parent.tracks, track] };
+  return { factor: parent.factor * group.opacity(), tracks: parent.tracks };
+}
+
+/** Count exportable LEAF (non-group, non-drop) descendants — the overlap-warn heuristic. */
+function countLeafDescendants(group: Group): number {
+  let n = 0;
+  for (const child of group.children) {
+    if (child instanceof Group) n += countLeafDescendants(child);
+    else if (classify(child) !== 'drop') n += 1;
+  }
+  return n;
 }
 
 function classify(node: Node): 'group' | 'rect' | 'circle' | 'path' | 'text' | 'drop' {
@@ -197,7 +253,7 @@ const describe = (node: Node): string => `${node.describeType}${node.id !== unde
 
 // --- transforms ---
 
-function buildTransform(ctx: Ctx, node: Node, tracks: NodeTracks): LottieTransform {
+function buildTransform(ctx: Ctx, node: Node, tracks: NodeTracks, o: LottieProp): LottieTransform {
   if (node.hasAnchor && (node.anchor[0] !== 0.5 || node.anchor[1] !== 0.5)) {
     ctx.warn(`${describe(node)}: a non-center anchor is not exported (MVP centers geometry) — placement may shift`);
   }
@@ -206,8 +262,46 @@ function buildTransform(ctx: Ctx, node: Node, tracks: NodeTracks): LottieTransfo
     p: positionProp(ctx, tracks, node.position()),
     s: vecProp(ctx, tracks, 'scale', node.scale(), (v) => [v[0] * 100, v[1] * 100]),
     r: scalarProp(ctx, tracks, 'rotation', node.rotation(), (v) => v), // rotation is degrees both sides (identity)
-    o: scalarProp(ctx, tracks, 'opacity', node.opacity(), (v) => v * 100),
+    o, // opacity is baked by the caller (leaf: leaf×ancestors; group null: forced 100)
   };
+}
+
+/**
+ * A leaf's `ks.o`, folding in the group opacity accumulated from its ancestors.
+ * With NO ancestor contribution (identity accumulator) this is byte-identical to
+ * the pre-feature `scalarProp` path — the exact cubicBezier/hold inversion is
+ * preserved. A static-only accumulator multiplies into a single `{a:0,k}`.
+ * Anything animated (a leaf `opacity` track and/or an ancestor track) samples
+ * the product `leaf_opacity(t) × Π ancestor_opacity(t)` on the union frame span
+ * and decimates — the identical discipline sampleComponentVec uses.
+ */
+function combineOpacity(ctx: Ctx, node: Node, tracks: NodeTracks, accum: OpacityAccum): LottieProp {
+  const leafTrack = tracks.get('opacity') as Track<number> | undefined;
+  const leafStatic = node.opacity();
+  // No ancestor opacity → identical to the pre-feature path (exact ease inversion).
+  if (accum.factor === 1 && accum.tracks.length === 0) {
+    return scalarProp(ctx, tracks, 'opacity', leafStatic, (v) => v * 100);
+  }
+  // Static leaf under a static-only accumulator → a single multiplied key.
+  if (leafTrack === undefined && accum.tracks.length === 0) {
+    return { a: 0, k: leafStatic * accum.factor * 100 };
+  }
+  // Animated: sample the opacity product on the union frame grid, then decimate.
+  const span = leafTrack ? [leafTrack, ...accum.tracks] : [...accum.tracks];
+  const [f0, f1] = frameSpan(ctx, span);
+  const out: LottieKeyframe[] = [];
+  for (let f = f0; f <= f1; f++) {
+    const t = f / ctx.fr;
+    let product = (leafTrack ? sampleTrack(leafTrack, t) : leafStatic) * accum.factor;
+    for (const at of accum.tracks) product *= sampleTrack(at, t);
+    const frame: LottieKeyframe = { t: f, s: [product * 100] };
+    if (f < f1) {
+      frame.o = { x: 0, y: 0 };
+      frame.i = { x: 1, y: 1 };
+    }
+    out.push(frame);
+  }
+  return { a: 1, k: decimateLinearKeys(out) };
 }
 
 function scalarProp(ctx: Ctx, tracks: NodeTracks, prop: string, staticVal: number, map: (v: number) => number): LottieProp {
@@ -305,8 +399,16 @@ function frameSpan(ctx: Ctx, tracks: (Track | undefined)[]): [number, number] {
 // --- layers ---
 
 function buildNullLayer(ctx: Ctx, node: Node, ind: number, parentInd: number | undefined, tracks: NodeTracks): LottieLayer {
-  if (node.opacity() !== 1 || tracks.has('opacity')) {
-    ctx.warn(`${describe(node)}: group opacity is exported on the null layer, but Lottie parenting does not composite it over children`);
+  // The group's opacity is baked into its leaf descendants (see combineOpacity /
+  // childOpacity); the null layer keeps only p/r/s, so its own opacity is forced
+  // to 100. The warn fires ONLY for the honest limit — a translucent group with
+  // ≥2 leaf descendants that COULD overlap (baking then double-composites the
+  // overlap). Exact (silent) for a single leaf or an opaque group.
+  const translucent = node.opacity() !== 1 || tracks.has('opacity');
+  if (translucent && node instanceof Group && countLeafDescendants(node) >= 2) {
+    ctx.warn(
+      `${describe(node)}: group opacity is baked into descendant leaves; OVERLAPPING translucent descendants may double-composite (exact when they don't overlap)`,
+    );
   }
   return {
     ty: 3,
@@ -314,7 +416,7 @@ function buildNullLayer(ctx: Ctx, node: Node, ind: number, parentInd: number | u
     ind,
     ip: ctx.ip,
     op: ctx.op,
-    ks: buildTransform(ctx, node, tracks),
+    ks: buildTransform(ctx, node, tracks, { a: 0, k: 100 }),
     ...(parentInd !== undefined ? { parent: parentInd } : {}),
   };
 }
@@ -326,6 +428,7 @@ function buildShapeLayer(
   ind: number,
   parentInd: number | undefined,
   tracks: NodeTracks,
+  opacity: OpacityAccum,
 ): LottieLayer {
   const shapes: LottieShapeItem[] = [buildGeometry(ctx, node, kind, tracks)];
   // stroke BEFORE fill in the array so the importer paints stroke ON TOP —
@@ -340,7 +443,7 @@ function buildShapeLayer(
     ind,
     ip: ctx.ip,
     op: ctx.op,
-    ks: buildTransform(ctx, node, tracks),
+    ks: buildTransform(ctx, node, tracks, combineOpacity(ctx, node, tracks, opacity)),
     shapes,
     ...(parentInd !== undefined ? { parent: parentInd } : {}),
   };
@@ -467,7 +570,7 @@ function warnTextUnsupported(ctx: Ctx, node: Text, tracks: NodeTracks): void {
   }
 }
 
-function buildTextLayer(ctx: Ctx, node: Text, ind: number, parentInd: number | undefined, tracks: NodeTracks): LottieLayer {
+function buildTextLayer(ctx: Ctx, node: Text, ind: number, parentInd: number | undefined, tracks: NodeTracks, opacity: OpacityAccum): LottieLayer {
   const fName = registerFont(ctx, node);
   warnTextUnsupported(ctx, node, tracks);
   const t: LottieTextData = { d: { k: buildTextDocKeyframes(ctx, node, fName, tracks) }, a: [] };
@@ -477,7 +580,7 @@ function buildTextLayer(ctx: Ctx, node: Text, ind: number, parentInd: number | u
     ind,
     ip: ctx.ip,
     op: ctx.op,
-    ks: buildTransform(ctx, node, tracks),
+    ks: buildTransform(ctx, node, tracks, combineOpacity(ctx, node, tracks, opacity)),
     t,
     ...(parentInd !== undefined ? { parent: parentInd } : {}),
   };

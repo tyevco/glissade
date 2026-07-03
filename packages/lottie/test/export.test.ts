@@ -110,6 +110,77 @@ describe('exportLottie', () => {
     expect(g.parent).toBeUndefined(); // group is a root layer
   });
 
+  it('bakes a static group opacity into the child (child ks.o.k === 50, null o stays 100)', () => {
+    const child = new Rect({ id: 'child', width: 10, height: 10, fill: '#ffffff' });
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Group({ id: 'g', opacity: 0.5, children: [child] })] }),
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const g = doc.layers.find((l: LottieLayer) => l.nm === 'g')!;
+    const c = doc.layers.find((l: LottieLayer) => l.nm === 'child')!;
+    expect(g.ks!.o).toEqual({ a: 0, k: 100 }); // the null carries no opacity — it's pushed down
+    expect((c.ks!.o as LottieProp)).toEqual({ a: 0, k: 50 }); // 1 (leaf) × 0.5 (group) × 100
+  });
+
+  it('multiplies NESTED group opacities into the leaf (0.5 inside 0.5 → 25)', () => {
+    const leaf = new Rect({ id: 'leaf', width: 10, height: 10, fill: '#fff' });
+    const mod: SceneModule = {
+      createScene: () =>
+        createScene({
+          size: { w: 100, h: 100 },
+          children: [new Group({ id: 'outer', opacity: 0.5, children: [new Group({ id: 'inner', opacity: 0.5, children: [leaf] })] })],
+        }),
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const leafLayer = doc.layers.find((l: LottieLayer) => l.nm === 'leaf')!;
+    const outer = doc.layers.find((l: LottieLayer) => l.nm === 'outer')!;
+    const inner = doc.layers.find((l: LottieLayer) => l.nm === 'inner')!;
+    expect((leafLayer.ks!.o as LottieProp)).toEqual({ a: 0, k: 25 }); // 0.5 × 0.5 × 100
+    expect(outer.ks!.o).toEqual({ a: 0, k: 100 }); // every null stays 100
+    expect(inner.ks!.o).toEqual({ a: 0, k: 100 });
+  });
+
+  it('animates a leaf ks.o from an animated GROUP opacity (a:1, decimated)', () => {
+    const child = new Rect({ id: 'child', width: 10, height: 10, fill: '#fff' });
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Group({ id: 'g', children: [child] })] }),
+      timeline: { version: 1, duration: 2, fps: 60, tracks: [track('g/opacity', 'number', [key(0, 0), key(2, 1)])] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const g = doc.layers.find((l: LottieLayer) => l.nm === 'g')!;
+    const c = doc.layers.find((l: LottieLayer) => l.nm === 'child')!;
+    expect(g.ks!.o).toEqual({ a: 0, k: 100 }); // group opacity moved onto the child
+    const o = c.ks!.o as LottieProp;
+    expect(o.a).toBe(1); // child opacity is now animated
+    const keys = kf(o);
+    expect(keys.length).toBeGreaterThanOrEqual(2);
+    expect(keys.length).toBeLessThan(30); // a linear ramp decimates hard
+    expect(keys[0]!.s).toEqual([0]); // 0 × 100
+    expect(keys[keys.length - 1]!.s).toEqual([100]); // 1 × 100
+  });
+
+  it('a group at opacity 1 with no track leaves the child ks.o byte-identical (accumulator identity)', () => {
+    const build = (groupOpacity: number): string => {
+      const mod: SceneModule = {
+        createScene: () =>
+          createScene({
+            size: { w: 100, h: 100 },
+            children: groupOpacity === 1
+              ? [new Group({ id: 'g', opacity: 1, children: [new Rect({ id: 'child', width: 10, height: 10, fill: '#fff' })] })]
+              : [new Group({ id: 'g', children: [new Rect({ id: 'child', width: 10, height: 10, fill: '#fff' })] })],
+        }),
+        timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+      };
+      const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+      const c = doc.layers.find((l: LottieLayer) => l.nm === 'child')!;
+      return JSON.stringify(c.ks!.o);
+    };
+    // group@opacity-1 (explicit or default) → child o is the plain {a:0,k:100} path
+    expect(build(1)).toBe(JSON.stringify({ a: 0, k: 100 }));
+  });
+
   it('is deterministic: same input → byte-identical JSON', () => {
     const a = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));
     const b = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));

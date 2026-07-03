@@ -12,7 +12,7 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { key, track, type Timeline } from '@glissade/core';
-import { createScene, evaluate, Rect, Text, type SceneModule } from '@glissade/scene';
+import { createScene, evaluate, Group, Rect, Text, type SceneModule } from '@glissade/scene';
 import { SkiaBackend, ssim, createMeasurer } from '@glissade/backend-skia';
 import { exportLottie } from '../src/export.js';
 import { importLottie } from '../src/index.js';
@@ -115,6 +115,81 @@ function animatedTextScene(): SceneModule {
     timeline,
   };
 }
+
+/**
+ * Two NON-overlapping Rects inside a Group at a STATIC opacity of 0.5. Before the
+ * bake-into-children fix the children exported at FULL opacity (Lottie null-parent
+ * parenting inherits the matrix only, never opacity) → the re-import rendered them
+ * solid and this SSIM gate failed.
+ */
+function staticGroupOpacityScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [
+          new Group({
+            id: 'card',
+            opacity: 0.5,
+            children: [
+              new Rect({ id: 'a', width: 44, height: 44, fill: '#3366cc', position: [70, 70] }),
+              new Rect({ id: 'b', width: 44, height: 44, fill: '#cc6633', position: [170, 170] }),
+            ],
+          }),
+        ],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** The same two non-overlapping Rects under a Group whose opacity animates 0 → 1. */
+function animatedGroupOpacityScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 2,
+    fps: FPS,
+    tracks: [track('card/opacity', 'number', [key(0, 0), key(2, 1)])],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [
+          new Group({
+            id: 'card',
+            children: [
+              new Rect({ id: 'a', width: 44, height: 44, fill: '#3366cc', position: [70, 70] }),
+              new Rect({ id: 'b', width: 44, height: 44, fill: '#cc6633', position: [170, 170] }),
+            ],
+          }),
+        ],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie group-opacity export round-trip (Skia SSIM)', () => {
+  it('static group opacity 0.5 bakes into children and matches perceptually (SSIM ≥ 0.98)', async () => {
+    const original = staticGroupOpacityScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    const roundTripped = importLottie(doc).toSceneModule();
+    const a = await renderPixels(original, 0);
+    const b = await renderPixels(roundTripped, 0);
+    expect(ssim(a, b, W, H)).toBeGreaterThanOrEqual(0.98);
+  });
+
+  it('animated group opacity 0→1 bakes into children at every sampled frame (SSIM ≥ 0.98)', async () => {
+    const original = animatedGroupOpacityScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    const roundTripped = importLottie(doc).toSceneModule();
+    for (const frame of [0, 30, 60, 90, 119]) {
+      const t = frame / FPS;
+      const a = await renderPixels(original, t);
+      const b = await renderPixels(roundTripped, t);
+      expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
+    }
+  });
+});
 
 describe('Lottie Text export round-trip (Skia SSIM)', () => {
   it('static text re-imports as a Text node and matches perceptually (SSIM ≥ 0.98)', async () => {
