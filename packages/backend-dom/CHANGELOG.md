@@ -1,5 +1,12 @@
 # @glissade/backend-dom
 
+## 0.46.0
+
+### Patch Changes
+
+- @glissade/core@0.46.0
+- @glissade/scene@0.46.0
+
 ## 0.46.0-pre.0
 
 ### Patch Changes
