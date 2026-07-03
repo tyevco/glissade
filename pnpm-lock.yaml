@@ -270,6 +270,10 @@ importers:
       '@glissade/scene':
         specifier: workspace:*
         version: link:../scene
+    devDependencies:
+      '@glissade/backend-skia':
+        specifier: workspace:*
+        version: link:../backend-skia
 
   packages/narrate:
     dependencies:

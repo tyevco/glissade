@@ -196,6 +196,29 @@ export interface EncoderChoice {
 export function evaluateAt(modulePath: string, t: number): Promise<DisplayList>;
 
 // @public (undocumented)
+export function exportCommand(opts: ExportCommandOptions): Promise<ExportCommandResult>;
+
+// @public
+export interface ExportCommandOptions {
+    // (undocumented)
+    fps?: number;
+    // (undocumented)
+    height?: number;
+    input: string;
+    out: string;
+    // (undocumented)
+    width?: number;
+}
+
+// @public (undocumented)
+export interface ExportCommandResult {
+    // (undocumented)
+    out: string;
+    // (undocumented)
+    warnings: string[];
+}
+
+// @public (undocumented)
 export function ffmpegAvailable(): boolean;
 
 // @public

@@ -38,6 +38,7 @@ const USAGE = `usage:
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
+  gs export --lottie <scene-module> --out <file.json> [--width <n>] [--height <n>] [--fps <n>]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
   gs narration-lint <scene-module|script.narration.timing.json> [--json] [--fix] [--max-cps <n>]
   gs sfx <scene-module|script.sfx.json> [--verbose]
@@ -126,6 +127,15 @@ import options (.json = Lottie; .svg = static SVG → a scene that defers to @gl
   --out <dir>          output directory for the generated scene module (default: .)
   --allow-degraded     (Lottie only) downgrade degradable rejections (expressions, merge-paths modes != 1) to warnings
 
+export options (--lottie: a glissade scene → a Lottie/bodymovin .json — the inverse of gs import):
+  --out <file.json>    output Lottie document (required)
+  --width <n>          document width in px (default: the scene size)
+  --height <n>         document height in px (default: the scene size)
+  --fps <n>            frame rate (default: the timeline fps, else 60). cubicBezier/hold eases round-trip
+                       exactly; named eases / springs / expr tracks are sampled to dense linear keys.
+                       MVP: Group / Rect / Circle / Path with a solid fill (+ optional stroke); Text,
+                       gradient/mesh paint, and images are dropped with a warning
+
 measure-loudness options (the explicit publish-loudness measure step; commits *.loudness.json):
   --profile <id>   youtube (default) | shorts (both -14 LUFS) | podcast (-16) | broadcast/ebu (-23); all cap at -1 dBTP
                    measures the final mix (ebur128) and commits a deterministic peak-clamped gain; render applies it
@@ -157,7 +167,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master' && command !== 'localize' && command !== 'types') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master' && command !== 'localize' && command !== 'types') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -666,6 +676,39 @@ async function main(): Promise<void> {
       });
       for (const w of result.warnings) process.stderr.write(`gs import: warning: ${w}\n`);
       process.stderr.write(`gs import: wrote ${result.out}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (command === 'export') {
+    // MVP: only --lottie. modulePath is the scene module; --out is a .json file.
+    if (!flags.has('lottie')) {
+      fail(`gs export currently supports only --lottie\n  gs export --lottie <scene-module> --out <file.json> [--width <n>] [--height <n>] [--fps <n>]`);
+    }
+    const out = flags.get('out');
+    if (!out) fail(`gs export needs --out <file.json>\n${USAGE}`);
+    const dim = (name: string): number | undefined => {
+      const raw = flags.get(name);
+      if (raw === undefined || raw === '') return undefined;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) fail(`--${name} must be a positive number, got '${raw}'`);
+      return n;
+    };
+    const width = dim('width');
+    const height = dim('height');
+    const { exportCommand } = await import('./export.js');
+    try {
+      const result = await exportCommand({
+        input: modulePath,
+        out,
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(flags.get('fps') ? { fps: parseFpsOrFail(flags.get('fps')!) } : {}),
+      });
+      for (const w of result.warnings) process.stderr.write(`gs export: warning: ${w}\n`);
+      process.stderr.write(`gs export: wrote ${result.out}\n`);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

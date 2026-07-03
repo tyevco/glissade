@@ -44,6 +44,7 @@ export default defineConfig({
           { text: 'Fitting & anchoring text', link: '/text-fitting' },
           { text: 'Hand-drawn sketch styles', link: '/sketch' },
           { text: 'SVG import', link: '/svg' },
+          { text: 'Lottie export (gs export)', link: '/lottie-export' },
           { text: 'Render caching & remux', link: '/caching' },
           { text: 'Building a project (gs build)', link: '/build' },
           { text: 'Series mastering (gs master)', link: '/mastering' },

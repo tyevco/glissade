@@ -1,5 +1,12 @@
 # @glissade/narrate
 
+## 0.45.0-pre.0
+
+### Patch Changes
+
+- @glissade/core@0.45.0-pre.0
+- @glissade/scene@0.45.0-pre.0
+
 ## 0.44.0
 
 ### Patch Changes

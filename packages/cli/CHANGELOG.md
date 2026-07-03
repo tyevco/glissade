@@ -1,5 +1,33 @@
 # @glissade/cli
 
+## 0.45.0-pre.0
+
+### Minor Changes
+
+- Track → Lottie export (`gs export --lottie`): compile a scene's timeline into
+  Lottie/dotLottie JSON — the inverse of Lottie import. `exportLottie(sceneModule, opts)`
+  walks the node tree into hierarchical Lottie layers and turns each `<id>/<prop>` track
+  into an animated channel (position/opacity/scale/rotation, solid fill/stroke color,
+  `Path.d`, sampled primitive geometry). `cubicBezier`/hold easings invert exactly to
+  Lottie handles; named easings, springs, and `Expr` tracks are baked to dense sampled
+  keyframes. Text, gradient/mesh paint, shaders, non-center anchors, and group-opacity
+  compositing are warned-and-dropped in this MVP. Verified by an in-process
+  export→import→Skia SSIM round-trip gate. Additive and off the embed path — no scene/core
+  change, determinism and goldens unaffected.
+
+### Patch Changes
+
+- Updated dependencies
+  - @glissade/lottie@0.45.0-pre.0
+  - @glissade/backend-skia@0.45.0-pre.0
+  - @glissade/core@0.45.0-pre.0
+  - @glissade/interact@0.45.0-pre.0
+  - @glissade/narrate@0.45.0-pre.0
+  - @glissade/player@0.45.0-pre.0
+  - @glissade/scene@0.45.0-pre.0
+  - @glissade/sfx@0.45.0-pre.0
+  - @glissade/svg@0.45.0-pre.0
+
 ## 0.44.0
 
 ### Minor Changes

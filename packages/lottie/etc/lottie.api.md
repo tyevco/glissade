@@ -8,6 +8,7 @@ import * as _glissade_scene0 from '@glissade/scene';
 import { Node as Node_2 } from '@glissade/scene';
 import { PathContour } from '@glissade/core';
 import { PathValue } from '@glissade/core';
+import { SceneModule } from '@glissade/scene';
 import { Timeline } from '@glissade/core';
 import { Vec2 } from '@glissade/core';
 
@@ -27,6 +28,19 @@ export function colorPropIsBytes(values: unknown[]): boolean;
 
 // @public
 export function ellipseContour(center: Vec2, size: Vec2): PathContour;
+
+// @public
+export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocument;
+
+// @public (undocumented)
+export interface ExportOptions {
+    fps?: number;
+    // (undocumented)
+    height: number;
+    onWarn?: (message: string) => void;
+    // (undocumented)
+    width: number;
+}
 
 // @public (undocumented)
 export function generateSceneModule(result: LottieImportResult, opts?: CodegenOptions): string;
@@ -66,6 +80,32 @@ export const KAPPA = 0.5519;
 
 // @public
 export function lottieColor(value: unknown, bytes: boolean): string;
+
+// @public (undocumented)
+export interface LottieDocument {
+    // Warning: (ae-forgotten-export) The symbol "LottieAsset" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    assets?: LottieAsset[];
+    // (undocumented)
+    ddd?: number;
+    // (undocumented)
+    fr: number;
+    // (undocumented)
+    h: number;
+    // (undocumented)
+    ip: number;
+    // Warning: (ae-forgotten-export) The symbol "LottieLayer" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    layers: LottieLayer[];
+    // (undocumented)
+    nm?: string;
+    // (undocumented)
+    op: number;
+    // (undocumented)
+    w: number;
+}
 
 // @public (undocumented)
 export class LottieImportError extends Error {

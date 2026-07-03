@@ -60,3 +60,7 @@ export { buildNode, buildNodes } from './build.js';
 export { generateSceneModule, type CodegenOptions } from './codegen.js';
 export { ellipseContour, rectContour, mergeContours, reverseContour, shToContour, KAPPA } from './pathvalue.js';
 export { colorPropIsBytes, lottieColor } from './convert.js';
+// Track → Lottie EXPORT (the inverse of the importer above): a SceneModule → a
+// LottieDocument. Pure conversion, off the base embed.
+export { exportLottie, type ExportOptions } from './export.js';
+export type { LottieDocument } from './types.js';

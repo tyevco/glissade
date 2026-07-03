@@ -26,6 +26,7 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'write',
   'keep-voice',
   'help',
+  'lottie',
 ]);
 
 export interface ParsedArgs {
