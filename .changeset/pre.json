@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.44.0"
   },
   "changesets": [
+    "gs-export-lottie-nits",
     "gs-export-lottie"
   ]
 }

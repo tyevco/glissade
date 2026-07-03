@@ -103,6 +103,7 @@ export interface LottieDocument {
     nm?: string;
     // (undocumented)
     op: number;
+    v?: string;
     // (undocumented)
     w: number;
 }

@@ -5,9 +5,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { key, track, type Timeline } from '@glissade/core';
+import { key, sampleTrack, track, type Timeline } from '@glissade/core';
 import { createScene, Circle, Group, Rect, type SceneModule } from '@glissade/scene';
 import { exportLottie } from '../src/index.js';
+import { decimateLinearKeys } from '../src/sampleFallback.js';
 import type { LottieKeyframe, LottieLayer, LottieProp } from '../src/types.js';
 
 /** A Rect with position (cubicBezier + hold), opacity, and fill (color) tracks. */
@@ -38,6 +39,7 @@ const kf = (p: LottieProp): LottieKeyframe[] => p.k as LottieKeyframe[];
 describe('exportLottie', () => {
   it('emits document metadata from the scene + timeline', () => {
     const doc = exportLottie(rectModule(), { width: 200, height: 200, fps: 60 });
+    expect(doc.v).toBe('5.7.0'); // bodymovin schema version — strict players require it
     expect(doc.fr).toBe(60);
     expect(doc.ip).toBe(0);
     expect(doc.op).toBe(120); // duration 2s * 60fps
@@ -112,5 +114,76 @@ describe('exportLottie', () => {
     const a = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));
     const b = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));
     expect(a).toBe(b);
+  });
+
+  it('decimates a dense sampled channel (named ease) yet stays faithful under linear playback', () => {
+    // easeInOutQuad is a NAMED ease → not a single Lottie bezier → dense-sampled.
+    const src: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: {
+        version: 1,
+        duration: 2,
+        fps: 60,
+        tracks: [track('box/opacity', 'number', [key(0, 0), key(2, 1, 'easeInOutQuad')])],
+      },
+    };
+    const doc = exportLottie(src, { width: 100, height: 100, fps: 60 });
+    const o = doc.layers[0]!.ks!.o as LottieProp;
+    const keys = kf(o);
+    // dense would be 121 frames; decimation cuts it hard but keeps the curve shape
+    expect(keys.length).toBeGreaterThanOrEqual(3);
+    expect(keys.length).toBeLessThan(60);
+    // endpoints exact (×100)
+    expect(keys[0]!.t).toBe(0);
+    expect(keys[0]!.s).toEqual([0]);
+    expect(keys[keys.length - 1]!.t).toBe(120);
+    expect(keys[keys.length - 1]!.s).toEqual([100]);
+    // FIDELITY: linear playback of the kept keys reproduces the true sample at every frame
+    const tr = track('box/opacity', 'number', [key(0, 0), key(2, 1, 'easeInOutQuad')]);
+    const lerpAt = (f: number): number => {
+      let j = 0;
+      while (j < keys.length - 1 && keys[j + 1]!.t <= f) j++;
+      const a = keys[j]!;
+      const b = keys[Math.min(j + 1, keys.length - 1)]!;
+      const span = b.t - a.t;
+      const u = span > 0 ? (f - a.t) / span : 0;
+      const av = (a.s as number[])[0]!;
+      const bv = (b.s as number[])[0]!;
+      return av + (bv - av) * u;
+    };
+    for (let f = 0; f <= 120; f++) {
+      expect(Math.abs(lerpAt(f) - sampleTrack(tr, f / 60) * 100)).toBeLessThan(0.5); // < 0.5 on the 0-100 scale
+    }
+  });
+});
+
+describe('decimateLinearKeys', () => {
+  const mk = (pts: [number, number[]][]): LottieKeyframe[] =>
+    pts.map(([t, s], i) => (i < pts.length - 1 ? { t, s, o: { x: 0, y: 0 }, i: { x: 1, y: 1 } } : { t, s }));
+
+  it('collapses a constant run to its endpoints', () => {
+    const keys = mk([[0, [5]], [1, [5]], [2, [5]], [3, [5]]]);
+    expect(decimateLinearKeys(keys).map((k) => k.t)).toEqual([0, 3]);
+  });
+
+  it('collapses a constant-velocity ramp to its endpoints', () => {
+    const keys = mk([[0, [0]], [1, [10]], [2, [20]], [3, [30]]]);
+    expect(decimateLinearKeys(keys).map((k) => k.t)).toEqual([0, 3]);
+  });
+
+  it('keeps the interior key at a slope change', () => {
+    const keys = mk([[0, [0]], [1, [10]], [2, [10]], [3, [10]]]);
+    // the corner at t=1 (ramp → flat) is not linearly reproducible → kept
+    expect(decimateLinearKeys(keys).map((k) => k.t)).toEqual([0, 1, 3]);
+  });
+
+  it('leaves non-flat (path sh) payloads untouched', () => {
+    const shData = [{ v: [[0, 0]], i: [[0, 0]], o: [[0, 0]], c: true }];
+    const keys: LottieKeyframe[] = [
+      { t: 0, s: shData, o: { x: 0, y: 0 }, i: { x: 1, y: 1 } },
+      { t: 1, s: shData, o: { x: 0, y: 0 }, i: { x: 1, y: 1 } },
+      { t: 2, s: shData },
+    ];
+    expect(decimateLinearKeys(keys)).toHaveLength(3);
   });
 });

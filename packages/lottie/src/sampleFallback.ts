@@ -20,7 +20,15 @@ import type { LottieKeyframe } from './types.js';
 /**
  * Sample `tr` at every integer frame across its keyed span (or the whole
  * document `[ip, op]` for an expr track with no keys) and emit linear Lottie
- * keys. `toS` maps a sampled value to the Lottie `s` payload.
+ * keys, then DECIMATE redundant ones ({@link decimateLinearKeys}). `toS` maps a
+ * sampled value to the Lottie `s` payload.
+ *
+ * Dense per-frame sampling is faithful but huge — a spring or named ease over a
+ * long shot densifies to one key per frame on every channel (a real episode
+ * measured ~148k keys / 139 MB). Since Lottie plays LINEAR between keys, most of
+ * those samples lie on the straight run between two others and are redundant;
+ * decimation drops them within a per-component tolerance, collapsing constant and
+ * constant-velocity stretches to their endpoints while keeping the curvature.
  */
 export function sampleToLottieKeys<T, S>(
   tr: Track<T>,
@@ -47,5 +55,79 @@ export function sampleToLottieKeys<T, S>(
     }
     out.push(frame);
   }
+  return decimateLinearKeys(out);
+}
+
+/**
+ * Ramer–Douglas–Peucker over linear-interpolated keyframes: keep the endpoints
+ * plus any interior key whose value is NOT reproduced (within `relEps` of each
+ * component's range) by linear interpolation between the kept neighbors — those
+ * are exactly the keys Lottie's linear playback can't recreate, so the rest are
+ * safe to drop. Endpoints (first/last, hence the exact start/end value and time)
+ * are always kept; existing linear handles on the survivors stay valid. Only
+ * flat-numeric `s` payloads are decimated — path `sh` data (nested vertex arrays)
+ * is left dense. `relEps` is a fraction of each channel's value range, so it is
+ * scale-invariant across position (px), opacity (0–100), scale (×100), color (0–1).
+ */
+export function decimateLinearKeys(keys: LottieKeyframe[], relEps = 0.002): LottieKeyframe[] {
+  const n = keys.length;
+  if (n <= 2) return keys;
+  const isFlat = (s: unknown): s is number[] => Array.isArray(s) && s.every((x) => typeof x === 'number');
+  if (!keys.every((k) => isFlat(k.s))) return keys;
+  const sAt = (i: number): number[] => keys[i]!.s as number[];
+  const dim = sAt(0).length;
+
+  // per-component range → normalize deviation so one tolerance fits every channel
+  const min = new Array<number>(dim).fill(Infinity);
+  const max = new Array<number>(dim).fill(-Infinity);
+  for (let i = 0; i < n; i++) {
+    const s = sAt(i);
+    for (let c = 0; c < dim; c++) {
+      const v = s[c]!;
+      if (v < min[c]!) min[c] = v;
+      if (v > max[c]!) max[c] = v;
+    }
+  }
+  const invRange = new Array<number>(dim);
+  for (let c = 0; c < dim; c++) {
+    const r = max[c]! - min[c]!;
+    invRange[c] = r > 1e-9 ? 1 / r : 0; // a constant channel never forces a split
+  }
+
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  while (stack.length > 0) {
+    const [lo, hi] = stack.pop()!;
+    if (hi - lo < 2) continue;
+    const a = sAt(lo);
+    const b = sAt(hi);
+    const ta = keys[lo]!.t;
+    const span = keys[hi]!.t - ta;
+    let worst = -1;
+    let worstDev = relEps; // only split when the chord deviates beyond the tolerance
+    for (let i = lo + 1; i < hi; i++) {
+      const s = sAt(i);
+      const f = span > 0 ? (keys[i]!.t - ta) / span : 0;
+      let dev = 0;
+      for (let c = 0; c < dim; c++) {
+        const chord = a[c]! + (b[c]! - a[c]!) * f;
+        const d = Math.abs(s[c]! - chord) * invRange[c]!;
+        if (d > dev) dev = d;
+      }
+      if (dev > worstDev) {
+        worstDev = dev;
+        worst = i;
+      }
+    }
+    if (worst >= 0) {
+      keep[worst] = 1;
+      stack.push([lo, worst], [worst, hi]);
+    }
+  }
+
+  const out: LottieKeyframe[] = [];
+  for (let i = 0; i < n; i++) if (keep[i] === 1) out.push(keys[i]!);
   return out;
 }

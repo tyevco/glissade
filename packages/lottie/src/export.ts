@@ -104,6 +104,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   walkChildren(ctx, scene.root.children, undefined, byNode);
 
   return {
+    v: BODYMOVIN_VERSION,
     fr,
     ip: 0,
     op,
@@ -113,6 +114,13 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
     layers: ctx.layers,
   };
 }
+
+/**
+ * bodymovin schema version stamped on every export. Strict lottie-web / dotLottie
+ * validators reject a document without a top-level `v`; 5.7.x is a widely-supported
+ * modern version and the shape this exporter emits is a subset of it.
+ */
+const BODYMOVIN_VERSION = '5.7.0';
 
 /** Resolve a track target to `[nodeId, propPath]` by the longest registered-id prefix. */
 function resolveTrackNode(nodes: ReadonlyMap<string, Node>, target: string): [string, string] | undefined {

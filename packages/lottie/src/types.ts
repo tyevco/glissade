@@ -131,6 +131,8 @@ export interface LottieAsset {
 }
 
 export interface LottieDocument {
+  /** bodymovin schema version (`v`) — strict lottie-web/dotLottie validators require it. */
+  v?: string;
   fr: number;
   ip: number;
   op: number;
