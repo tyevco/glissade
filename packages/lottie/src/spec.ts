@@ -42,7 +42,20 @@ export interface ImageSpec extends BaseSpec {
   height: number;
 }
 
-export type NodeSpec = GroupSpec | PathSpec | RectSpec | ImageSpec;
+export interface TextSpec extends BaseSpec {
+  kind: 'text';
+  text: string;
+  fill: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight?: number;
+  fontStyle?: 'normal' | 'italic';
+  align?: 'left' | 'center' | 'right';
+  letterSpacing?: number;
+  lineHeight?: number;
+}
+
+export type NodeSpec = GroupSpec | PathSpec | RectSpec | ImageSpec | TextSpec;
 
 export interface LottieImportResult {
   size: { w: number; h: number };

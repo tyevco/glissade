@@ -89,6 +89,9 @@ export interface LottieDocument {
     assets?: LottieAsset[];
     // (undocumented)
     ddd?: number;
+    fonts?: {
+        list: LottieFont[];
+    };
     // (undocumented)
     fr: number;
     // (undocumented)
@@ -135,7 +138,7 @@ export interface LottieImportResult {
 export function mergeContours(values: PathValue[]): PathValue;
 
 // @public (undocumented)
-export type NodeSpec = GroupSpec | PathSpec | RectSpec | ImageSpec;
+export type NodeSpec = GroupSpec | PathSpec | RectSpec | ImageSpec | TextSpec;
 
 // @public (undocumented)
 export interface PathSpec extends BaseSpec {
@@ -173,6 +176,34 @@ export function reverseContour(c: PathContour): PathContour;
 //
 // @public
 export function shToContour(data: LottieShapePathData, closedFallback?: boolean): PathContour;
+
+// @public (undocumented)
+export interface TextSpec extends BaseSpec {
+    // (undocumented)
+    align?: 'left' | 'center' | 'right';
+    // (undocumented)
+    fill: string;
+    // (undocumented)
+    fontFamily: string;
+    // (undocumented)
+    fontSize: number;
+    // (undocumented)
+    fontStyle?: 'normal' | 'italic';
+    // (undocumented)
+    fontWeight?: number;
+    // (undocumented)
+    kind: 'text';
+    // (undocumented)
+    letterSpacing?: number;
+    // (undocumented)
+    lineHeight?: number;
+    // (undocumented)
+    text: string;
+}
+
+// Warnings were encountered during analysis:
+//
+// dist/index.d.ts:253:5 - (ae-forgotten-export) The symbol "LottieFont" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

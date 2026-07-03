@@ -84,6 +84,61 @@ export interface LottieTransform {
   sa?: LottieProp;
 }
 
+/**
+ * A text document (`t.d.k[n].s`) — the paint + font state of a ty:5 text layer
+ * at one keyframe. Modern bodymovin: `fc` is a 0–1 rgb(a) array, `j` is the
+ * justification (0 left, 1 right, 2 center — the Lottie/bodymovin convention).
+ * Optional fields (`tr`/`lh`) are OMITTED when at their glissade default so the
+ * emitted JSON stays minimal + deterministic (mirrors fontSpec()'s omissions).
+ */
+export interface LottieTextDocument {
+  /** the text string */
+  t: string;
+  /** font name — references a `fonts.list[n].fName` */
+  f: string;
+  /** font size (px) */
+  s: number;
+  /** fill color, 0–1 `[r,g,b]` or `[r,g,b,a]` */
+  fc: number[];
+  /** justification: 0 = left, 1 = right, 2 = center */
+  j: number;
+  /** tracking / letter-spacing (px) — omitted when unset */
+  tr?: number;
+  /** line height (px) — omitted when the glissade lineHeight is the 1.25 default */
+  lh?: number;
+  /** baseline shift — read-through only (never emitted) */
+  ls?: number;
+  /** wrap box size `[w,h]` — read-through only (never emitted) */
+  sz?: number[];
+  /** wrap box position `[x,y]` — read-through only */
+  ps?: number[];
+}
+
+/** One text-document keyframe: the document `s` applied from frame `t` (hold). */
+export interface LottieTextDocKeyframe {
+  t: number;
+  s: LottieTextDocument;
+}
+
+/** ty:5 text data: keyframed documents (`d.k`) + animators (`a`, always empty here). */
+export interface LottieTextData {
+  d: { k: LottieTextDocKeyframe[] };
+  a?: unknown[];
+  m?: unknown;
+  p?: unknown;
+}
+
+/** A `fonts.list[n]` entry — a font REFERENCE (never embedded; the player supplies it). */
+export interface LottieFont {
+  fName: string;
+  fFamily: string;
+  fStyle: string;
+  fWeight?: string;
+  fPath?: string;
+  origin?: number;
+  ascent?: number;
+}
+
 export interface LottieLayer {
   ty: number;
   nm?: string;
@@ -100,6 +155,8 @@ export interface LottieLayer {
   ao?: number;
   /** shape layer */
   shapes?: LottieShapeItem[];
+  /** text layer (ty:5) */
+  t?: LottieTextData;
   /** solid */
   sw?: number;
   sh?: number;
@@ -142,4 +199,6 @@ export interface LottieDocument {
   ddd?: number;
   layers: LottieLayer[];
   assets?: LottieAsset[];
+  /** Font references (ty:5 layers name into `fonts.list[n].fName`). */
+  fonts?: { list: LottieFont[] };
 }

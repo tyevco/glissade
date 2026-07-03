@@ -11,6 +11,7 @@ const CTOR: Record<NodeSpec['kind'], string> = {
   path: 'Path',
   rect: 'Rect',
   image: 'ImageNode',
+  text: 'Text',
 };
 
 function lit(value: unknown, indent: string): string {
@@ -46,6 +47,19 @@ function emitNode(spec: NodeSpec, indent: string): string {
       break;
     case 'image':
       props.push(`assetId: ${JSON.stringify(spec.assetId)}`, `width: ${spec.width}`, `height: ${spec.height}`);
+      break;
+    case 'text':
+      props.push(
+        `text: ${JSON.stringify(spec.text)}`,
+        `fill: ${JSON.stringify(spec.fill)}`,
+        `fontSize: ${spec.fontSize}`,
+        `fontFamily: ${JSON.stringify(spec.fontFamily)}`,
+      );
+      if (spec.fontWeight !== undefined) props.push(`fontWeight: ${spec.fontWeight}`);
+      if (spec.fontStyle !== undefined) props.push(`fontStyle: ${JSON.stringify(spec.fontStyle)}`);
+      if (spec.align !== undefined) props.push(`align: ${JSON.stringify(spec.align)}`);
+      if (spec.letterSpacing !== undefined) props.push(`letterSpacing: ${spec.letterSpacing}`);
+      if (spec.lineHeight !== undefined) props.push(`lineHeight: ${spec.lineHeight}`);
       break;
   }
   return `new ${CTOR[spec.kind]}({\n${props.map((p) => `${inner}${p},`).join('\n')}\n${indent}})`;

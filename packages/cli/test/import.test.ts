@@ -31,8 +31,30 @@ describe('gs import', () => {
     expect(compiled.duration).toBeCloseTo(3.2, 10);
   });
 
+  it('imports the docs_text sample (ty:5 text) into a renderable scene module', async () => {
+    // 0.46: text layers now import (ty:5 → Text node); docs_text is a real
+    // bodymovin text sample, so it round-trips through gs import.
+    const result = await importCommand({ input: docsText, out: outDir });
+    expect(readFileSync(result.out, 'utf8')).toContain('new Text(');
+    const mod = await loadSceneModule(result.out);
+    expect(mod.createScene().nodes.size).toBeGreaterThan(0);
+  });
+
   it('fails fast on rejected documents, listing the problems', async () => {
-    await expect(importCommand({ input: docsText, out: outDir })).rejects.toThrow(
+    // a precomp (ty:0) layer stays unsupported → the fail-fast audit rejects it
+    const rejectPath = join(outDir, 'reject.json');
+    writeFileSync(
+      rejectPath,
+      JSON.stringify({
+        fr: 60,
+        ip: 0,
+        op: 60,
+        w: 100,
+        h: 100,
+        layers: [{ ty: 0, nm: 'pre', ind: 0, ip: 0, op: 60, st: 0, ks: {}, refId: 'comp0' }],
+      }),
+    );
+    await expect(importCommand({ input: rejectPath, out: outDir })).rejects.toThrow(
       /unsupported-layer-type/,
     );
   });

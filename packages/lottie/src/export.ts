@@ -20,10 +20,15 @@
  * silent). IN: Group hierarchy, Rect/Circle/Path with a SOLID fill (+ optional
  * stroke), transform channels (position / position.x/.y split, opacity, scale,
  * rotation → identity degrees), animated `fill` color, animated `d` path
- * (constant topology). OUT (warned + dropped): Text, Image/Video, gradient/mesh
- * paint (solid only), non-center anchors, group opacity compositing (Lottie
- * parenting never inherits opacity). Animated primitive geometry (width/radius
- * tracks) is SAMPLED, not channel-mapped.
+ * (constant topology), and TEXT (ty:5): a Text node → a text layer with a font
+ * reference (fonts.list) + a text-document keyframe stream (static = one doc;
+ * animated text/fill/fontSize → doc keyframes sampled on the frame grid, held).
+ * OUT (warned + dropped): Image/Video, gradient/mesh paint (solid only),
+ * non-center anchors, group opacity compositing (Lottie parenting never inherits
+ * opacity), text typewriter `reveal`/`revealFraction`, variable-font axes
+ * (`fontAxes`/`fontVariationSettings` — no Lottie doc field), `box` valign
+ * (baseline-approximated) and wrap `width` (the player self-reflows), TokenHighlight.
+ * Animated primitive geometry (width/radius tracks) is SAMPLED, not channel-mapped.
  */
 
 import {
@@ -36,18 +41,22 @@ import {
   type Track,
   type Vec2,
 } from '@glissade/core';
-import { Circle, Group, Node, Path, Rect, type SceneModule } from '@glissade/scene';
+import { Circle, Group, Node, Path, Rect, Text, type SceneModule } from '@glissade/scene';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
 import { decimateLinearKeys, sampleToLottieKeys } from './sampleFallback.js';
 import type {
   LottieDocument,
+  LottieFont,
   LottieKeyframe,
   LottieLayer,
   LottieProp,
   LottieShapeItem,
   LottieSplitPosition,
+  LottieTextData,
+  LottieTextDocKeyframe,
+  LottieTextDocument,
   LottieTransform,
 } from './types.js';
 
@@ -67,6 +76,8 @@ interface Ctx {
   warn: (m: string) => void;
   layers: LottieLayer[];
   ind: number;
+  /** Font references de-duped by fName across every Text node (pure/deterministic). */
+  fonts: Map<string, LottieFont>;
 }
 
 type NodeTracks = ReadonlyMap<string, Track>;
@@ -100,9 +111,13 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   }
 
   const op = computeOp(mod.timeline, fr);
-  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0 };
+  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map() };
   walkChildren(ctx, scene.root.children, undefined, byNode);
 
+  // fonts.list is built by the walk (insertion order = deterministic first-seen)
+  // and attached only when a Text node referenced a font — a text-free export is
+  // byte-identical to before this feature.
+  const fonts = [...ctx.fonts.values()];
   return {
     v: BODYMOVIN_VERSION,
     fr,
@@ -112,6 +127,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
     h: opts.height,
     nm: 'glissade export',
     layers: ctx.layers,
+    ...(fonts.length > 0 ? { fonts: { list: fonts } } : {}),
   };
 }
 
@@ -152,7 +168,7 @@ function walkChildren(ctx: Ctx, children: readonly Node[], parentInd: number | u
     const node = children[i]!;
     const kind = classify(node);
     if (kind === 'drop') {
-      ctx.warn(`${describe(node)} is not exportable (MVP: Group / Rect / Circle / Path) — dropped`);
+      ctx.warn(`${describe(node)} is not exportable (MVP: Group / Rect / Circle / Path / Text) — dropped`);
       continue;
     }
     const myInd = ++ctx.ind;
@@ -160,16 +176,19 @@ function walkChildren(ctx: Ctx, children: readonly Node[], parentInd: number | u
     ctx.layers.push(
       kind === 'group'
         ? buildNullLayer(ctx, node, myInd, parentInd, tracks)
-        : buildShapeLayer(ctx, node as ShapeNode, kind, myInd, parentInd, tracks),
+        : kind === 'text'
+          ? buildTextLayer(ctx, node as Text, myInd, parentInd, tracks)
+          : buildShapeLayer(ctx, node as ShapeNode, kind, myInd, parentInd, tracks),
     );
     if (node instanceof Group) walkChildren(ctx, node.children, myInd, byNode);
   }
 }
 
-function classify(node: Node): 'group' | 'rect' | 'circle' | 'path' | 'drop' {
+function classify(node: Node): 'group' | 'rect' | 'circle' | 'path' | 'text' | 'drop' {
   if (node instanceof Rect) return 'rect';
   if (node instanceof Circle) return 'circle';
   if (node instanceof Path) return 'path';
+  if (node instanceof Text) return 'text';
   if (node instanceof Group) return 'group';
   return 'drop';
 }
@@ -323,6 +342,143 @@ function buildShapeLayer(
     op: ctx.op,
     ks: buildTransform(ctx, node, tracks),
     shapes,
+    ...(parentInd !== undefined ? { parent: parentInd } : {}),
+  };
+}
+
+// --- text ---
+
+/** Human weight-class names (400 = Regular), the OTF/bodymovin `fStyle` convention. */
+const WEIGHT_NAMES: Record<number, string> = {
+  100: 'Thin',
+  200: 'ExtraLight',
+  300: 'Light',
+  400: 'Regular',
+  500: 'Medium',
+  600: 'SemiBold',
+  700: 'Bold',
+  800: 'ExtraBold',
+  900: 'Black',
+};
+
+/** `fStyle` from weight + italic — e.g. 700 + italic → 'Bold Italic', 400 → 'Regular'. */
+function fontStyleName(weight: number, italic: boolean): string {
+  const name = WEIGHT_NAMES[weight] ?? String(weight);
+  if (name === 'Regular') return italic ? 'Italic' : 'Regular';
+  return italic ? `${name} Italic` : name;
+}
+
+/**
+ * Register (family, weight, style) once, returning the stable `fName` the text
+ * document references. De-dupe is keyed on the derived fName, so two Text nodes
+ * sharing a face share one `fonts.list` entry (pure + insertion-ordered). Fonts
+ * are referenced by name only — never embedded; the player supplies the face
+ * (the §3.6 registry papercut).
+ */
+function registerFont(ctx: Ctx, node: Text): string {
+  const italic = node.fontStyle === 'italic';
+  const fStyle = fontStyleName(node.fontWeight, italic);
+  const fName = `${node.fontFamily}-${fStyle.replace(/ /g, '')}`;
+  if (!ctx.fonts.has(fName)) {
+    ctx.fonts.set(fName, { fName, fFamily: node.fontFamily, fStyle, fWeight: String(node.fontWeight) });
+  }
+  return fName;
+}
+
+/** Justification: glissade align → the Lottie/bodymovin `j` (0 left, 1 right, 2 center). */
+function alignToJustification(align: 'left' | 'center' | 'right'): number {
+  return align === 'left' ? 0 : align === 'right' ? 1 : 2;
+}
+
+/** The text document at time `t`, sampling the animatable text/fill/fontSize props. */
+function textDocAt(node: Text, fName: string, tracks: NodeTracks, t: number): LottieTextDocument {
+  const text = sampleStr(tracks, 'text', node.text(), t);
+  const fill = sampleColor(tracks, 'fill', node.fill(), t);
+  const size = sampleNum(tracks, 'fontSize', node.fontSize(), t);
+  const doc: LottieTextDocument = {
+    t: text,
+    f: fName,
+    s: size,
+    fc: colorToLottie(fill),
+    j: alignToJustification(node.align),
+    // omit `tr`/`lh` at their glissade defaults so a default Text emits a minimal,
+    // deterministic document (mirrors fontSpec()'s byte-identity omissions).
+    ...(node.letterSpacing !== undefined ? { tr: node.letterSpacing } : {}),
+    ...(node.lineHeight !== 1.25 ? { lh: size * node.lineHeight } : {}),
+  };
+  return doc;
+}
+
+const sampleStr = (tracks: NodeTracks, prop: string, staticVal: string, t: number): string => {
+  const tr = tracks.get(prop) as Track<string> | undefined;
+  return tr ? sampleTrack(tr, t) : staticVal;
+};
+const sampleNum = (tracks: NodeTracks, prop: string, staticVal: number, t: number): number => {
+  const tr = tracks.get(prop) as Track<number> | undefined;
+  return tr ? sampleTrack(tr, t) : staticVal;
+};
+const sampleColor = (tracks: NodeTracks, prop: string, staticVal: string, t: number): string => {
+  const tr = tracks.get(prop) as Track<string> | undefined;
+  return tr && tr.type === 'color' ? sampleTrack(tr, t) : staticVal;
+};
+
+/**
+ * The text-document keyframe stream. STATIC (no text/fill/fontSize track) = one
+ * document at t=0. ANIMATED = one document per frame across the animated span,
+ * SAMPLED and held (a Lottie text document switches discretely — smooth fill/size
+ * animation degrades to a per-frame step, the honest MVP limit). Consecutive
+ * identical documents collapse to their first frame so a constant prop stays lean.
+ */
+function buildTextDocKeyframes(ctx: Ctx, node: Text, fName: string, tracks: NodeTracks): LottieTextDocKeyframe[] {
+  const docProps = ['text', 'fill', 'fontSize'];
+  if (!docProps.some((p) => tracks.has(p))) {
+    return [{ t: ctx.ip, s: textDocAt(node, fName, tracks, ctx.ip / ctx.fr) }];
+  }
+  ctx.warn(`${describe(node)}: animated text/fill/fontSize is sampled at ${ctx.fr} fps into stepped text documents (not smoothly interpolated)`);
+  const [f0, f1] = frameSpan(ctx, docProps.map((p) => tracks.get(p)));
+  const keys: LottieTextDocKeyframe[] = [];
+  let prev: string | undefined;
+  for (let f = f0; f <= f1; f++) {
+    const s = textDocAt(node, fName, tracks, f / ctx.fr);
+    const sig = JSON.stringify(s);
+    if (sig === prev) continue; // hold: a document persists until it changes
+    keys.push({ t: f, s });
+    prev = sig;
+  }
+  return keys;
+}
+
+/** Warn (never silent) on the text features this MVP cannot represent, then drop them. */
+function warnTextUnsupported(ctx: Ctx, node: Text, tracks: NodeTracks): void {
+  if (tracks.has('reveal') || Number.isFinite(node.reveal())) {
+    ctx.warn(`${describe(node)}: typewriter 'reveal' is not exported (Lottie range selectors are a later phase) — dropped, full text shown`);
+  }
+  if (tracks.has('revealFraction') || !Number.isNaN(node.revealFraction())) {
+    ctx.warn(`${describe(node)}: 'revealFraction' is not exported — dropped, full text shown`);
+  }
+  if (tracks.has('fontAxes') || Object.keys(node.fontAxes()).length > 0 || node.fontVariationSettings !== undefined) {
+    ctx.warn(`${describe(node)}: variable-font axes (fontAxes/fontVariationSettings) have no Lottie text-document field — dropped`);
+  }
+  if (node.box !== undefined) {
+    ctx.warn(`${describe(node)}: box valign is approximated as baseline-anchored (no Lottie ink-box anchor) — vertical placement may shift`);
+  }
+  if (tracks.has('width') || node.width() > 0) {
+    ctx.warn(`${describe(node)}: wrap 'width' relies on the player's own line reflow — wrapping may diverge from glissade's`);
+  }
+}
+
+function buildTextLayer(ctx: Ctx, node: Text, ind: number, parentInd: number | undefined, tracks: NodeTracks): LottieLayer {
+  const fName = registerFont(ctx, node);
+  warnTextUnsupported(ctx, node, tracks);
+  const t: LottieTextData = { d: { k: buildTextDocKeyframes(ctx, node, fName, tracks) }, a: [] };
+  return {
+    ty: 5,
+    nm: node.id ?? `text${ind}`,
+    ind,
+    ip: ctx.ip,
+    op: ctx.op,
+    ks: buildTransform(ctx, node, tracks),
+    t,
     ...(parentInd !== undefined ? { parent: parentInd } : {}),
   };
 }

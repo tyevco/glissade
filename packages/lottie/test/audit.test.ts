@@ -16,7 +16,6 @@ const importError = (json: unknown, allowDegraded = false): LottieImportError =>
 describe('fail-fast feature audit', () => {
   it('collects EVERY unsupported feature in one error, not one per run', () => {
     const json = doc([
-      { ty: 5, nm: 'title', ind: 0, ip: 0, op: 50, st: 0, ks: {} }, // text layer
       { ty: 0, nm: 'pre', ind: 1, ip: 0, op: 50, st: 0, ks: {}, refId: 'comp0' }, // precomp
       shapeLayer(
         [
@@ -30,9 +29,8 @@ describe('fail-fast feature audit', () => {
       ),
     ]);
     const err = importError(json);
-    expect(err.problems).toHaveLength(6);
+    expect(err.problems).toHaveLength(5);
     const text = err.problems.join('\n');
-    expect(text).toContain('[unsupported-layer-type] text');
     expect(text).toContain('[unsupported-layer-type] precomp');
     expect(text).toContain('[unsupported-masking]');
     expect(text).toContain('[unsupported-time-remap]');
@@ -94,9 +92,40 @@ describe('fail-fast feature audit', () => {
     expect(() => importLottie({ foo: 1 })).toThrow(/invalid-document/);
   });
 
-  it('rejects the real docs_text sample (text layer)', () => {
+  it('accepts the real docs_text sample (static+animated text layer) and builds a Text node', () => {
     const json = JSON.parse(readFileSync(new URL('./fixtures/docs_text.json', import.meta.url), 'utf8'));
+    const result = importLottie(json);
+    let texts = 0;
+    const visit = (nodes: typeof result.nodes): void => {
+      for (const n of nodes) {
+        if (n.kind === 'text') {
+          texts++;
+          expect(n.text).toBe('Text'); // t.d.k[0].s.t
+          expect(n.fontFamily).toBe('sans'); // fonts.list lookup by fName
+        }
+        if (n.kind === 'group') visit(n.children);
+      }
+    };
+    visit(result.nodes);
+    expect(texts).toBe(1);
+    // the text CHANGES across the two doc keyframes → a string track was emitted
+    expect(result.timeline.tracks.some((t) => t.type === 'string')).toBe(true);
+  });
+
+  it('rejects a text layer whose animator list (t.a) is non-empty', () => {
+    const json = doc([
+      {
+        ty: 5,
+        nm: 't',
+        ind: 0,
+        ip: 0,
+        op: 50,
+        st: 0,
+        ks: {},
+        t: { a: [{ nm: 'sel' }], d: { k: [{ t: 0, s: { t: 'x', f: 'sans', s: 20, fc: [0, 0, 0], j: 0 } }] } },
+      },
+    ]);
     const err = importError(json);
-    expect(err.problems.join('\n')).toContain('unsupported-layer-type');
+    expect(err.problems.join('\n')).toContain('unsupported-text-animator');
   });
 });

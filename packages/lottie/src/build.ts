@@ -3,7 +3,7 @@
  * importLottie's data output stays plain JSON-able.
  */
 
-import { Group, ImageNode, Path, Rect, type Node } from '@glissade/scene';
+import { Group, ImageNode, Path, Rect, Text, type Node } from '@glissade/scene';
 import type { NodeSpec } from './spec.js';
 
 export function buildNode(spec: NodeSpec): Node {
@@ -35,6 +35,19 @@ export function buildNode(spec: NodeSpec): Node {
       });
     case 'image':
       return new ImageNode({ ...base, assetId: spec.assetId, width: spec.width, height: spec.height });
+    case 'text':
+      return new Text({
+        ...base,
+        text: spec.text,
+        fill: spec.fill,
+        fontSize: spec.fontSize,
+        fontFamily: spec.fontFamily,
+        ...(spec.fontWeight !== undefined ? { fontWeight: spec.fontWeight } : {}),
+        ...(spec.fontStyle !== undefined ? { fontStyle: spec.fontStyle } : {}),
+        ...(spec.align !== undefined ? { align: spec.align } : {}),
+        ...(spec.letterSpacing !== undefined ? { letterSpacing: spec.letterSpacing } : {}),
+        ...(spec.lineHeight !== undefined ? { lineHeight: spec.lineHeight } : {}),
+      });
   }
 }
 

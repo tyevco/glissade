@@ -32,7 +32,7 @@ const LAYER_TYPE_NAMES: Record<number, string> = {
   13: 'camera',
 };
 
-const SUPPORTED_LAYER_TYPES = new Set([1, 2, 3, 4]);
+const SUPPORTED_LAYER_TYPES = new Set([1, 2, 3, 4, 5]);
 
 interface Ctx {
   problems: string[];
@@ -206,7 +206,25 @@ function auditLayer(ctx: Ctx, layer: LottieLayer, index: number, doc: LottieDocu
       reject(ctx, 'invalid-asset', `image ${where} references missing asset '${layer.refId ?? ''}'`);
     }
   }
+  if (layer.ty === 5) auditTextLayer(ctx, layer, where);
   if (layer.shapes) auditShapeItems(ctx, layer.shapes, where);
+}
+
+/**
+ * Text layers (ty:5) import a static-or-doc-keyframed document; the range-selector
+ * ANIMATOR list (`t.a`) has no glissade analogue, so a non-empty one is rejected —
+ * loud, not silent (§1). A malformed / missing document is an invalid document.
+ */
+function auditTextLayer(ctx: Ctx, layer: LottieLayer, where: string): void {
+  const t = layer.t;
+  const keys = t?.d?.k;
+  if (!Array.isArray(keys) || keys.length === 0 || typeof keys[0]?.s?.t !== 'string') {
+    reject(ctx, 'invalid-text', `${where}: text layer has no readable document (t.d.k[0].s.t)`);
+    return;
+  }
+  if (Array.isArray(t?.a) && t.a.length > 0) {
+    reject(ctx, 'unsupported-text-animator', `${where}: text range-selector animators (t.a) are not supported`);
+  }
 }
 
 /** Throws LottieImportError listing EVERY rejection; returns collected warnings. */

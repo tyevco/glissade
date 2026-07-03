@@ -32,15 +32,17 @@ import {
   type TimeMap,
 } from './keyframes.js';
 import { ellipseContour, mergeContours, rectContour, reverseContour, shToContour } from './pathvalue.js';
-import type { GroupSpec, ImageSpec, NodeSpec, PathSpec, RectSpec } from './spec.js';
+import type { GroupSpec, ImageSpec, NodeSpec, PathSpec, RectSpec, TextSpec } from './spec.js';
 import type {
   LottieDocument,
+  LottieFont,
   LottieKeyframe,
   LottieLayer,
   LottieProp,
   LottieShapeItem,
   LottieShapePathData,
   LottieSplitPosition,
+  LottieTextDocKeyframe,
   LottieTransform,
 } from './types.js';
 
@@ -501,6 +503,96 @@ function denormItems(ctx: Ctx, items: LottieShapeItem[], idBase: string, tm: Tim
   return out;
 }
 
+// --- text (ty:5) ---
+
+/** OTF/bodymovin weight-class names → numeric weight, the inverse of the exporter's map. */
+const WEIGHT_BY_NAME: Record<string, number> = {
+  Thin: 100,
+  ExtraLight: 200,
+  Light: 300,
+  Regular: 400,
+  Medium: 500,
+  SemiBold: 600,
+  Bold: 700,
+  ExtraBold: 800,
+  Black: 900,
+};
+
+/** Numeric weight from a font ref: prefer `fWeight`, else read a class name out of `fStyle`. */
+function fontWeightFrom(font: LottieFont | undefined): number | undefined {
+  if (font === undefined) return undefined;
+  if (font.fWeight !== undefined) {
+    const n = Number(font.fWeight);
+    if (Number.isFinite(n)) return n;
+  }
+  for (const word of font.fStyle.split(' ')) {
+    if (WEIGHT_BY_NAME[word] !== undefined) return WEIGHT_BY_NAME[word];
+  }
+  return undefined;
+}
+
+/** Justification (0 left / 1 right / 2 center) → glissade align. */
+const justificationToAlign = (j: number): 'left' | 'center' | 'right' =>
+  j === 1 ? 'right' : j === 2 ? 'center' : 'left';
+
+/**
+ * A varying text-document field → a HOLD track (the document switches discretely
+ * between keyframes). Consecutive-equal values collapse; a field constant across
+ * the whole stream produces no track (the static base value on the spec suffices).
+ */
+function pushDocTrack<T>(
+  ctx: Ctx,
+  target: string,
+  type: string,
+  dks: LottieTextDocKeyframe[],
+  tm: TimeMap,
+  extract: (s: LottieTextDocKeyframe['s']) => T,
+): void {
+  const keys: Key<T>[] = [];
+  let prev: string | undefined;
+  for (const dk of dks) {
+    const value = extract(dk.s);
+    const sig = JSON.stringify(value);
+    if (sig === prev) continue; // hold: the value persists until it changes
+    const k: Key<T> = { t: toSeconds(tm, dk.t), value };
+    if (keys.length > 0) k.interp = 'hold';
+    keys.push(k);
+    prev = sig;
+  }
+  if (keys.length <= 1) return;
+  ctx.tracks.push(makeTrack(target, type, enforceMonotonic(keys)));
+}
+
+/** ty:5 layer → a Text spec (+ hold tracks for any animated text/fill/fontSize). */
+function convertTextLayer(ctx: Ctx, layer: LottieLayer, base: string, tm: TimeMap): TextSpec {
+  const dks = layer.t!.d.k; // audit guarantees a non-empty, well-formed stream
+  const first = dks[0]!.s;
+  const font = (ctx.doc.fonts?.list ?? []).find((f) => f.fName === first.f);
+  const spec: TextSpec = {
+    kind: 'text',
+    id: uid(ctx, `${base}__text`),
+    text: first.t,
+    fill: lottieColor(first.fc, colorPropIsBytes([first.fc])),
+    fontSize: first.s,
+    fontFamily: font?.fFamily ?? first.f,
+  };
+  const weight = fontWeightFrom(font);
+  if (weight !== undefined) spec.fontWeight = weight;
+  if (font !== undefined && /italic/i.test(font.fStyle)) spec.fontStyle = 'italic';
+  const align = justificationToAlign(first.j);
+  if (align !== 'left') spec.align = align;
+  if (first.tr !== undefined) spec.letterSpacing = first.tr;
+  if (first.lh !== undefined && first.s > 0) spec.lineHeight = first.lh / first.s;
+
+  if (dks.length > 1) {
+    pushDocTrack(ctx, `${spec.id}/text`, 'string', dks, tm, (s) => s.t);
+    pushDocTrack(ctx, `${spec.id}/fontSize`, 'number', dks, tm, (s) => s.s);
+    const bytes = colorPropIsBytes(dks.map((k) => k.s.fc));
+    pushDocTrack(ctx, `${spec.id}/fill`, 'color', dks, tm, (s) => lottieColor(s.fc, bytes));
+  }
+  return spec;
+}
+
 // --- layers ---
 
 interface LayerRecord {
@@ -572,6 +664,8 @@ function convertLayer(ctx: Ctx, layer: LottieLayer, index: number): LayerRecord 
       position: [w / 2, h / 2], // ImageNode is center-anchored; Lottie draws from the layer origin
     };
     contentChildren.push(image);
+  } else if (layer.ty === 5 && layer.t) {
+    contentChildren.push(convertTextLayer(ctx, layer, base, tm));
   }
 
   if (layer.ty !== 3 && layer.hd !== true) {

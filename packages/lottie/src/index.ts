@@ -55,6 +55,7 @@ export type {
   PathSpec,
   RectSpec,
   ImageSpec,
+  TextSpec,
 } from './spec.js';
 export { buildNode, buildNodes } from './build.js';
 export { generateSceneModule, type CodegenOptions } from './codegen.js';

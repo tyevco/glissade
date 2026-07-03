@@ -9,16 +9,25 @@
  * invertible subset), so the round trip is faithful by construction.
  */
 
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { key, track, type Timeline } from '@glissade/core';
-import { createScene, evaluate, Rect, type SceneModule } from '@glissade/scene';
-import { SkiaBackend, ssim } from '@glissade/backend-skia';
+import { createScene, evaluate, Rect, Text, type SceneModule } from '@glissade/scene';
+import { SkiaBackend, ssim, createMeasurer } from '@glissade/backend-skia';
 import { exportLottie } from '../src/export.js';
 import { importLottie } from '../src/index.js';
 
 const W = 240;
 const H = 240;
 const FPS = 60;
+
+// Register the golden test face process-wide (side effect) so the Text round-trip
+// actually rasterizes real glyphs — otherwise both renders would draw nothing and
+// the SSIM gate would pass vacuously. 'DejaVu Sans' is the golden corpus's pinned
+// family (memory: sans-serif diverges byte-wise in CI; a real registered face is
+// stable). Both scenes reference it, so the export→import→render loop is exercised.
+const FAMILY = 'DejaVu Sans';
+createMeasurer({ fonts: { [FAMILY]: fileURLToPath(new URL('../../examples/assets/fonts/DejaVuSans.ttf', import.meta.url)) } });
 
 /** A Rect animated on position (cubicBezier), rotation, and opacity + a hold tail. */
 function mappableScene(): SceneModule {
@@ -71,5 +80,62 @@ describe('Lottie export round-trip (Skia SSIM)', () => {
     const b = await renderPixels(roundTripped, t);
     const score = ssim(a, b, W, H);
     expect(score).toBeGreaterThanOrEqual(0.98);
+  });
+});
+
+/** A static centered Text — one text document, no tracks. */
+function staticTextScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Text({ id: 'label', text: 'Glissade', fill: '#e8462b', fontSize: 40, fontFamily: FAMILY, align: 'center', position: [120, 130] })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** A Text animated on position (cubicBezier) and fill (color) — doc keyframes + transform. */
+function animatedTextScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 2,
+    fps: FPS,
+    tracks: [
+      track('label/position', 'vec2', [key(0, [70, 110]), key(2, [150, 140], { kind: 'cubicBezier', pts: [0.42, 0, 0.58, 1] })]),
+      track('label/fill', 'color', [key(0, '#2b7fe8'), key(2, '#e8462b')]),
+    ],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Text({ id: 'label', text: 'Motion', fill: '#2b7fe8', fontSize: 44, fontFamily: FAMILY, align: 'center' })],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie Text export round-trip (Skia SSIM)', () => {
+  it('static text re-imports as a Text node and matches perceptually (SSIM ≥ 0.98)', async () => {
+    const original = staticTextScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    expect(doc.layers.some((l) => l.ty === 5)).toBe(true);
+    const roundTripped = importLottie(doc).toSceneModule();
+    const a = await renderPixels(original, 0);
+    const b = await renderPixels(roundTripped, 0);
+    expect(ssim(a, b, W, H)).toBeGreaterThanOrEqual(0.98);
+  });
+
+  it('animated fill+position text matches at sampled frames (SSIM ≥ 0.98)', async () => {
+    const original = animatedTextScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    const roundTripped = importLottie(doc).toSceneModule();
+    for (const frame of [0, 30, 60, 90, 119]) {
+      const t = frame / FPS;
+      const a = await renderPixels(original, t);
+      const b = await renderPixels(roundTripped, t);
+      expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
+    }
   });
 });
