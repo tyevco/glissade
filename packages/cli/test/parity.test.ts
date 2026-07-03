@@ -7,13 +7,14 @@
  * gates the run (a floor of 1.0 fails a never-perfect round-trip).
  */
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parityCommand, parseBackends, ParityBackendError } from '../src/parity.js';
+import { loadParityBaseline, ParityBaselineError, type ParityBaseline } from '../src/parityBaseline.js';
 import fixtureModule from './fixtures/parity-scene.js';
 import imageModule from './fixtures/parity-image.js';
 // Real corpus scenes, imported through vitest's graph (instanceof-safe) — the render
@@ -25,6 +26,9 @@ const FIXTURES = fileURLToPath(new URL('./fixtures', import.meta.url));
 const EXAMPLES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
 const MODULE = join(FIXTURES, 'parity-scene.ts');
 const VF_MODULE = join(EXAMPLES, 'golden-font-axis-anim.ts');
+const VF_MOD = { modulePath: VF_MODULE, module: vfModule } as const;
+const VF_FRAMES = [0, 60, 120, 180];
+const SEED_BASELINE = join(FIXTURES, 'golden-font-axis-anim.parity.json');
 const LAYOUT_MODULE = join(EXAMPLES, 'golden-layout.ts');
 const IMAGE_MODULE = join(FIXTURES, 'parity-image.ts');
 const NAME = 'parity-scene';
@@ -139,6 +143,175 @@ describe('gs parity — render-environment fidelity (the false-PASS guard)', () 
     const r = await parityCommand({ modulePath: IMAGE_MODULE, module: imageModule, frames: [0] });
     expect(r.frames.length).toBe(1);
     expect(Number.isFinite(r.frames[0]!.pairs[0]!.mean)).toBe(true);
+  });
+});
+
+describe('gs parity — the known-drop regression gate (--baseline)', () => {
+  // THE point of the gate: a variable-font scene legitimately falls below the 0.98
+  // floor (dropped fontAxes — a documented scope-out). Pinning that EXPECTED drop
+  // as a baseline turns a red-by-design floor-fail into a green gate: the scope-out
+  // PASSES because it matches its pin, while a NEW/worse drop still FAILs.
+  it('the committed seed baseline PASSES the expected VF drop even below the 0.98 floor', async () => {
+    const r = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: SEED_BASELINE });
+    expect(r.gateOk).toBe(true);
+    expect(r.regressed).toBe(0);
+    expect(r.newComparisons).toBe(0);
+    // the floor path still runs (belowFloor > 0), but the GATE verdict overrides it:
+    // the below-floor frames match their pin, so this is a PASS, not a FAIL.
+    expect(r.belowFloor).toBeGreaterThan(0);
+    expect(r.report).toMatch(/PASS — every comparison matched its expected drop/);
+    expect(r.report).toContain('✓ expected-drop');
+  });
+
+  it("a pin raised above the actual mean is a REGRESSION (gateOk false)", async () => {
+    const seed = loadParityBaseline(SEED_BASELINE);
+    // bump frame 180's expectation well above the real ~0.98 → actual < expected−tol.
+    const tightened: ParityBaseline = {
+      ...seed,
+      frames: { ...seed.frames, '180': { lottie: { mean: 0.999 } } },
+    };
+    const p = join(tmp, 'tightened.parity.json');
+    writeFileSync(p, JSON.stringify(tightened));
+    const r = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: p });
+    expect(r.gateOk).toBe(false);
+    expect(r.regressed).toBeGreaterThan(0);
+    const f180 = r.frames.find((f) => f.frame === 180)!.pairs[0]!;
+    expect(f180.status).toBe('regressed');
+    expect(f180.expected).toBe(0.999);
+    expect(r.report).toMatch(/FAIL/);
+    expect(r.report).toContain('⚠ REGRESSION');
+  });
+
+  it('a frame absent from the baseline is NEW → fail', async () => {
+    // frame 90 is not pinned in the seed baseline (it has 0/60/120/180).
+    const r = await parityCommand({ ...VF_MOD, frames: [0, 90], baselinePath: SEED_BASELINE });
+    expect(r.gateOk).toBe(false);
+    expect(r.newComparisons).toBeGreaterThan(0);
+    const f90 = r.frames.find((f) => f.frame === 90)!.pairs[0]!;
+    expect(f90.status).toBe('new');
+    expect(r.report).toContain('＋ NEW');
+  });
+
+  it('a pin lowered below the actual mean is IMPROVED (pass but flagged)', async () => {
+    const seed = loadParityBaseline(SEED_BASELINE);
+    // drop frame 60's pin far below its real ~0.987 → actual > expected+tol.
+    const loosened: ParityBaseline = {
+      ...seed,
+      frames: { ...seed.frames, '60': { lottie: { mean: 0.5 } } },
+    };
+    const p = join(tmp, 'loosened.parity.json');
+    writeFileSync(p, JSON.stringify(loosened));
+    const r = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: p });
+    expect(r.gateOk).toBe(true); // improved does not fail the gate
+    expect(r.improved).toBeGreaterThan(0);
+    expect(r.frames.find((f) => f.frame === 60)!.pairs[0]!.status).toBe('improved');
+    expect(r.report).toContain('▲ improved');
+  });
+
+  it('--update-baseline writes the live numbers, then a gate PASSES against them (round-trip)', async () => {
+    const p = join(tmp, 'emitted.parity.json');
+    const w = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: p, updateBaseline: true });
+    expect(w.baselineWritten).toBe(p);
+    expect(w.baselineAdded).toBe(VF_FRAMES.length); // one lottie pair per frame, all new
+    expect(existsSync(p)).toBe(true);
+    expect(w.report).toContain('wrote baseline →');
+    // the emitted file is a valid baseline whose header matches the run…
+    const emitted = loadParityBaseline(p);
+    expect(emitted.width).toBe(640);
+    expect(emitted.reference).toBe('skia');
+    // …and gating against it PASSES (it captured the exact live numbers).
+    const g = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: p });
+    expect(g.gateOk).toBe(true);
+  });
+
+  it('--update-baseline re-pinning an existing baseline reports moved entries', async () => {
+    const p = join(tmp, 'repin.parity.json');
+    // seed with a deliberately-wrong pin for frame 180, then re-pin from the live run.
+    writeFileSync(
+      p,
+      JSON.stringify({
+        name: 'golden-font-axis-anim',
+        width: 640,
+        height: 360,
+        fps: 60,
+        reference: 'skia',
+        frames: { '180': { lottie: { mean: 0.5 } } },
+      }),
+    );
+    const w = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: p, updateBaseline: true });
+    expect(w.baselineWritten).toBe(p);
+    expect(w.baselineAdded).toBe(3); // 0, 60, 120 are new; 180 pre-existed
+    expect(w.regressed).toBe(1); // 180's mean moved past tolerance → re-pinned count
+    expect(w.report).toMatch(/re-pinned/);
+  });
+
+  it('a header mismatch (wrong width) fails loud', async () => {
+    const seed = loadParityBaseline(SEED_BASELINE);
+    const mismatched: ParityBaseline = { ...seed, width: 999 };
+    const p = join(tmp, 'mismatch.parity.json');
+    writeFileSync(p, JSON.stringify(mismatched));
+    await expect(parityCommand({ ...VF_MOD, frames: [0], baselinePath: p })).rejects.toThrow(
+      ParityBaselineError,
+    );
+    await expect(parityCommand({ ...VF_MOD, frames: [0], baselinePath: p })).rejects.toThrow(
+      /pinned at a different config/,
+    );
+  });
+
+  it('--update-baseline without a baseline path fails loud', async () => {
+    await expect(
+      parityCommand({ ...VF_MOD, frames: [0], updateBaseline: true }),
+    ).rejects.toThrow(ParityBaselineError);
+  });
+
+  it('a custom --tolerance narrows the accept band', async () => {
+    const seed = loadParityBaseline(SEED_BASELINE);
+    // pin frame 120 ~0.01 below its real ~0.9836. Default tol accepts as improved;
+    // but a tolerance of 0 with an expected 0.001 above the real mean regresses.
+    const p = join(tmp, 'tol.parity.json');
+    const nudged: ParityBaseline = {
+      ...seed,
+      frames: { ...seed.frames, '120': { lottie: { mean: seed.frames['120']!.lottie!.mean + 0.001 } } },
+    };
+    writeFileSync(p, JSON.stringify(nudged));
+    // wide tolerance (0.01) → within band → ok/pass
+    const wide = await parityCommand({ ...VF_MOD, frames: [120], baselinePath: p, tolerance: 0.01 });
+    expect(wide.gateOk).toBe(true);
+    // tight tolerance (0) → 0.001 below pin → regressed
+    const tight = await parityCommand({ ...VF_MOD, frames: [120], baselinePath: p, tolerance: 0 });
+    expect(tight.gateOk).toBe(false);
+    expect(tight.regressed).toBeGreaterThan(0);
+  });
+
+  it('the seed baseline fixture on disk matches the current live run (guards drift)', async () => {
+    const seed = loadParityBaseline(SEED_BASELINE);
+    const r = await parityCommand({ ...VF_MOD, frames: VF_FRAMES, baselinePath: SEED_BASELINE });
+    // every pinned frame's live mean is within tolerance of the committed pin.
+    for (const f of r.frames) {
+      const pin = seed.frames[String(f.frame)]!.lottie!.mean;
+      expect(Math.abs(f.pairs[0]!.mean - pin)).toBeLessThan(1e-4);
+    }
+    // and no field of the committed file drifted from a fresh emit shape.
+    expect(seed.reference).toBe('skia');
+    expect(readFileSync(SEED_BASELINE, 'utf8')).toContain('"golden-font-axis-anim"');
+  });
+});
+
+describe('gs parity — non-gate runs are unchanged (byte-identical report)', () => {
+  it('without --baseline the pair line + report carry NO gate annotations', async () => {
+    const r = await parityCommand({ ...MOD, name: NAME, frames: [0] });
+    expect(r.gateOk).toBeUndefined();
+    expect(r.regressed).toBeUndefined();
+    expect(r.baselineWritten).toBeUndefined();
+    for (const f of r.frames) for (const p of f.pairs) {
+      expect(p.status).toBeUndefined();
+      expect(p.expected).toBeUndefined();
+      expect(p.delta).toBeUndefined();
+    }
+    // the strict-floor report shape is exactly the shipped 0.49.0 one.
+    expect(r.report).toMatch(/PASS — every frame ≥ floor/);
+    expect(r.report).not.toContain('expected-drop');
+    expect(r.report).not.toContain('exp ');
   });
 });
 

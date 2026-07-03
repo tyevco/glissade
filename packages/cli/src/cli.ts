@@ -53,7 +53,7 @@ const USAGE = `usage:
   gs types [--out <file.ts>] [--from <api.json>] [--check] [--global]   codegen a type-checked track() SDK from the describe() manifest: only registered animatable paths + their value types compile, so a typo'd path or wrong value-type id is a COMPILE error (import track from the generated file). --check fails if --out is stale. Zero-runtime (types + a re-typed re-export of the real track). --global (alias --iife) instead emits a SELF-CONTAINED ambient window.glissade .d.ts for the no-build <script src> author (typed IIFE surface — a typo'd window.glissade member is a compile error)
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
-  gs parity <scene-module> [--backends skia,lottie] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--heatmap <dir>] [--min <ssim>]   cross-backend perceptual review: render ONE scene across backends and report per-frame SSIM vs the Skia reference + the worst 8×8 tile (skia = reference, lottie = export↔import round-trip). --heatmap writes a thermal PNG per frame; --min is the SSIM floor (default 0.98) — a below-floor frame exits non-zero. (dom = Phase B, not yet shipped)
+  gs parity <scene-module> [--backends skia,lottie] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--heatmap <dir>] [--min <ssim>] [--baseline <file>] [--update-baseline] [--tolerance <eps>]   cross-backend perceptual review: render ONE scene across backends and report per-frame SSIM vs the Skia reference + the worst 8×8 tile (skia = reference, lottie = export↔import round-trip). --heatmap writes a thermal PNG per frame; --min is the SSIM floor (default 0.98) — a below-floor frame exits non-zero. --baseline turns it into a KNOWN-DROP regression gate: compare each mean vs a committed per-scene baseline of EXPECTED drops and fail ONLY on a deviation (a new/worse drop), so documented scope-outs that legitimately fail the floor PASS while a real regression FAILs; --update-baseline (re)writes that baseline from the live run; --tolerance is the expected-SSIM band (default 1e-4). --baseline takes precedence over --min. (dom = Phase B, not yet shipped)
   gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--strict] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json (re-localize CARRIES existing translations over — never clobbers); --strict refuses to write on a preflight failure
   gs --version   print the engine version
 
@@ -488,6 +488,22 @@ async function main(): Promise<void> {
       min = Number(minRaw);
       if (!(min >= -1 && min <= 1)) fail(`parity: --min must be an SSIM floor in [-1, 1], got '${minRaw}'`);
     }
+    // known-drop regression gate: --baseline pins EXPECTED drops (gate mode, takes
+    // precedence over --min); --update-baseline re-pins the live numbers; --tolerance
+    // is the expected-SSIM band. --update-baseline without --baseline fails loud.
+    const baselinePath = pf.get('baseline');
+    const updateBaseline = pf.has('update-baseline');
+    if (updateBaseline && baselinePath === undefined) {
+      fail(`parity: --update-baseline needs --baseline <file> (the baseline path to write to)\n${USAGE}`);
+    }
+    const tolRaw = pf.get('tolerance');
+    let tolerance: number | undefined;
+    if (tolRaw !== undefined) {
+      tolerance = Number(tolRaw);
+      if (!(tolerance >= 0) || !Number.isFinite(tolerance)) {
+        fail(`parity: --tolerance must be a non-negative number, got '${tolRaw}'`);
+      }
+    }
     const { parityCommand, parseBackends, ParityBackendError } = await import('./parity.js');
     // dom / unknown backends fail loud HERE (never silently skip a requested backend).
     let backends: string[];
@@ -508,10 +524,21 @@ async function main(): Promise<void> {
         ...(height !== undefined ? { height } : {}),
         ...(pf.get('heatmap') ? { heatmapDir: pf.get('heatmap')! } : {}),
         ...(min !== undefined ? { min } : {}),
+        ...(baselinePath !== undefined ? { baselinePath } : {}),
+        ...(updateBaseline ? { updateBaseline: true } : {}),
+        ...(tolerance !== undefined ? { tolerance } : {}),
       });
       process.stdout.write(`${result.report}\n`);
-      // a below-floor frame is a real cross-backend divergence — exit non-zero so CI catches it.
-      if (!result.ok) process.exit(1);
+      // --update-baseline is a re-pin (exit 0). --baseline is the regression gate:
+      // exit non-zero only on a DEVIATION (a new/worse drop), so documented scope-outs
+      // that match their pin PASS. Otherwise the strict --min floor gates the run.
+      if (updateBaseline) {
+        // re-pin succeeded → exit 0 (default).
+      } else if (baselinePath !== undefined) {
+        if (result.gateOk !== true) process.exit(1);
+      } else if (!result.ok) {
+        process.exit(1);
+      }
     } catch (err) {
       fail(err instanceof ParityBackendError ? err.message : err instanceof Error ? err.message : String(err));
     }

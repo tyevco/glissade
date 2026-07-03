@@ -27,6 +27,16 @@ import { evaluate, withDeterminismGuards, type SceneModule } from '@glissade/sce
 import { SkiaBackend, ssimMap, heatmapRgba } from '@glissade/backend-skia';
 import { exportLottie, importLottie } from '@glissade/lottie';
 import { loadSceneModule, prepareSkiaRenderEnv } from './render.js';
+import {
+  DEFAULT_PARITY_TOLERANCE,
+  ParityBaselineError,
+  assertBaselineHeader,
+  compareToBaseline,
+  loadParityBaseline,
+  saveParityBaseline,
+  type ParityBaseline,
+  type ParityGateStatus,
+} from './parityBaseline.js';
 
 /** Default sampled frames + fps — matches the round-trip / golden suites' cadence. */
 export const DEFAULT_PARITY_FRAMES = [0, 30, 60, 90, 119];
@@ -64,6 +74,17 @@ export interface ParityOptions {
   heatmapDir?: string;
   /** SSIM floor — a frame whose mean drops below this fails the run. Default 0.98. */
   min?: number;
+  /**
+   * Known-drop regression gate: compare each (frame, backend) mean against the
+   * EXPECTED drop pinned in this baseline file instead of an absolute floor. A
+   * documented scope-out that matches its pin PASSES even below `min`; only a
+   * deviation (new/worse drop) fails. Takes precedence over `min` for the verdict.
+   */
+  baselinePath?: string;
+  /** emit the live numbers to `baselinePath` (re-pin), then exit 0. Needs baselinePath. */
+  updateBaseline?: boolean;
+  /** expected-SSIM tolerance band for the gate; default DEFAULT_PARITY_TOLERANCE. */
+  tolerance?: number;
 }
 
 /** One backend-vs-reference comparison at a single frame. */
@@ -80,6 +101,12 @@ export interface ParityPair {
   belowFloor: boolean;
   /** path of the emitted heat-map PNG, when --heatmap was given. */
   heatmap?: string;
+  /** gate verdict vs the baseline pin (only set when a baseline is active). */
+  status?: ParityGateStatus;
+  /** the expected mean from the baseline (only set when this pair was pinned). */
+  expected?: number;
+  /** `mean − expected` (only set when this pair was pinned). */
+  delta?: number;
 }
 
 export interface ParityFrame {
@@ -105,6 +132,18 @@ export interface ParityResult {
   belowFloor: number;
   /** true when every comparison met the floor. */
   ok: boolean;
+  /** gate mode only: comparisons that dropped below their pinned expected − tolerance. */
+  regressed?: number;
+  /** gate mode only: comparisons with no baseline pin (unpinned → must be accepted). */
+  newComparisons?: number;
+  /** gate/update mode: comparisons that rose above expected + tolerance (re-pin tighter). */
+  improved?: number;
+  /** gate mode only: true when regressed === 0 && newComparisons === 0. */
+  gateOk?: boolean;
+  /** update mode only: the path the emitted baseline was written to. */
+  baselineWritten?: string;
+  /** update mode only: (frame,pair) entries newly added vs a prior baseline (all when none). */
+  baselineAdded?: number;
   report: string;
 }
 
@@ -204,6 +243,18 @@ export async function parityCommand(opts: ParityOptions): Promise<ParityResult> 
   const floor = opts.min ?? DEFAULT_PARITY_FLOOR;
   const name = opts.name ?? basename(opts.modulePath).replace(/\.[jt]sx?$/, '');
 
+  // Gate mode: a baseline of EXPECTED drops is loaded and each mean is compared
+  // against its pin (not the absolute floor). --update-baseline is the write side
+  // (re-pin), so it never LOADS/compares — it emits the live numbers after the run.
+  const tolerance = opts.tolerance ?? DEFAULT_PARITY_TOLERANCE;
+  const gating = opts.baselinePath !== undefined && opts.updateBaseline !== true;
+  let baseline: ParityBaseline | undefined;
+  if (gating) {
+    baseline = loadParityBaseline(opts.baselinePath!);
+    // the baseline is pinned at a specific config — a mismatch is not comparable.
+    assertBaselineHeader(baseline, { width: w, height: h, fps, reference: REFERENCE_BACKEND });
+  }
+
   // Build the reference + each compared leg's frame source up front (each registers
   // its faithful render env once). The reference registers the scene's font faces
   // globally, so even a Lottie leg that dropped the face still resolves the family —
@@ -218,6 +269,9 @@ export async function parityCommand(opts: ParityOptions): Promise<ParityResult> 
   let belowFloor = 0;
   let worstMean = Infinity;
   let worstAt: { frame: number; backend: string } | null = null;
+  let regressed = 0;
+  let newComparisons = 0;
+  let improved = 0;
 
   for (const frame of frames) {
     const t = frame / fps;
@@ -246,6 +300,18 @@ export async function parityCommand(opts: ParityOptions): Promise<ParityResult> 
         writeFileSync(hp, hb.encodePng());
         pair.heatmap = hp;
       }
+      if (baseline) {
+        const expected = baseline.frames[String(frame)]?.[backend];
+        const status = compareToBaseline(map.mean, expected, tolerance);
+        pair.status = status;
+        if (expected !== undefined) {
+          pair.expected = expected.mean;
+          pair.delta = map.mean - expected.mean;
+        }
+        if (status === 'regressed') regressed++;
+        else if (status === 'new') newComparisons++;
+        else if (status === 'improved') improved++;
+      }
       pairs.push(pair);
     }
     results.push({ frame, t, pairs });
@@ -263,10 +329,85 @@ export async function parityCommand(opts: ParityOptions): Promise<ParityResult> 
     belowFloor,
     ok,
   };
+
+  // --update-baseline: emit the live numbers as the new pin, report the delta vs
+  // any prior baseline (how many entries are added), and exit 0 (a re-pin, never a gate).
+  if (opts.updateBaseline === true) {
+    if (opts.baselinePath === undefined) {
+      throw new ParityBaselineError('gs parity --update-baseline needs --baseline <file> to write to');
+    }
+    const emitted = buildBaseline(name, w, h, fps, results);
+    let prior: ParityBaseline | undefined;
+    if (existsSync(opts.baselinePath)) {
+      try {
+        prior = loadParityBaseline(opts.baselinePath);
+      } catch {
+        /* a malformed / mismatched prior is fine to overwrite on an explicit re-pin */
+      }
+    }
+    let added = 0;
+    let repinned = 0;
+    for (const [frame, backends] of Object.entries(emitted.frames)) {
+      for (const backend of Object.keys(backends)) {
+        const before = prior?.frames[frame]?.[backend];
+        if (before === undefined) added++;
+        else if (Math.abs(before.mean - backends[backend]!.mean) > tolerance) repinned++;
+      }
+    }
+    saveParityBaseline(opts.baselinePath, emitted);
+    const updated: Omit<ParityResult, 'report'> = {
+      ...result,
+      improved,
+      baselineWritten: opts.baselinePath,
+      baselineAdded: added,
+    };
+    // reuse `regressed` in the report as the "re-pinned (moved past tolerance)" count.
+    return { ...updated, regressed: repinned, report: formatReport(name, updated, { repinned }) };
+  }
+
+  if (gating) {
+    const gated: Omit<ParityResult, 'report'> = {
+      ...result,
+      regressed,
+      newComparisons,
+      improved,
+      gateOk: regressed === 0 && newComparisons === 0,
+    };
+    return { ...gated, report: formatReport(name, gated) };
+  }
+
   return { ...result, report: formatReport(name, result) };
 }
 
-function formatReport(name: string, r: Omit<ParityResult, 'report'>): string {
+/** Build a baseline document from the live frames (used by --update-baseline). */
+function buildBaseline(name: string, w: number, h: number, fps: number, frames: ParityFrame[]): ParityBaseline {
+  const out: Record<string, Record<string, { mean: number; min: number; minTile: { tx: number; ty: number } }>> = {};
+  for (const f of frames) {
+    const perBackend: Record<string, { mean: number; min: number; minTile: { tx: number; ty: number } }> = {};
+    for (const p of f.pairs) {
+      perBackend[p.backend] = { mean: p.mean, min: p.min, minTile: { tx: p.minTile.tx, ty: p.minTile.ty } };
+    }
+    out[String(f.frame)] = perBackend;
+  }
+  return { name, width: w, height: h, fps, reference: REFERENCE_BACKEND, frames: out };
+}
+
+/** gate/update status → the report mark appended to a pair line. */
+const GATE_MARK: Record<ParityGateStatus, string> = {
+  ok: '  ✓ expected-drop',
+  regressed: '  ⚠ REGRESSION',
+  new: '  ＋ NEW',
+  improved: '  ▲ improved',
+};
+
+function formatReport(
+  name: string,
+  r: Omit<ParityResult, 'report'>,
+  extra?: { repinned: number },
+): string {
+  // update mode carries a written path; gate mode carries a gateOk verdict; else strict.
+  const update = r.baselineWritten !== undefined;
+  const gate = !update && r.gateOk !== undefined;
   const lines: string[] = [];
   lines.push(
     `gs parity '${name}' — ${REFERENCE_BACKEND} reference vs ${r.backends.join(', ')} — ` +
@@ -278,8 +419,15 @@ function formatReport(name: string, r: Omit<ParityResult, 'report'>): string {
       const tile = `@ tile ${p.minTile.tx},${p.minTile.ty}`;
       const mark = p.belowFloor ? '  ⚠ BELOW FLOOR' : '';
       const heat = p.heatmap ? `  → ${p.heatmap}` : '';
+      // gate mode annotates each pair with expected/delta + a status mark; without a
+      // baseline the line is byte-identical to the shipped strict-floor report.
+      let gateSuffix = '';
+      if (gate && p.status !== undefined) {
+        const exp = p.expected !== undefined ? ` exp ${p.expected.toFixed(4)} Δ${p.delta! >= 0 ? '+' : ''}${p.delta!.toFixed(4)}` : '';
+        gateSuffix = `${exp}${GATE_MARK[p.status]}`;
+      }
       lines.push(
-        `  ${fno}  ${p.backend.padEnd(6)} ssim ${p.mean.toFixed(4)} (min ${p.min.toFixed(3)} ${tile})${mark}${heat}`,
+        `  ${fno}  ${p.backend.padEnd(6)} ssim ${p.mean.toFixed(4)} (min ${p.min.toFixed(3)} ${tile})${gateSuffix}${mark}${heat}`,
       );
     }
   }
@@ -287,6 +435,23 @@ function formatReport(name: string, r: Omit<ParityResult, 'report'>): string {
     lines.push(
       `  worst: f${String(r.worstAt.frame).padStart(4, '0')} ${r.worstAt.backend} ssim ${r.worstMean.toFixed(4)}`,
     );
+  }
+  if (update) {
+    lines.push(`  wrote baseline → ${r.baselineWritten}`);
+    lines.push(
+      `  ${r.baselineAdded ?? 0} added, ${extra?.repinned ?? 0} re-pinned (moved > tol), ${r.improved ?? 0} improved`,
+    );
+    return lines.join('\n');
+  }
+  if (gate) {
+    const parts = [`${r.regressed ?? 0} regressed`, `${r.newComparisons ?? 0} new`];
+    if ((r.improved ?? 0) > 0) parts.push(`${r.improved} improved`);
+    lines.push(
+      r.gateOk
+        ? `  PASS — every comparison matched its expected drop (${parts.join(', ')})`
+        : `  FAIL — ${parts.join(', ')} vs the baseline`,
+    );
+    return lines.join('\n');
   }
   lines.push(
     r.ok

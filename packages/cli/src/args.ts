@@ -30,6 +30,7 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'lint', // gs describe --lint (0.47): drift-guard the manifest vs the window.glissade surface
   'global', // gs types --global (0.47): emit the ambient window.glissade .d.ts
   'iife', // alias of --global
+  'update-baseline', // gs parity --update-baseline: re-pin the known-drop baseline
 ]);
 
 export interface ParsedArgs {
