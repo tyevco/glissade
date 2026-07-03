@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.40.0"
   },
   "changesets": [
-    "incremental"
+    "incremental",
+    "version-skew-warning"
   ]
 }

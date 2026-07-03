@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.41.0-pre.1
+
+### Patch Changes
+
+- dc996d7: `gs render`: warn on a `@glissade/*` version skew (dual-package adopt trap)
+
+  Installing `@glissade/cli` at a different version than the `@glissade/core` a scene resolves is a dual-package hazard: the subpath side-effect registries (`@glissade/core/expr`'s track sampler, Yoga `layout`'s engine) register per-package-**instance**, so under a skew a _correctly_ imported `@glissade/core/expr` or `layout` still fails with a misleading `expr tracks need import '@glissade/core/expr'` / `no LayoutEngine registered` — even though the import is present. `gs render` now resolves the scene's `@glissade/core` version, compares it to its own, and prints a clear **"version skew — align every @glissade/\* to X"** warning before evaluate, turning a confusing failure into an actionable one. A warning, never a hard error (it never blocks a render and stays silent when versions match or core can't be resolved). glissade is lockstep — bump all `@glissade/*` together.
+
+  - @glissade/backend-skia@0.41.0-pre.1
+  - @glissade/core@0.41.0-pre.1
+  - @glissade/interact@0.41.0-pre.1
+  - @glissade/lottie@0.41.0-pre.1
+  - @glissade/narrate@0.41.0-pre.1
+  - @glissade/player@0.41.0-pre.1
+  - @glissade/scene@0.41.0-pre.1
+  - @glissade/sfx@0.41.0-pre.1
+  - @glissade/svg@0.41.0-pre.1
+
 ## 0.41.0-pre.0
 
 ### Minor Changes
