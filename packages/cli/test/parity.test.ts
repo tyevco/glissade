@@ -21,6 +21,7 @@ import imageModule from './fixtures/parity-image.js';
 // environment (variable-font axes, Yoga, asset decode) is exercised end-to-end.
 import vfModule from '../../examples/src/scenes/golden-font-axis-anim.js';
 import layoutModule from '../../examples/src/scenes/golden-layout.js';
+import meshModule from '../../examples/src/scenes/golden-mesh.js';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures', import.meta.url));
 const EXAMPLES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -30,6 +31,7 @@ const VF_MOD = { modulePath: VF_MODULE, module: vfModule } as const;
 const VF_FRAMES = [0, 60, 120, 180];
 const SEED_BASELINE = join(FIXTURES, 'golden-font-axis-anim.parity.json');
 const LAYOUT_MODULE = join(EXAMPLES, 'golden-layout.ts');
+const MESH_MODULE = join(EXAMPLES, 'golden-mesh.ts');
 const IMAGE_MODULE = join(FIXTURES, 'parity-image.ts');
 const NAME = 'parity-scene';
 // Pass the module through vitest's OWN graph (not jiti) so the exporter's
@@ -135,6 +137,19 @@ describe('gs parity — render-environment fidelity (the false-PASS guard)', () 
     const r = await parityCommand({ modulePath: LAYOUT_MODULE, module: layoutModule, frames: [0, 30] });
     expect(r.frames.length).toBe(2);
     for (const f of r.frames) expect(Number.isFinite(f.pairs[0]!.mean)).toBe(true);
+  });
+
+  it('mesh: a mesh fill recovers via the ty:2 raster fallback (was warn-dropped → ~0)', async () => {
+    // THE mesh-export gain: before the raster fallback the lottie leg DROPPED the
+    // mesh fills entirely (SSIM ~0.026/~0.10 — the shapes collapsed to nothing).
+    // Now the exporter rasterizes each mesh → an embedded ty:2 image whose data:-URL
+    // the render leg decodes, so the round-trip recovers to near-parity. Frame 0 is
+    // the clean recovery test: the animated mesh flattens to its FIRST key, which
+    // EQUALS the reference at t=0, so every mesh region matches.
+    const r = await parityCommand({ modulePath: MESH_MODULE, module: meshModule, frames: [0] });
+    expect(r.frames.length).toBe(1);
+    const lottie = r.frames[0]!.pairs.find((p) => p.backend === 'lottie')!;
+    expect(lottie.mean).toBeGreaterThanOrEqual(0.98);
   });
 
   it('media: an image scene decodes + binds the asset instead of erroring', async () => {

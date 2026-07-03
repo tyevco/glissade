@@ -36,6 +36,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
 
 // @public (undocumented)
 export interface ExportOptions {
+    encodePng?: (rgba: Uint8ClampedArray, w: number, h: number) => string;
     fps?: number;
     // (undocumented)
     height: number;

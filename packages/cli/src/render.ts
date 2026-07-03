@@ -531,9 +531,19 @@ export async function prepareSkiaRenderEnv(o: PrepareRenderEnvOptions): Promise<
       // faces already registered above
     } else if (ref.kind === 'image') {
       const { loadImage } = await import('@napi-rs/canvas');
-      const imgPath = resolveAsset(ref.url, modulePath);
-      assetDigests.set(`image:${assetId}`, digestBytes(await readFile(imgPath)));
-      backend.setImageAsset(assetId, await loadImage(imgPath));
+      if (ref.url.startsWith('data:')) {
+        // Inline base64 image (a Lottie mesh raster round-trips as `data:image/png;
+        // base64,…`). resolveAssetPath would treat `data:` as a file path and fail;
+        // decode the payload to a Buffer and hand it straight to loadImage instead.
+        const b64 = ref.url.slice(ref.url.indexOf(',') + 1);
+        const buf = Buffer.from(b64, 'base64');
+        assetDigests.set(`image:${assetId}`, digestBytes(buf));
+        backend.setImageAsset(assetId, await loadImage(buf));
+      } else {
+        const imgPath = resolveAsset(ref.url, modulePath);
+        assetDigests.set(`image:${assetId}`, digestBytes(await readFile(imgPath)));
+        backend.setImageAsset(assetId, await loadImage(imgPath));
+      }
     } else if (ref.kind === 'video') {
       if (!ffmpegAvailable()) {
         throw new Error(`video asset '${assetId}' needs FFmpeg on PATH for frame extraction (§5.4)`);

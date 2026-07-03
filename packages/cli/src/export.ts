@@ -38,11 +38,16 @@ export async function exportCommand(opts: ExportOptions): Promise<ExportCommandR
   // breaks the render produces — else wrapped text round-trips collapsed onto one
   // line. Absent this the exporter falls back to raw passthrough + a wrap warning.
   const measurer = await buildSceneMeasurer(mod, opts.input);
+  // A Skia-backed PNG encoder so a MESH fill rasterizes → embedded ty:2 image layer
+  // (Lottie has no mesh primitive). Threaded like the measurer — the pure exporter
+  // stays DOM/Node-free. Absent it, mesh fills warn-drop.
+  const encodePng = await buildPngEncoder();
   const doc = exportLottie(mod, {
     width,
     height,
     ...(opts.fps !== undefined ? { fps: opts.fps } : {}),
     measurer,
+    encodePng,
     onWarn: (w) => warnings.push(w),
   });
   const outAbs = resolve(opts.out);
@@ -67,4 +72,20 @@ async function buildSceneMeasurer(mod: SceneModule, input: string): Promise<Text
     fonts[face.family] = resolveAssetPath(face.url, input);
   }
   return createMeasurer({ fonts });
+}
+
+/**
+ * A deterministic PNG encoder over @napi-rs/canvas (SkiaBackend.putPixels →
+ * encodePng), handed to `exportLottie` so a mesh fill can be rasterized and
+ * embedded as a base64 ty:2 image. A fresh backend per encode sizes to the
+ * raster's own w×h. backend-skia stays a lottie DEV-dep — the CLI (which already
+ * depends on it) does the encoding and threads the closure in.
+ */
+async function buildPngEncoder(): Promise<(rgba: Uint8ClampedArray, w: number, h: number) => string> {
+  const { SkiaBackend } = await import('@glissade/backend-skia');
+  return (rgba: Uint8ClampedArray, w: number, h: number): string => {
+    const backend = new SkiaBackend(w, h);
+    backend.putPixels(rgba);
+    return backend.encodePng().toString('base64');
+  };
 }

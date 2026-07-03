@@ -463,15 +463,65 @@ describe('exportLottie gradient fill (gf)', () => {
     expect((gf.s as LottieProp).a).toBe(1);
   });
 
-  it('still WARN-DROPS a mesh fill (linear/radial only)', () => {
+  /** A Rect (w×h) with a static mesh fill — the aurora-backdrop shape. */
+  const meshRectModule = (): SceneModule => ({
+    createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 40, height: 40, fill: { kind: 'mesh', points: [{ pos: [0, 0], color: '#f00' }, { pos: [1, 1], color: '#00f' }] } as unknown as string })] }),
+    timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+  });
+
+  it('WARN-DROPS a mesh fill when NO PNG encoder is threaded (pure-JS path unchanged)', () => {
     const warnings: string[] = [];
-    const mod: SceneModule = {
-      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 40, height: 40, fill: { kind: 'mesh', points: [{ pos: [0, 0], color: '#f00' }, { pos: [1, 1], color: '#00f' }] } as unknown as string })] }),
-      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
-    };
-    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60, onWarn: (m) => warnings.push(m) });
+    const doc = exportLottie(meshRectModule(), { width: 100, height: 100, fps: 60, onWarn: (m) => warnings.push(m) });
+    // no encoder → no fl/gf item, no image layer, no assets field (byte-identical to before)
     expect(doc.layers[0]!.shapes!.some((s) => s.ty === 'gf' || s.ty === 'fl')).toBe(false);
+    expect(doc.layers.some((l) => l.ty === 2)).toBe(false);
+    expect(doc.assets).toBeUndefined();
     expect(warnings.some((w) => /mesh fill/.test(w))).toBe(true);
+  });
+
+  it('with a PNG encoder threaded, a mesh fill emits a ty:2 image layer + a base64 asset at localBounds', () => {
+    const warnings: string[] = [];
+    // Stub encoder: a fixed base64 payload (the export path is what we assert, not the pixels).
+    const encodePng = (): string => 'AAAA';
+    const doc = exportLottie(meshRectModule(), { width: 100, height: 100, fps: 60, encodePng, onWarn: (m) => warnings.push(m) });
+
+    // the shape layer keeps its geometry but has NO fl/gf fill item (raster replaces it)
+    const shapeLayer = doc.layers.find((l) => l.ty === 4)!;
+    expect(shapeLayer.shapes!.some((s) => s.ty === 'gf' || s.ty === 'fl')).toBe(false);
+    expect(warnings.some((w) => /mesh fill/.test(w))).toBe(false); // no drop warning
+
+    // one embedded image asset, base64 data-URL
+    expect(doc.assets).toHaveLength(1);
+    const asset = doc.assets![0]!;
+    expect(asset.p).toBe('data:image/png;base64,AAAA');
+    expect(asset.e).toBe(1);
+    // raster is downscaled: 40px / MESH_DOWNSCALE(4) = 10
+    expect(asset.w).toBe(10);
+    expect(asset.h).toBe(10);
+
+    // a ty:2 image layer references the asset, parented to the shape, at the fill bounds
+    const imgLayer = doc.layers.find((l) => l.ty === 2)!;
+    expect(imgLayer.refId).toBe(asset.id);
+    expect(imgLayer.parent).toBe(shapeLayer.ind);
+    // localBounds of a 40×40 center-anchored Rect = [-20,-20]..[20,20]
+    expect((imgLayer.ks!.p as LottieProp).k).toEqual([-20, -20]);
+    // scale upsizes the 10px raster back to the 40px fill: 40/10 = 4 → 400%
+    expect((imgLayer.ks!.s as LottieProp).k).toEqual([400, 400]);
+    expect((imgLayer.ks!.a as LottieProp).k).toEqual([0, 0]);
+  });
+
+  it('with an encoder, an ANIMATED mesh fill flattens to a static raster + a warning', () => {
+    const warnings: string[] = [];
+    const meshA = { kind: 'mesh', points: [{ pos: [0, 0], color: '#f00' }, { pos: [1, 1], color: '#00f' }] };
+    const meshB = { kind: 'mesh', points: [{ pos: [0, 0], color: '#0f0' }, { pos: [1, 1], color: '#ff0' }] };
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 40, height: 40, fill: meshA as unknown as string })] }),
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [track('box/fill', 'paint', [key(0, meshA as never), key(1, meshB as never)])] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60, encodePng: () => 'AAAA', onWarn: (m) => warnings.push(m) });
+    expect(doc.assets).toHaveLength(1);
+    expect(doc.layers.some((l) => l.ty === 2)).toBe(true);
+    expect(warnings.some((w) => /flattened to a static raster/.test(w))).toBe(true);
   });
 });
 

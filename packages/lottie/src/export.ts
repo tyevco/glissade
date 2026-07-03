@@ -54,6 +54,7 @@ import {
   sampleTrack,
   type ColorStop,
   type Key,
+  type MeshPaint,
   type Paint,
   type PathContour,
   type PathValue,
@@ -61,12 +62,13 @@ import {
   type Track,
   type Vec2,
 } from '@glissade/core';
-import { breakLines, Circle, Group, Node, Path, Rect, Text, type FontSpec, type SceneModule, type TextMeasurer } from '@glissade/scene';
+import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, Rect, Text, type FontSpec, type SceneModule, type TextMeasurer } from '@glissade/scene';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
 import { anchorSampledSpan, decimateLinearKeys, sampleToLottieKeys } from './sampleFallback.js';
 import type {
+  LottieAsset,
   LottieDocument,
   LottieFont,
   LottieGradient,
@@ -98,6 +100,15 @@ export interface ExportOptions {
    * wouldn't match a faithful render, so we don't bake with it).
    */
   measurer?: TextMeasurer;
+  /**
+   * PNG encoder threaded from the CLI (like `measurer`) so a MESH fill can be
+   * rasterized (the pure `rasterizeMesh` kernel) and embedded as a ty:2 image
+   * layer — Lottie has no mesh primitive. `@glissade/lottie` stays DOM/Node-free,
+   * so it can't encode PNG itself. Returns BASE64 (no `data:` prefix; the exporter
+   * prepends `data:image/png;base64,`). ABSENT (pure-JS callers/tests) → a mesh
+   * fill keeps the historical warn-drop, so non-CLI exports are unchanged.
+   */
+  encodePng?: (rgba: Uint8ClampedArray, w: number, h: number) => string;
 }
 
 interface Ctx {
@@ -111,6 +122,13 @@ interface Ctx {
   fonts: Map<string, LottieFont>;
   /** Real measurer for baking width-wrapped Text into the doc `t`; undefined = raw passthrough. */
   measurer: TextMeasurer | undefined;
+  /** PNG encoder for the mesh raster fallback; undefined = mesh fills warn-drop (as before). */
+  encodePng: ((rgba: Uint8ClampedArray, w: number, h: number) => string) | undefined;
+  /**
+   * Image assets accumulated by the walk (mesh rasters). Attached to the document
+   * ONLY when non-empty — like `fonts`, so a non-mesh export stays byte-identical.
+   */
+  assets: LottieAsset[];
 }
 
 type NodeTracks = ReadonlyMap<string, Track>;
@@ -172,7 +190,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   }
 
   const op = computeOp(mod.timeline, fr);
-  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map(), measurer: opts.measurer };
+  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map(), measurer: opts.measurer, encodePng: opts.encodePng, assets: [] };
   walkChildren(ctx, scene.root.children, undefined, byNode, IDENTITY_OPACITY);
 
   // fonts.list is built by the walk (insertion order = deterministic first-seen)
@@ -188,6 +206,9 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
     h: opts.height,
     nm: 'glissade export',
     layers: ctx.layers,
+    // Mesh rasters accumulate into ctx.assets during the walk; attached only when
+    // non-empty (mirroring the fonts conditional) so a non-mesh export is byte-identical.
+    ...(ctx.assets.length > 0 ? { assets: ctx.assets } : {}),
     ...(fonts.length > 0 ? { fonts: { list: fonts } } : {}),
   };
 }
@@ -502,7 +523,9 @@ function buildShapeLayer(
   // matching Shape.draw (fill then stroke). See the importer's reverse-slot emit.
   const stroke = buildStroke(ctx, node, tracks);
   if (stroke) shapes.push(stroke);
-  const fill = buildFill(ctx, node, tracks);
+  // `ind` is threaded so a MESH fill can emit a SIBLING ty:2 image layer parented
+  // to THIS shape layer (a mesh has no `fl`/`gf` item — the raster replaces the fill).
+  const fill = buildFill(ctx, node, tracks, ind);
   if (fill) shapes.push(fill);
   return {
     ty: 4,
@@ -759,14 +782,14 @@ function colorKeys(ctx: Ctx, tr: Track<string>): LottieKeyframe[] {
     : sampleToLottieKeys(tr, ctx.fr, ctx.ip, ctx.op, colorToLottie);
 }
 
-function buildFill(ctx: Ctx, node: ShapeNode, tracks: NodeTracks): LottieShapeItem | undefined {
+function buildFill(ctx: Ctx, node: ShapeNode, tracks: NodeTracks, ind: number): LottieShapeItem | undefined {
   const tr = tracks.get('fill') as Track<unknown> | undefined;
   if (tr) {
     if (tr.type === 'color') {
       return { ty: 'fl', c: { a: 1, k: colorKeys(ctx, tr as Track<string>) }, o: { a: 0, k: 100 } };
     }
     if (tr.type === 'paint') {
-      return buildAnimatedGradientFill(ctx, node, tr as Track<Paint>);
+      return buildAnimatedGradientFill(ctx, node, tr as Track<Paint>, ind);
     }
     ctx.warn(`${describe(node)}: animated '${tr.type}' fill is not exported — dropped`);
     return undefined;
@@ -779,11 +802,60 @@ function buildFill(ctx: Ctx, node: ShapeNode, tracks: NodeTracks): LottieShapeIt
   // A static Paint object: solid color sugar, a linear/radial gradient, or mesh.
   if (fill.kind === 'color') return { ty: 'fl', c: { a: 0, k: colorToLottie(fill.color) }, o: { a: 0, k: 100 } };
   if (fill.kind === 'mesh') {
+    // With a PNG encoder threaded, rasterize the mesh → ty:2 image layer (the raster
+    // fallback). Absent one (pure-JS callers) keep the historical warn-drop.
+    if (ctx.encodePng) {
+      emitMeshRaster(ctx, node, fill, ind);
+      return undefined; // the image LAYER replaces the fill; no `fl` item
+    }
     ctx.warn(`${describe(node)}: a mesh fill has no Lottie gradient ramp (MVP: solid / linear / radial) — dropped`);
     return undefined;
   }
   warnGradientInterpolation(ctx, node, fill);
   return gradientFillItem(fill, localBounds(node));
+}
+
+/**
+ * Rasterize a STATIC (or first-key-flattened) mesh Paint to a PNG and emit it as a
+ * ty:2 image LAYER parented to the shape layer (`shapeInd`). The raster's placement
+ * mirrors raster2d.fillMesh's blit rect EXACTLY: the buffer covers the fill's
+ * `localBounds`, so expressing the image in SHAPE-LOCAL coordinates (anchor [0,0],
+ * position = bounds top-left, scale = bounds/raster) lets the shape layer's own
+ * transform (position/rotation/scale/anchor) carry it to screen — the importer
+ * re-parents the image under the shape's transform group, aligning it with the
+ * (now fill-less) geometry. Gated on `ctx.encodePng` by the caller. Deterministic:
+ * `rasterizeMesh` is pure, the Skia PNG encode is byte-stable, base64 is total.
+ */
+function emitMeshRaster(ctx: Ctx, node: ShapeNode, mesh: MeshPaint, shapeInd: number): void {
+  const b = localBounds(node);
+  const bw = b.maxX - b.minX;
+  const bh = b.maxY - b.minY;
+  if (bw <= 0 || bh <= 0) {
+    ctx.warn(`${describe(node)}: a mesh fill has empty local bounds — dropped`);
+    return;
+  }
+  const { w: rw, h: rh } = meshRasterSize(bw, bh);
+  const rgba = rasterizeMesh(mesh, rw, rh);
+  const b64 = ctx.encodePng!(rgba, rw, rh);
+  const id = `mesh_${ctx.assets.length}`;
+  ctx.assets.push({ id, w: rw, h: rh, u: '', p: `data:image/png;base64,${b64}`, e: 1 });
+  const layerInd = ++ctx.ind;
+  ctx.layers.push({
+    ty: 2,
+    nm: `${node.id ?? `mesh${shapeInd}`}_raster`,
+    refId: id,
+    ind: layerInd,
+    ip: ctx.ip,
+    op: ctx.op,
+    ks: {
+      a: { a: 0, k: [0, 0] },
+      p: { a: 0, k: [b.minX, b.minY] }, // top-left of the fill bounds, shape-local
+      s: { a: 0, k: [(bw / rw) * 100, (bh / rh) * 100] }, // upscale the downscaled raster to the fill
+      r: { a: 0, k: 0 },
+      o: { a: 0, k: 100 },
+    },
+    parent: shapeInd,
+  });
 }
 
 // --- gradient paint (fill: linear | radial → Lottie gf) ---
@@ -890,9 +962,17 @@ function gradientFillItem(g: Gradient, bounds: FillBounds): LottieShapeItem {
  * the frame grid. A key whose kind/stop-count differs from the first would snap
  * under paintType anyway, so its geometry/ramp is read as best-effort.
  */
-function buildAnimatedGradientFill(ctx: Ctx, node: ShapeNode, tr: Track<Paint>): LottieShapeItem | undefined {
+function buildAnimatedGradientFill(ctx: Ctx, node: ShapeNode, tr: Track<Paint>, ind: number): LottieShapeItem | undefined {
   const first = tr.keys[0]!.value;
   if (first.kind === 'mesh') {
+    // MVP: flatten the animation to the FIRST key's mesh → one static raster (a
+    // per-frame PNG sequence is out of scope). Precedent: the wrap / gradient-interp
+    // sampling degrades. Absent an encoder, keep the historical warn-drop.
+    if (ctx.encodePng) {
+      ctx.warn(`${describe(node)}: mesh animation is flattened to a static raster (first key) — motion dropped`);
+      emitMeshRaster(ctx, node, first, ind);
+      return undefined;
+    }
     ctx.warn(`${describe(node)}: an animated mesh fill has no Lottie gradient ramp — dropped`);
     return undefined;
   }

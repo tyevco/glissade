@@ -214,7 +214,14 @@ async function lottieSource(mod: SceneModule, w: number, h: number, fps: number,
   const measureScene = mod.createScene();
   const measurer = new SkiaBackend(w, h);
   await prepareSkiaRenderEnv({ scene: measureScene, doc: mod.timeline, backend: measurer, modulePath });
-  const doc = exportLottie(mod, { width: w, height: h, fps, measurer });
+  // Thread a Skia PNG encoder so a MESH fill exports as an embedded ty:2 raster —
+  // else it warn-drops and the round-trip collapses it to nothing (the SSIM gain).
+  const encodePng = (rgba: Uint8ClampedArray, rw: number, rh: number): string => {
+    const b = new SkiaBackend(rw, rh);
+    b.putPixels(rgba);
+    return b.encodePng().toString('base64');
+  };
+  const doc = exportLottie(mod, { width: w, height: h, fps, measurer, encodePng });
   const roundTripped = importLottie(doc).toSceneModule();
   return skiaSource(roundTripped, w, h, modulePath);
 }
