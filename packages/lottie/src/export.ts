@@ -40,7 +40,7 @@ import { Circle, Group, Node, Path, Rect, type SceneModule } from '@glissade/sce
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
-import { sampleToLottieKeys } from './sampleFallback.js';
+import { decimateLinearKeys, sampleToLottieKeys } from './sampleFallback.js';
 import type {
   LottieDocument,
   LottieKeyframe,
@@ -264,7 +264,12 @@ function sampleComponentVec(
     }
     out.push(frame);
   }
-  return out;
+  // This combined per-axis fallback is dense-sampled just like sampleToLottieKeys,
+  // so it MUST decimate too — otherwise a per-axis `scale` animation (Lottie has
+  // no split-scale form) keeps one key per frame on a channel linear playback
+  // could reproduce from a handful (the dominant real-episode bloat: 12 scale
+  // channels × 11.5k keys). Flat numeric payloads, so RDP applies.
+  return decimateLinearKeys(out);
 }
 
 /** Union frame span of a set of tracks (their first→last key), else [ip, op]. */

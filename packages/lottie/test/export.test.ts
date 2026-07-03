@@ -116,6 +116,31 @@ describe('exportLottie', () => {
     expect(a).toBe(b);
   });
 
+  it('decimates the per-axis scale combined channel (a linear ramp → 2 keys, not 61)', () => {
+    // Lottie has no split-scale form, so per-axis scale.x/.y sample to a dense
+    // combined channel — this MUST decimate too (video-canary's minimal repro of
+    // the e04 bd-orb bloat: 61 dense keys on a dead-linear ramp).
+    const src: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'orb', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: {
+        version: 1,
+        duration: 1,
+        fps: 60,
+        tracks: [
+          track('orb/scale.x', 'number', [key(0, 1), key(1, 2)]),
+          track('orb/scale.y', 'number', [key(0, 1), key(1, 2)]),
+        ],
+      },
+    };
+    const doc = exportLottie(src, { width: 100, height: 100, fps: 60 });
+    const s = doc.layers[0]!.ks!.s as LottieProp;
+    expect(s.a).toBe(1);
+    const keys = kf(s);
+    expect(keys).toHaveLength(2); // a constant-velocity ramp collapses to its endpoints
+    expect(keys[0]!.s).toEqual([100, 100]); // scale ×100
+    expect(keys[1]!.s).toEqual([200, 200]);
+  });
+
   it('decimates a dense sampled channel (named ease) yet stays faithful under linear playback', () => {
     // easeInOutQuad is a NAMED ease → not a single Lottie bezier → dense-sampled.
     const src: SceneModule = {

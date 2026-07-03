@@ -27,6 +27,7 @@
   },
   "changesets": [
     "gs-export-lottie-nits",
+    "gs-export-lottie-scale-decimation",
     "gs-export-lottie"
   ]
 }
