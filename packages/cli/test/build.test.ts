@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { affectedScenes, buildCommand, hashInputs, mixDefaults, renderDefaults, sceneInputFiles, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
+import { affectedScenes, buildCommand, hashInputs, mixDefaults, renderDefaults, sceneInputFiles, selectAffectedScenes, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
 
 let root: string;
 let calls: string[];
@@ -229,5 +229,34 @@ describe('project runtime — shared-master phase (0.43 sub-card A)', () => {
     expect(r.mastered).toBe(0);
     expect(masterCalls).toEqual([]);
     expect(calls.filter((c) => c === 'e01.ts:render')).toHaveLength(1); // rendered once, no remux phase
+  });
+});
+
+describe('selectAffectedScenes — conservative fallback (0.43 pre.1, ai-training footgun)', () => {
+  const scenes = ['/proj/a.ts', '/proj/b.ts', '/proj/c.ts'];
+
+  it('a shared code file (not any scene input) → rebuild ALL (never silently skips a real change)', () => {
+    // src/theme.ts is imported by scenes but is NOT in any sceneInputFiles → can't attribute → all
+    expect(selectAffectedScenes(scenes, new Set(['/proj/src/theme.ts']))).toEqual(scenes);
+  });
+
+  it('the config changing → rebuild ALL (it reshapes the whole plan)', () => {
+    expect(selectAffectedScenes(scenes, new Set(['/proj/glissade.config.ts']))).toEqual(scenes);
+  });
+
+  it('a scene SOURCE change still narrows to that scene (attributable)', () => {
+    expect(selectAffectedScenes(scenes, new Set(['/proj/b.ts']))).toEqual(['/proj/b.ts']);
+  });
+
+  it('a scene SIDECAR change narrows to that scene (attributable)', () => {
+    expect(selectAffectedScenes(scenes, new Set(['/proj/c.narration.timing.json']))).toEqual(['/proj/c.ts']);
+  });
+
+  it('only NON-code changes (docs / unrelated json) narrow normally — the CI no-op fast path', () => {
+    expect(selectAffectedScenes(scenes, new Set(['/proj/README.md', '/proj/data/foo.json']))).toEqual([]);
+  });
+
+  it('a mixed diff (shared code + a scene) still rebuilds ALL (the code change dominates, safely)', () => {
+    expect(selectAffectedScenes(scenes, new Set(['/proj/src/util.ts', '/proj/a.ts']))).toEqual(scenes);
   });
 });

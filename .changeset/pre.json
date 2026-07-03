@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.42.0"
   },
   "changesets": [
+    "gs-build-affected-conservative",
     "gs-build-project-runtime"
   ]
 }

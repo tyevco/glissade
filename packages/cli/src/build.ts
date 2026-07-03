@@ -238,6 +238,27 @@ export function affectedScenes(scenes: readonly string[], changedPaths: Readonly
   return scenes.filter((s) => sceneInputFiles(s).some((f) => changedPaths.has(f)));
 }
 
+const isCodeFile = (f: string): boolean => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f);
+
+/**
+ * The `--affected` selector with a SAFE-BY-DEFAULT fallback. A scene's staleness is
+ * tracked by its own files (source + sidecars), but a scene `.ts` *imports* other
+ * modules — and a change to a shared `src/util.ts` (or the config, or any code file
+ * not attributable to a scene) affects scenes transitively, invisibly to the
+ * file-level diff. Silently narrowing that to nothing would ship stale renders — the
+ * exact silent-skip the rest of the system fails loud on. So: if the diff touched a
+ * CODE file (`.ts`/`.js`/…) that is NOT any scene's recognized input, we cannot
+ * attribute it, so we DON'T narrow — rebuild every scene (the per-step content hash
+ * still skips the genuinely-fresh ones). A diff of only non-code files (docs, an
+ * unrelated JSON) narrows normally. (Precise import-graph affectedness — rebuild only
+ * true dependents — is a follow-up; footgun-free-80% over precise-but-unshipped-100%.)
+ */
+export function selectAffectedScenes(scenes: readonly string[], changedPaths: ReadonlySet<string>): string[] {
+  const accountedFor = new Set(scenes.flatMap(sceneInputFiles));
+  const hasUnattributedCode = [...changedPaths].some((f) => isCodeFile(f) && !accountedFor.has(f));
+  return hasUnattributedCode ? [...scenes] : affectedScenes(scenes, changedPaths);
+}
+
 /** The files changed since a git ref (`git diff --name-only <ref>`), as absolute paths. */
 export function gitChangedFiles(ref: string, root: string): Set<string> {
   const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim();
@@ -367,7 +388,7 @@ export async function buildCommand(opts: BuildOptions, deps: BuildDeps = { runSt
   const allScenes = resolveScenes(cfg.scenes, root);
   let renderScenes = allScenes;
   if (opts.only?.length) renderScenes = renderScenes.filter((s) => opts.only!.some((o) => s.includes(o)));
-  if (opts.affected !== undefined) renderScenes = affectedScenes(renderScenes, gitChangedFiles(opts.affected, root));
+  if (opts.affected !== undefined) renderScenes = selectAffectedScenes(renderScenes, gitChangedFiles(opts.affected, root));
   const version = glissadeVersion();
   const manifest = loadManifest(root);
   const log = opts.onLog ?? (() => {});

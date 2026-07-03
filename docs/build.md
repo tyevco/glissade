@@ -69,6 +69,8 @@ gs build --affected HEAD~1 --explain  # what would the last commit rebuild?
 
 It composes with the normal content-hash staleness: `--affected` narrows the set, then each kept scene is still hash-checked (so a scene the diff touched but whose *output-affecting* inputs are unchanged still skips). It never runs a scene the diff didn't touch, and never skips a real change within the ones it keeps.
 
+Because a scene `.ts` *imports* other modules, `--affected` is **safe-by-default** about changes it can't attribute to a scene: if the diff touched a code file that is not any scene's input — a shared `src/` module, or `glissade.config.ts` itself — it rebuilds **all** scenes rather than silently skipping transitively-affected ones (the per-step hash still skips the genuinely fresh). A diff of only non-code files (docs, an unrelated JSON) narrows normally.
+
 ### Master the whole project to a shared target
 
 Add a `master` block to the config and `gs build` runs a second, cross-scene phase after rendering — the series-level [shared-target loudness](/mastering) applied as part of the build:
