@@ -1,5 +1,15 @@
 # @glissade/react
 
+## 0.47.0
+
+### Patch Changes
+
+- Updated dependencies [f0e56bf]
+- Updated dependencies [e63249f]
+  - @glissade/scene@0.47.0
+  - @glissade/player@0.47.0
+  - @glissade/core@0.47.0
+
 ## 0.47.0-pre.1
 
 ### Patch Changes
