@@ -17,9 +17,11 @@
  * same discipline the importer uses for misaligned parametric geometry.
  *
  * SCOPE (MVP — mirror the importer's audit discipline: warn + drop, never
- * silent). IN: Group hierarchy, Rect/Circle/Path with a SOLID fill (+ optional
- * stroke), transform channels (position / position.x/.y split, opacity, scale,
- * rotation → identity degrees), animated `fill` color, animated `d` path
+ * silent). IN: Group hierarchy, Rect/Circle/Path with a SOLID fill or a
+ * LINEAR/RADIAL gradient `fill: paint` (→ Lottie `gf`; +optional stroke),
+ * transform channels (position / position.x/.y split, opacity, scale,
+ * rotation → identity degrees), animated `fill` color OR animated `fill: paint`
+ * gradient (keyed g/s/e when directly invertible, else sampled), animated `d` path
  * (constant topology), and TEXT (ty:5): a Text node → a text layer with a font
  * reference (fonts.list) + a text-document keyframe stream (static = one doc;
  * animated text/fill/fontSize → doc keyframes sampled on the frame grid, held).
@@ -38,8 +40,9 @@
  * 0.75, not the correct single 0.5). Same limitation the importer documents at
  * convert.ts:470-475. A correct-for-overlap precomp (ty:0 + assets) is a later phase.
  *
- * OUT (warned + dropped): Image/Video, gradient/mesh paint (solid only),
- * non-center anchors, text typewriter `reveal`/`revealFraction`, variable-font axes
+ * OUT (warned + dropped): Image/Video, MESH paint (`gf` covers linear/radial only —
+ * mesh has no Lottie ramp), gradient STROKE (`gs` — Path.stroke is a color string,
+ * not a Paint), non-center anchors, text typewriter `reveal`/`revealFraction`, variable-font axes
  * (`fontAxes`/`fontVariationSettings` — no Lottie doc field), `box` valign
  * (baseline-approximated) and wrap `width` (the player self-reflows), TokenHighlight.
  * Animated primitive geometry (width/radius tracks) is SAMPLED, not channel-mapped.
@@ -49,7 +52,9 @@ import {
   compileTimeline,
   parseColor,
   sampleTrack,
+  type ColorStop,
   type Key,
+  type Paint,
   type PathContour,
   type PathValue,
   type Timeline,
@@ -64,6 +69,7 @@ import { anchorSampledSpan, decimateLinearKeys, sampleToLottieKeys } from './sam
 import type {
   LottieDocument,
   LottieFont,
+  LottieGradient,
   LottieKeyframe,
   LottieLayer,
   LottieProp,
@@ -678,19 +684,173 @@ function colorKeys(ctx: Ctx, tr: Track<string>): LottieKeyframe[] {
 function buildFill(ctx: Ctx, node: ShapeNode, tracks: NodeTracks): LottieShapeItem | undefined {
   const tr = tracks.get('fill') as Track<unknown> | undefined;
   if (tr) {
-    if (tr.type !== 'color') {
-      ctx.warn(`${describe(node)}: animated '${tr.type}' fill (gradient/mesh) is not exported — dropped`);
-      return undefined;
+    if (tr.type === 'color') {
+      return { ty: 'fl', c: { a: 1, k: colorKeys(ctx, tr as Track<string>) }, o: { a: 0, k: 100 } };
     }
-    return { ty: 'fl', c: { a: 1, k: colorKeys(ctx, tr as Track<string>) }, o: { a: 0, k: 100 } };
-  }
-  const fill = node.fill();
-  if (typeof fill !== 'string') {
-    ctx.warn(`${describe(node)}: a gradient/mesh fill is not exported (MVP: solid color) — dropped`);
+    if (tr.type === 'paint') {
+      return buildAnimatedGradientFill(ctx, node, tr as Track<Paint>);
+    }
+    ctx.warn(`${describe(node)}: animated '${tr.type}' fill is not exported — dropped`);
     return undefined;
   }
-  if (fill === '') return undefined;
-  return { ty: 'fl', c: { a: 0, k: colorToLottie(fill) }, o: { a: 0, k: 100 } };
+  const fill = node.fill();
+  if (typeof fill === 'string') {
+    if (fill === '') return undefined;
+    return { ty: 'fl', c: { a: 0, k: colorToLottie(fill) }, o: { a: 0, k: 100 } };
+  }
+  // A static Paint object: solid color sugar, a linear/radial gradient, or mesh.
+  if (fill.kind === 'color') return { ty: 'fl', c: { a: 0, k: colorToLottie(fill.color) }, o: { a: 0, k: 100 } };
+  if (fill.kind === 'mesh') {
+    ctx.warn(`${describe(node)}: a mesh fill has no Lottie gradient ramp (MVP: solid / linear / radial) — dropped`);
+    return undefined;
+  }
+  warnGradientInterpolation(ctx, node, fill);
+  return gradientFillItem(fill, localBounds(node));
+}
+
+// --- gradient paint (fill: linear | radial → Lottie gf) ---
+
+/** Local-space bounds of a shape's fill path — the gradient-geometry default source
+ * (matches raster2d.resolveFill: linear ⇒ vertical bounds sweep, radial ⇒ centre +
+ * half-diagonal). Rect/Circle draw centred at the origin; a Path bounds its anchors. */
+function localBounds(node: ShapeNode): FillBounds {
+  if (node instanceof Rect) {
+    const w = node.width() / 2;
+    const h = node.height() / 2;
+    return { minX: -w, minY: -h, maxX: w, maxY: h };
+  }
+  if (node instanceof Circle) {
+    const r = node.radius();
+    return { minX: -r, minY: -r, maxX: r, maxY: r };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const contour of node.data()) {
+    for (const [x, y] of contour.v) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return { minX, minY, maxX, maxY };
+}
+
+interface FillBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+type Gradient = Extract<Paint, { kind: 'linear' | 'radial' }>;
+
+/** gf start point (Lottie `s`) from a gradient's geometry, defaulting to bounds
+ * exactly as raster2d.resolveFill does (linear: [centre-x, minY]; radial: centre). */
+function gradientStart(g: Gradient, b: FillBounds): [number, number] {
+  const cx = (b.minX + b.maxX) / 2;
+  if (g.kind === 'linear') return g.from ? [g.from[0], g.from[1]] : [cx, b.minY];
+  const cy = (b.minY + b.maxY) / 2;
+  return g.center ? [g.center[0], g.center[1]] : [cx, cy];
+}
+
+/** gf end point (Lottie `e`): linear ⇒ `to`; radial ⇒ centre + [radius, 0], so the
+ * Lottie radial extent (|s→e|) equals the glissade radius (half-diagonal default). */
+function gradientEnd(g: Gradient, b: FillBounds): [number, number] {
+  if (g.kind === 'linear') {
+    const cx = (b.minX + b.maxX) / 2;
+    return g.to ? [g.to[0], g.to[1]] : [cx, b.maxY];
+  }
+  const [cx, cy] = gradientStart(g, b);
+  const radius = g.radius !== undefined ? g.radius : Math.hypot(b.maxX - b.minX, b.maxY - b.minY) / 2;
+  return [cx + radius, cy];
+}
+
+/** Flatten stops into the Lottie `g.k` array: `[offset,r,g,b, …]` (0–1 floats),
+ * then `[offset,a, …]` alpha stops appended iff any stop is translucent. */
+function gradientStopArray(stops: ColorStop[]): number[] {
+  const colors: number[] = [];
+  const alphas: number[] = [];
+  let anyAlpha = false;
+  for (const s of stops) {
+    const { r, g, b, a } = parseColor(s.color);
+    colors.push(s.offset, r / 255, g / 255, b / 255);
+    alphas.push(s.offset, a);
+    if (a < 1) anyAlpha = true;
+  }
+  return anyAlpha ? [...colors, ...alphas] : colors;
+}
+
+function warnGradientInterpolation(ctx: Ctx, node: ShapeNode, g: Gradient): void {
+  if (g.interpolation !== undefined && g.interpolation !== 'linear') {
+    ctx.warn(
+      `${describe(node)}: '${g.interpolation}' gradient interpolation is emitted as a linear Lottie ramp ` +
+        `(gf has no smooth/gaussian mode) — mid-stop banding may differ`,
+    );
+  }
+}
+
+/** A static linear/radial gradient → a `gf` shape item (geometry from `bounds`). */
+function gradientFillItem(g: Gradient, bounds: FillBounds): LottieShapeItem {
+  const gk: LottieGradient = { p: g.stops.length, k: { a: 0, k: gradientStopArray(g.stops) } };
+  const s = gradientStart(g, bounds);
+  const e = gradientEnd(g, bounds);
+  if (g.kind === 'radial') {
+    return { ty: 'gf', t: 2, s: { a: 0, k: s }, e: { a: 0, k: e }, g: gk, h: { a: 0, k: 0 }, a: { a: 0, k: 0 }, o: { a: 0, k: 100 } };
+  }
+  return { ty: 'gf', t: 1, s: { a: 0, k: s }, e: { a: 0, k: e }, g: gk, o: { a: 0, k: 100 } };
+}
+
+/**
+ * An animated `fill: paint` track → a `gf` with keyframed s/e/g channels. The
+ * gradient KIND (linear/radial) is fixed to the first key's kind (Lottie can't
+ * animate `t`); mesh/color first keys warn-drop. Directly-invertible tracks keep
+ * their eases via emitKeys; anything else (named ease / spring / expr) samples on
+ * the frame grid. A key whose kind/stop-count differs from the first would snap
+ * under paintType anyway, so its geometry/ramp is read as best-effort.
+ */
+function buildAnimatedGradientFill(ctx: Ctx, node: ShapeNode, tr: Track<Paint>): LottieShapeItem | undefined {
+  const first = tr.keys[0]!.value;
+  if (first.kind === 'mesh') {
+    ctx.warn(`${describe(node)}: an animated mesh fill has no Lottie gradient ramp — dropped`);
+    return undefined;
+  }
+  if (first.kind === 'color') {
+    ctx.warn(`${describe(node)}: an animated color-only paint fill is not exported (use a 'color' track) — dropped`);
+    return undefined;
+  }
+  const kind = first.kind;
+  const bounds = localBounds(node);
+  const asGradient = (p: Paint): Gradient =>
+    p.kind === 'linear' || p.kind === 'radial' ? p : ({ kind, stops: [{ offset: 0, color: '#000000' }] } as Gradient);
+  warnGradientInterpolation(ctx, node, first);
+  const p = first.stops.length;
+
+  const sMap = (v: Paint): number[] => gradientStart(asGradient(v), bounds);
+  const eMap = (v: Paint): number[] => gradientEnd(asGradient(v), bounds);
+  const gMap = (v: Paint): number[] => gradientStopArray(asGradient(v).stops);
+
+  let sK: LottieKeyframe[];
+  let eK: LottieKeyframe[];
+  let gK: LottieKeyframe[];
+  if (isDirectlyInvertible(tr.keys, tr.expr)) {
+    sK = emitKeys(tr.keys, ctx.fr, sMap);
+    eK = emitKeys(tr.keys, ctx.fr, eMap);
+    gK = emitKeys(tr.keys, ctx.fr, gMap);
+  } else {
+    ctx.warn(`${describe(node)}: animated gradient fill is sampled at ${ctx.fr} fps (non-invertible ease)`);
+    sK = sampleToLottieKeys(tr, ctx.fr, ctx.ip, ctx.op, sMap);
+    eK = sampleToLottieKeys(tr, ctx.fr, ctx.ip, ctx.op, eMap);
+    gK = sampleToLottieKeys(tr, ctx.fr, ctx.ip, ctx.op, gMap);
+  }
+  const g: LottieGradient = { p, k: { a: 1, k: gK } };
+  if (kind === 'radial') {
+    return { ty: 'gf', t: 2, s: { a: 1, k: sK }, e: { a: 1, k: eK }, g, h: { a: 0, k: 0 }, a: { a: 0, k: 0 }, o: { a: 0, k: 100 } };
+  }
+  return { ty: 'gf', t: 1, s: { a: 1, k: sK }, e: { a: 1, k: eK }, g, o: { a: 0, k: 100 } };
 }
 
 function buildStroke(ctx: Ctx, node: ShapeNode, tracks: NodeTracks): LottieShapeItem | undefined {

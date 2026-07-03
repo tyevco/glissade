@@ -113,6 +113,19 @@ export function validateTrack(track: Track): void {
   // later as a native backend panic (a Skia abort with no source location). Catch
   // it here with the target + t named. Additive: every valid finite key passes,
   // so all goldens stay byte-identical. (Two canary seats' paired 0.32 nit.)
+  // Per-type structural guard (§2.2): a value type may reject a broken keyframe
+  // value up front (e.g. paintType on an unknown kind / empty stops) so it can't
+  // detonate later inside lerp/raster. Additive — only throws on invalid input, so
+  // valid documents (and every golden) are byte-identical.
+  if (vt.validate) {
+    for (const k of track.keys) {
+      try {
+        vt.validate(k.value);
+      } catch (e) {
+        throw new TrackValidationError(track.target, `invalid ${vt.id} keyframe at t=${k.t}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  }
   const repr = (vt as { repr?: string }).repr ?? vt.id;
   if (repr === 'number' || repr === 'vec2') {
     for (const k of track.keys) {

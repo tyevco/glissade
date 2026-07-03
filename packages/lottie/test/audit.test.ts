@@ -21,7 +21,7 @@ describe('fail-fast feature audit', () => {
         [
           triangleSh(),
           { ty: 'tm', nm: 'trim' }, // trim paths
-          { ty: 'gf', nm: 'grad' }, // gradient fill
+          { ty: 'gs', nm: 'gstroke' }, // gradient stroke (still unsupported — stroke is a color string)
           redFill,
         ],
         {},
@@ -35,7 +35,7 @@ describe('fail-fast feature audit', () => {
     expect(text).toContain('[unsupported-masking]');
     expect(text).toContain('[unsupported-time-remap]');
     expect(text).toContain('[unsupported-shape-item] trim paths');
-    expect(text).toContain('[unsupported-shape-item] gradient fill');
+    expect(text).toContain('[unsupported-shape-item] gradient stroke');
   });
 
   it('rejects skew, expressions, and merge modes ≠ 1 by default', () => {

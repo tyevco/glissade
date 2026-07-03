@@ -14,6 +14,20 @@ describe('track validation', () => {
     expect(() => track('a/x', 'number', [key(1, 0), key(0.5, 1)])).toThrow(TrackValidationError);
   });
 
+  it('runs the value-type validate hook per key (paint): rejects a broken gradient, passes a valid one', () => {
+    // valid linear gradient track — no throw
+    expect(() =>
+      track('box/fill', 'paint', [
+        key(0, { kind: 'linear', stops: [{ offset: 0, color: '#f00' }, { offset: 1, color: '#00f' }] }),
+      ]),
+    ).not.toThrow();
+    // an unknown kind is caught up front with the target + t named
+    expect(() => track('box/fill', 'paint', [key(0, { kind: 'bogus' } as unknown as never)])).toThrow(TrackValidationError);
+    expect(() => track('box/fill', 'paint', [key(0, { kind: 'bogus' } as unknown as never)])).toThrow(/box\/fill/);
+    // empty stops on a gradient throws too
+    expect(() => track('box/fill', 'paint', [key(0, { kind: 'radial', stops: [] } as unknown as never)])).toThrow(/non-empty `stops`/);
+  });
+
   it('rejects duplicate key times', () => {
     expect(() => track('a/x', 'number', [key(1, 0), key(1, 1)])).toThrow(TrackValidationError);
   });

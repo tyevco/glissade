@@ -850,6 +850,7 @@ export interface ValueType<T> {
     serialize?(value: T): unknown;
     // (undocumented)
     sub?(a: T, b: T): T;
+    validate?(value: T): void;
 }
 
 // @public (undocumented)

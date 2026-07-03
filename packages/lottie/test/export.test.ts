@@ -373,6 +373,108 @@ describe('exportLottie', () => {
   });
 });
 
+describe('exportLottie gradient fill (gf)', () => {
+  const gfOf = (mod: SceneModule) => {
+    const doc = exportLottie(mod, { width: 200, height: 200, fps: 60 });
+    const shapes = doc.layers[0]!.shapes!;
+    return shapes.find((s) => s.ty === 'gf')!;
+  };
+  const staticRect = (fill: unknown): SceneModule => ({
+    createScene: () => createScene({ size: { w: 200, h: 200 }, children: [new Rect({ id: 'box', width: 100, height: 60, fill: fill as string })] }),
+    timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+  });
+
+  it('emits a LINEAR gradient as gf t=1 with explicit s/e and a flattened g ramp', () => {
+    const gf = gfOf(staticRect({ kind: 'linear', from: [-50, -30], to: [50, 30], stops: [{ offset: 0, color: '#ff0000' }, { offset: 1, color: '#0000ff' }] }));
+    expect(gf.t).toBe(1);
+    expect(gf.s).toEqual({ a: 0, k: [-50, -30] });
+    expect(gf.e).toEqual({ a: 0, k: [50, 30] });
+    expect(gf.g!.p).toBe(2);
+    // [offset,r,g,b, offset,r,g,b] — 0-1 floats, no alpha stops (all opaque)
+    expect(gf.g!.k).toEqual({ a: 0, k: [0, 1, 0, 0, 1, 0, 0, 1] });
+    expect(gf.o).toEqual({ a: 0, k: 100 });
+  });
+
+  it('defaults omitted linear geometry to the fill bounds (vertical sweep, centre-x)', () => {
+    // Rect 100×60 centred at origin → bounds [-50,-30]..[50,30]; linear default = [0,-30]→[0,30]
+    const gf = gfOf(staticRect({ kind: 'linear', stops: [{ offset: 0, color: '#000000' }, { offset: 1, color: '#ffffff' }] }));
+    expect(gf.s).toEqual({ a: 0, k: [0, -30] });
+    expect(gf.e).toEqual({ a: 0, k: [0, 30] });
+  });
+
+  it('emits a RADIAL gradient as gf t=2 with e = centre + [radius,0] and zero highlight', () => {
+    const gf = gfOf(staticRect({ kind: 'radial', center: [10, 20], radius: 40, stops: [{ offset: 0, color: '#ffffff' }, { offset: 1, color: '#000000' }] }));
+    expect(gf.t).toBe(2);
+    expect(gf.s).toEqual({ a: 0, k: [10, 20] });
+    expect(gf.e).toEqual({ a: 0, k: [50, 20] }); // centre + [radius, 0]
+    expect(gf.h).toEqual({ a: 0, k: 0 });
+    expect(gf.a).toEqual({ a: 0, k: 0 });
+    expect(gf.g!.p).toBe(2);
+  });
+
+  it('defaults omitted radial geometry to bounds centre + half-diagonal', () => {
+    // bounds [-50,-30]..[50,30]: centre [0,0], radius = hypot(100,60)/2
+    const gf = gfOf(staticRect({ kind: 'radial', stops: [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }] }));
+    const r = Math.hypot(100, 60) / 2;
+    expect(gf.s).toEqual({ a: 0, k: [0, 0] });
+    expect(gf.e).toEqual({ a: 0, k: [r, 0] });
+  });
+
+  it('flattens a MULTI-STOP ramp and sets g.p to the stop count', () => {
+    const gf = gfOf(staticRect({ kind: 'linear', from: [0, 0], to: [1, 1], stops: [
+      { offset: 0, color: '#ff0000' },
+      { offset: 0.5, color: '#00ff00' },
+      { offset: 1, color: '#0000ff' },
+    ] }));
+    expect(gf.g!.p).toBe(3);
+    expect(gf.g!.k).toEqual({ a: 0, k: [0, 1, 0, 0, 0.5, 0, 1, 0, 1, 0, 0, 1] });
+  });
+
+  it('appends per-stop OPACITY stops when any stop is translucent', () => {
+    const gf = gfOf(staticRect({ kind: 'linear', from: [0, 0], to: [1, 1], stops: [
+      { offset: 0, color: 'rgba(255,0,0,0.5)' },
+      { offset: 1, color: '#0000ff' },
+    ] }));
+    // colors first (p*4=8 entries), then alpha stops [offset,a, offset,a]
+    expect(gf.g!.k).toEqual({ a: 0, k: [0, 1, 0, 0, 1, 0, 0, 1, /* alpha */ 0, 0.5, 1, 1] });
+    expect(gf.g!.p).toBe(2);
+  });
+
+  it('exports an ANIMATED linear gradient with keyframed s/e/g (a:1)', () => {
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 200, h: 200 }, children: [new Rect({ id: 'box', width: 100, height: 60, fill: '#ff0000' })] }),
+      timeline: {
+        version: 1,
+        duration: 1,
+        fps: 60,
+        tracks: [track('box/fill', 'paint', [
+          key(0, { kind: 'linear', from: [-50, 0], to: [50, 0], stops: [{ offset: 0, color: '#ff0000' }, { offset: 1, color: '#0000ff' }] }),
+          key(1, { kind: 'linear', from: [-50, 0], to: [50, 0], stops: [{ offset: 0, color: '#00ff00' }, { offset: 1, color: '#ffff00' }] }),
+        ])],
+      },
+    };
+    const gf = gfOf(mod);
+    expect(gf.t).toBe(1);
+    const g = gf.g!;
+    expect(g.p).toBe(2);
+    expect((g.k as LottieProp).a).toBe(1);
+    const gKeys = (g.k as LottieProp).k as LottieKeyframe[];
+    expect(gKeys.map((k) => k.t)).toEqual([0, 60]);
+    expect((gf.s as LottieProp).a).toBe(1);
+  });
+
+  it('still WARN-DROPS a mesh fill (linear/radial only)', () => {
+    const warnings: string[] = [];
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 40, height: 40, fill: { kind: 'mesh', points: [{ pos: [0, 0], color: '#f00' }, { pos: [1, 1], color: '#00f' }] } as unknown as string })] }),
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60, onWarn: (m) => warnings.push(m) });
+    expect(doc.layers[0]!.shapes!.some((s) => s.ty === 'gf' || s.ty === 'fl')).toBe(false);
+    expect(warnings.some((w) => /mesh fill/.test(w))).toBe(true);
+  });
+});
+
 describe('decimateLinearKeys', () => {
   const mk = (pts: [number, number[]][]): LottieKeyframe[] =>
     pts.map(([t, s], i) => (i < pts.length - 1 ? { t, s, o: { x: 0, y: 0 }, i: { x: 1, y: 1 } } : { t, s }));

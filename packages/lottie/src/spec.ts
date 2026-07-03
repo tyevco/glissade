@@ -4,7 +4,7 @@
  * into real @glissade/scene nodes.
  */
 
-import type { PathValue, Timeline, Vec2 } from '@glissade/core';
+import type { Paint, PathValue, Timeline, Vec2 } from '@glissade/core';
 
 export interface BaseSpec {
   id: string;
@@ -23,7 +23,8 @@ export interface GroupSpec extends BaseSpec {
 export interface PathSpec extends BaseSpec {
   kind: 'path';
   data: PathValue;
-  fill?: string;
+  /** A CSS color string, or a linear/radial gradient `Paint` (imported from `gf`). */
+  fill?: string | Paint;
   stroke?: string;
   strokeWidth?: number;
 }

@@ -97,7 +97,6 @@ const UNSUPPORTED_SHAPE_ITEMS: Record<string, string> = {
   rp: 'repeater',
   rd: 'round corners',
   sr: 'polystar',
-  gf: 'gradient fill',
   gs: 'gradient stroke',
   // geometry-modifying modern items: NOT inert, must never pass silently (§1)
   zz: 'zig-zag',
@@ -154,6 +153,37 @@ function auditShapeItems(ctx: Ctx, items: LottieShapeItem[], where: string): voi
         checkExpression(ctx, item.c, `${here}.c`);
         checkExpression(ctx, item.o, `${here}.o`);
         checkExpression(ctx, item.w, `${here}.w`);
+        break;
+      }
+      case 'gf': {
+        // gradient FILL (gs stays rejected — a Path stroke is a color string, not a Paint).
+        // A style after a sibling group would paint that group too (style inheritance).
+        if (sawGroup) {
+          reject(ctx, 'unsupported-shape-structure', `style inheriting into a preceding group at ${here}`);
+        }
+        if (typeof item.r === 'number' && item.r === 2) {
+          reject(ctx, 'unsupported-fill-rule', `even-odd gradient fill at ${here}`);
+        }
+        if (item.t !== 1 && item.t !== 2) {
+          reject(ctx, 'unsupported-gradient', `gradient type ${String(item.t)} (only linear=1 / radial=2) at ${here}`);
+        }
+        if (!isProp(item.s) || !isProp(item.e)) {
+          reject(ctx, 'invalid-gradient', `${here}: gradient fill missing start/end point (s/e)`);
+        }
+        const g = item.g;
+        if (!g || typeof g.p !== 'number' || g.p < 1 || !isProp(g.k)) {
+          reject(ctx, 'invalid-gradient', `${here}: gradient fill missing color stops (g.p/g.k)`);
+        }
+        // a radial HIGHLIGHT (h/a offset) has no glissade analogue — reject if non-zero
+        for (const [name, prop] of [['h', item.h], ['a', item.a]] as const) {
+          if (isProp(prop) && !isKeyframed(prop) && typeof prop.k === 'number' && Math.abs(prop.k) > 1e-9) {
+            reject(ctx, 'unsupported-gradient', `radial highlight (${name}) at ${here}`);
+          }
+        }
+        checkExpression(ctx, item.s, `${here}.s`);
+        checkExpression(ctx, item.e, `${here}.e`);
+        checkExpression(ctx, item.o, `${here}.o`);
+        checkExpression(ctx, g?.k, `${here}.g`);
         break;
       }
       case 'mm': {

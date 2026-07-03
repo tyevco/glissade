@@ -39,6 +39,14 @@ export interface ValueType<T> {
   /** Accepts easedT outside [0,1] (spring overshoot)? Otherwise clamped. */
   extrapolates: boolean;
   equals(a: T, b: T): boolean;
+  /**
+   * Optional fail-loud structural guard for a keyframe VALUE, called per key by
+   * `validateTrack`. Throws (with the offending field named) on a structurally
+   * invalid value that `lerp` would otherwise turn into a NaN / native-backend
+   * panic much later. ADDITIVE: only throws on genuinely invalid input, so every
+   * valid document is unaffected (goldens byte-identical).
+   */
+  validate?(value: T): void;
   /** Optional linear-space operators (offset decay + reserved additive blending, §B.6). */
   add?(a: T, b: T): T;
   sub?(a: T, b: T): T;
@@ -463,6 +471,32 @@ export const paintType: ValueType<Paint> = {
     return paintSnap(t, a, b);
   },
   extrapolates: false, // gradients clamp; spring overshoot on stops/geometry isn't meaningful
+  validate: (v) => {
+    // Fail loud on a structurally broken Paint keyframe (unknown kind, or a
+    // gradient with no stops / mesh with no points) — otherwise lerp/raster hits
+    // it much later as an opaque NaN or backend panic. Additive: valid paints pass.
+    if (v === null || typeof v !== 'object' || !('kind' in v)) {
+      throw new TypeError(`paint value must be an object with a 'kind', got ${JSON.stringify(v)}`);
+    }
+    switch (v.kind) {
+      case 'color':
+        if (typeof v.color !== 'string') throw new TypeError("paint kind 'color' requires a string `color`");
+        return;
+      case 'linear':
+      case 'radial':
+        if (!Array.isArray(v.stops) || v.stops.length === 0) {
+          throw new TypeError(`paint kind '${v.kind}' requires a non-empty \`stops\` array`);
+        }
+        return;
+      case 'mesh':
+        if (!Array.isArray(v.points) || v.points.length === 0) {
+          throw new TypeError("paint kind 'mesh' requires a non-empty `points` array");
+        }
+        return;
+      default:
+        throw new TypeError(`unknown paint kind '${(v as { kind: string }).kind}' (expected color | linear | radial | mesh)`);
+    }
+  },
   equals: (a, b) => {
     if (a === b) return true;
     if (a.kind !== b.kind) return false;

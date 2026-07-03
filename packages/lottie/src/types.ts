@@ -49,6 +49,17 @@ export interface LottieShapePathData {
   c?: boolean;
 }
 
+/**
+ * A gradient color ramp (`gf`/`gs` `.g`): `p` = the number of COLOR stops, `k`
+ * the animatable flattened array. Static `k` is `[offset,r,g,b, …]` (p color
+ * stops, 0–1 floats) optionally followed by `[offset,a, …]` alpha stops when any
+ * stop is translucent; the split point is `p*4`.
+ */
+export interface LottieGradient {
+  p: number;
+  k: LottieProp;
+}
+
 export interface LottieShapeItem {
   /** shape direction: 3 = reversed winding (el/rc). */
   d?: number | { k?: unknown };
@@ -60,11 +71,11 @@ export interface LottieShapeItem {
   /** sh */
   ks?: LottieProp;
   closed?: boolean;
-  /** el / rc / tr */
+  /** el / rc / tr — also gf/gs gradient START point (s) + highlight angle (a). */
   p?: LottieProp;
   s?: LottieProp;
   a?: LottieProp;
-  /** rc corner radius / fl-st opacity-adjacent fields */
+  /** rc corner radius / fl-st opacity-adjacent fields / gf-gs fill rule. */
   r?: LottieProp | number;
   /** fl / st */
   c?: LottieProp;
@@ -72,6 +83,11 @@ export interface LottieShapeItem {
   w?: LottieProp;
   /** mm */
   mm?: number;
+  /** gf / gs gradient: type (1 linear, 2 radial), END point, highlight length, color ramp. */
+  t?: number;
+  e?: LottieProp;
+  h?: LottieProp;
+  g?: LottieGradient;
 }
 
 export interface LottieTransform {

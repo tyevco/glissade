@@ -199,6 +199,20 @@ describe('paintType mesh variant (§3 Paint 0.12)', () => {
     expect(paintType.lerp(m, { kind: 'color', color: '#fff' }, 0.4)).toBe(m);
   });
 
+  it('validate: accepts every valid paint kind, rejects structurally-broken values', () => {
+    // valid — no throw
+    expect(() => paintType.validate!({ kind: 'color', color: '#f00' })).not.toThrow();
+    expect(() => paintType.validate!(radial(50))).not.toThrow();
+    expect(() => paintType.validate!({ kind: 'linear', stops: [{ offset: 0, color: '#000' }, { offset: 1, color: '#fff' }] })).not.toThrow();
+    expect(() => paintType.validate!(mesh([[0, 0, '#000'], [1, 1, '#fff']]))).not.toThrow();
+    // invalid — throws with the offending field named
+    expect(() => paintType.validate!({ kind: 'linear', stops: [] } as unknown as Paint)).toThrow(/non-empty `stops`/);
+    expect(() => paintType.validate!({ kind: 'radial', stops: [] } as unknown as Paint)).toThrow(/non-empty `stops`/);
+    expect(() => paintType.validate!({ kind: 'mesh', points: [] } as unknown as Paint)).toThrow(/non-empty `points`/);
+    expect(() => paintType.validate!({ kind: 'bogus' } as unknown as Paint)).toThrow(/unknown paint kind/);
+    expect(() => paintType.validate!({ stops: [] } as unknown as Paint)).toThrow(/must be an object with a 'kind'/);
+  });
+
   it('equals: structural for matched meshes, false on differing points/interp/bg/kind', () => {
     const a = mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#101010');
     expect(paintType.equals(a, mesh([[0, 0, '#000000'], [1, 1, '#ffffff']], 'smooth', '#101010'))).toBe(true);

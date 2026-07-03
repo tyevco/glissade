@@ -6,6 +6,7 @@
 
 import * as _glissade_scene0 from '@glissade/scene';
 import { Node as Node_2 } from '@glissade/scene';
+import { Paint } from '@glissade/core';
 import { PathContour } from '@glissade/core';
 import { PathValue } from '@glissade/core';
 import { SceneModule } from '@glissade/scene';
@@ -144,8 +145,7 @@ export type NodeSpec = GroupSpec | PathSpec | RectSpec | ImageSpec | TextSpec;
 export interface PathSpec extends BaseSpec {
     // (undocumented)
     data: PathValue;
-    // (undocumented)
-    fill?: string;
+    fill?: string | Paint;
     // (undocumented)
     kind: 'path';
     // (undocumented)
@@ -203,7 +203,7 @@ export interface TextSpec extends BaseSpec {
 
 // Warnings were encountered during analysis:
 //
-// dist/index.d.ts:253:5 - (ae-forgotten-export) The symbol "LottieFont" needs to be exported by the entry point index.d.ts
+// dist/index.d.ts:269:5 - (ae-forgotten-export) The symbol "LottieFont" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

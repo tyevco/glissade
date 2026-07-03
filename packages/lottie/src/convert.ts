@@ -11,7 +11,9 @@ import {
   formatColor,
   track as makeTrack,
   type AssetRef,
+  type ColorStop,
   type Key,
+  type Paint,
   type PathValue,
   type Timeline,
   type Track,
@@ -402,6 +404,107 @@ function mergeGeomSources(ctx: Ctx, sources: GeomSource[], tm: TimeMap, where: s
   return { kind: 'animated', keys: enforceMonotonic(keys) };
 }
 
+// --- gradient fill (gf → linear/radial Paint) ---
+
+/** Lottie gf color ramp (`g.k`) → glissade ColorStop[]. The first `p` groups of
+ * `[offset,r,g,b]` are colors (0–1 floats); trailing `[offset,a]` groups are alpha
+ * stops, merged onto each color offset (interpolated across the alpha ramp). */
+function gradientStops(k: number[], p: number): ColorStop[] {
+  const alphas: { offset: number; a: number }[] = [];
+  for (let i = p * 4; i + 1 < k.length; i += 2) alphas.push({ offset: k[i]!, a: k[i + 1]! });
+  const alphaAt = (offset: number): number => {
+    if (alphas.length === 0) return 1;
+    let lo = alphas[0]!;
+    if (offset <= lo.offset) return lo.a;
+    for (let j = 1; j < alphas.length; j++) {
+      const hi = alphas[j]!;
+      if (offset <= hi.offset) {
+        const span = hi.offset - lo.offset;
+        return span > 0 ? lo.a + ((hi.a - lo.a) * (offset - lo.offset)) / span : hi.a;
+      }
+      lo = hi;
+    }
+    return lo.a;
+  };
+  const stops: ColorStop[] = [];
+  for (let i = 0; i < p; i++) {
+    const o = i * 4;
+    const offset = k[o] ?? 0;
+    stops.push({
+      offset,
+      color: formatColor({ r: (k[o + 1] ?? 0) * 255, g: (k[o + 2] ?? 0) * 255, b: (k[o + 3] ?? 0) * 255, a: alphaAt(offset) }),
+    });
+  }
+  return stops;
+}
+
+/** Reconstruct a static Paint from a gf's start/end points + ramp — the inverse of
+ * export.ts's gradientStart/gradientEnd (radial: centre = s, radius = |s→e|). */
+function buildStaticPaint(t: number | undefined, s: Vec2, e: Vec2, k: number[], p: number): Paint {
+  const stops = gradientStops(k, p);
+  if (t === 2) {
+    return { kind: 'radial', stops, center: [s[0], s[1]], radius: Math.hypot(e[0] - s[0], e[1] - s[1]) };
+  }
+  return { kind: 'linear', stops, from: [s[0], s[1]], to: [e[0], e[1]] };
+}
+
+/** Set `spec.fill` to a linear/radial Paint (static) or push a `paint` track (animated). */
+function applyGradientFill(ctx: Ctx, spec: PathSpec, style: LottieShapeItem, tm: TimeMap): void {
+  const t = style.t;
+  const p = style.g?.p ?? 0;
+  const sNorm = norms(style.s);
+  const eNorm = norms(style.e);
+  const gNorm = norms(style.g?.k);
+  const staticS = (): Vec2 => vec2Of(style.s?.k ?? [0, 0]);
+  const staticE = (): Vec2 => vec2Of(style.e?.k ?? [0, 0]);
+  const staticG = (): number[] => (Array.isArray(style.g?.k.k) ? (style.g!.k.k as number[]) : []);
+  if (!sNorm && !eNorm && !gNorm) {
+    spec.fill = buildStaticPaint(t, staticS(), staticE(), staticG(), p);
+    return;
+  }
+  const channels = [sNorm, eNorm, gNorm].filter((n): n is NormKey[] => n !== undefined);
+  const first = channels[0]!;
+  const aligned = channels.every((n) => n.length === first.length && n.every((kk, j) => kk.t === first[j]!.t));
+  let keys: Key<Paint>[];
+  if (aligned) {
+    // shared grid (our own export): one channel supplies times + eases, read per-index
+    const driver = gNorm ?? sNorm ?? eNorm!;
+    keys = convertKeys(driver, tm, () => ({ kind: 'linear', stops: [] }) as Paint);
+    for (let j = 0; j < keys.length; j++) {
+      const s = sNorm ? vec2Of(sNorm[j]!.value) : staticS();
+      const e = eNorm ? vec2Of(eNorm[j]!.value) : staticE();
+      const g = gNorm ? (gNorm[j]!.value as number[]) : staticG();
+      keys[j]!.value = buildStaticPaint(t, s, e, g, p);
+    }
+  } else {
+    // misaligned / foreign grids: union of times, hold-previous per channel (linear eases)
+    const times = [...new Set(channels.flatMap((n) => n.map((kk) => kk.t)))].sort((a, b) => a - b);
+    const at = <R>(norm: NormKey[] | undefined, ft: number, fallback: () => R, read: (v: unknown) => R): R => {
+      if (!norm) return fallback();
+      let v = norm[0]!.value;
+      for (const kk of norm) {
+        if (kk.t <= ft) v = kk.value;
+        else break;
+      }
+      return read(v);
+    };
+    keys = enforceMonotonic(
+      times.map((ft) => ({
+        t: toSeconds(tm, ft),
+        value: buildStaticPaint(
+          t,
+          at(sNorm, ft, staticS, vec2Of),
+          at(eNorm, ft, staticE, vec2Of),
+          at(gNorm, ft, staticG, (v) => v as number[]),
+          p,
+        ),
+      })),
+    );
+  }
+  spec.fill = keys[0]!.value;
+  pushTrack(ctx, `${spec.id}/fill`, 'paint', keys);
+}
+
 // --- painter-model denormalization ---
 
 function pathSpecFor(
@@ -420,6 +523,12 @@ function pathSpecFor(
     // duplicated per node (style × geometry shares geometry, not tracks);
     // type 'path' is EXPLICIT — inferValueType never sees these keys
     pushTrack(ctx, `${spec.id}/d`, 'path', geom.keys.map((k) => ({ ...k })));
+  }
+  if (style.ty === 'gf') {
+    applyGradientFill(ctx, spec, style, tm);
+    // gf opacity → node opacity (each Path carries exactly one style, mirrors fl/st)
+    applyOpacity(ctx, spec, style.o, tm);
+    return spec;
   }
   const colorTarget = style.ty === 'fl' ? 'fill' : 'stroke';
   const cNorm = norms(style.c);
@@ -481,7 +590,7 @@ function denormItems(ctx: Ctx, items: LottieShapeItem[], idBase: string, tm: Tim
     } else if (item.ty === 'sh' || item.ty === 'el' || item.ty === 'rc') {
       const source = geometrySource(ctx, item, tm, here);
       if (source) geoms.push({ index: i, source, name: item.nm ?? `geo${geomCounter++}` });
-    } else if (item.ty === 'fl' || item.ty === 'st') {
+    } else if (item.ty === 'fl' || item.ty === 'st' || item.ty === 'gf') {
       const preceding = geoms.filter((g) => g.index < i);
       if (preceding.length === 0) continue;
       const applicable = hasMerge

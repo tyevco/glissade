@@ -285,6 +285,102 @@ describe('Lottie sampled-fade boundary export round-trip (Skia SSIM)', () => {
   });
 });
 
+/** A Rect filled with a LINEAR gradient (explicit node-local geometry). */
+function linearGradientScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Rect({ id: 'box', width: 160, height: 120, position: [120, 120], fill: {
+          kind: 'linear', from: [-80, -60], to: [80, 60],
+          stops: [{ offset: 0, color: '#ff3366' }, { offset: 1, color: '#3366ff' }],
+        } })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** A Rect filled with a RADIAL gradient — bright core at the node origin. A Rect
+ * (not Circle) so the geometry round-trips EXACTLY, isolating the gradient mapping
+ * from the kappa-bezier circle-edge approximation. */
+function radialGradientScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Rect({ id: 'orb', width: 180, height: 180, position: [120, 120], fill: {
+          kind: 'radial', center: [0, 0], radius: 90,
+          stops: [{ offset: 0, color: '#ffffff' }, { offset: 1, color: '#101858' }],
+        } })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** A MULTI-STOP linear gradient with a translucent middle stop (opacity ramp). */
+function multiStopGradientScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Rect({ id: 'box', width: 180, height: 180, position: [120, 120], fill: {
+          kind: 'linear', from: [-90, 0], to: [90, 0],
+          stops: [
+            { offset: 0, color: '#ff0000' },
+            { offset: 0.5, color: 'rgba(0,255,0,0.5)' },
+            { offset: 1, color: '#0000ff' },
+          ],
+        } })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** An ANIMATED radial gradient — colours drift over 2s (paint track, linear ease). */
+function animatedGradientScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 2,
+    fps: FPS,
+    tracks: [track('orb/fill', 'paint', [
+      key(0, { kind: 'radial', center: [0, 0], radius: 90, stops: [{ offset: 0, color: '#ffcc00' }, { offset: 1, color: '#330066' }] }),
+      key(2, { kind: 'radial', center: [0, 0], radius: 90, stops: [{ offset: 0, color: '#00ffcc' }, { offset: 1, color: '#003366' }] }),
+    ])],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Rect({ id: 'orb', width: 180, height: 180, position: [120, 120], fill: {
+          kind: 'radial', center: [0, 0], radius: 90, stops: [{ offset: 0, color: '#ffcc00' }, { offset: 1, color: '#330066' }],
+        } })],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie gradient-fill export round-trip (Skia SSIM)', () => {
+  const cases: [string, () => SceneModule, number[]][] = [
+    ['linear', linearGradientScene, [0]],
+    ['radial', radialGradientScene, [0]],
+    ['multi-stop (translucent middle)', multiStopGradientScene, [0]],
+    ['animated radial', animatedGradientScene, [0, 30, 60, 90, 119]],
+  ];
+  it.each(cases)('%s gradient re-imports as gf and matches perceptually (SSIM ≥ 0.98)', async (_name, make, frames) => {
+    const original = make();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    // it exported a gf shape item (not a warn-dropped fill)
+    expect(doc.layers.some((l) => l.shapes?.some((s) => s.ty === 'gf'))).toBe(true);
+    const roundTripped = importLottie(doc).toSceneModule();
+    for (const frame of frames) {
+      const t = frame / FPS;
+      const a = await renderPixels(original, t);
+      const b = await renderPixels(roundTripped, t);
+      expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
+    }
+  });
+});
+
 describe('Lottie Text export round-trip (Skia SSIM)', () => {
   it('static text re-imports as a Text node and matches perceptually (SSIM ≥ 0.98)', async () => {
     const original = staticTextScene();
