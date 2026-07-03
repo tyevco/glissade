@@ -1,5 +1,60 @@
 # @glissade/scene
 
+## 0.40.0
+
+### Minor Changes
+
+- 18f27a0: 0.40: `Expr` — animate a prop by a FORMULA of time
+
+  `exprTrack('orb/position.y', '180 + 120*sin(t*2)')` drives a numeric prop by a
+  math formula of the playhead `t` instead of keyframes — orbits, pulses, jitter,
+  easing curves as one line. Fed via `tl.tracks([exprTrack(...)])` (the clip-tier
+  authoring path).
+
+  - A deterministic evaluator (tokenizer + precedence-climbing parser → closure):
+    `+ - * / % ^`, unary ±, parens; constants `PI/TAU/E`; a pure-function whitelist
+    (`sin cos clamp lerp smoothstep min max mod floor …`); and `rand(x)` (a seeded
+    hash → [0,1) — the ONLY randomness). No `Date`/`Math.random`; an unknown
+    identifier/function/arity fails loud at compile time.
+  - Binds through the SAME playhead channel keyframes use (`sampleTrack` at `t`), so
+    it's a pure function of time — backward scrub, export sharding, and the golden
+    byte-comparison all hold. A `golden-expr` showcase (Lissajous orbits) is in the
+    corpus.
+  - The evaluator lives on the tree-shakeable **`@glissade/core/expr`** subpath, OFF
+    the base embed (a metafile guard asserts it) — the base render path carries only
+    a tiny compiler-register seam, so the SACRED base embed stays 39.00/39. Importing
+    `@glissade/core/expr` activates it; re-exported on the browser bundle as
+    `window.glissade.exprTrack`, and surfaced in `describe().helpers`.
+
+  Determinism hash + all existing goldens unchanged (Expr is additive; no
+  `core`/`scene` evaluate-path behaviour changed for keyed tracks).
+
+### Patch Changes
+
+- e7cbe29: 0.40.0-pre.1: keep the base embed ≤39 for Expr via a budget-review relocation (revert the 39→40 bump)
+
+  Expr adds an irreducible base sampler seam (~0.17 kB: `sampleTrack`'s `tr.expr`
+  branch + `compileTimeline`'s `validateTrack` skip-keys for expr tracks). pre.0
+  bumped the base embed 39→40 to seat it — but that contravened the "preserve the
+  base-embed budget" constraint, and all three canary seats correctly held their
+  promote vote for a human ruling rather than bless it.
+
+  Instead of bumping the SACRED ceiling, this recovers headroom the proven way (the
+  0.20 budget-review playbook): `retime` — a pure build-time key-time transform
+  (speed/shift/reverse/pingpong), never on the sampleTrack/evaluate hot path — plus
+  its private `reversedKeys`/`mirrorEase` helpers (string-heavy) move OFF the base
+  core index onto `@glissade/core/clips`. That recovers ~0.5 kB gz, so the base embed
+  lands at **38.44/39 WITH Expr's seam** — the ceiling stays 39, no bump.
+
+  - `retime` / `RetimeSpec` now import from `@glissade/core/clips` (not
+    `@glissade/core`). `window.glissade.retime` is unaffected (the IIFE re-exports
+    `@glissade/core/clips`). `core/clips` budget 8→9 (off the base embed).
+  - Determinism hash + all goldens unchanged.
+
+- Updated dependencies [e7cbe29]
+- Updated dependencies [18f27a0]
+  - @glissade/core@0.40.0
+
 ## 0.40.0-pre.1
 
 ### Patch Changes
