@@ -8,7 +8,7 @@
 import { describe as vdescribe, expect, it } from 'vitest';
 import type { ApiManifest, DescribedHelper, SurfaceEntry } from '@glissade/scene/describe';
 import { describe as realDescribe } from '@glissade/scene/describe';
-import { collectRuntimeSurface, describeLint, exemptFromUnreachable } from '../src/describeLint.js';
+import { collectRuntimeSurface, describeLint, exemptFromUnreachable, isExemptFromSurface, unsurfacedExports } from '../src/describeLint.js';
 
 /** Build a minimal manifest with the sections the lint reads. */
 function manifest(over: Partial<ApiManifest> = {}): ApiManifest {
@@ -50,7 +50,7 @@ vdescribe('describeLint — clean', () => {
 vdescribe('describeLint — seeded drift', () => {
   it('a described helper MISSING from the bundle → a `missing` violation', () => {
     const m = manifest({ helpers: [helper({ name: 'fitTextSize' })], surface: [val('fitTextSize')] });
-    const v = describeLint(m, { Rect: class {} }); // fitTextSize absent
+    const v = describeLint(m, {}); // fitTextSize absent from the bundle
     expect(v).toHaveLength(1);
     expect(v[0]).toMatchObject({ kind: 'missing', name: 'fitTextSize' });
   });
@@ -93,13 +93,49 @@ vdescribe('describeLint — seeded drift', () => {
   });
 });
 
+vdescribe('describeLint — bidirectional (no-MISSING) gate', () => {
+  it('flags a PUBLIC runtime export absent from surface as `unsurfaced` (the omission class the gate now catches)', () => {
+    // manifest surfaces nothing; the bundle exposes `glow` → it must be flagged.
+    const m = manifest({ surface: [] });
+    const v = describeLint(m, { glow: (_x: unknown) => {} });
+    expect(v).toContainEqual(expect.objectContaining({ kind: 'unsurfaced', name: 'glow' }));
+  });
+
+  it('does NOT flag an exempt internal (an error class / registry / pipeline helper)', () => {
+    const m = manifest({ surface: [] });
+    const surface = { UnboundTargetError: class {}, numberType: {}, bindTimeline: () => {}, setShaderRunner: () => {} };
+    expect(describeLint(m, surface).filter((x) => x.kind === 'unsurfaced')).toEqual([]);
+    // …and the pattern/list predicate agrees
+    for (const n of ['UnboundTargetError', 'numberType', 'bindTimeline', 'setShaderRunner']) expect(isExemptFromSurface(n)).toBe(true);
+    expect(isExemptFromSurface('glow')).toBe(false); // an authoring fundamental is NOT exempt
+  });
+
+  it('a name present in surface is not flagged (SEEDED-OMISSION regression: dropping it re-flags)', () => {
+    const withKey = manifest({ surface: [val('key')] });
+    expect(describeLint(withKey, { key: (_a: unknown) => {} }).filter((x) => x.kind === 'unsurfaced')).toEqual([]);
+    // drop it from surface → the very same bundle export is now flagged
+    const dropped = manifest({ surface: [] });
+    expect(describeLint(dropped, { key: (_a: unknown) => {} })).toContainEqual(expect.objectContaining({ kind: 'unsurfaced', name: 'key' }));
+  });
+});
+
 vdescribe('describeLint — against the real manifest + assembled surface', () => {
-  it('the live describe() manifest is clean against the headlessly-reachable surface', async () => {
+  it('the live describe() manifest is clean against the headlessly-reachable surface (both directions)', async () => {
     const m = realDescribe();
     const { surface, unreachable } = await collectRuntimeSurface(m);
     const exempt = exemptFromUnreachable(m, unreachable);
     // Sanity: the two browser-only snapshot helpers are the only ones exempted.
     for (const n of exempt) expect(['renderToDataURL', 'snapshotCanvas']).toContain(n);
     expect(describeLint(m, surface, { exempt })).toEqual([]);
+  });
+
+  it('the fundamentals set is complete — no authoring export is left unsurfaced (edcc surfaceMissingFundamentals === [])', async () => {
+    const m = realDescribe();
+    const { surface } = await collectRuntimeSurface(m);
+    // every fundamental resolves AND is surfaced (so unsurfacedExports doesn't list it)
+    const missing = unsurfacedExports(m, surface);
+    for (const n of ['key', 'signal', 'spring', 'cubicBezier', 'namedEasing', 'springTo', 'pathFromSvg', 'glow', 'morph', 'typewriter', 'pulse', 'popIn', 'slideIn', 'presence', 'highlight']) {
+      expect(missing, `fundamental '${n}' is unsurfaced`).not.toContain(n);
+    }
   });
 });

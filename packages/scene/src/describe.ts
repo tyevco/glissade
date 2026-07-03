@@ -241,6 +241,36 @@ const SURFACE_CORE: { name: string; arity: number }[] = [
   { name: 'describe', arity: 0 },
 ];
 
+/**
+ * The remaining authoring `window.glissade.<name>` FUNCTIONS beyond the node
+ * constructors / {@link HELPERS} / {@link SURFACE_CORE} — the fundamentals a
+ * no-build author reaches for that had no home in the curated lists: the core
+ * primitives (`key`/`signal`/`spring`/`cubicBezier`/`namedEasing`/`springTo`), the
+ * SVG-path parser (`pathFromSvg`), and the motion/clip-tier helpers
+ * (`glow`/`morph`/`typewriter`/`pulse`/`popIn`/`slideIn`/`presence`/`highlight`).
+ * Their ABSENCE red-lined valid no-build code (`track('x/o','number',[key(0,0)])`)
+ * under the ambient .d.ts; the bidirectional describe-lint gate now keeps this set
+ * complete (a public window.glissade export MUST be surfaced or explicitly exempt).
+ * `arity` = the runtime `Function.length` (informational).
+ */
+const SURFACE_EXTRA: { name: string; arity: number }[] = [
+  { name: 'key', arity: 3 },
+  { name: 'signal', arity: 2 },
+  { name: 'spring', arity: 1 },
+  { name: 'cubicBezier', arity: 4 },
+  { name: 'namedEasing', arity: 1 },
+  { name: 'springTo', arity: 4 },
+  { name: 'pathFromSvg', arity: 1 },
+  { name: 'glow', arity: 1 },
+  { name: 'morph', arity: 4 },
+  { name: 'typewriter', arity: 2 },
+  { name: 'pulse', arity: 1 },
+  { name: 'popIn', arity: 1 },
+  { name: 'slideIn', arity: 2 },
+  { name: 'presence', arity: 2 },
+  { name: 'highlight', arity: 1 },
+];
+
 /** Value exports that are runtime OBJECTS (not callable): the easing registry. */
 const SURFACE_VALUE_OBJECTS = ['easings'];
 
@@ -265,6 +295,7 @@ function buildSurface(): SurfaceEntry[] {
     out.push({ name: h.name, kind: 'value', iife: true, form: 'function', ...(arity !== undefined ? { arity } : {}) });
   }
   for (const c of SURFACE_CORE) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
+  for (const c of SURFACE_EXTRA) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
   for (const name of SURFACE_VALUE_OBJECTS) out.push({ name, kind: 'value', iife: true, form: 'object' });
   for (const name of SURFACE_TYPE_ONLY) out.push({ name, kind: 'type', iife: false, form: 'type' });
   const seen = new Set<string>();

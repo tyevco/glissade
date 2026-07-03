@@ -258,6 +258,10 @@ export function generateAmbientDts(manifest: ApiManifest): string {
     for (const prop of Object.keys(props).sort()) {
       L.push(`  ${JSON.stringify(prop)}?: ${ambientPropType(props[prop]!.type)};`);
     }
+    // Permissive index signature: the manifest doesn't enumerate EVERY construction
+    // prop (e.g. Path.data), so accept unknown extras rather than red-line valid
+    // authoring — the KNOWN props above still keep their real (checked) types.
+    L.push('  [prop: string]: unknown;');
     L.push('}');
     L.push('');
   }

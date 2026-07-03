@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.46.0"
   },
   "changesets": [
+    "ground-truth-surface-fix",
     "verifiable-ground-truth"
   ]
 }

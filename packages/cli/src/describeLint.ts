@@ -21,7 +21,7 @@
 import type { ApiManifest } from '@glissade/scene/describe';
 import { usageArity } from '@glissade/scene/describe';
 
-export type LintKind = 'missing' | 'not-callable' | 'type-as-value' | 'arity';
+export type LintKind = 'missing' | 'not-callable' | 'type-as-value' | 'arity' | 'unsurfaced';
 
 export interface LintViolation {
   /** Which invariant broke. */
@@ -51,6 +51,71 @@ export interface LintOptions {
 const RUNTIME_TYPE_ALLOWLIST = new Set<string>([]);
 
 /**
+ * PUBLIC runtime exports that are intentionally NOT authoring surface, so they need
+ * not appear in describe().surface — the curated exempt-list that makes the
+ * BIDIRECTIONAL "no-MISSING" gate precise. Grouped by rationale. A NEW public export
+ * that fits none of these (nor a pattern below) must be added to describe()'s surface
+ * (authoring) OR here (internal), or `check:describe` fails — which is exactly how an
+ * omission (a real authoring export absent from surface, red-lining valid no-build
+ * code under the ambient .d.ts) is now caught instead of staying silently green.
+ */
+const EXEMPT_INTERNALS = new Set<string>([
+  // Helper RETURN classes + base/advanced node classes + backends + the custom element.
+  // Authors call the helper/constructor, not these; the node CONSTRUCTORS in surface
+  // (Group…Layout) are the authoring entry, these are their return/instance types.
+  'Canvas2DBackend', 'Custom', 'Echo', 'FollowPath', 'GsPlayerElement', 'Highlight', 'ImageNode', 'LookAt', 'MotionBlur', 'Node', 'OrientToPath', 'Raster2D', 'ShaderEffect', 'TextCursor', 'TrackMatte',
+  // Constants / registries / sentinels (not callable authoring entry points).
+  'ALL_FILTER_KINDS', 'DEFAULT_EASE', 'EXPR_CONSTANTS', 'EXPR_FUNCTIONS', 'IDENTITY', 'MEASURE_QUANTUM_PX', 'MESH_DOWNSCALE', 'MESH_SHEPARD_POWER', 'MESH_SIGMA', 'NODE_TAXONOMY', 'TARGET_PATH', 'easingDerivatives', 'estimatingMeasurer', 'springPresets',
+  // Backend / element / player / driver / scheduler / layout-engine / measurer plumbing
+  // (embed wiring done by mount()/the CLI, never hand-called by a no-build author).
+  'clockDriver', 'scrollDriver', 'createPlayhead', 'createDisplayListBuilder', 'getLayoutEngine', 'setLayoutEngine', 'requireLayoutEngine', 'loadYogaLayoutEngine', 'swapOnHmr', 'setScheduler', 'synchronousScheduler', 'setDefaultMeasurer', 'setDevWarning', 'defineGsPlayer', 'buildFontRegistry', 'setShaderRunner',
+  // Compile / bind / bake / evaluate / read-phase pipeline + registries/validators
+  // (build internals; `listComponents` is describe()'s own registry reader, not on the IIFE).
+  'bake', 'bakeCheckpointed', 'batch', 'beginReadPhase', 'endReadPhase', 'inReadPhase', 'bindScene', 'bindTimeline', 'buildTimeline', 'compileExpr', 'compileTimeline', 'computed', 'collapseReplacer', 'evaluateAt', 'getTimelineCallbacks', 'sampleTrack', 'validateTrack', 'withDeterminismGuards', 'untracked', 'revealSchedule', 'registerExamples', 'listComponents', 'isDurationEditable', 'isEditableNodeId', 'targetNodeId', 'resolveTweenTarget', 'drawOn', 'drawOnEach',
+  // Low-level geometry / color / math / text / mesh / font / sketch helpers + validators
+  // + niche re-exports (advanced; not the MVP no-build authoring surface). NB
+  // driftLoop / each / random / pathFromSegs / parseSvgPathData / pointAtLength /
+  // pathLength are candidates to PROMOTE to surface if canaries request — exempt for
+  // now, not principled internals.
+  '__resetEstimateWarnings', 'applyToPoint', 'arcLength', 'assertFiniteFontSize', 'audioOffsetSamples', 'breakLines', 'childId', 'coercePathData', 'collectLocalizedTextUsages', 'collectTextUsages', 'cubicBezierDerivative', 'driftLoop', 'each', 'emitDevWarning', 'filtersToCanvasFilter', 'flatten', 'fontString', 'formatColor', 'fromTRS', 'hachureLines', 'invert', 'isEstimatingMeasurer', 'isExemptFamily', 'lerpColor', 'listValueTypes', 'matEquals', 'mediaPrefersReducedMotion', 'meshRasterSize', 'multiply', 'oklabToRgba', 'parseCmap', 'parseColor', 'parseSvgPathData', 'pathFromSegs', 'pathLength', 'planReducedMotion', 'pointAtLength', 'quantize', 'random', 'rasterizeMesh', 'reprOf', 'resolveAnchor', 'resolveEase', 'resolveEaseDerivative', 'resolveSketch', 'rgbaToOklab', 'roughen', 'roundedRectSegs', 'segmentGraphemes', 'segmentWords', 'sketchStrokes', 'springEasing', 'springEasingDerivative', 'textCursor', 'transitionToClip', 'usageArity', 'validateFilters', 'validateFonts', 'validateHachure', 'validateSceneFonts', 'validateSketch', 'vec2Equals', 'vec2Signal', 'velocityAt',
+]);
+
+/**
+ * PATTERN-exempt runtime exports (no per-name entry needed): error classes
+ * (`…Error`), the value-type registry + its accessors (`…Type`), and the ESM
+ * `default` binding. Everything else must be surfaced or in {@link EXEMPT_INTERNALS}.
+ */
+function isExemptPattern(name: string): boolean {
+  return name === 'default' || /Error$/.test(name) || /Type$/.test(name);
+}
+
+/** Whether a public runtime export is intentionally NOT part of describe().surface. */
+export function isExemptFromSurface(name: string): boolean {
+  return isExemptPattern(name) || EXEMPT_INTERNALS.has(name);
+}
+
+/**
+ * The set of public runtime exports on `surface` that are NEITHER surfaced by the
+ * manifest NOR exempt — i.e. the omissions the bidirectional gate flags. Exposed so
+ * a canary/edcc guard can assert `unsurfacedExports(describe(), browser)` is empty.
+ */
+export function unsurfacedExports(manifest: ApiManifest, surface: Record<string, unknown>): string[] {
+  const surfaced = surfacedNames(manifest);
+  return Object.keys(surface)
+    .filter((name) => !surfaced.has(name) && !isExemptFromSurface(name))
+    .sort();
+}
+
+/** Every name the manifest presents as authoring surface (surface entries + node/helper names). */
+function surfacedNames(manifest: ApiManifest): Set<string> {
+  const surfaced = new Set<string>();
+  for (const e of manifest.surface ?? []) surfaced.add(e.name);
+  for (const n of Object.keys(manifest.nodes)) surfaced.add(n);
+  for (const h of manifest.helpers) surfaced.add(h.name);
+  return surfaced;
+}
+
+/**
  * Reconcile a describe() manifest against a runtime surface record. Returns every
  * violation (empty = clean); the CLI prints them and exits non-zero.
  *
@@ -62,7 +127,12 @@ const RUNTIME_TYPE_ALLOWLIST = new Set<string>([]);
  *  (c) arity: a documented callable must not REQUIRE materially more positional
  *      args than its usage advertises (`Function.length > documented total + 1`;
  *      tolerant by one — a trailing optional like `measurer` legitimately lifts
- *      `Function.length`).
+ *      `Function.length`);
+ *  (d) NO-MISSING (the BIDIRECTIONAL half): every PUBLIC runtime export on the
+ *      bundle must be SURFACED or explicitly exempt ({@link isExemptFromSurface}) —
+ *      an omission (a real authoring export absent from surface, which red-lines
+ *      valid no-build code under the ambient .d.ts) fails here. Without (d) the gate
+ *      could only catch PHANTOMS, never OMISSIONS — the class it was scoped to gate.
  */
 export function describeLint(
   manifest: ApiManifest,
@@ -123,6 +193,17 @@ export function describeLint(
     }
   }
 
+  // (d) NO-MISSING — every public runtime export must be surfaced or exempt.
+  const surfaced = surfacedNames(manifest);
+  for (const name of Object.keys(surface).sort()) {
+    if (surfaced.has(name) || exempt.has(name) || isExemptFromSurface(name)) continue;
+    out.push({
+      kind: 'unsurfaced',
+      name,
+      detail: `on window.glissade but absent from describe().surface — add it to buildSurface() (an authoring export) or the exempt-list in describeLint.ts (an internal)`,
+    });
+  }
+
   return out;
 }
 
@@ -141,9 +222,11 @@ export async function collectRuntimeSurface(
 ): Promise<{ surface: Record<string, unknown>; unreachable: Set<string> }> {
   const modules = new Set<string>([
     '@glissade/core',
+    '@glissade/core/clips', // popIn/slideIn/pulse/presence/morph (surface EXTRA)
     '@glissade/scene',
     '@glissade/scene/describe',
     '@glissade/scene/layout-ctors',
+    '@glissade/scene/path', // pathFromSvg (surface EXTRA)
   ]);
   for (const h of manifest.helpers) modules.add(h.import);
   const surface: Record<string, unknown> = {};

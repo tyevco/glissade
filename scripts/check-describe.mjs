@@ -7,6 +7,13 @@
  * arity + type-only checks. Modeled on `check:readme` / `gen-api-docs --check`:
  * imports the BUILT dist directly and exits non-zero on any violation.
  *
+ * BIDIRECTIONAL: it asserts BOTH directions — no PHANTOM (every surface entry
+ * resolves on the bundle) AND no MISSING (every public window.glissade export is in
+ * surface or an explicit exempt-list). The no-MISSING half is what makes an
+ * INCOMPLETE surface (the 0.47.0-pre.0 bug: 15 authoring exports absent from surface,
+ * red-lining valid no-build code under the ambient .d.ts) fail the gate instead of
+ * staying silently green.
+ *
  *   pnpm check:describe   → fail if describe()'s curated surface drifts from what
  *                           actually ships on the built @glissade/browser bundle.
  *

@@ -187,13 +187,25 @@ vdescribe('describe() surface taxonomy', () => {
     }
   });
 
-  it('every surface value name corresponds to a described node, helper, core callable, or value object (no phantoms)', () => {
+  // 0.47.0-pre.0 fix (canary-caught): the fundamentals a no-build author reaches for
+  // — the core primitives, the SVG-path parser, and the motion/clip-tier helpers —
+  // were ABSENT from surface, so the ambient .d.ts red-lined valid code (e.g.
+  // `track('x/o','number',[key(0,0)])`). They must now all be present.
+  it('carries the fundamentals: key/signal/spring/cubicBezier/namedEasing/springTo, pathFromSvg, and glow/morph/typewriter/pulse/popIn/slideIn/presence/highlight', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    for (const n of ['key', 'signal', 'spring', 'cubicBezier', 'namedEasing', 'springTo', 'pathFromSvg', 'glow', 'morph', 'typewriter', 'pulse', 'popIn', 'slideIn', 'presence', 'highlight']) {
+      expect(byName.get(n), `fundamental '${n}' missing from surface`).toMatchObject({ kind: 'value', iife: true, form: 'function' });
+    }
+  });
+
+  it('every surface value name corresponds to a described node, helper, core callable, fundamental, or value object (no phantoms)', () => {
     const nodeNames = new Set(Object.keys(m.nodes));
     const helperNames = new Set(m.helpers.map((h) => h.name));
-    const known = new Set([...nodeNames, ...helperNames, 'timeline', 'createScene', 'track', 'evaluate', 'stagger', 'describe', 'easings']);
+    const fundamentals = ['key', 'signal', 'spring', 'cubicBezier', 'namedEasing', 'springTo', 'pathFromSvg', 'glow', 'morph', 'typewriter', 'pulse', 'popIn', 'slideIn', 'presence', 'highlight'];
+    const known = new Set([...nodeNames, ...helperNames, ...fundamentals, 'timeline', 'createScene', 'track', 'evaluate', 'stagger', 'describe', 'easings']);
     for (const e of m.surface!) {
       if (e.kind !== 'value') continue;
-      expect(known.has(e.name), `surface value '${e.name}' is not a described node/helper/core callable`).toBe(true);
+      expect(known.has(e.name), `surface value '${e.name}' is not a described node/helper/core callable/fundamental`).toBe(true);
     }
   });
 });

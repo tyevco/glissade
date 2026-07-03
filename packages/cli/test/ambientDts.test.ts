@@ -83,6 +83,19 @@ new glissade.Text({ text: 'hi', fontSize: 40 });
     expect(good).toEqual([]);
   });
 
+  it('the 0.47.0-pre.0 REGRESSION: key()/spring()/cubicBezier()/pathFromSvg()/glow() now type-check (they red-lined before the surface fix)', () => {
+    const good = compile(`/// <reference path="./glissade.d.ts" />
+// key(...) inside track(...) — the exact no-build authoring code the incomplete surface rejected
+const t = window.glissade.track('orb/opacity', 'number', [glissade.key(0, 0), glissade.key(1, 1)]);
+const sp = glissade.spring(1);
+const ease = glissade.cubicBezier(0.4, 0, 0.2, 1);
+const p = new glissade.Path({ data: window.glissade.pathFromSvg('M0 0 L40 0') });
+const g = glissade.glow(new glissade.Rect({ width: 10, height: 10 }));
+const sig = glissade.signal(0);
+`);
+    expect(good).toEqual([]);
+  });
+
   it('a typo\'d member is a COMPILE error', () => {
     const bad = compile(`/// <reference path="./glissade.d.ts" />
 glissade.Reet({});
