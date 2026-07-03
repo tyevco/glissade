@@ -5,7 +5,9 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, mkdtempSync, rmSync, existsSync, renameSync } from 'node:fs';
+import { mkdirSync, writeFileSync, mkdtempSync, rmSync, existsSync, renameSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { glissadeVersion } from './version.js';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -277,6 +279,58 @@ export function parseFrameRange(flag: string): [number, number] {
   return [a, b];
 }
 
+/**
+ * Resolve the `@glissade/core` version the SCENE will bind to (anchored at the
+ * scene's own directory, so it's the copy in the user's project), by resolving
+ * core's entry and walking up to its package root — `@glissade/core/package.json`
+ * isn't an exported subpath, so it can't be required directly. Returns undefined
+ * if it can't be resolved (an unusual layout) — the caller then skips the check.
+ */
+function resolveSceneCoreVersion(scenePath: string): string | undefined {
+  try {
+    const require = createRequire(pathToFileURL(scenePath));
+    let dir = dirname(require.resolve('@glissade/core'));
+    for (let i = 0; i < 8; i++) {
+      const pkgPath = join(dir, 'package.json');
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: string; version?: string };
+        if (pkg.name === '@glissade/core') return pkg.version;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    // unresolvable (exports quirk / odd hoist) — never block a render on the diagnostic
+  }
+  return undefined;
+}
+
+/**
+ * Warn (once, loudly) on a `@glissade/*` version SKEW between the running `gs`
+ * (cli) and the `@glissade/core` the scene resolves. glissade is lockstep, and
+ * the subpath side-effect registries (`/expr`'s sampler, Yoga `layout`) register
+ * per-package-INSTANCE — so under a skew a correctly-imported `@glissade/core/expr`
+ * or `layout` still fails with a misleading "expr tracks need import …" / "no
+ * LayoutEngine registered". Naming the skew up front turns a confusing failure
+ * into an actionable one. A warning, never a throw: legitimate edge layouts exist,
+ * and the check must never break a render (video-canary 0.41 adopt finding).
+ */
+function warnOnVersionSkew(scenePath: string): void {
+  const cliVer = glissadeVersion();
+  if (cliVer === '0.0.0') return; // unresolved/source dev — no meaningful comparison
+  const coreVer = resolveSceneCoreVersion(scenePath);
+  if (coreVer === undefined || coreVer === cliVer) return;
+  process.stderr.write(
+    `warning: @glissade version skew — gs (@glissade/cli@${cliVer}) is rendering a scene that resolves ` +
+      `@glissade/core@${coreVer}.\n` +
+      `  glissade is LOCKSTEP: subpath features register per-package-instance (the /expr sampler, Yoga layout), so ` +
+      `under a skew a\n  correctly-imported '@glissade/core/expr' or 'layout' can still fail with "need import" / ` +
+      `"no LayoutEngine registered".\n` +
+      `  Align every @glissade/* dependency to ${cliVer} (e.g. npm i @glissade/core@${cliVer} @glissade/scene@${cliVer}).\n`,
+  );
+}
+
 export async function loadSceneModule(modulePath: string, locale?: string): Promise<SceneModule> {
   // 0.14 localization core: install the ambient message table BEFORE the module
   // is imported — `t('id')` runs at module-eval / createScene() time, so the
@@ -299,6 +353,9 @@ export async function loadSceneModule(modulePath: string, locale?: string): Prom
   if (!candidates.some((c) => existsSync(c))) {
     throw new SceneModuleError(modulePath, 'scene module not found (check the path)');
   }
+  // Surface a version skew (cli vs the scene's @glissade/core) BEFORE evaluate, so a
+  // dual-package registry miss reads as "align versions" not a phantom "need import".
+  warnOnVersionSkew(candidates.find((c) => existsSync(c)) ?? abs);
   const jiti = createJiti(pathToFileURL(process.cwd() + '/').href);
   const loaded = (await jiti.import(pathToFileURL(abs).href, { default: true })) as Partial<SceneModule>;
   if (typeof loaded?.createScene !== 'function' || loaded?.timeline === undefined) {
@@ -567,7 +624,6 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // keyCtx whenever either is active (incremental doesn't need the raster cache).
   if (cacheOn || opts.incremental) {
     const { capsId, combineAssetDigests } = await import('./frameCache.js');
-    const { glissadeVersion } = await import('./version.js');
     const version = glissadeVersion();
     const caps = capsId(backend.caps);
     keyCtx = {
