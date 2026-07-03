@@ -49,7 +49,7 @@ async function renderPixels(mod: SceneModule, t: number): Promise<Uint8ClampedAr
 }
 
 const poseSubNull = (doc: { layers: LottieLayer[] }): LottieLayer =>
-  doc.layers.find((l) => l.ty === 3 && /-layer\d+$/.test(l.nm))!;
+  doc.layers.find((l) => l.ty === 3 && /-layer\d+$/.test(l.nm ?? ""))!;
 
 describe('Camera pose → Lottie null-parent ks', () => {
   it('a STATIC zoom 1.5 exports null-parent ks scale [150,150] (the canary repro — was 100)', () => {
@@ -57,16 +57,16 @@ describe('Camera pose → Lottie null-parent ks', () => {
     const sub = poseSubNull(doc);
     expect(sub).toBeDefined();
     // decomposed pose: scale = zoom×100, translate = screenCenter − scale·focal
-    expect((sub.ks.s as LottieProp).a).toBe(0);
-    expect((sub.ks.s as LottieProp).k).toEqual([150, 150]);
-    expect((sub.ks.p as LottieProp).k).toEqual([-60, -60]);
-    expect((sub.ks.r as LottieProp).k).toBe(0);
+    expect((sub.ks!.s as LottieProp).a).toBe(0);
+    expect((sub.ks!.s as LottieProp).k).toEqual([150, 150]);
+    expect((sub.ks!.p as LottieProp).k).toEqual([-60, -60]);
+    expect((sub.ks!.r as LottieProp).k).toBe(0);
   });
 
   it('an ANIMATED cam/zoom 1→1.5 exports sampled ks scale KEYFRAMES', () => {
     const doc = exportLottie(cameraScene('anim'), { width: W, height: H, fps: FPS });
     const sub = poseSubNull(doc);
-    const s = sub.ks.s as LottieProp;
+    const s = sub.ks!.s as LottieProp;
     expect(s.a).toBe(1); // animated
     expect(Array.isArray(s.k)).toBe(true);
     const keys = s.k as { s: number[] }[];
