@@ -1,5 +1,50 @@
 # @glissade/lottie
 
+## 0.45.0
+
+### Minor Changes
+
+- fc3b727: Track → Lottie export (`gs export --lottie`): compile a scene's timeline into
+  Lottie/dotLottie JSON — the inverse of Lottie import. `exportLottie(sceneModule, opts)`
+  walks the node tree into hierarchical Lottie layers and turns each `<id>/<prop>` track
+  into an animated channel (position/opacity/scale/rotation, solid fill/stroke color,
+  `Path.d`, sampled primitive geometry). `cubicBezier`/hold easings invert exactly to
+  Lottie handles; named easings, springs, and `Expr` tracks are baked to dense sampled
+  keyframes. Text, gradient/mesh paint, shaders, non-center anchors, and group-opacity
+  compositing are warned-and-dropped in this MVP. Verified by an in-process
+  export→import→Skia SSIM round-trip gate. Additive and off the embed path — no scene/core
+  change, determinism and goldens unaffected.
+
+### Patch Changes
+
+- fffb2f8: `gs export --lottie` pre.1 — two canary-flagged fixes:
+
+  - **Emit the bodymovin `v` (schema-version) field** (`"5.7.0"`). Strict lottie-web /
+    dotLottie validators reject a document without it, so the pre.0 output could be
+    refused by real players. Both the render and real-scene canary seats verified the
+    gap independently.
+  - **Decimate dense-sampled fallback keys.** Springs, named easings, and `Expr` tracks
+    sample to one linear key per frame; a real episode measured ~148k keys / 139 MB.
+    Since Lottie plays linear between keys, a Ramer–Douglas–Peucker pass drops the keys
+    that linear playback already reproduces (within 0.2% of each channel's range),
+    collapsing constant and constant-velocity runs to their endpoints while preserving
+    curvature and the exact start/end. Output shrinks by orders of magnitude with no
+    perceptible fidelity change.
+
+- e1b7830: `gs export --lottie` pre.2 — complete the sampled-key decimation. pre.1 decimated
+  the `sampleToLottieKeys` fallback but a second dense-sampling site — the per-axis
+  `scale` combined channel (`sampleComponentVec`; Lottie has no split-scale form, so
+  `scale.x`/`scale.y` sample to one dense channel) — bypassed the RDP pass. Both consumer
+  seats caught it: a real episode's 12 backdrop scale channels (11.5k keys each, ~138k of
+  142.8k total) survived undecimated, and a minimal repro showed a dead-linear per-axis
+  scale ramp keeping 61 keys instead of 2. That combined channel now runs through the same
+  RDP decimation, so a linear/constant per-axis scale collapses to its endpoints and real
+  sampled scale channels drop their key COUNT (not just per-key bytes). Fidelity and
+  determinism are unchanged (decimation only removes keys linear playback already
+  reproduces within 0.2% of each channel's range).
+  - @glissade/core@0.45.0
+  - @glissade/scene@0.45.0
+
 ## 0.45.0-pre.2
 
 ### Patch Changes

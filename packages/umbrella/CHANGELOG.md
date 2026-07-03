@@ -1,5 +1,13 @@
 # glissade
 
+## 0.45.0
+
+### Patch Changes
+
+- @glissade/core@0.45.0
+- @glissade/player@0.45.0
+- @glissade/scene@0.45.0
+
 ## 0.45.0-pre.2
 
 ### Patch Changes
