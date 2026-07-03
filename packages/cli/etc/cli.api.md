@@ -610,6 +610,7 @@ export interface RenderOptions {
     fps?: number;
     frame?: number;
     frameRange?: [number, number];
+    incremental?: boolean;
     locale?: string;
     losslessIntermediate?: boolean;
     loudness?: 'auto' | 'off';
@@ -771,7 +772,7 @@ export interface VideoInfo {
     width: number;
 }
 
-// @public (undocumented)
+// @public
 export class VideoProbeError extends Error {
     constructor(path: string, detail: string);
 }
