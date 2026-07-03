@@ -113,6 +113,12 @@ export class Camera extends Group {
   readonly layers: readonly Required<CameraLayer>[];
   readonly #shake: ShakeSpec | undefined;
 
+  /** The whole-frame shake spec, if any — read by exporters (render-only, so it is
+   *  warned + not baked into Lottie keyframes). */
+  get shakeSpec(): ShakeSpec | undefined {
+    return this.#shake;
+  }
+
   constructor(layers: CameraLayer[], props: CameraProps = {}) {
     if (!Array.isArray(layers) || layers.length === 0) {
       throw new CameraError('camera(layers, props?): needs at least one layer — pass [{ content }] (a node per depth plane).');

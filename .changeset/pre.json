@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.54.0"
   },
   "changesets": [
+    "camera-pose-lottie-export",
     "camera-rig"
   ]
 }

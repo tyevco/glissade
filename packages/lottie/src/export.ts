@@ -62,7 +62,13 @@ import {
   type Track,
   type Vec2,
 } from '@glissade/core';
-import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, Rect, Text, type FontSpec, type SceneModule, type TextMeasurer } from '@glissade/scene';
+import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, Rect, Text, type FontSpec, type Mat2x3, type SceneModule, type TextMeasurer } from '@glissade/scene';
+// 0.55 Camera rig: the pose (zoom/center/roll) lives in a custom draw transform,
+// not the node's p/s/r signals — so the exporter must be camera-aware and sample
+// the per-layer inverse pose into the Lottie null-parent hierarchy (else the whole
+// camera move vanishes silently on export). `cameraLayerMatrix` is the SAME pure
+// pose math Camera.draw uses, so export and render agree by construction.
+import { Camera, cameraLayerMatrix } from '@glissade/scene/motion';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
@@ -115,6 +121,9 @@ interface Ctx {
   fr: number;
   ip: number;
   op: number;
+  /** Document viewport (opts.width/height) — the Camera pose samples against it. */
+  w: number;
+  h: number;
   warn: (m: string) => void;
   layers: LottieLayer[];
   ind: number;
@@ -190,7 +199,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   }
 
   const op = computeOp(mod.timeline, fr);
-  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map(), measurer: opts.measurer, encodePng: opts.encodePng, assets: [] };
+  const ctx: Ctx = { fr, ip: 0, op, w: opts.width, h: opts.height, warn, layers: [], ind: 0, fonts: new Map(), measurer: opts.measurer, encodePng: opts.encodePng, assets: [] };
   walkChildren(ctx, scene.root.children, undefined, byNode, IDENTITY_OPACITY);
 
   // fonts.list is built by the walk (insertion order = deterministic first-seen)
@@ -261,6 +270,15 @@ function walkChildren(
     }
     const myInd = ++ctx.ind;
     const tracks = (node.id !== undefined ? byNode.get(node.id) : undefined) ?? EMPTY_TRACKS;
+    // 0.55 Camera: a Group whose POSE (zoom/center/roll) rides a custom draw
+    // transform, not p/s/r — so emit the camera's OWN transform on this null, then
+    // a depth-adjusted pose sub-null per layer with the layer's content parented to
+    // it (parallax). Skip the generic Group recurse (buildCameraLayers walks it).
+    if (node instanceof Camera) {
+      ctx.layers.push(buildNullLayer(ctx, node, myInd, parentInd, tracks));
+      buildCameraLayers(ctx, node, myInd, byNode, childOpacity(node, tracks, opacity));
+      continue;
+    }
     ctx.layers.push(
       kind === 'group'
         ? buildNullLayer(ctx, node, myInd, parentInd, tracks)
@@ -507,6 +525,135 @@ function buildNullLayer(ctx: Ctx, node: Node, ind: number, parentInd: number | u
     ks: buildTransform(ctx, node, tracks, { a: 0, k: 100 }),
     ...(parentInd !== undefined ? { parent: parentInd } : {}),
   };
+}
+
+// --- camera (0.55) ---
+
+/**
+ * Decompose a per-layer inverse-camera-pose 2x3 into Lottie ks channels. The pose
+ * is `T(screenCenter)·scale(zoom)·rotate(roll)·T(−effectiveCenter)` — an affine
+ * with UNIFORM scale + rotation + translation, i.e. exactly `fromTRS(p, r, [s,s])`
+ * — so it inverts to `p = [e,f]`, `s = |(a,b)|`, `r = atan2(b,a)` (the anchor stays
+ * [0,0], the camera looks at the world, not a boxed node).
+ */
+function decomposePose(m: Mat2x3): { p: [number, number]; s: [number, number]; r: number } {
+  const scale = Math.hypot(m[0], m[1]);
+  const r = (Math.atan2(m[1], m[0]) * 180) / Math.PI;
+  return { p: [m[4], m[5]], s: [scale * 100, scale * 100], r };
+}
+
+/** Static camera ks: one constant matrix → constant p/s/r (no keyframes). */
+function buildStaticCameraKs(m: Mat2x3): LottieTransform {
+  const d = decomposePose(m);
+  return {
+    a: { a: 0, k: [0, 0] },
+    p: { a: 0, k: d.p },
+    s: { a: 0, k: d.s },
+    r: { a: 0, k: d.r },
+    o: { a: 0, k: 100 },
+  };
+}
+
+/** Dense-sample one decomposed channel across [f0,f1], then decimate + anchor —
+ *  the identical discipline sampleComponentVec / combineOpacity use. */
+function sampleChannel(ctx: Ctx, f0: number, f1: number, sampleAt: (frame: number) => number[]): LottieKeyframe[] {
+  const out: LottieKeyframe[] = [];
+  for (let f = f0; f <= f1; f++) {
+    const frame: LottieKeyframe = { t: f, s: sampleAt(f) };
+    if (f < f1) {
+      frame.o = { x: 0, y: 0 };
+      frame.i = { x: 1, y: 1 };
+    }
+    out.push(frame);
+  }
+  return anchorSampledSpan(decimateLinearKeys(out), f0, f1, ctx.ip, ctx.op, sampleAt);
+}
+
+/** Animated camera ks: sample the pose per-frame across the cam-track span and
+ *  decompose into p / s / r keyframe channels (a static [0,0] anchor, o 100). */
+function buildAnimatedCameraKs(
+  ctx: Ctx,
+  poseAt: (t: number) => Mat2x3,
+  camTracks: (Track | undefined)[],
+): LottieTransform {
+  const [f0, f1] = frameSpan(ctx, camTracks);
+  const at = (frame: number): { p: [number, number]; s: [number, number]; r: number } =>
+    decomposePose(poseAt(frame / ctx.fr));
+  return {
+    a: { a: 0, k: [0, 0] },
+    p: { a: 1, k: sampleChannel(ctx, f0, f1, (f) => at(f).p) },
+    s: { a: 1, k: sampleChannel(ctx, f0, f1, (f) => at(f).s) },
+    r: { a: 1, k: sampleChannel(ctx, f0, f1, (f) => [at(f).r]) },
+    o: { a: 0, k: 100 },
+  };
+}
+
+/**
+ * Emit the Camera's depth layers as pose sub-nulls under the camera null. Each
+ * layer gets its own `cameraLayerMatrix` (depth-scaled pan = parallax) sampled at
+ * the export frame grid — STATIC (no cam/* tracks) → constant ks; ANIMATED → ks
+ * keyframes. The layer's content parents to its sub-null, so the pose composes onto
+ * every descendant exactly as Camera.draw applies it at render. A whole-frame shake
+ * is render-only (a closed-form jitter, not a track) → an honest warn, never a
+ * silent drop.
+ */
+function buildCameraLayers(
+  ctx: Ctx,
+  cam: Camera,
+  camInd: number,
+  byNode: Map<string, Map<string, Track>>,
+  opacity: OpacityAccum,
+): void {
+  const camTracks = (cam.id !== undefined ? byNode.get(cam.id) : undefined) ?? EMPTY_TRACKS;
+  const zoomTr = camTracks.get('zoom') as Track<number> | undefined;
+  const rollTr = camTracks.get('roll') as Track<number> | undefined;
+  const centerTr = camTracks.get('center') as Track<Vec2> | undefined;
+  const centerXTr = camTracks.get('center.x') as Track<number> | undefined;
+  const centerYTr = camTracks.get('center.y') as Track<number> | undefined;
+  const poseTracks: (Track | undefined)[] = [zoomTr, rollTr, centerTr, centerXTr, centerYTr];
+  const animated = poseTracks.some((t) => t !== undefined);
+  const size = { w: ctx.w, h: ctx.h };
+
+  if (cam.shakeSpec) {
+    ctx.warn(
+      `${describe(cam)}: whole-frame camera shake is render-only — NOT exported to Lottie (it is a closed-form jitter, not a keyframe track)`,
+    );
+  }
+
+  const zoomAt = (t: number): number => (zoomTr ? sampleTrack(zoomTr, t) : cam.zoom());
+  const rollAt = (t: number): number => (rollTr ? sampleTrack(rollTr, t) : cam.roll());
+  const centerAt = (t: number): Vec2 => {
+    const base = cam.center();
+    let cx = base[0];
+    let cy = base[1];
+    if (centerTr) {
+      const v = sampleTrack(centerTr, t);
+      cx = v[0];
+      cy = v[1];
+    }
+    if (centerXTr) cx = sampleTrack(centerXTr, t);
+    if (centerYTr) cy = sampleTrack(centerYTr, t);
+    return [cx, cy];
+  };
+
+  // Reverse array order so the array-LAST (foreground) layer gets the SMALLER ind
+  // (top paint) — the same sibling discipline walkChildren uses.
+  for (let i = cam.layers.length - 1; i >= 0; i--) {
+    const layer = cam.layers[i]!;
+    const subInd = ++ctx.ind;
+    const poseAt = (t: number): Mat2x3 => cameraLayerMatrix(size, centerAt(t), zoomAt(t), rollAt(t), layer.depth);
+    const ks = animated ? buildAnimatedCameraKs(ctx, poseAt, poseTracks) : buildStaticCameraKs(poseAt(0));
+    ctx.layers.push({
+      ty: 3,
+      nm: `${cam.id ?? 'cam'}-layer${i}`,
+      ind: subInd,
+      ip: ctx.ip,
+      op: ctx.op,
+      ks,
+      parent: camInd,
+    });
+    walkChildren(ctx, [layer.content], subInd, byNode, opacity);
+  }
 }
 
 function buildShapeLayer(
