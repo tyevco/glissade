@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { key, timeline, track, valueNoise, type DisplayList } from '@glissade/core';
-import { Circle, Rect, Text, createScene, evaluate } from '../src/index.js';
+import { key, timeline, track, valueNoise } from '@glissade/core';
+import { Circle, Rect, Text, createScene, evaluate, type DisplayList } from '../src/index.js';
 import { applyToPoint, multiply, type Mat2x3 } from '../src/matrix.js';
 import { Camera, camera, CameraError, cameraLayerMatrix } from '../src/camera.js';
 import { shake, shakeOffset } from '../src/shake.js';
