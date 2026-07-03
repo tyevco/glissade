@@ -27,6 +27,7 @@ jobs:
       - run: node scripts/api-report.mjs # api-extractor: committed *.api.md surface is current
       - run: pnpm check:docs-api # generated docs/api-reference.md is current (drifted 6 minors before this gate)
       - run: pnpm check:readme # every user-facing scene subpath has a shipped-README mention (docs-prose gap recurred 0.34/0.35/0.37/0.38)
+      - run: pnpm check:describe # describe()'s curated node/helper/surface taxonomy matches the built @glissade/browser bundle (drift guard: fitTextSize/ClipRegion/defineComponent recurred)
 
   browser-suites:
     runs-on: ubuntu-latest

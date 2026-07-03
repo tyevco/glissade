@@ -129,6 +129,28 @@ export interface DescribedHelper {
   examples?: readonly string[];
 }
 
+/**
+ * One entry in the {@link ApiManifest.surface} taxonomy (0.47 "verifiable
+ * ground-truth"): a single window.glissade export, tagged with how a consumer
+ * reaches it. This is the ONE machine-readable truth for the IIFE surface that
+ * both `gs describe --lint` (the drift guard vs the real `@glissade/browser`
+ * bundle) and `gs types --global` (the ambient `window.glissade` `.d.ts`) read —
+ * so the curated helper/node lists can't silently drift from what actually ships
+ * on `window.glissade`, and the no-build author gets a typed global surface.
+ */
+export interface SurfaceEntry {
+  /** The export name — also the `window.glissade.<name>` global on the IIFE. */
+  name: string;
+  /** `'value'` = a runtime binding on the bundle (a class / function / object); `'type'` = a TS type-only name that erases at runtime (opaque, referenced by signatures). */
+  kind: 'value' | 'type';
+  /** `true` when it is reachable as `window.glissade.<name>` on the single-file IIFE bundle. */
+  iife: boolean;
+  /** How to consume it: `'constructor'` needs `new`, `'function'` is a plain call, `'object'` is a value namespace (e.g. `easings`), `'type'` is type-only. */
+  form: 'constructor' | 'function' | 'object' | 'type';
+  /** Documented positional-arg count for a callable (parsed from its usage), when known — absent for value objects and types. */
+  arity?: number;
+}
+
 /** The full machine-readable manifest `describe()` returns. */
 export interface ApiManifest {
   version: string;
@@ -148,6 +170,107 @@ export interface ApiManifest {
   components?: DescribedComponent[];
   createScene: string;
   subpaths: { [entry: string]: string };
+  /**
+   * (0.47 "verifiable ground-truth") The window.glissade runtime SURFACE taxonomy:
+   * one machine-readable enumeration of every export a no-build `<script src>`
+   * author reaches on the IIFE — node constructors, helper/factory functions, the
+   * core callables (`timeline`/`createScene`/`track`/`evaluate`/…), value objects
+   * (`easings`), and the opaque type-only names signatures reference. PURELY
+   * ADDITIVE + generated from the same curated registries the rest of the manifest
+   * is (so it can't drift), and OFF the base embed (describe is tree-shaken off the
+   * base scene index) — zero determinism/render-path cost. Consumed by
+   * `gs describe --lint` and `gs types --global`. Optional so a manifest captured
+   * before 0.47 (no `surface`) still type-checks.
+   */
+  surface?: SurfaceEntry[];
+}
+
+/**
+ * Parse the documented positional-arg count from a helper `usage` string — the
+ * count of top-level comma-separated params in its FIRST `(...)` call group
+ * (depth-tracked so nested `()`/`[]`/`{}`/`<>` in a param type don't miscount).
+ * Used to stamp {@link SurfaceEntry.arity} and to drift-check runtime arity.
+ */
+export function usageArity(usage: string): number | undefined {
+  const open = usage.indexOf('(');
+  if (open < 0) return undefined;
+  let depth = 0;
+  const params: string[] = [];
+  let cur = '';
+  for (let i = open; i < usage.length; i++) {
+    const c = usage[i]!;
+    if (c === '(' || c === '[' || c === '{' || c === '<') {
+      depth++;
+      if (depth === 1) continue; // the opening paren of the call group itself
+    } else if (c === ')' || c === ']' || c === '}' || c === '>') {
+      depth--;
+      if (depth === 0) {
+        if (cur.trim()) params.push(cur);
+        break;
+      }
+    }
+    if (depth === 1 && c === ',') {
+      params.push(cur);
+      cur = '';
+      continue;
+    }
+    if (depth >= 1) cur += c;
+  }
+  return params.filter((p) => p.trim().length > 0).length;
+}
+
+/**
+ * The window.glissade CONSTRUCTOR nodes — reached with `new` (`new glissade.Rect(…)`).
+ * The layout FACTORIES (Stack/Row/Column) + the build-time fan-outs (Grid/Chart/…)
+ * are plain calls and live in {@link HELPERS}, so they aren't here.
+ */
+const SURFACE_CONSTRUCTORS = ['Group', 'Rect', 'Circle', 'Path', 'Text', 'Image', 'Video', 'Layout'];
+
+/**
+ * The core callables that are `window.glissade.<name>` globals but are neither a
+ * node constructor nor a curated {@link HELPERS} factory — the authoring entry
+ * points (`timeline`/`createScene`/`track`/`evaluate`/`stagger`) + `describe`
+ * itself. `arity` is the documented positional-arg count.
+ */
+const SURFACE_CORE: { name: string; arity: number }[] = [
+  { name: 'timeline', arity: 1 },
+  { name: 'createScene', arity: 1 },
+  { name: 'track', arity: 3 },
+  { name: 'evaluate', arity: 3 },
+  { name: 'stagger', arity: 3 },
+  { name: 'describe', arity: 0 },
+];
+
+/** Value exports that are runtime OBJECTS (not callable): the easing registry. */
+const SURFACE_VALUE_OBJECTS = ['easings'];
+
+/**
+ * The opaque, type-ONLY names the API surface references (they erase at runtime —
+ * `window.glissade.Paint` is `undefined`). `gs types --global` emits a best-effort
+ * alias per name; `gs describe --lint` guards they stay type-only (a type surfaced
+ * as a callable value is the ClipRegion-class drift this catches).
+ */
+const SURFACE_TYPE_ONLY = ['Paint', 'PathValue', 'FontAxes'];
+
+/**
+ * Assemble the {@link SurfaceEntry} taxonomy from the same curated registries the
+ * rest of the manifest is built from (node factories + {@link HELPERS} + the core
+ * callables), so it can't drift. Deterministic: deduped by name, sorted.
+ */
+function buildSurface(): SurfaceEntry[] {
+  const out: SurfaceEntry[] = [];
+  for (const name of SURFACE_CONSTRUCTORS) out.push({ name, kind: 'value', iife: true, form: 'constructor' });
+  for (const h of HELPERS) {
+    const arity = usageArity(h.usage);
+    out.push({ name: h.name, kind: 'value', iife: true, form: 'function', ...(arity !== undefined ? { arity } : {}) });
+  }
+  for (const c of SURFACE_CORE) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
+  for (const name of SURFACE_VALUE_OBJECTS) out.push({ name, kind: 'value', iife: true, form: 'object' });
+  for (const name of SURFACE_TYPE_ONLY) out.push({ name, kind: 'type', iife: false, form: 'type' });
+  const seen = new Set<string>();
+  return out
+    .filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Arity of a value type's numeric repr: vec2/vec2-arc → 2, number → 1; others (color/paint/path/string/boolean) carry no scalar arity. */
@@ -742,5 +865,7 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     createScene:
       "createScene({ size: { w, h }, children: Node[] }): Scene  —  media assets are declared on the Timeline document: timeline({ assets: { <id>: { kind: 'image'|'video', url } } }); an Image/Video node's `assetId` names an entry here.",
     subpaths: SUBPATHS,
+    // 0.47: the window.glissade runtime SURFACE taxonomy (drift guard + ambient .d.ts).
+    surface: buildSurface(),
   };
 }

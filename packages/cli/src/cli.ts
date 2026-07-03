@@ -49,8 +49,8 @@ const USAGE = `usage:
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
   gs build [filter...] [--config <glissade.config.ts>] [--affected <git-ref>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree. --affected <ref> pre-filters to scenes a git diff since <ref> touched (rebuild only what a change set touched; composed with the per-step content-hash staleness)
-  gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
-  gs types [--out <file.ts>] [--from <api.json>] [--check]   codegen a type-checked track() SDK from the describe() manifest: only registered animatable paths + their value types compile, so a typo'd path or wrong value-type id is a COMPILE error (import track from the generated file). --check fails if --out is stale. Zero-runtime (types + a re-typed re-export of the real track)
+  gs describe [--out <api.json>] [--examples] [--lint]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate. --lint reconciles the manifest against the window.glissade runtime surface (every helper/node/surface member resolves, no type surfaced as a value, no arity drift) and exits non-zero on drift
+  gs types [--out <file.ts>] [--from <api.json>] [--check] [--global]   codegen a type-checked track() SDK from the describe() manifest: only registered animatable paths + their value types compile, so a typo'd path or wrong value-type id is a COMPILE error (import track from the generated file). --check fails if --out is stale. Zero-runtime (types + a re-typed re-export of the real track). --global (alias --iife) instead emits a SELF-CONTAINED ambient window.glissade .d.ts for the no-build <script src> author (typed IIFE surface — a typo'd window.glissade member is a compile error)
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
   gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--strict] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json (re-localize CARRIES existing translations over — never clobbers); --strict refuses to write on a preflight failure
@@ -301,6 +301,27 @@ async function main(): Promise<void> {
     const { describe } = await import('@glissade/scene/describe');
     if (df.has('examples')) await import('@glissade/scene/examples'); // register the corpus first
     const manifest = describe(df.has('examples') ? { examples: true } : {});
+    // --lint: reconcile the manifest against the window.glissade runtime surface and
+    // exit non-zero on any drift (a helper/node that doesn't resolve, a type surfaced
+    // as a value, an arity mismatch). Headless: the CLI assembles the surface from the
+    // embed packages it can reach and exempts the browser-only helpers it can't import
+    // (the check:describe CI gate covers those against the built @glissade/browser).
+    if (df.has('lint')) {
+      const { describeLint, collectRuntimeSurface, exemptFromUnreachable } = await import('./describeLint.js');
+      const { surface, unreachable } = await collectRuntimeSurface(manifest);
+      const exempt = exemptFromUnreachable(manifest, unreachable);
+      const violations = describeLint(manifest, surface, { exempt });
+      if (violations.length > 0) {
+        process.stderr.write(`gs describe --lint: ${violations.length} violation(s) — describe() drifted from the window.glissade surface:\n`);
+        for (const v of violations) process.stderr.write(`  ✗ [${v.kind}] ${v.name}: ${v.detail}\n`);
+        process.exit(1);
+      }
+      const skipped = exempt.size > 0
+        ? ` (${exempt.size} browser-only helper(s) not verifiable headlessly — the check:describe CI gate covers them against the built @glissade/browser bundle)`
+        : '';
+      process.stderr.write(`gs describe --lint: OK — every described node/helper/surface member resolves on the runtime bundle${skipped}\n`);
+      return;
+    }
     const json = `${JSON.stringify(manifest, null, 2)}\n`;
     const outPath = df.get('out');
     if (outPath) {
@@ -319,7 +340,10 @@ async function main(): Promise<void> {
   // output is types + a re-typed re-export of the real `track` — zero runtime.
   if (command === 'types') {
     const { flags: tf } = parseArgs(rest);
-    const { generateTypedSdk } = await import('./typedSdk.js');
+    // --global (alias --iife): emit the SELF-CONTAINED ambient window.glissade .d.ts
+    // for the no-build <script src> author, instead of the ESM typed-track() SDK.
+    const global = tf.has('global') || tf.has('iife');
+    const { generateTypedSdk, generateAmbientDts } = await import('./typedSdk.js');
     const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
     const from = tf.get('from');
     let manifest: import('@glissade/scene/describe').ApiManifest;
@@ -336,13 +360,13 @@ async function main(): Promise<void> {
       const { describe } = await import('@glissade/scene/describe');
       manifest = describe();
     }
-    const src = generateTypedSdk(manifest!);
+    const src = global ? generateAmbientDts(manifest!) : generateTypedSdk(manifest!);
     const outPath = tf.get('out');
     if (tf.has('check')) {
-      if (!outPath) fail('gs types --check needs --out <file> (the committed typed-SDK file to verify)');
+      if (!outPath) fail(`gs types ${global ? '--global ' : ''}--check needs --out <file> (the committed ${global ? 'ambient .d.ts' : 'typed-SDK'} file to verify)`);
       const current = existsSync(outPath) ? readFileSync(outPath, 'utf8') : '';
       if (current !== src) {
-        process.stderr.write(`gs types: ${outPath} is STALE — run \`gs types --out ${outPath}\` to regenerate\n`);
+        process.stderr.write(`gs types: ${outPath} is STALE — run \`gs types ${global ? '--global ' : ''}--out ${outPath}\` to regenerate\n`);
         process.exit(1);
       }
       process.stderr.write(`gs types: ${outPath} is up to date\n`);
@@ -350,7 +374,9 @@ async function main(): Promise<void> {
     }
     if (outPath) {
       writeFileSync(outPath, src);
-      process.stderr.write(`gs types: wrote a typed track() SDK (${Object.keys(manifest!.nodes).length} node types) → ${outPath}\n`);
+      process.stderr.write(global
+        ? `gs types --global: wrote the self-contained ambient window.glissade .d.ts → ${outPath}\n`
+        : `gs types: wrote a typed track() SDK (${Object.keys(manifest!.nodes).length} node types) → ${outPath}\n`);
     } else {
       process.stdout.write(src);
     }

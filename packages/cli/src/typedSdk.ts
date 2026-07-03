@@ -16,7 +16,7 @@
  * manifest doesn't carry (a follow-up); a bad node id still fails loud at bind time.
  */
 
-import type { ApiManifest } from '@glissade/scene/describe';
+import type { ApiManifest, SurfaceEntry } from '@glissade/scene/describe';
 
 /** value-type id → the TS type its keyframes carry. Unmapped ids fall back to `unknown`. */
 const TS_VALUE_TYPE: Record<string, string> = {
@@ -129,4 +129,176 @@ export function generateTypedSdk(manifest: ApiManifest): string {
   L.push(') => Track<ValueOf<P>>;');
   L.push('');
   return L.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `gs types --global` (0.47 "verifiable ground-truth") — the ambient window.glissade
+// `.d.ts` generator. `gs types` (above) gave the ESM `track()` author typo→compile
+// safety; the NO-BUILD `<script src>` + window.glissade author got NOTHING. This
+// emits a SELF-CONTAINED ambient declaration (no `import`/`typeof import(...)`, since
+// that author has no node_modules) typing the whole `window.glissade` surface from
+// the manifest's `surface` section, so `window.glissade.Rect({…})` / `glissade
+// .timeline(…)` type-check and a typo'd member is a compile error.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * value-type id → the SELF-CONTAINED TS type used in the ambient d.ts. Opaque core
+ * types (`paint`/`fontAxes`/`path`) map to local `Gs*` aliases instead of the real
+ * `@glissade/core` names, so the emitted file needs no imports (the no-build author
+ * has no node_modules to resolve `Paint` from).
+ */
+const AMBIENT_VALUE_TYPE: Record<string, string> = {
+  number: 'number',
+  vec2: 'readonly [number, number]',
+  'vec2-arc': 'readonly [number, number]',
+  color: 'string',
+  string: 'string',
+  boolean: 'boolean',
+  paint: 'GsPaint',
+  fontAxes: 'GsFontAxes',
+  path: 'GsPathValue',
+};
+
+/** The node constructors that get a real per-node props interface (form:'constructor'). */
+const CONSTRUCTOR_NODES = new Set(['Group', 'Rect', 'Circle', 'Path', 'Text', 'Image', 'Video', 'Layout']);
+
+/**
+ * Map a manifest prop `type` string to a SELF-CONTAINED TS type for the ambient
+ * d.ts. Precise for the known value-type ids (incl. a `|`-union of them, e.g.
+ * `color|paint` → `string | GsPaint`); best-effort `unknown` for opaque construction
+ * types (`SketchStyle`, `BlendMode`, the `anchor` preset union, …) whose real shapes
+ * aren't self-containedly expressible — permissive, so authoring never fights it.
+ */
+function ambientPropType(manifestType: string): string {
+  const members = manifestType.split('|').map((m) => m.trim());
+  if (members.every((m) => m in AMBIENT_VALUE_TYPE)) {
+    return [...new Set(members.map((m) => AMBIENT_VALUE_TYPE[m]!))].join(' | ');
+  }
+  if (manifestType === 'Node[]') return 'GsNode[]';
+  return 'unknown';
+}
+
+/**
+ * Derive a surface taxonomy when the manifest predates 0.47 (no `surface`): node
+ * names that are known constructors → constructors, helpers + core callables →
+ * functions, `easings` → object, plus the opaque type-only names. Keeps
+ * `gs types --global --from <old-api.json>` working (best-effort).
+ */
+function surfaceOf(manifest: ApiManifest): SurfaceEntry[] {
+  if (manifest.surface && manifest.surface.length > 0) return manifest.surface;
+  const out: SurfaceEntry[] = [];
+  for (const name of Object.keys(manifest.nodes)) {
+    if (CONSTRUCTOR_NODES.has(name)) out.push({ name, kind: 'value', iife: true, form: 'constructor' });
+    else out.push({ name, kind: 'value', iife: true, form: 'function' });
+  }
+  for (const h of manifest.helpers) out.push({ name: h.name, kind: 'value', iife: true, form: 'function' });
+  for (const name of ['timeline', 'createScene', 'track', 'evaluate', 'stagger', 'describe']) out.push({ name, kind: 'value', iife: true, form: 'function' });
+  out.push({ name: 'easings', kind: 'value', iife: true, form: 'object' });
+  for (const name of ['Paint', 'PathValue', 'FontAxes']) out.push({ name, kind: 'type', iife: false, form: 'type' });
+  const seen = new Set<string>();
+  return out.filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true))).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Generate the SELF-CONTAINED ambient `window.glissade` `.d.ts` from the manifest's
+ * `surface` taxonomy. Emits opaque `Gs*` aliases for the complex types, a real
+ * per-node construction-props interface for each node constructor (value types
+ * reused from the manifest), a best-effort signature per callable, and the global
+ * augmentation (`declare global { interface Window { glissade }; const glissade }`).
+ * Deterministic (everything sorted) + pure, so it's `--check`-gateable.
+ *
+ * HONEST about approximation: node instances / Paint / FontAxes / PathValue / the
+ * timeline document are OPAQUE brands (the real shapes need the published types);
+ * helper signatures beyond the headline authoring calls are `(...args) => any`.
+ * The value it delivers is member-name + node-construction-prop type-checking — a
+ * typo'd `window.glissade.Reet` or an unknown surface member is a compile error.
+ */
+export function generateAmbientDts(manifest: ApiManifest): string {
+  const surface = surfaceOf(manifest);
+  const byName = new Map(manifest.surface ? manifest.surface.map((e) => [e.name, e]) : []);
+  const builderMethods = [...manifest.builder.methods.map((m) => m.name)].sort();
+
+  const L: string[] = [];
+  L.push(`// GENERATED by \`gs types --global\` from the describe() API manifest v${manifest.version} — DO NOT EDIT.`);
+  L.push('// Self-contained ambient types for the NO-BUILD `window.glissade` IIFE (<script src>).');
+  L.push('// Regenerate after a glissade upgrade:  gs types --global --out glissade.d.ts');
+  L.push('// Reference it from your tsconfig `include` (or a /// <reference path> ) — no imports needed.');
+  L.push('//');
+  L.push('// APPROXIMATE: node instances, Paint, FontAxes, PathValue and the Timeline document are');
+  L.push('// OPAQUE brands, and helper signatures beyond the headline authoring calls are `(...args) => any`.');
+  L.push('// What IS checked: every surface member name + each node constructor\'s construction props.');
+  L.push('');
+  L.push('export {};');
+  L.push('');
+
+  // Opaque best-effort aliases for the complex/type-only names.
+  L.push('/** Opaque best-effort types — the real shapes live in @glissade/core|scene. */');
+  L.push('type GsPaint = string | { readonly [key: string]: unknown };');
+  L.push('type GsFontAxes = { readonly [axis: string]: number };');
+  L.push('type GsPathValue = readonly unknown[];');
+  L.push("type GsNode = { readonly __glissadeNode: 'node' };");
+  L.push("type GsScene = { readonly __glissadeScene: 'scene' };");
+  L.push("type GsTimeline = { readonly __glissadeTimeline: 'timeline' };");
+  L.push('');
+
+  // The timeline builder — methods from describe().builder (chained, best-effort args).
+  L.push('/** The `timeline(tl => …)` builder surface (methods from describe().builder). */');
+  L.push('interface GsTimelineBuilder {');
+  for (const name of builderMethods) L.push(`  ${name}(...args: any[]): GsTimelineBuilder;`);
+  L.push('}');
+  L.push('');
+
+  // Per-node construction props (real types from the manifest).
+  const ctorNodes = surface.filter((e) => e.form === 'constructor' && manifest.nodes[e.name]).map((e) => e.name).sort();
+  const propsInterfaceName = (node: string): string => `Gs${node}Props`;
+  for (const node of ctorNodes) {
+    const props = manifest.nodes[node]!.props;
+    L.push(`/** Construction props for \`new glissade.${node}({ … })\` (best-effort; opaque prop types → \`unknown\`). */`);
+    L.push(`interface ${propsInterfaceName(node)} {`);
+    for (const prop of Object.keys(props).sort()) {
+      L.push(`  ${JSON.stringify(prop)}?: ${ambientPropType(props[prop]!.type)};`);
+    }
+    L.push('}');
+    L.push('');
+  }
+
+  // The window.glissade surface interface.
+  L.push('/** Every `window.glissade.<name>` export (a typo\'d member is a compile error). */');
+  L.push('interface GlissadeGlobal {');
+  for (const e of surface) {
+    if (e.kind !== 'value' || !e.iife) continue;
+    L.push(`  ${JSON.stringify(e.name)}: ${ambientMemberType(e, ctorNodes)};`);
+  }
+  L.push('}');
+  L.push('');
+
+  // Global augmentation: window.glissade + the bare `glissade` global.
+  L.push('declare global {');
+  L.push('  interface Window {');
+  L.push('    glissade: GlissadeGlobal;');
+  L.push('  }');
+  L.push('  const glissade: GlissadeGlobal;');
+  L.push('}');
+  L.push('');
+  return L.join('\n');
+}
+
+/** The TS type for one window.glissade value member (constructor / function / object). */
+function ambientMemberType(e: SurfaceEntry, ctorNodes: string[]): string {
+  if (e.form === 'object') return 'Record<string, unknown>';
+  if (e.form === 'constructor') {
+    const props = ctorNodes.includes(e.name) ? `Gs${e.name}Props` : 'Record<string, unknown>';
+    return `new (props?: ${props}) => GsNode`;
+  }
+  // form 'function' — real-ish signatures for the headline authoring calls, best-effort otherwise.
+  switch (e.name) {
+    case 'timeline':
+      return '(build: (tl: GsTimelineBuilder) => void) => GsTimeline';
+    case 'createScene':
+      return '(spec: { size: { w: number; h: number }; children: GsNode[] }) => GsScene';
+    case 'track':
+      return '(target: string, type: string, keys: readonly unknown[], opts?: { editable?: boolean }) => unknown';
+    default:
+      return '(...args: any[]) => any';
+  }
 }

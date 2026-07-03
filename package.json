@@ -21,6 +21,7 @@
     "docs:api": "node scripts/gen-api-docs.mjs",
     "check:docs-api": "node scripts/gen-api-docs.mjs --check",
     "check:readme": "node scripts/check-readme-subpaths.mjs",
+    "check:describe": "node scripts/check-describe.mjs",
     "lint": "eslint packages/core/src packages/scene/src"
   },
   "devDependencies": {

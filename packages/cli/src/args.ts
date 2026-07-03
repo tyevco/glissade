@@ -27,6 +27,9 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'keep-voice',
   'help',
   'lottie',
+  'lint', // gs describe --lint (0.47): drift-guard the manifest vs the window.glissade surface
+  'global', // gs types --global (0.47): emit the ambient window.glissade .d.ts
+  'iife', // alias of --global
 ]);
 
 export interface ParsedArgs {

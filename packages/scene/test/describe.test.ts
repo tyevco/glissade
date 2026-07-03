@@ -126,6 +126,78 @@ vdescribe('describe() manifest', () => {
 // it in the dep graph), so the curated literal is structurally asserted here; the
 // drift guard that IMPORTS+resolves each name lives in @glissade/browser's smoke
 // test (it imports the whole IIFE surface, above scene).
+// 0.47 "verifiable ground-truth": the additive `surface` taxonomy — one
+// machine-readable enumeration of the window.glissade IIFE surface (nodes/helpers/
+// core callables/value objects/type-only names). It feeds `gs describe --lint`
+// (drift guard vs the real bundle) and `gs types --global` (the ambient .d.ts).
+vdescribe('describe() surface taxonomy', () => {
+  const m = describe();
+
+  it('emits a populated, JSON-round-tripping surface of tagged entries', () => {
+    expect(Array.isArray(m.surface)).toBe(true);
+    expect(m.surface!.length).toBeGreaterThan(0);
+    for (const e of m.surface!) {
+      expect(typeof e.name).toBe('string');
+      expect(e.name.length).toBeGreaterThan(0);
+      expect(['value', 'type']).toContain(e.kind);
+      expect(['constructor', 'function', 'object', 'type']).toContain(e.form);
+      expect(typeof e.iife).toBe('boolean');
+    }
+    // stable + deduped: sorted by name, each name once
+    const names = m.surface!.map((e) => e.name);
+    expect([...names]).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    expect(new Set(names).size).toBe(names.length);
+    // round-trips through JSON unchanged (part of the committed api.json)
+    expect(JSON.parse(JSON.stringify(m.surface))).toEqual(m.surface);
+  });
+
+  it('tags the node constructors (new glissade.Rect(...)) as kind:value form:constructor', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    for (const n of ['Group', 'Rect', 'Circle', 'Path', 'Text', 'Image', 'Video', 'Layout']) {
+      expect(byName.get(n), `${n} missing from surface`).toMatchObject({ kind: 'value', iife: true, form: 'constructor' });
+    }
+  });
+
+  it('carries every curated helper as an iife value function, with parsed arity', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    for (const h of m.helpers) {
+      const e = byName.get(h.name);
+      expect(e, `helper '${h.name}' missing from surface`).toBeDefined();
+      expect(e!.kind).toBe('value');
+      expect(e!.form).toBe('function');
+      expect(e!.iife).toBe(true);
+    }
+    // e.g. motionPath(path) → arity 1
+    expect(byName.get('motionPath')!.arity).toBe(1);
+  });
+
+  it('carries the core callables (timeline/createScene/track/evaluate/stagger) as iife value functions', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    for (const n of ['timeline', 'createScene', 'track', 'evaluate', 'stagger']) {
+      expect(byName.get(n), `core callable '${n}' missing from surface`).toMatchObject({ kind: 'value', iife: true, form: 'function' });
+    }
+  });
+
+  it('tags easings as a value OBJECT (present but not callable) and Paint/PathValue/FontAxes as type-only', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    expect(byName.get('easings')).toMatchObject({ kind: 'value', form: 'object' });
+    for (const t of ['Paint', 'PathValue', 'FontAxes']) {
+      expect(byName.get(t), `${t} missing from surface`).toMatchObject({ kind: 'type', form: 'type', iife: false });
+      expect(byName.get(t)!.arity).toBeUndefined();
+    }
+  });
+
+  it('every surface value name corresponds to a described node, helper, core callable, or value object (no phantoms)', () => {
+    const nodeNames = new Set(Object.keys(m.nodes));
+    const helperNames = new Set(m.helpers.map((h) => h.name));
+    const known = new Set([...nodeNames, ...helperNames, 'timeline', 'createScene', 'track', 'evaluate', 'stagger', 'describe', 'easings']);
+    for (const e of m.surface!) {
+      if (e.kind !== 'value') continue;
+      expect(known.has(e.name), `surface value '${e.name}' is not a described node/helper/core callable`).toBe(true);
+    }
+  });
+});
+
 vdescribe('describe() helpers section', () => {
   const m = describe();
 
