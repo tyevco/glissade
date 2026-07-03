@@ -1,5 +1,36 @@
 # @glissade/cli
 
+## 0.43.0
+
+### Minor Changes
+
+- 10196ce: `gs build` project runtime — `--affected <git-ref>` + a shared-master phase
+
+  `gs build` becomes a DAG-aware project runtime, not just a per-scene loop:
+
+  - **`gs build --affected <git-ref>`** pre-filters to the scenes a git diff since `<ref>` touched (source or any sidecar input), composed with the existing per-step content-hash staleness — the "rebuild only what this change set touched" CI story. Never runs a scene the diff didn't touch; never skips a real change within the ones it keeps.
+  - **A shared-master phase.** A `master` block on the config (`defineProject({ scenes, master: { profile, consistency, limiter } })`) makes `gs build` run a two-phase schedule with an explicit barrier: render every stale scene → **barrier** → master the whole project to one shared LUFS target + true-peak limiter (`runMaster`, extracted from `gs master` so both drive the same core) → the render staleness remuxes exactly the members whose committed `loudness.json` moved (a fast mix-only re-encode, not a full re-render). The master always measures all members (the shared target is the quietest member's reach), so `--affected` narrows the render phase while the master still considers the whole project. An unchanged project settles — byte-identical loudness, nothing remuxes.
+
+  CLI-only (no scene/embed surface, base embed unchanged); the per-scene staleness, hashes, and determinism are untouched. This is the first slice of the DAG-project-runtime capstone; `toolchain.lock`, sub-scene `anchorHash`, and `gs remaster` are follow-on work.
+
+### Patch Changes
+
+- 5ec73fb: `gs build --affected`: never silently skip an unattributable code change
+
+  `--affected` tracks each scene by its own files (source + sidecars), but a scene `.ts` _imports_ other modules — so a change to a shared `src/util.ts` (or the config) affects scenes transitively, invisibly to the file-level diff. Selecting nothing on such a change would ship stale renders — the exact silent-skip the rest of the pipeline fails loud on (a real consumer's remaster edited shared `src/theme.ts` + backgrounds and would have shipped 16 stale episodes).
+
+  `--affected` now falls back **safe-by-default**: if the diff touched a code file (`.ts`/`.tsx`/`.js`/`.jsx`/`.mjs`/`.cjs`) that is NOT any scene's recognized input — a shared module, or `glissade.config.ts` itself — it does **not** narrow; it rebuilds every scene (the per-step content hash still skips the genuinely fresh ones). A diff of only non-code files (docs, an unrelated JSON) narrows normally. Precise import-graph affectedness (rebuild only true dependents) is a follow-up.
+
+  - @glissade/backend-skia@0.43.0
+  - @glissade/core@0.43.0
+  - @glissade/interact@0.43.0
+  - @glissade/lottie@0.43.0
+  - @glissade/narrate@0.43.0
+  - @glissade/player@0.43.0
+  - @glissade/scene@0.43.0
+  - @glissade/sfx@0.43.0
+  - @glissade/svg@0.43.0
+
 ## 0.43.0-pre.1
 
 ### Patch Changes
