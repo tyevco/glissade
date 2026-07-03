@@ -10,13 +10,13 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadSceneModule } from '../src/render.js';
 import { glissadeVersion } from '../src/version.js';
 
 let dir: string;
 let stderr: string;
-let spy: ReturnType<typeof vi.spyOn>;
+let origWrite: typeof process.stderr.write;
 
 /** A minimal project rooted at `dir`: a stubbed @glissade/core@<ver> + a scene.ts. */
 const project = (coreVersion: string): string => {
@@ -32,9 +32,10 @@ const project = (coreVersion: string): string => {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'gs-skew-'));
   stderr = '';
-  spy = vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => { stderr += c.toString(); return true; });
+  origWrite = process.stderr.write;
+  process.stderr.write = ((c: string | Uint8Array): boolean => { stderr += c.toString(); return true; }) as typeof process.stderr.write;
 });
-afterEach(() => { spy.mockRestore(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => { process.stderr.write = origWrite; rmSync(dir, { recursive: true, force: true }); });
 
 describe('version-skew warning', () => {
   it('WARNS when the scene resolves a different @glissade/core than the running cli', async () => {
