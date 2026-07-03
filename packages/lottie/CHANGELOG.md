@@ -1,5 +1,22 @@
 # @glissade/lottie
 
+## 0.55.0
+
+### Patch Changes
+
+- 8c3828c: Camera pose (and parallax) now export to Lottie instead of silently dropping.
+
+  The camera applies its pose via a render-time transform that `exportLottie` didn't read, so a camera's zoom/center/roll silently vanished on export (a push-in round-tripped to no push-in at all). `exportLottie` is now camera-aware: it samples the camera pose (`cameraLayerMatrix`) at the frame grid and emits it as the ty:3 null-parent `ks` — a static camera becomes a constant transform, an animated camera (`cam/zoom`/`cam/center`/`cam/roll` tracks) sampled keyframes — and each depth layer gets its own parented null so per-layer parallax exports too. Round-trip SSIM of a push-in recovers from ~0.87 to ≥0.98. Whole-frame camera _shake_ is a render-only closed-form effect and is honestly warned (not silently dropped) rather than exported. Render path untouched — goldens byte-identical.
+
+- b37beba: The standalone `shake(node, …)` driver now warns (instead of silently dropping) on Lottie export.
+
+  `shake()` is a closed-form render-only jitter (it wraps a node's `emit`, not a keyframe track), so it doesn't export to Lottie — the same limit camera-shake already warned about. But the _standalone_ driver dropped silently. `exportLottie` now detects a shaken node (via a render-invisible marker) and emits the same honest "shake is render-only — NOT exported to Lottie" warning, once per node. No render change (goldens byte-identical); exporting the shake _motion_ itself (sampled to keyframes) remains a separate follow-up.
+
+- Updated dependencies [3e88c6c]
+- Updated dependencies [b37beba]
+  - @glissade/scene@0.55.0
+  - @glissade/core@0.55.0
+
 ## 0.55.0-pre.2
 
 ### Patch Changes
