@@ -27,8 +27,17 @@ describe('color parsing/formatting', () => {
     expect(formatColor(parseColor('#12345678'))).toBe('#12345678');
   });
 
-  it('rejects garbage', () => {
+  it('parses the CSS `transparent` keyword to rgba(0,0,0,0)', () => {
+    // render backends already honor it (stroke-only shapes); Lottie export routes
+    // fills through parseColor, so it must not throw on this common idiom.
+    expect(parseColor('transparent')).toEqual({ r: 0, g: 0, b: 0, a: 0 });
+    expect(parseColor('Transparent').a).toBe(0); // case-insensitive
+    expect(formatColor(parseColor('transparent'))).toBe('#00000000'); // round-trips to transparent hex
+  });
+
+  it('rejects garbage (but not `transparent`, and no other named colors)', () => {
     expect(() => parseColor('bisque-ish')).toThrow(ColorParseError);
+    expect(() => parseColor('rebeccapurple')).toThrow(ColorParseError); // only `transparent` is special-cased
   });
 });
 

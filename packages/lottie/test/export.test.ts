@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { key, sampleTrack, track, type Timeline } from '@glissade/core';
 import { createScene, Circle, Group, Rect, type SceneModule } from '@glissade/scene';
-import { exportLottie } from '../src/index.js';
+import { exportLottie, importLottie } from '../src/index.js';
 import { decimateLinearKeys } from '../src/sampleFallback.js';
 import type { LottieKeyframe, LottieLayer, LottieProp } from '../src/types.js';
 
@@ -503,5 +503,43 @@ describe('decimateLinearKeys', () => {
       { t: 2, s: shData },
     ];
     expect(decimateLinearKeys(keys)).toHaveLength(3);
+  });
+});
+
+describe('exportLottie: fill:transparent (the stroke-only-shape idiom)', () => {
+  // Regression: `fill:'transparent'` hard-threw ColorParseError in exportLottie
+  // (colorToLottie→parseColor rejected the CSS keyword) — exit-1, breaking export
+  // for any scene with a transparent-filled/stroke-only shape. parseColor now
+  // honors `transparent`→rgba(0,0,0,0); the existing 4-element-alpha color path
+  // carries it round-trip to an invisible fill (NOT opaque black).
+  function transparentModule(): SceneModule {
+    return {
+      timeline: { version: 1, duration: 1, fps: 30, tracks: [] },
+      createScene: () =>
+        createScene({
+          size: { w: 100, h: 100 },
+          children: [new Rect({ id: 'ring', width: 50, height: 50, fill: 'transparent', stroke: '#ff0000', strokeWidth: 2 })],
+        }),
+    };
+  }
+
+  it('exports without throwing and emits a 0-alpha fill (not opaque black)', () => {
+    // pre-fix this threw ColorParseError; now it exports.
+    const doc = exportLottie(transparentModule(), { width: 100, height: 100, fps: 30 });
+    // shapes is a flat item array ([sh, st, fl]); find the fill item.
+    const items = (doc.layers as { shapes?: { ty: string; c?: { k: number[] } }[] }[]).flatMap((l) => l.shapes ?? []);
+    const fl = items.find((it) => it.ty === 'fl');
+    expect(fl).toBeDefined();
+    // 4-element [r,g,b,a] with a=0 — carries transparency, does NOT collapse to opaque [0,0,0].
+    // The importer's lottieColor reads the 4th element as alpha (convert.ts) → #00000000, so the
+    // round-trip renders invisible, not black.
+    expect(fl!.c!.k).toEqual([0, 0, 0, 0]);
+    // the visible stroke still exports (the shape isn't dropped).
+    expect(items.some((it) => it.ty === 'st')).toBe(true);
+  });
+
+  it('the full round-trip completes (import does not throw on the transparent fill)', () => {
+    const doc = exportLottie(transparentModule(), { width: 100, height: 100, fps: 30 });
+    expect(() => importLottie(doc).toSceneModule().createScene()).not.toThrow();
   });
 });

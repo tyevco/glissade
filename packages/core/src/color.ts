@@ -16,12 +16,17 @@ const RGB_RE = /^rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*(?:[,/
 
 export class ColorParseError extends Error {
   constructor(input: string) {
-    super(`cannot parse color '${input}' (supported: #rgb[a], #rrggbb[aa], rgb()/rgba())`);
+    super(`cannot parse color '${input}' (supported: transparent, #rgb[a], #rrggbb[aa], rgb()/rgba())`);
     this.name = 'ColorParseError';
   }
 }
 
 export function parseColor(input: string): Rgba {
+  // The CSS `transparent` keyword (= rgba(0,0,0,0)). The render backends already
+  // honor it (a stroke-only shape's invisible fill); this lets the color model —
+  // and Lottie export, which routes fills through parseColor — honor it too,
+  // instead of throwing on a common idiom.
+  if (/^transparent$/i.test(input)) return { r: 0, g: 0, b: 0, a: 0 };
   const hex = HEX_RE.exec(input);
   if (hex) {
     let h = hex[1]!;
