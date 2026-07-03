@@ -1,5 +1,50 @@
 # @glissade/lottie
 
+## 0.48.0
+
+### Minor Changes
+
+- 0e195a9: Group-opacity compositing in Lottie export. A `Group` with opacity < 1 (or an animated
+  opacity track) previously exported its children at full opacity — Lottie parenting
+  inherits a parent's transform matrix but not its opacity, so `gs export --lottie` warned
+  and left group fades un-composited (elements that should fade out stayed visible in the
+  re-imported Lottie). Now the group's opacity is baked into each leaf descendant's own
+  opacity (`leaf × Π ancestor-group-opacity`), while the group's null layer keeps only its
+  position/rotation/scale — so a fading group finally hides its children (exact for the
+  common case: a group fading to ~0 gives `0 × child = 0`). Nested groups multiply; an
+  animated group opacity samples and decimates onto the child channel. Honest limit
+  (warned, not silent): overlapping _translucent_ siblings inside a group double-composite
+  their overlap region — exact when descendants don't overlap or the group opacity is
+  near 0/1. Export-only and additive; determinism and goldens unaffected.
+
+### Patch Changes
+
+- cb629ec: `gs export --lottie` pre.1 — coalesce multi-`track()` channels (fix a latent
+  last-write-wins bug). The exporter grouped tracks per target with last-write-wins, so a
+  channel driven by more than one `track()` call (e.g. a card fading IN via one track and
+  OUT via another, both on `<id>/opacity`) dropped all but the last track — the fade-in
+  vanished and the element held full opacity from t=0 (every card leaked its entrance in
+  the re-imported Lottie). The exporter now runs the timeline through `compileTimeline`
+  first, whose coalescing is the exact same merge `evaluate()` uses — so a multi-track
+  channel exports the merged keyframes and the export matches what glissade renders. This
+  was latent since the 0.45 exporter and affects every channel (opacity/position/scale/
+  fill), not just group opacity. Single-track exports are byte-identical (coalesce of one
+  track is that track).
+- 2fd5dc9: `gs export --lottie` pre.2 — anchor the document boundaries of sampled channels (fix a
+  dormant-window ghost). A group or leaf that fades in via a SAMPLED channel (spring /
+  named ease / expr, whose first key sits at a fractional frame time) sampled its span
+  starting one frame PAST the fade start — so the true base (0) across the leading dormant
+  window was never emitted, and Lottie held the first ~9% sample backward to t=0, ghosting
+  a "hidden" element at 4–10%. The sampled paths (`combineOpacity`'s group-opacity bake,
+  `sampleToLottieKeys`, and the per-axis `sampleComponentVec`) now anchor their boundaries:
+  a HOLD keyframe at `ip` carrying the value sampled there (0 for a dormant fade — held,
+  not ramped, so the whole dormant window stays at the base) and a keyframe at `op` for a
+  fade-out's true tail. Channels whose keyed span already covers `[ip,op]` (the common
+  integer-keyed case) are byte-identical. Together with the pre.1 multi-track coalesce fix,
+  a real episode's fading elements now export hidden until their beat.
+  - @glissade/core@0.48.0
+  - @glissade/scene@0.48.0
+
 ## 0.48.0-pre.2
 
 ### Patch Changes

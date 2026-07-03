@@ -1,5 +1,16 @@
 # @glissade/browser
 
+## 0.48.0
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.48.0
+- @glissade/backend-dom@0.48.0
+- @glissade/core@0.48.0
+- @glissade/element@0.48.0
+- @glissade/player@0.48.0
+- @glissade/scene@0.48.0
+
 ## 0.48.0-pre.2
 
 ### Patch Changes
