@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { emitDevWarning, getValueType, random, signal, type BindableSignal, type FontAxes, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
+import { emitDevWarning, paintType, random, signal, type BindableSignal, type FontAxes, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
 import {
   arcLength,
@@ -208,7 +208,7 @@ abstract class Shape extends Node {
     // validated separately in core's validateTrack; a `() => Paint` binding is
     // resolved per-frame and out of scope here.
     if (props.fill !== undefined && typeof props.fill === 'object') {
-      getValueType<Paint>('paint').validate?.(props.fill);
+      paintType.validate?.(props.fill);
     }
     this.stroke = initProp(signal(''), props.stroke);
     this.strokeWidth = initProp(signal(0), props.strokeWidth);
