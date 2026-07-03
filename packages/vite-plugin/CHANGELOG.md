@@ -1,5 +1,12 @@
 # @glissade/vite-plugin
 
+## 0.51.0
+
+### Patch Changes
+
+- Updated dependencies [92bd6ef]
+  - @glissade/core@0.51.0
+
 ## 0.51.0-pre.1
 
 ### Patch Changes

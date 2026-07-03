@@ -1,6 +1,6 @@
 {
   "name": "@glissade/core",
-  "version": "0.51.0-pre.1",
+  "version": "0.51.0",
   "description": "glissade core: signals, tracks, timeline document, evaluation, easing, springs, seeded RNG. Zero DOM/Node dependencies.",
   "license": "Apache-2.0",
   "engines": {
