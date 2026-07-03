@@ -1,5 +1,16 @@
 # @glissade/browser
 
+## 0.43.1-pre.0
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.43.1-pre.0
+- @glissade/backend-dom@0.43.1-pre.0
+- @glissade/core@0.43.1-pre.0
+- @glissade/element@0.43.1-pre.0
+- @glissade/player@0.43.1-pre.0
+- @glissade/scene@0.43.1-pre.0
+
 ## 0.43.0
 
 ### Patch Changes

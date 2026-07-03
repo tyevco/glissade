@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { affectedScenes, buildCommand, hashInputs, mixDefaults, renderDefaults, sceneInputFiles, selectAffectedScenes, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
+import { affectedScenes, buildCommand, hashInputs, isIgnoredScene, mixDefaults, renderDefaults, resolveScenes, sceneInputFiles, selectAffectedScenes, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
 
 let root: string;
 let calls: string[];
@@ -258,5 +258,29 @@ describe('selectAffectedScenes — conservative fallback (0.43 pre.1, ai-trainin
 
   it('a mixed diff (shared code + a scene) still rebuilds ALL (the code change dominates, safely)', () => {
     expect(selectAffectedScenes(scenes, new Set(['/proj/src/util.ts', '/proj/a.ts']))).toEqual(scenes);
+  });
+});
+
+describe('ProjectConfig.ignore — exclude colocated tests / wip (0.43.1 nit)', () => {
+  it('isIgnoredScene: a slash-less glob matches the basename at any depth', () => {
+    expect(isIgnoredScene('/proj/episodes/e01.test.ts', '/proj', ['*.test.ts'])).toBe(true);
+    expect(isIgnoredScene('/proj/episodes/e01.ts', '/proj', ['*.test.ts'])).toBe(false);
+  });
+  it('isIgnoredScene: a slash-bearing glob matches the config-relative path', () => {
+    expect(isIgnoredScene('/proj/_wip/draft.ts', '/proj', ['_wip/**'])).toBe(true);
+    expect(isIgnoredScene('/proj/episodes/e01.ts', '/proj', ['_wip/**'])).toBe(false);
+  });
+  it('no ignore globs → nothing excluded (back-compat)', () => {
+    expect(isIgnoredScene('/proj/e01.test.ts', '/proj')).toBe(false);
+  });
+
+  it('resolveScenes drops files matching an ignore glob (the documented-glob crash fix)', () => {
+    // colocate a *.test.ts next to the episodes — the exact vitest-import crash case
+    writeFileSync(join(root, 'e01.test.ts'), 'import { it } from "vitest";');
+    const withoutIgnore = resolveScenes(['*.ts'], root);
+    expect(withoutIgnore.some((f) => f.endsWith('e01.test.ts'))).toBe(true); // swept in (the bug)
+    const withIgnore = resolveScenes(['*.ts'], root, ['*.test.ts']);
+    expect(withIgnore.some((f) => f.endsWith('.test.ts'))).toBe(false); // excluded
+    expect(withIgnore.some((f) => f.endsWith('e01.ts'))).toBe(true); // real scenes kept
   });
 });

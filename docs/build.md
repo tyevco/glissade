@@ -12,20 +12,25 @@ import { defineProject } from '@glissade/cli/config';
 
 export default defineProject({
   scenes: ['episodes/**/*.ts'],
+  ignore: ['*.test.ts'],             // exclude colocated tests (else gs build tries to LOAD them)
   out: 'dist',                       // rendered videos land here (default: next to each scene)
   defaults: {
     fps: 30,
     captions: 'sidecar',             // burn (default) | sidecar | off
     cache: '.gscache',               // persistent frame cache (speed only)
+    // strictFonts: true,            // fail the render on a missing/fallback font (§3.6 gate)
   },
 });
 ```
 
 ```sh
 gs build                 # run the stale subtree across every scene
-gs build e07             # only scenes whose path contains 'e07'
+gs build e07             # only scenes whose path contains 'e07' (a FILTER, not a config path)
+gs build --config x.ts   # point at a specific config file
 gs build --explain       # print the plan, run nothing
 ```
+
+`ignore` runs after `scenes` expands, so a broad glob stays safe: a `/`-less pattern matches the basename at any depth (`*.test.ts`), a `/`-bearing one matches the config-relative path (`_wip/**`). A bare positional (`gs build e07`) is a scene **filter**, not a config path — use `--config` to point at a config file.
 
 ## Render defaults (0.33)
 

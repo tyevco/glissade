@@ -189,9 +189,21 @@ async function main(): Promise<void> {
   // stale subtree. Self-contained: no <scene-module> positional (positionals filter).
   if (command === 'build') {
     const { positional: bp, flags: bf } = parseArgs(rest);
+    if (bf.has('help')) { process.stdout.write(`${USAGE}\n`); return; }
     const { buildCommand } = await import('./build.js');
     const config = bf.get('config') || 'glissade.config.ts';
     const explain = bf.has('explain');
+    // A positional is a scene FILTER (substring), not a config path — flag a mis-passed
+    // config file so it doesn't silently fall back to glissade.config.ts + filter nothing.
+    if (bp.some((p) => /\.(ts|js|mjs|cjs)$/.test(p))) {
+      const { existsSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+      for (const p of bp) {
+        if (/\.(ts|js|mjs|cjs)$/.test(p) && existsSync(resolve(process.cwd(), p))) {
+          process.stderr.write(`note: '${p}' is a scene FILTER (substring match), not a config path — to point gs build at a config file, use --config ${p}\n`);
+        }
+      }
+    }
     try {
       const r = await buildCommand({
         config,
