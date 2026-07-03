@@ -24,7 +24,7 @@ export function applyMixGainDb(filterComplex: string, gainDb: number, limiter?: 
 // @public
 export function atempoChain(rate: number): string[];
 
-// @public (undocumented)
+// @public
 export class AudioMixError extends Error {
     constructor(detail: string);
 }
@@ -601,7 +601,7 @@ export interface PublishProfile {
 // @public
 export function readLoudness(modulePath: string, locale?: string): LoudnessMeasurement | null;
 
-// @public (undocumented)
+// @public
 export function render(opts: RenderOptions): Promise<{
     frames: number;
     out: string;
@@ -796,7 +796,7 @@ export interface VideoInfo {
     width: number;
 }
 
-// @public
+// @public (undocumented)
 export class VideoProbeError extends Error {
     constructor(path: string, detail: string);
 }

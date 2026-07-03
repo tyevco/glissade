@@ -375,6 +375,182 @@ export function ffmpegAvailable(): boolean {
   return spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
 }
 
+/** What `prepareSkiaRenderEnv` needs to make a Skia render FAITHFUL (fonts+axes,
+ *  Yoga, assets) — the setup that `gs render` and any parity/preview render must
+ *  share so a headless render is byte-faithful to `gs render` by construction. */
+export interface PrepareRenderEnvOptions {
+  scene: ReturnType<SceneModule['createScene']>;
+  /** the (localized/resolved) render document — its `assets` drive font/media loading. */
+  doc: import('@glissade/core').Timeline;
+  /** the backend the scene will draw into (image/video assets are bound to it). */
+  backend: SkiaBackend;
+  /** module path for resolving relative asset URLs. */
+  modulePath: string;
+  /** --strict: throw on an unregistered family / uncovered glyph (default dev-warn). */
+  strictFonts?: boolean;
+  /** --allow-system-fonts: exempt the true-OS catalog from the unregistered-family check. */
+  allowSystemFonts?: boolean;
+  /** active locale (drives the post-localize font validation of string-track values). */
+  locale?: string;
+}
+
+/** The side-data `render()` needs downstream after the environment is prepared. */
+export interface SkiaRenderEnv {
+  /** sha256 of every referenced font/image/video asset's bytes (folds into the cache key). */
+  assetDigests: Map<string, string>;
+  /** opened video frame sources — the caller MUST close these when done. */
+  videoSources: import('./videoSource.js').FfmpegVideoFrameSource[];
+  /** families glissade actually registered from `doc.assets` (case-folded). */
+  registeredFamilies: Set<string>;
+}
+
+/**
+ * Prepare the Skia render environment so `evaluate(scene, doc, t)` → `backend.render`
+ * is FAITHFUL: line-break measurer, Yoga (flexbox scenes), font faces registered
+ * under their families (variable-font axes included, so `fontAxes` reaches the
+ * glyphs), font validation, and image/video asset decode bound to the backend.
+ *
+ * This is the SINGLE SOURCE OF TRUTH for render setup — `gs render` AND `gs parity`
+ * both call it, so a parity render cannot silently diverge from a real render (e.g.
+ * report a false-perfect SSIM on a variable-font scene by rendering BOTH legs at the
+ * default weight because neither registered the face). Extracted verbatim from the
+ * `render()` body; the ordering (yoga → asset-validate → font-register → validate →
+ * asset-decode) is preserved so `gs render` stays byte-identical.
+ */
+export async function prepareSkiaRenderEnv(o: PrepareRenderEnvOptions): Promise<SkiaRenderEnv> {
+  const { scene, doc, backend, modulePath } = o;
+  // line breaking measures with the rasterizer that will draw (§3.2)
+  scene.setTextMeasurer(backend);
+
+  // flexbox scenes need the wasm engine loaded before evaluation (§3.2)
+  const hasLayout = [...scene.nodes.values()].some(
+    (n) => (n.constructor as { isLayoutNode?: boolean }).isLayoutNode === true,
+  );
+  if (hasLayout) {
+    const { loadYogaLayoutEngine } = await import('@glissade/scene/layout');
+    await loadYogaLayoutEngine();
+  }
+
+  // Pre-validate every Image/Video asset reference against the declared
+  // timeline assets BEFORE warming/evaluate, so an undeclared (or undefined —
+  // the `new Image({ src })` mistake) asset id surfaces the REAL cause instead
+  // of the downstream `asset 'undefined' not ready` ColdAssetError (§2.5).
+  validateAssetReferences(
+    collectAssetReferences(scene.root as unknown as Parameters<typeof collectAssetReferences>[0]),
+    Object.keys(doc.assets ?? {}),
+  );
+
+  // Warm timeline assets before evaluation (§2.5 readiness precondition).
+  const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
+  const { resolveAssetPath: resolveAsset } = await import('./audioMix.js');
+
+  // §3.6: register EVERY declared face under its family (the asset id IS the
+  // family name), not one path per asset, so weight/style variants resolve.
+  // A plain ttf/otf path goes straight to Skia via registerFromPath — the
+  // byte-identical legacy path that keeps the existing goldens stable. A
+  // woff/woff2 face is decoded in-process (the §3.6 front door) before
+  // register(Buffer, family), since @napi-rs/canvas cannot read woff2 directly.
+  // §3.5 cache: the DisplayList carries only an asset *id*, never the pixels/glyphs,
+  // so an in-place edit of an asset (same id/url) would otherwise collide the frame
+  // cache key and serve STALE pixels. We sha256 each referenced asset's BYTES as we
+  // load them and fold a combined digest into the cache key context below.
+  const { createHash } = await import('node:crypto');
+  const assetDigests = new Map<string, string>();
+  const digestBytes = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+
+  // Families glissade actually registers from `doc.assets` (FIX 6, 0.14): these
+  // — NOT the true-OS catalog — seed the --strict validation's "exempt" set, so
+  // the PASS/FAIL verdict is host-independent. Case-folded to match isExemptFamily.
+  const registeredFamilies = new Set<string>();
+  const fontRegistry = buildFontRegistry(doc.assets);
+  if (fontRegistry.faces().length > 0) {
+    const { GlobalFonts } = await import('@napi-rs/canvas');
+    let ingest: typeof import('@glissade/core/font-ingest') | undefined;
+    for (const face of fontRegistry.faces()) {
+      registeredFamilies.add(face.family.toLowerCase());
+      const path = resolveAsset(face.url, modulePath);
+      if (/\.woff2?$/i.test(face.url)) {
+        ingest ??= await import('@glissade/core/font-ingest');
+        const src = await readFile(path);
+        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(src));
+        const result = await ingest.ingestFont({ family: face.family, src });
+        GlobalFonts.register(Buffer.from(result.bytes), face.family);
+      } else {
+        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(await readFile(path)));
+        GlobalFonts.registerFromPath(path, face.family);
+      }
+    }
+  }
+
+  // --- osFamilies (§3.6, 0.14, FIX 6): begin self-contained region ---
+  // The OS catalog is host-dependent (3 families on clean Linux, hundreds on
+  // macOS); reading it into the exempt set made the --strict verdict host-
+  // dependent. Only fold the true-OS catalog when it would actually be USED —
+  // i.e. --allow-system-fonts AND not --strict (buildFontExemptSet ignores it
+  // otherwise). This also avoids importing the catalog on the common path.
+  const includeOsCatalog = !!o.allowSystemFonts && !o.strictFonts;
+  const osCatalog = includeOsCatalog
+    ? new Set<string>(
+        (await import('@napi-rs/canvas')).GlobalFonts.families.map((f) => f.family.toLowerCase()),
+      )
+    : new Set<string>();
+  const osFamilies = buildFontExemptSet(registeredFamilies, {
+    allowSystemFonts: !!o.allowSystemFonts,
+    strict: !!o.strictFonts,
+    osCatalog,
+  });
+  // --- osFamilies: end self-contained region ---
+
+  // §3.6 font validation: dev-warn by default, --strict throws on an
+  // unregistered non-generic family or an uncovered glyph. FIX 3 (0.14 canary):
+  // also validate the POST-localize string-track values (`doc` is already the
+  // localized doc here) — `validateSceneFonts`'s scene-walk only sees the authored
+  // BASE `node.text()`, which is read BEFORE the localized tracks bind, so a
+  // localized CJK message on a Latin-only font would otherwise pass --strict then
+  // render tofu. Empty for the base (no --locale) render → byte-identical path.
+  const localizedUsages =
+    o.locale !== undefined && o.locale !== ''
+      ? collectLocalizedTextUsages(scene, doc)
+      : [];
+  await validateSceneFonts(
+    scene,
+    doc,
+    async (url) => {
+      try {
+        const buf = await readFile(resolveAsset(url, modulePath));
+        return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      } catch {
+        return undefined;
+      }
+    },
+    { mode: o.strictFonts ? 'strict' : 'dev', osFamilies, extraUsages: localizedUsages },
+  );
+
+  for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
+    if (ref.kind === 'font') {
+      // faces already registered above
+    } else if (ref.kind === 'image') {
+      const { loadImage } = await import('@napi-rs/canvas');
+      const imgPath = resolveAsset(ref.url, modulePath);
+      assetDigests.set(`image:${assetId}`, digestBytes(await readFile(imgPath)));
+      backend.setImageAsset(assetId, await loadImage(imgPath));
+    } else if (ref.kind === 'video') {
+      if (!ffmpegAvailable()) {
+        throw new Error(`video asset '${assetId}' needs FFmpeg on PATH for frame extraction (§5.4)`);
+      }
+      const { FfmpegVideoFrameSource } = await import('./videoSource.js');
+      const videoPath = resolveAsset(ref.url, modulePath);
+      assetDigests.set(`video:${assetId}`, digestBytes(await readFile(videoPath)));
+      const source = new FfmpegVideoFrameSource(videoPath);
+      await source.warm(0, source.duration); // v1: whole-source warm, trivially correct
+      backend.setVideoAsset(assetId, source);
+      videoSources.push(source);
+    }
+  }
+
+  return { assetDigests, videoSources, registeredFamilies };
+}
+
 export async function render(opts: RenderOptions): Promise<{ frames: number; out: string }> {
   const mod = await loadSceneModule(opts.modulePath, opts.locale);
   const scene = mod.createScene();
@@ -491,134 +667,18 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   mkdirSync(framesDir, { recursive: true });
 
   const backend = new SkiaBackend(scene.size.w, scene.size.h);
-  // line breaking measures with the rasterizer that will draw (§3.2)
-  scene.setTextMeasurer(backend);
-
-  // flexbox scenes need the wasm engine loaded before evaluation (§3.2)
-  const hasLayout = [...scene.nodes.values()].some(
-    (n) => (n.constructor as { isLayoutNode?: boolean }).isLayoutNode === true,
-  );
-  if (hasLayout) {
-    const { loadYogaLayoutEngine } = await import('@glissade/scene/layout');
-    await loadYogaLayoutEngine();
-  }
-
-  // Pre-validate every Image/Video asset reference against the declared
-  // timeline assets BEFORE warming/evaluate, so an undeclared (or undefined —
-  // the `new Image({ src })` mistake) asset id surfaces the REAL cause instead
-  // of the downstream `asset 'undefined' not ready` ColdAssetError (§2.5).
-  validateAssetReferences(
-    collectAssetReferences(scene.root as unknown as Parameters<typeof collectAssetReferences>[0]),
-    Object.keys(doc.assets ?? {}),
-  );
-
-  // Warm timeline assets before evaluation (§2.5 readiness precondition).
-  const videoSources: import('./videoSource.js').FfmpegVideoFrameSource[] = [];
-  const { resolveAssetPath: resolveAsset } = await import('./audioMix.js');
-
-  // §3.6: register EVERY declared face under its family (the asset id IS the
-  // family name), not one path per asset, so weight/style variants resolve.
-  // A plain ttf/otf path goes straight to Skia via registerFromPath — the
-  // byte-identical legacy path that keeps the existing goldens stable. A
-  // woff/woff2 face is decoded in-process (the §3.6 front door) before
-  // register(Buffer, family), since @napi-rs/canvas cannot read woff2 directly.
-  // §3.5 cache: the DisplayList carries only an asset *id*, never the pixels/glyphs,
-  // so an in-place edit of an asset (same id/url) would otherwise collide the frame
-  // cache key and serve STALE pixels. We sha256 each referenced asset's BYTES as we
-  // load them and fold a combined digest into the cache key context below.
-  const { createHash } = await import('node:crypto');
-  const assetDigests = new Map<string, string>();
-  const digestBytes = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
-
-  // Families glissade actually registers from `doc.assets` (FIX 6, 0.14): these
-  // — NOT the true-OS catalog — seed the --strict validation's "exempt" set, so
-  // the PASS/FAIL verdict is host-independent. Case-folded to match isExemptFamily.
-  const registeredFamilies = new Set<string>();
-  const fontRegistry = buildFontRegistry(doc.assets);
-  if (fontRegistry.faces().length > 0) {
-    const { GlobalFonts } = await import('@napi-rs/canvas');
-    let ingest: typeof import('@glissade/core/font-ingest') | undefined;
-    for (const face of fontRegistry.faces()) {
-      registeredFamilies.add(face.family.toLowerCase());
-      const path = resolveAsset(face.url, opts.modulePath);
-      if (/\.woff2?$/i.test(face.url)) {
-        ingest ??= await import('@glissade/core/font-ingest');
-        const src = await readFile(path);
-        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(src));
-        const result = await ingest.ingestFont({ family: face.family, src });
-        GlobalFonts.register(Buffer.from(result.bytes), face.family);
-      } else {
-        assetDigests.set(`font:${face.family}:${face.url}`, digestBytes(await readFile(path)));
-        GlobalFonts.registerFromPath(path, face.family);
-      }
-    }
-  }
-
-  // --- osFamilies (§3.6, 0.14, FIX 6): begin self-contained region ---
-  // The OS catalog is host-dependent (3 families on clean Linux, hundreds on
-  // macOS); reading it into the exempt set made the --strict verdict host-
-  // dependent. Only fold the true-OS catalog when it would actually be USED —
-  // i.e. --allow-system-fonts AND not --strict (buildFontExemptSet ignores it
-  // otherwise). This also avoids importing the catalog on the common path.
-  const includeOsCatalog = !!opts.allowSystemFonts && !opts.strictFonts;
-  const osCatalog = includeOsCatalog
-    ? new Set<string>(
-        (await import('@napi-rs/canvas')).GlobalFonts.families.map((f) => f.family.toLowerCase()),
-      )
-    : new Set<string>();
-  const osFamilies = buildFontExemptSet(registeredFamilies, {
-    allowSystemFonts: !!opts.allowSystemFonts,
-    strict: !!opts.strictFonts,
-    osCatalog,
-  });
-  // --- osFamilies: end self-contained region ---
-
-  // §3.6 font validation: dev-warn by default, --strict throws on an
-  // unregistered non-generic family or an uncovered glyph. FIX 3 (0.14 canary):
-  // also validate the POST-localize string-track values (`doc` is already the
-  // localized doc here) — `validateSceneFonts`'s scene-walk only sees the authored
-  // BASE `node.text()`, which is read BEFORE the localized tracks bind, so a
-  // localized CJK message on a Latin-only font would otherwise pass --strict then
-  // render tofu. Empty for the base (no --locale) render → byte-identical path.
-  const localizedUsages =
-    opts.locale !== undefined && opts.locale !== ''
-      ? collectLocalizedTextUsages(scene, doc)
-      : [];
-  await validateSceneFonts(
+  // Prepare the faithful Skia render environment (measurer, Yoga, font faces incl.
+  // variable-font axes, font validation, image/video decode). SHARED with gs parity
+  // via prepareSkiaRenderEnv so a parity render can't drift from a real render.
+  const { assetDigests, videoSources } = await prepareSkiaRenderEnv({
     scene,
     doc,
-    async (url) => {
-      try {
-        const buf = await readFile(resolveAsset(url, opts.modulePath));
-        return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      } catch {
-        return undefined;
-      }
-    },
-    { mode: opts.strictFonts ? 'strict' : 'dev', osFamilies, extraUsages: localizedUsages },
-  );
-
-  for (const [assetId, ref] of Object.entries(doc.assets ?? {})) {
-    if (ref.kind === 'font') {
-      // faces already registered above
-    } else if (ref.kind === 'image') {
-      const { loadImage } = await import('@napi-rs/canvas');
-      const imgPath = resolveAsset(ref.url, opts.modulePath);
-      assetDigests.set(`image:${assetId}`, digestBytes(await readFile(imgPath)));
-      backend.setImageAsset(assetId, await loadImage(imgPath));
-    } else if (ref.kind === 'video') {
-      if (!ffmpegAvailable()) {
-        throw new Error(`video asset '${assetId}' needs FFmpeg on PATH for frame extraction (§5.4)`);
-      }
-      const { FfmpegVideoFrameSource } = await import('./videoSource.js');
-      const videoPath = resolveAsset(ref.url, opts.modulePath);
-      assetDigests.set(`video:${assetId}`, digestBytes(await readFile(videoPath)));
-      const source = new FfmpegVideoFrameSource(videoPath);
-      await source.warm(0, source.duration); // v1: whole-source warm, trivially correct
-      backend.setVideoAsset(assetId, source);
-      videoSources.push(source);
-    }
-  }
+    backend,
+    modulePath: opts.modulePath,
+    ...(opts.strictFonts !== undefined ? { strictFonts: opts.strictFonts } : {}),
+    ...(opts.allowSystemFonts !== undefined ? { allowSystemFonts: opts.allowSystemFonts } : {}),
+    ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+  });
   // §3.5 persistent whole-frame raster cache (opt-in; default 'off' = baseline).
   // The key folds the DisplayList-snapshot bytes + the glissade version + the
   // backend caps id (the INJECTED CacheKeyContext — components with no source in

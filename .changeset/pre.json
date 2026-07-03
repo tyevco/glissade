@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.48.0"
   },
   "changesets": [
+    "gs-parity-render-env",
     "gs-parity"
   ]
 }

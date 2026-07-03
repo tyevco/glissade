@@ -23,10 +23,10 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { evaluate, type SceneModule } from '@glissade/scene';
+import { evaluate, withDeterminismGuards, type SceneModule } from '@glissade/scene';
 import { SkiaBackend, ssimMap, heatmapRgba } from '@glissade/backend-skia';
 import { exportLottie, importLottie } from '@glissade/lottie';
-import { loadSceneModule } from './render.js';
+import { loadSceneModule, prepareSkiaRenderEnv } from './render.js';
 
 /** Default sampled frames + fps — matches the round-trip / golden suites' cadence. */
 export const DEFAULT_PARITY_FRAMES = [0, 30, 60, 90, 119];
@@ -137,34 +137,48 @@ export function parseBackends(raw: string | undefined): string[] {
 /** A per-frame RGBA source for one backend, over the SAME w×h as every other leg. */
 type FrameSource = (t: number) => Promise<Uint8ClampedArray>;
 
-/** skia = the direct headless render (repin's render→pixels shape) — the reference. */
-function skiaSource(mod: SceneModule, w: number, h: number): FrameSource {
+/**
+ * skia = the direct headless render — the reference every leg is diffed against.
+ * CRITICAL: it renders through the SAME environment as `gs render`
+ * (`prepareSkiaRenderEnv`: font faces incl. variable-font axes registered, Yoga
+ * for flexbox, assets decoded) and wraps `evaluate` in the determinism guard. Without
+ * this the reference would render a variable-font scene at DEFAULT weight (the face
+ * never registered) and match a fontAxes-dropping Lottie leg at a FALSE SSIM 1.0 —
+ * a fidelity gate silently reporting perfect on a real interchange loss.
+ *
+ * The scene + backend are built ONCE and reused across frames (evaluate is pure of
+ * time — the ONE contract — exactly as `gs render`'s frame loop reuses them).
+ */
+async function skiaSource(mod: SceneModule, w: number, h: number, modulePath: string): Promise<FrameSource> {
+  const scene = mod.createScene();
+  const backend = new SkiaBackend(w, h);
+  await prepareSkiaRenderEnv({ scene, doc: mod.timeline, backend, modulePath });
   return async (t: number) => {
-    const scene = mod.createScene();
-    const backend = new SkiaBackend(w, h);
-    scene.setTextMeasurer(backend);
-    backend.render(evaluate(scene, mod.timeline, t));
+    const dl = withDeterminismGuards('throw', () => evaluate(scene, mod.timeline, t));
+    backend.render(dl);
     return backend.readPixels();
   };
 }
 
 /**
  * lottie = the export↔import round-trip rendered on Skia (roundtrip.test's renderPixels
- * shape). The document is exported/imported ONCE (it's time-independent); each frame
- * evaluates the re-imported module — so the leg measures the Lottie bijection per frame.
+ * shape). The document is exported/imported ONCE (it's time-independent); the re-imported
+ * module renders through the SAME faithful environment as the reference (so its render is
+ * honest too). Asset URLs resolve against the ORIGINAL module path. This leg measures the
+ * Lottie bijection per frame — e.g. the dropped `fontAxes` surfaces as a real SSIM drop.
  */
-function lottieSource(mod: SceneModule, w: number, h: number, fps: number): FrameSource {
+async function lottieSource(mod: SceneModule, w: number, h: number, fps: number, modulePath: string): Promise<FrameSource> {
   const doc = exportLottie(mod, { width: w, height: h, fps });
   const roundTripped = importLottie(doc).toSceneModule();
-  return skiaSource(roundTripped, w, h);
+  return skiaSource(roundTripped, w, h, modulePath);
 }
 
-function makeSource(backend: string, mod: SceneModule, w: number, h: number, fps: number): FrameSource {
+function makeSource(backend: string, mod: SceneModule, w: number, h: number, fps: number, modulePath: string): Promise<FrameSource> {
   switch (backend) {
     case 'skia':
-      return skiaSource(mod, w, h);
+      return skiaSource(mod, w, h, modulePath);
     case 'lottie':
-      return lottieSource(mod, w, h, fps);
+      return lottieSource(mod, w, h, fps, modulePath);
     default:
       // parseBackends already rejected everything else; this is a defensive guard.
       throw new ParityBackendError(`unknown parity backend '${backend}'`);
@@ -190,8 +204,13 @@ export async function parityCommand(opts: ParityOptions): Promise<ParityResult> 
   const floor = opts.min ?? DEFAULT_PARITY_FLOOR;
   const name = opts.name ?? basename(opts.modulePath).replace(/\.[jt]sx?$/, '');
 
-  const reference = skiaSource(mod, w, h);
-  const sources = new Map<string, FrameSource>(compared.map((b) => [b, makeSource(b, mod, w, h, fps)]));
+  // Build the reference + each compared leg's frame source up front (each registers
+  // its faithful render env once). The reference registers the scene's font faces
+  // globally, so even a Lottie leg that dropped the face still resolves the family —
+  // but renders it at DEFAULT axes, which is exactly the loss parity must surface.
+  const reference = await skiaSource(mod, w, h, opts.modulePath);
+  const sources = new Map<string, FrameSource>();
+  for (const b of compared) sources.set(b, await makeSource(b, mod, w, h, fps, opts.modulePath));
 
   if (opts.heatmapDir && !existsSync(opts.heatmapDir)) mkdirSync(opts.heatmapDir, { recursive: true });
 

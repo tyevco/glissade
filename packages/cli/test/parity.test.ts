@@ -15,9 +15,18 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parityCommand, parseBackends, ParityBackendError } from '../src/parity.js';
 import fixtureModule from './fixtures/parity-scene.js';
+import imageModule from './fixtures/parity-image.js';
+// Real corpus scenes, imported through vitest's graph (instanceof-safe) — the render
+// environment (variable-font axes, Yoga, asset decode) is exercised end-to-end.
+import vfModule from '../../examples/src/scenes/golden-font-axis-anim.js';
+import layoutModule from '../../examples/src/scenes/golden-layout.js';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures', import.meta.url));
+const EXAMPLES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
 const MODULE = join(FIXTURES, 'parity-scene.ts');
+const VF_MODULE = join(EXAMPLES, 'golden-font-axis-anim.ts');
+const LAYOUT_MODULE = join(EXAMPLES, 'golden-layout.ts');
+const IMAGE_MODULE = join(FIXTURES, 'parity-image.ts');
 const NAME = 'parity-scene';
 // Pass the module through vitest's OWN graph (not jiti) so the exporter's
 // instanceof node-kind checks see the SAME @glissade/scene — see ParityOptions.module.
@@ -95,6 +104,41 @@ describe('gs parity — skia vs lottie perceptual review', () => {
     expect(r.worstAt!.backend).toBe('lottie');
     expect(r.worstMean).toBeLessThanOrEqual(1);
     expect(FRAMES).toContain(r.worstAt!.frame);
+  });
+});
+
+describe('gs parity — render-environment fidelity (the false-PASS guard)', () => {
+  // THE must-have regression: a single-weight scene can't catch this. A variable-font
+  // scene's Lottie export DROPS fontAxes. Before the fix gs parity's Skia REFERENCE
+  // also rendered at default weight (it never registered the face / applied axes), so
+  // reference == lottie == default → a false SSIM 1.0000 / PASS on a real interchange
+  // loss. Now both legs render through the SAME env as `gs render`, so the reference
+  // tracks the swept weight and the drop surfaces as a below-floor FAIL.
+  it('vf: a variable-font scene surfaces the dropped fontAxes (< 1.0, not a false PASS)', async () => {
+    const r = await parityCommand({ modulePath: VF_MODULE, module: vfModule, frames: [0, 60, 120, 180] });
+    expect(r.ok).toBe(false); // was `true` (false PASS) before the render-env fix
+    expect(r.belowFloor).toBeGreaterThan(0);
+    expect(r.worstMean).toBeLessThan(0.98);
+    // the loss grows with the weight sweep: the heaviest frame diverges more than
+    // frame 0 (where the swept weight still equals the font's default instance).
+    const meanAt = (f: number): number => r.frames.find((x) => x.frame === f)!.pairs[0]!.mean;
+    expect(meanAt(180)).toBeLessThan(meanAt(0));
+    expect(meanAt(180)).toBeLessThan(1);
+  });
+
+  it('layout: a flexbox scene renders (Yoga initialized) instead of erroring', async () => {
+    // gs parity used to THROW here (no loadYogaLayoutEngine before evaluate).
+    const r = await parityCommand({ modulePath: LAYOUT_MODULE, module: layoutModule, frames: [0, 30] });
+    expect(r.frames.length).toBe(2);
+    for (const f of r.frames) expect(Number.isFinite(f.pairs[0]!.mean)).toBe(true);
+  });
+
+  it('media: an image scene decodes + binds the asset instead of erroring', async () => {
+    // gs parity used to ERROR on any image scene (no asset decode). The reference now
+    // decodes + draws the committed swatch PNG; the run completes with finite SSIM.
+    const r = await parityCommand({ modulePath: IMAGE_MODULE, module: imageModule, frames: [0] });
+    expect(r.frames.length).toBe(1);
+    expect(Number.isFinite(r.frames[0]!.pairs[0]!.mean)).toBe(true);
   });
 });
 
