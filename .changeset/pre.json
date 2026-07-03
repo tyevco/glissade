@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.50.0"
   },
   "changesets": [
-    "gradient-lottie-export"
+    "gradient-lottie-export",
+    "static-paint-validate"
   ]
 }

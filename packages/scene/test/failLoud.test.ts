@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
 import { assertFiniteFontSize, breakLines, createScene, estimatingMeasurer, evaluate } from '../src/index.js';
-import { Text } from '../src/nodes.js';
+import { Rect, Text } from '../src/nodes.js';
 
 describe('fail-loud: the measureText / font.size contract (0.24 sweep)', () => {
   const bad = [Number.NaN, 0, -10, Number.POSITIVE_INFINITY];
@@ -42,5 +42,47 @@ describe('fail-loud: the measureText / font.size contract (0.24 sweep)', () => {
   it('evaluating a Text with a NaN fontSize throws instead of silently rendering zero-height', () => {
     const t = new Text({ text: 'hi', fontFamily: 'X', fontSize: Number.NaN });
     expect(() => evaluate(createScene({ size: { w: 100, h: 50 }, children: [t] }), timeline(() => {}), 0)).toThrow(/font\.size/);
+  });
+});
+
+describe('fail-loud: malformed static Paint fill at construction (0.51 — the common gradient-authoring path)', () => {
+  // Before this guard, a typo'd static fill bypassed paintType.validate (which was
+  // only wired into validateTrack) and failed cryptically & inconsistently per
+  // backend — canvas2d "s is not iterable", Skia shader failure, DOM silent-wrong.
+  // Now `new Rect({ fill })` fails loud at construction with a clean PaintError.
+  it('throws on an unknown/typo\'d paint kind (the reported case)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: { kind: 'radialgradient' } as any })).toThrow(
+      /unknown paint kind 'radialgradient'.*color \| linear \| radial \| mesh/,
+    );
+  });
+
+  it('throws on an empty stops array (linear/radial) and empty mesh points', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: { kind: 'radial', stops: [] } as any })).toThrow(/requires a non-empty .?stops/);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: { kind: 'linear', stops: [] } as any })).toThrow(/requires a non-empty .?stops/);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: { kind: 'mesh', points: [] } as any })).toThrow(/requires a non-empty .?points/);
+  });
+
+  it('throws on a kind-less object', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: { stops: [{ offset: 0, color: '#fff' }] } as any })).toThrow(/kind/);
+  });
+
+  it('a valid static gradient and a plain color string construct fine (happy path untouched → goldens byte-identical)', () => {
+    expect(
+      () =>
+        new Rect({
+          width: 10,
+          height: 10,
+          fill: { kind: 'radial', stops: [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }], center: [40, 0], radius: 30 },
+        }),
+    ).not.toThrow();
+    expect(() => new Rect({ width: 10, height: 10, fill: '#f0f' })).not.toThrow();
+    // a `() => Paint` binding is resolved per-frame (validateTrack path), not at construction
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new Rect({ width: 10, height: 10, fill: (() => ({ kind: 'radialgradient' })) as any })).not.toThrow();
   });
 });

@@ -3,7 +3,7 @@
  * Path/Image/Video/Layout arrive with their milestones.
  */
 
-import { emitDevWarning, random, signal, type BindableSignal, type FontAxes, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
+import { emitDevWarning, getValueType, random, signal, type BindableSignal, type FontAxes, type PathContour, type PathValue, type Track, type Vec2 } from '@glissade/core';
 import { type DisplayListBuilder, type FontSpec, type Paint, type PathSeg, type StrokeStyle } from './displayList.js';
 import {
   arcLength,
@@ -201,6 +201,15 @@ abstract class Shape extends Node {
   constructor(props: ShapeProps = {}) {
     super(props);
     this.fill = initProp(signal<string | Paint>(''), props.fill);
+    // Fail loud on a malformed STATIC Paint literal — the common gradient-authoring
+    // path (`new Rect({ fill: { kind: 'radialgradient', … } })`). Without this the
+    // backends fail cryptically and inconsistently (canvas2d "s is not iterable",
+    // Skia shader failure, DOM silently renders wrong). Animated paint tracks are
+    // validated separately in core's validateTrack; a `() => Paint` binding is
+    // resolved per-frame and out of scope here.
+    if (props.fill !== undefined && typeof props.fill === 'object') {
+      getValueType<Paint>('paint').validate?.(props.fill);
+    }
     this.stroke = initProp(signal(''), props.stroke);
     this.strokeWidth = initProp(signal(0), props.strokeWidth);
     this.reveal = initProp(signal(1), props.reveal);
