@@ -29,7 +29,7 @@ whitelist of **pure** functions and constants:
 | | |
 |---|---|
 | variable | `t` (the playhead, seconds) — plus any scope var a binding provides |
-| constants | `PI`, `TAU`, `E` |
+| constants | `PI`, `TAU`, `E` (lowercase `pi`/`tau`/`e` resolve too) |
 | 1-arg | `sin cos tan asin acos atan abs sqrt exp log floor ceil round sign fract rand` |
 | 2-arg | `pow atan2 mod step` (`mod`/`%` are **floored** — `mod(-1,3) == 2`) |
 | 3-arg | `clamp lerp mix smoothstep` |
@@ -37,7 +37,10 @@ whitelist of **pure** functions and constants:
 
 `rand(x)` is a deterministic seeded hash → `[0, 1)` — the **only** randomness, so
 a formula stays a pure function of time. There is no `Date` or `Math.random`; an
-unknown identifier or function **fails loud at compile time**, not silently.
+unknown identifier or function **fails loud at compile time**, not silently. A
+formula that evaluates to a **non-finite** number (a division by zero → `±Infinity`,
+`sqrt` of a negative or `0/0` → `NaN`) **fails loud at sample time** too — it throws
+rather than silently binding `null` to the prop.
 
 ```ts
 exprTrack('dust/position.x', '320 + 200*sin(t) + 8*rand(floor(t*8))'); // jittered orbit

@@ -392,7 +392,7 @@ export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ fra
 
   const work = mkdtempSync(join(tmpdir(), 'glissade-incr-'));
   const segVideos: string[] = [];
-  let done = 0;
+  let rendered = 0; // frames actually RE-RENDERED (kept segments splice, they don't render)
   try {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]!;
@@ -439,8 +439,13 @@ export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ fra
         rmSync(segFrames, { recursive: true, force: true });
       }
       segVideos.push(segVideo);
-      done += seg.end - seg.start + 1;
-      opts.onProgress?.(Math.min(done, total), total);
+      // Report progress against the RE-RENDERED frame count, not the whole timeline —
+      // a splice that re-renders 637 of 1530 shows `rendering 637/637`, not a misleading
+      // `1530/1530` that reads like a full render (kept segments are copied, not rendered).
+      if (seg.kind === 'render' && renderFrames > 0) {
+        rendered += seg.end - seg.start + 1;
+        opts.onProgress?.(rendered, renderFrames);
+      }
     }
 
     // 3) Concat-copy the FFV1 clips → the new retained intermediate (byte-faithful, no re-encode).

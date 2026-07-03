@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { compileExpr, ExprError, EXPR_FUNCTIONS, exprTrack } from '../src/expr.js';
+import { compileExpr, ExprError, EXPR_FUNCTIONS, EXPR_CONSTANTS, exprTrack } from '../src/expr.js';
 import { sampleTrack, validateTrack, timeline, type Track } from '../src/index.js';
 
 const at = (src: string, scope: Record<string, number> = {}): number => compileExpr(src).eval(scope);
@@ -151,5 +151,44 @@ describe('exprTrack + sampleTrack + tl.expr (the Track integration)', () => {
     expect(tr).toBeDefined();
     expect(tr!.expr).toBe('0.5 + 0.5*sin(t*3)');
     expect(sampleTrack(tr!, 0)).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('lowercase constant aliases (0.41.1)', () => {
+  it('lowercase pi/tau/e resolve to the same values as PI/TAU/E', () => {
+    expect(at('pi')).toBeCloseTo(Math.PI, 12);
+    expect(at('tau')).toBeCloseTo(Math.PI * 2, 12);
+    expect(at('e')).toBeCloseTo(Math.E, 12);
+    expect(at('2*pi')).toBeCloseTo(Math.PI * 2, 12);
+    // both cases still work (canonical uppercase unchanged)
+    expect(at('PI')).toBe(at('pi'));
+  });
+  it("scientific-notation numbers still parse (a bare 'e' constant doesn't break 1e3)", () => {
+    expect(at('1e3')).toBe(1000);
+    expect(at('2.5e2')).toBe(250);
+  });
+  it('EXPR_CONSTANTS advertises only the canonical uppercase names', () => {
+    expect(EXPR_CONSTANTS).toEqual(['PI', 'TAU', 'E']);
+  });
+});
+
+describe('non-finite guard (0.41.1) — fail loud instead of silent null at the bound prop', () => {
+  it('a formula that evaluates to ±Infinity throws ExprError when sampled', () => {
+    const tr = exprTrack('a/x', '1/0'); // compiles fine; only non-finite at eval
+    expect(() => sampleTrack(tr, 0)).toThrow(ExprError);
+    expect(() => sampleTrack(tr, 0)).toThrow(/finite number/);
+  });
+  it('a formula that evaluates to NaN throws (0/0, sqrt of a negative)', () => {
+    expect(() => sampleTrack(exprTrack('a/x', '0/0'), 0)).toThrow(ExprError);
+    expect(() => sampleTrack(exprTrack('a/x', 'sqrt(0-1)'), 0)).toThrow(/finite number/);
+  });
+  it('the guard only fires at the t where the formula blows up (finite elsewhere still samples)', () => {
+    const tr = exprTrack('a/x', '1/(t-1)'); // ±Inf only at t=1
+    expect(sampleTrack(tr, 0)).toBe(-1); // finite → samples normally
+    expect(sampleTrack(tr, 2)).toBe(1);
+    expect(() => sampleTrack(tr, 1)).toThrow(/finite number/);
+  });
+  it('a finite formula is untouched by the guard (no false positive)', () => {
+    expect(sampleTrack(exprTrack('a/x', '1/2'), 0)).toBe(0.5);
   });
 });

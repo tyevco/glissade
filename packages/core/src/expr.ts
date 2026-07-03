@@ -49,7 +49,12 @@ const rand = (x: number): number => {
   return random(seed)();
 };
 
-const CONSTS: Record<string, number> = { PI: Math.PI, TAU: Math.PI * 2, E: Math.E };
+// Both cases resolve (0.41.1): the canonical UPPERCASE plus lowercase aliases, so a
+// copy-pasted `2*pi`/`e` reads the constant instead of throwing `unknown variable`.
+const CONSTS: Record<string, number> = {
+  PI: Math.PI, TAU: Math.PI * 2, E: Math.E,
+  pi: Math.PI, tau: Math.PI * 2, e: Math.E,
+};
 
 type Fn = (...a: number[]) => number;
 const FNS: Record<string, { fn: Fn; arity: number | 'variadic' }> = {
@@ -232,7 +237,9 @@ export function compileExpr(source: string): CompiledExpr {
 
 /** The names available to an expression (for docs / a describe() surface). */
 export const EXPR_FUNCTIONS = Object.keys(FNS);
-export const EXPR_CONSTANTS = Object.keys(CONSTS);
+// Canonical (uppercase) names for the docs / describe() surface; lowercase aliases
+// resolve too but aren't advertised, to keep the listed set clean.
+export const EXPR_CONSTANTS = ['PI', 'TAU', 'E'];
 
 /**
  * A raw formula-driven numeric track — `exprTrack('circle/opacity', '0.5 +
@@ -248,5 +255,13 @@ export function exprTrack(target: string, formula: string): Track<number> {
 // activates `tl.expr` / expr-track sampling. Idempotent.
 setExprCompiler((src) => {
   const c = compileExpr(src);
-  return (t) => c.eval({ t });
+  return (t) => {
+    const v = c.eval({ t });
+    // Fail loud on a non-finite result (0.41.1): `0/0`/`sqrt(-1)`→NaN, `1/0`→±Infinity
+    // otherwise coerce silently to `null` at the bound prop — a determinism-posture gap.
+    if (!Number.isFinite(v)) {
+      throw new ExprError(`expr '${src}' evaluated to ${v} at t=${t} — a formula must produce a finite number (division by zero, sqrt of a negative, etc.)`);
+    }
+    return v;
+  };
 });

@@ -1098,6 +1098,22 @@ export async function planFinalAudio(
   }
   if (!mix) return { audioInputs: [], audioArgs: [] };
 
+  // Preflight the mix inputs (0.41.1): a committed narration/sfx timing manifest can
+  // reference a cache WAV that isn't on disk (the audio cache is often git-ignored, so a
+  // fresh checkout lacks it). Without this the render dies deep in ffmpeg with a bare
+  // `hook-….wav: No such file`; name the actual fix instead.
+  const missing = mix.inputs.find((p) => !existsSync(p));
+  if (missing !== undefined) {
+    const isNarrationOrSfx = /(^|[/\\])hook-[^/\\]*\.wav$/i.test(missing) || /\.(narration|sfx)\b/i.test(missing);
+    throw new Error(
+      `audio input not found: ${missing}\n` +
+        (isNarrationOrSfx
+          ? '  A committed timing manifest references this cache file, but it is not on disk (the audio cache is usually git-ignored).\n' +
+            '  Regenerate it with `gs narrate` (or `gs sfx`), or pass --narration off / --sfx off to skip the mix.'
+          : '  Check the audio asset path, or pass --narration off / --music off / --sfx off to skip the mix.'),
+    );
+  }
+
   const loud = await resolveLoudnessGainDb(opts, timelineClips);
   const filterComplex = loud !== null ? applyMixGainDb(mix.filterComplex, loud.gainDb, loud.limiter) : mix.filterComplex;
   if (loud !== null) {
