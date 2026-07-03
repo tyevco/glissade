@@ -20,6 +20,8 @@ import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
 import { defineComponent } from '@glissade/scene/component';
+import { EmphasizeOpts } from '@glissade/scene/type';
+import { emphasizeWords } from '@glissade/scene/type';
 import { EXPR_CONSTANTS } from '@glissade/core/expr';
 import { EXPR_FUNCTIONS } from '@glissade/core/expr';
 import { ExprError } from '@glissade/core/expr';
@@ -36,6 +38,7 @@ import { GaugeResult } from '@glissade/scene/gauge';
 import { GaugeSpec } from '@glissade/scene/gauge';
 import { GaugeZone } from '@glissade/scene/gauge';
 import { Grid } from '@glissade/scene/grid';
+import { KineticTypeError } from '@glissade/scene/type';
 import { Layout } from '@glissade/scene/layout-ctors';
 import { linearScale } from '@glissade/scene/chart';
 import { loadYogaLayoutEngine } from '@glissade/scene/layout';
@@ -49,6 +52,11 @@ import { orientToPath } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
+import { RevealFrom } from '@glissade/scene/type';
+import { revealLines } from '@glissade/scene/type';
+import { RevealOpts } from '@glissade/scene/type';
+import { RevealResult } from '@glissade/scene/type';
+import { revealWords } from '@glissade/scene/type';
 import { Row } from '@glissade/scene/layout-ctors';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { shake } from '@glissade/scene/motion';
@@ -56,6 +64,9 @@ import { shakeOffset } from '@glissade/scene/motion';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
+import { typeOn } from '@glissade/scene/type';
+import { TypeOnOpts } from '@glissade/scene/type';
+import { TypeOnResult } from '@glissade/scene/type';
 
 export { bandScale }
 
@@ -89,6 +100,10 @@ export { ComponentPropSpec }
 
 export { defineComponent }
 
+export { EmphasizeOpts }
+
+export { emphasizeWords }
+
 export { EXPR_CONSTANTS }
 
 export { EXPR_FUNCTIONS }
@@ -121,6 +136,8 @@ export { GaugeZone }
 
 export { Grid }
 
+export { KineticTypeError }
+
 export { Layout }
 
 export { linearScale }
@@ -147,6 +164,16 @@ export { pointAtLength }
 
 export { renderToDataURL }
 
+export { RevealFrom }
+
+export { revealLines }
+
+export { RevealOpts }
+
+export { RevealResult }
+
+export { revealWords }
+
 export { Row }
 
 export { setShaderRunner }
@@ -160,6 +187,12 @@ export { snapshotCanvas }
 export { splitText }
 
 export { Stack }
+
+export { typeOn }
+
+export { TypeOnOpts }
+
+export { TypeOnResult }
 
 
 export * from "@glissade/core";

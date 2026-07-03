@@ -44,6 +44,22 @@ export { splitText } from '@glissade/scene/type';
 // 0.35 fitText (shrink-to-fit + wrap-to-max-lines) — same /type subpath, same
 // measurer plumbing as splitText; a no-build author reaches for window.glissade.fitText.
 export { fitText, fitTextSize, fitTextGroup, type FitTextOpts } from '@glissade/scene/type';
+// 0.56 kinetic type presets — one-call sugar over typewriter/splitText/tl.stagger,
+// same /type subpath. The no-build kinetic-typography author reaches for
+// window.glissade.typeOn / revealWords / revealLines / emphasizeWords.
+export {
+  typeOn,
+  revealWords,
+  revealLines,
+  emphasizeWords,
+  KineticTypeError,
+  type TypeOnOpts,
+  type TypeOnResult,
+  type RevealOpts,
+  type RevealResult,
+  type RevealFrom,
+  type EmphasizeOpts,
+} from '@glissade/scene/type';
 // 0.20 no-build layout split: the Yoga-FREE node ctors (Layout/Stack/Row/Column)
 // live on `@glissade/scene/layout-ctors` — they touch the LayoutEngine seam only
 // at compute time, never `import('yoga-layout/load')` at construction. So they

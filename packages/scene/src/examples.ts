@@ -25,7 +25,7 @@ import { Circle, Group, ImageNode, Path, Rect, Text } from './nodes.js';
 import { createScene, evaluate } from './scene.js';
 import { Grid } from './grid.js';
 import { Stack } from './layoutCtors.js';
-import { splitText } from './type.js';
+import { splitText, typeOn, revealWords, revealLines, emphasizeWords } from './type.js';
 import { motionPath } from './motionPath.js';
 import { orientToPath, lookAt } from './orient.js';
 import { echo } from './echo.js';
@@ -126,6 +126,26 @@ export const EXAMPLES: readonly ApiExample[] = [
     key: 'splitText',
     code: "import { splitText } from '@glissade/scene/type';\n// the source needs an `id` — parts bind tracks against `<id>/<i>`. sp.targets('opacity') gives the reveal-recipe targets\nconst sp = splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme' });",
     run: () => void splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme' }),
+  },
+  {
+    key: 'typeOn',
+    code: "import { typeOn } from '@glissade/scene/type';\n// one-call typewriter. DEFAULT = a string hold-key track on `<id>/text` (round-trips to Lottie).\n// children: [t.node, t.cursor]; timeline: tl.tracks([t.track])\nconst t = typeOn({ id: 'prompt', text: 'make it pop', fontSize: 40 }, { cursor: true, perChar: 0.06 });",
+    run: () => void typeOn({ id: 'prompt', text: 'make it pop', fontSize: 40 }, { cursor: true, perChar: 0.06 }),
+  },
+  {
+    key: 'revealWords',
+    code: "import { revealWords } from '@glissade/scene/type';\n// split into words + cascade each in. Draw r.node (the split Group), inject r.tracks via tl.tracks(r).\nconst r = revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12 });",
+    run: () => void revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12 }),
+  },
+  {
+    key: 'revealLines',
+    code: "import { revealLines } from '@glissade/scene/type';\n// like revealWords but per LINE. Draw r.node; tl.tracks(r).\nconst r = revealLines({ id: 'body', text: 'line one\\nline two', fontSize: 28 }, { each: 0.2 });",
+    run: () => void revealLines({ id: 'body', text: 'line one\nline two', fontSize: 28 }, { each: 0.2 }),
+  },
+  {
+    key: 'emphasizeWords',
+    code: "import { emphasizeWords } from '@glissade/scene/type';\n// pulse the words at the given indices (fails loud on an out-of-range index). Draw r.node; tl.tracks(r).\nconst r = emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3 });",
+    run: () => void emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3 }),
   },
   {
     key: 'measureWrappedText',

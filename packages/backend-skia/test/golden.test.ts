@@ -58,6 +58,7 @@ import goldenMorph from '../../examples/src/scenes/golden-morph.js';
 import goldenPresence from '../../examples/src/scenes/golden-presence.js';
 import goldenEach from '../../examples/src/scenes/golden-each.js';
 import goldenSplitText, { setSplitMeasurer } from '../../examples/src/scenes/golden-splittext.js';
+import goldenKinetic, { setKineticMeasurer } from '../../examples/src/scenes/golden-kinetic.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -95,6 +96,9 @@ GlobalFonts.register(Buffer.from(woff2Face.bytes), 'Inconsolata WOFF2');
 // per-character estimate (cumulative drift). The fonts above are registered, so
 // a bare SkiaBackend measures with the exact metrics the golden frames draw.
 setSplitMeasurer(new SkiaBackend(8, 8));
+// 0.56 kinetic type presets: revealWords/revealLines call splitText() at BUILD
+// time too, so thread the same real Skia measurer (typeOn needs none).
+setKineticMeasurer(new SkiaBackend(8, 8));
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 const UPDATE = process.env['GOLDEN_UPDATE'] === '1';
@@ -261,6 +265,11 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // the revealFraction count alias driving a typewriter. Pure build-time
   // expansion to ordinary nodes/tracks — byte-stable on Skia by construction.
   { name: 'splittext', mod: goldenSplitText },
+  // 0.56 kinetic type presets: revealWords (word rise+fade cascade) + revealLines
+  // + typeOn string-track + typeOn cursor (render-only caret) + typeOn mask
+  // (render-only grapheme reveal). One-call sugar over the shipped primitives;
+  // pure function of time — byte-stable on Skia by construction.
+  { name: 'kinetic', mod: goldenKinetic },
 ];
 
 for (const { name, mod } of CORPUS) {

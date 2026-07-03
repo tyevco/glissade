@@ -728,6 +728,38 @@ const HELPERS: DescribedHelper[] = [
     usage: 'fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer? }): number',
   },
   {
+    name: 'typeOn',
+    summary:
+      "Kinetic type: one-call typewriter over the shipped typewriter(). DEFAULT emits a STRING hold-key track on `<id>/text` (round-trips to Lottie as stepped text docs). { cursor: true } adds a render-only caret sibling (export warns+drops it); { mask: true } swaps to a render-only `<id>/reveal` grapheme mask (export warns 'reveal not exported'). Factory (no `new`). Inject with tl.tracks([r.track]); draw r.node (+ r.cursor). On @glissade/scene/type.",
+    import: '@glissade/scene/type',
+    usage:
+      "typeOn(source: Text | TextProps, opts?: { perChar?, start?, cursor?: boolean, mask?: boolean, cursorWidth?, blinkPeriod? }): { node: Text, cursor?: TextCursor, track: Track, marks, duration }",
+  },
+  {
+    name: 'revealWords',
+    summary:
+      'Kinetic type: splitText(by:\'word\') → cascade each word in (opacity, optionally rising from \'below\'/dropping from \'above\', or \'fade\'). Returns the split Group as `node` (draw THIS, not the source) plus REAL tracks that round-trip to Lottie. Factory (no `new`). Pass { measurer } for exact geometry. On @glissade/scene/type.',
+    import: '@glissade/scene/type',
+    usage:
+      "revealWords(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }",
+  },
+  {
+    name: 'revealLines',
+    summary:
+      'Kinetic type: like revealWords but splitText(by:\'line\') — cascade each LINE in. Returns the split Group as `node` + REAL tracks (round-trip to Lottie). Factory (no `new`). On @glissade/scene/type.',
+    import: '@glissade/scene/type',
+    usage:
+      "revealLines(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }",
+  },
+  {
+    name: 'emphasizeWords',
+    summary:
+      'Kinetic type: pulse (scale up-and-back) the words at `indices` in reading order, cascaded. FAIL-LOUD: an out-of-range or non-integer index THROWS. Real scale tracks (round-trip to Lottie). Returns the split Group as `node`. Factory (no `new`). On @glissade/scene/type.',
+    import: '@glissade/scene/type',
+    usage:
+      "emphasizeWords(source: Text | TextProps, indices: number[], opts?: { scale?, duration?, each?, ease?, at?, by?: 'word'|'grapheme', id?, measurer? }): { node: Group, tracks: Track[] }",
+  },
+  {
     name: 'Grid',
     summary:
       'Build-time CSS-grid-style track resolver: position plain children into a column grid (fr/px tracks + gaps), returning a Group. Pure fan-out (no Yoga, no new target) — the goldens hold by construction. Tree-shaken off the base scene index.',
