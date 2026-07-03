@@ -60,7 +60,7 @@ import { Circle, Group, Node, Path, Rect, Text, type SceneModule } from '@glissa
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
-import { decimateLinearKeys, sampleToLottieKeys } from './sampleFallback.js';
+import { anchorSampledSpan, decimateLinearKeys, sampleToLottieKeys } from './sampleFallback.js';
 import type {
   LottieDocument,
   LottieFont,
@@ -298,21 +298,28 @@ function combineOpacity(ctx: Ctx, node: Node, tracks: NodeTracks, accum: Opacity
     return { a: 0, k: leafStatic * accum.factor * 100 };
   }
   // Animated: sample the opacity product on the union frame grid, then decimate.
+  // The sampled span starts at the earliest involved key — so a group fade-in
+  // whose first key sits AFTER ip has a leading dormant window that isn't sampled;
+  // anchorSampledSpan pins the true base there so a fading-in element stays HIDDEN
+  // (o=0) before the fade instead of ghosting at its first sample (held backward).
   const span = leafTrack ? [leafTrack, ...accum.tracks] : [...accum.tracks];
   const [f0, f1] = frameSpan(ctx, span);
-  const out: LottieKeyframe[] = [];
-  for (let f = f0; f <= f1; f++) {
-    const t = f / ctx.fr;
+  const sampleAt = (frame: number): number[] => {
+    const t = frame / ctx.fr;
     let product = (leafTrack ? sampleTrack(leafTrack, t) : leafStatic) * accum.factor;
     for (const at of accum.tracks) product *= sampleTrack(at, t);
-    const frame: LottieKeyframe = { t: f, s: [product * 100] };
+    return [product * 100];
+  };
+  const out: LottieKeyframe[] = [];
+  for (let f = f0; f <= f1; f++) {
+    const frame: LottieKeyframe = { t: f, s: sampleAt(f) };
     if (f < f1) {
       frame.o = { x: 0, y: 0 };
       frame.i = { x: 1, y: 1 };
     }
     out.push(frame);
   }
-  return { a: 1, k: decimateLinearKeys(out) };
+  return { a: 1, k: anchorSampledSpan(decimateLinearKeys(out), f0, f1, ctx.ip, ctx.op, sampleAt) };
 }
 
 function scalarProp(ctx: Ctx, tracks: NodeTracks, prop: string, staticVal: number, map: (v: number) => number): LottieProp {
@@ -376,12 +383,15 @@ function sampleComponentVec(
   map: (v: Vec2) => [number, number],
 ): LottieKeyframe[] {
   const [f0, f1] = frameSpan(ctx, [xt, yt]);
-  const out: LottieKeyframe[] = [];
-  for (let f = f0; f <= f1; f++) {
-    const t = f / ctx.fr;
+  const sampleAt = (frame: number): number[] => {
+    const t = frame / ctx.fr;
     const x = xt ? sampleTrack(xt, t) : staticVal[0];
     const y = yt ? sampleTrack(yt, t) : staticVal[1];
-    const frame: LottieKeyframe = { t: f, s: map([x, y]) };
+    return map([x, y]);
+  };
+  const out: LottieKeyframe[] = [];
+  for (let f = f0; f <= f1; f++) {
+    const frame: LottieKeyframe = { t: f, s: sampleAt(f) };
     if (f < f1) {
       frame.o = { x: 0, y: 0 };
       frame.i = { x: 1, y: 1 };
@@ -392,8 +402,11 @@ function sampleComponentVec(
   // so it MUST decimate too — otherwise a per-axis `scale` animation (Lottie has
   // no split-scale form) keeps one key per frame on a channel linear playback
   // could reproduce from a handful (the dominant real-episode bloat: 12 scale
-  // channels × 11.5k keys). Flat numeric payloads, so RDP applies.
-  return decimateLinearKeys(out);
+  // channels × 11.5k keys). Flat numeric payloads, so RDP applies. Anchor the
+  // boundaries too (same discipline) so a per-axis channel starting mid-timeline
+  // holds its base value across the uncovered run instead of holding the first
+  // sample backward.
+  return anchorSampledSpan(decimateLinearKeys(out), f0, f1, ctx.ip, ctx.op, sampleAt);
 }
 
 /** Union frame span of a set of tracks (their first→last key), else [ip, op]. */

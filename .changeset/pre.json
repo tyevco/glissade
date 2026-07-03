@@ -27,6 +27,7 @@
   },
   "changesets": [
     "export-coalesce-multitrack",
+    "export-sampled-boundary",
     "group-opacity-lottie"
   ]
 }

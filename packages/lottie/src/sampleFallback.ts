@@ -55,7 +55,51 @@ export function sampleToLottieKeys<T, S>(
     }
     out.push(frame);
   }
-  return decimateLinearKeys(out);
+  return anchorSampledSpan(decimateLinearKeys(out), f0, f1, ip, op, (frame) => toS(sampleTrack(tr, frame / fr)));
+}
+
+/**
+ * Anchor the document boundaries of a densely-SAMPLED channel whose keyed span
+ * [f0,f1] doesn't reach the document bounds [ip,op]. Lottie extrapolates a channel
+ * by HOLDING its first key backward and its last key forward, so when the span
+ * starts AFTER ip the first EMITTED sample holds backward across the whole leading
+ * dormant run — and for a fade-in whose first key rounds to a frame PAST the fade
+ * start (a fractional key time, `round(t·fr) > t·fr`), that first sample is already
+ * non-zero (e.g. ~9%), so a "hidden" element GHOSTS at ~9% from t=0 instead of 0.
+ * Make the true base explicit:
+ *   • f0 > ip → PREPEND a HOLD key at ip carrying `sampleAt(ip)` — the value
+ *     `sampleTrack` holds across the dormant run (0 for a dormant-at-0 fade). HELD,
+ *     not linearly ramped, so a long dormant window stays at the base value the
+ *     whole way instead of sloping up to the first sample.
+ *   • f1 < op → APPEND a key at op carrying `sampleAt(op)`. Lottie already holds
+ *     the last key forward, but a fractional last-key round-DOWN leaves the true
+ *     tail value unsampled (e.g. a fade-out whose final 0 is skipped); this pins it.
+ * `body` is the already-decimated sampled keyframes; the boundary keys sit OUTSIDE
+ * it, so decimation (which assumes pure linear segments) never touches them. A span
+ * that already covers [ip,op] (the common integer-keyed case) returns `body`
+ * unchanged — byte-identical to before this fix.
+ */
+export function anchorSampledSpan(
+  body: LottieKeyframe[],
+  f0: number,
+  f1: number,
+  ip: number,
+  op: number,
+  sampleAt: (frame: number) => LottieKeyframe['s'],
+): LottieKeyframe[] {
+  if (body.length === 0 || (f0 <= ip && f1 >= op)) return body;
+  const out = body.slice();
+  if (f1 < op) {
+    // the old last key gains a departing linear segment toward the new op key
+    const last = out[out.length - 1]!;
+    out[out.length - 1] = { ...last, o: { x: 0, y: 0 }, i: { x: 1, y: 1 } };
+    out.push({ t: op, s: sampleAt(op) });
+  }
+  if (f0 > ip) {
+    // HOLD the base across the dormant run so it stays hidden, not ramped
+    out.unshift({ t: ip, s: sampleAt(ip), h: 1 });
+  }
+  return out;
 }
 
 /**

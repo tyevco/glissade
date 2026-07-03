@@ -254,6 +254,53 @@ describe('exportLottie', () => {
     expect(keys.some((k) => (k.s as number[])[0]! >= 99)).toBe(true); // fully visible mid-run
   });
 
+  it('anchors a SAMPLED group fade-in starting mid-timeline — leaf HIDDEN (o=0) at ip, not ghosting at the first sample', () => {
+    // Fractional start t=1.009 → round(60.54)=frame 61, PAST the key, so the first
+    // sampled value is already ~7% (easeOutBack, a NAMED ease → the group opacity
+    // bakes via combineOpacity's sampled path). Without the boundary anchor that
+    // ~7% is the first exported keyframe, held BACKWARD to t=0 → the leaf ghosts
+    // across its whole dormant window (ai-training e04 hc-bg residual).
+    const child = new Rect({ id: 'child', width: 10, height: 10, fill: '#fff' });
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Group({ id: 'g', children: [child] })] }),
+      timeline: { version: 1, duration: 4, fps: 60, tracks: [track('g/opacity', 'number', [key(1.009, 0), key(1.5, 1, 'easeOutBack')])] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const o = doc.layers.find((l: LottieLayer) => l.nm === 'child')!.ks!.o as LottieProp;
+    expect(o.a).toBe(1);
+    const keys = kf(o);
+    expect(keys[0]!.t).toBe(0); // a boundary keyframe AT ip, not the first sample at frame 61
+    expect(keys[0]!.s).toEqual([0]); // held base 0 — the leaf is HIDDEN before the fade
+    expect(keys[0]!.h).toBe(1); // HELD across the dormant run (not linearly ramped up)
+  });
+
+  it('anchors a SAMPLED leaf channel starting mid-timeline (sampleToLottieKeys path) — base held at ip', () => {
+    // A direct leaf opacity named-ease track (identity accumulator → scalarKeys →
+    // sampleToLottieKeys): same boundary bug, same fix. Pre-fade value held at base.
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: { version: 1, duration: 4, fps: 60, tracks: [track('box/opacity', 'number', [key(1.009, 0), key(1.5, 1, 'easeOutBack')])] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const keys = kf(doc.layers[0]!.ks!.o as LottieProp);
+    expect(keys[0]!.t).toBe(0);
+    expect(keys[0]!.s).toEqual([0]);
+    expect(keys[0]!.h).toBe(1);
+  });
+
+  it('a SAMPLED channel that already covers [ip,op] gets NO boundary keys (byte-identical to before)', () => {
+    // named-ease opacity keyed at t=0 and t=duration → span == [ip,op] → unchanged.
+    const mod: SceneModule = {
+      createScene: () => createScene({ size: { w: 100, h: 100 }, children: [new Rect({ id: 'box', width: 10, height: 10, fill: '#fff' })] }),
+      timeline: { version: 1, duration: 2, fps: 60, tracks: [track('box/opacity', 'number', [key(0, 0), key(2, 1, 'easeInOutQuad')])] },
+    };
+    const doc = exportLottie(mod, { width: 100, height: 100, fps: 60 });
+    const keys = kf(doc.layers[0]!.ks!.o as LottieProp);
+    expect(keys[0]!.t).toBe(0); // the real sampled start, already at ip
+    expect(keys[0]!.h).toBeUndefined(); // NOT a boundary hold
+    expect(keys[keys.length - 1]!.t).toBe(120); // last key already at op — no appended boundary
+  });
+
   it('is deterministic: same input → byte-identical JSON', () => {
     const a = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));
     const b = JSON.stringify(exportLottie(rectModule(), { width: 200, height: 200, fps: 60 }));

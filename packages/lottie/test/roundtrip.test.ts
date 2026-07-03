@@ -243,6 +243,48 @@ describe('Lottie group-opacity export round-trip (Skia SSIM)', () => {
   });
 });
 
+/**
+ * A Group fading in via a NAMED ease (the sampled bake path) whose first key sits
+ * at a FRACTIONAL time (t=1.009 → frame 60.54 → rounds to 61, PAST the key),
+ * wrapping a large Rect. Before the boundary-anchor fix the baked leaf's first
+ * exported keyframe was the ~7% sample at frame 61, held BACKWARD to t=0 → the
+ * card GHOSTED across its whole dormant window [0, ~1s]. After the fix the base 0
+ * is HELD at ip → the card is hidden until the fade. Fails at dormant frames
+ * before the fix; passes after (ai-training e04 hc-bg residual).
+ */
+function sampledDormantFadeScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 4,
+    fps: FPS,
+    tracks: [track('card/opacity', 'number', [key(1.009, 0), key(1.5, 1, 'easeOutBack')])],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Group({ id: 'card', children: [new Rect({ id: 'a', width: 160, height: 160, fill: '#3366cc', position: [120, 120] })] })],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie sampled-fade boundary export round-trip (Skia SSIM)', () => {
+  it('a sampled group fade-in starting mid-timeline stays HIDDEN in its dormant window (SSIM ≥ 0.98)', async () => {
+    const original = sampledDormantFadeScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    const roundTripped = importLottie(doc).toSceneModule();
+    // frames 15/30/55 are DORMANT (before the t=1.009 fade) → child must be absent;
+    // frames 95/200 are past the fade → visible. All must match the original.
+    for (const frame of [15, 30, 55, 95, 200]) {
+      const t = frame / FPS;
+      const a = await renderPixels(original, t);
+      const b = await renderPixels(roundTripped, t);
+      expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
+    }
+  });
+});
+
 describe('Lottie Text export round-trip (Skia SSIM)', () => {
   it('static text re-imports as a Text node and matches perceptually (SSIM ≥ 0.98)', async () => {
     const original = staticTextScene();
