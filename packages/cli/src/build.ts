@@ -12,17 +12,27 @@
  */
 
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { glissadeVersion } from './version.js';
 import { type BuildStep, PIPELINE, planScene, type StepPlan } from './buildPlan.js';
+import type { MasterRunOptions } from './master.js';
 
 export interface ProjectConfig {
   /** scene module paths or globs (`episodes/**\/*.ts`), relative to the config file. */
   scenes: string[];
   /** output dir for rendered videos (default: alongside each scene as `<base>.mp4`). */
   out?: string;
+  /**
+   * 0.43 project runtime: master the WHOLE project to a SHARED loudness target after
+   * rendering. When set, `gs build` runs a second, cross-scene phase — render all →
+   * BARRIER → master (one shared LUFS target + limiter across every member) → the
+   * render staleness (a changed `<scene>.loudness.json`) remuxes exactly the members
+   * whose gain moved. Absent → the classic per-scene pipeline, unchanged.
+   */
+  master?: MasterRunOptions;
   /** per-scene render/cache defaults. */
   defaults?: {
     fps?: number;
@@ -206,6 +216,40 @@ export function applicableSteps(scene: string): BuildStep[] {
   return PIPELINE.filter((s) => steps.includes(s));
 }
 
+// ── affected-scene selection (0.43: gs build --affected <ref>) ───────────────
+/** Every input file whose change makes a scene stale — the scene source + every
+ *  step's inputs (upstream sidecars included), as absolute paths. */
+export function sceneInputFiles(scene: string): string[] {
+  const files = new Set<string>([scene]);
+  for (const step of applicableSteps(scene)) for (const f of stepInputs(scene, step)) files.add(f);
+  return [...files];
+}
+
+/**
+ * Restrict a scene list to those a git diff TOUCHED — a scene is affected when any
+ * of its input files (source + sidecars) is in `changedPaths`. Pure: the caller
+ * supplies the resolved changed-file set (from `gitChangedFiles`), so the whole
+ * selector is unit-testable without git. This is a COARSE pre-filter on top of the
+ * per-step content-hash staleness (planScene still hash-checks each selected scene),
+ * so it never runs a scene the diff didn't touch, and never skips a real hash change
+ * within the ones it keeps. `changedPaths` are absolute.
+ */
+export function affectedScenes(scenes: readonly string[], changedPaths: ReadonlySet<string>): string[] {
+  return scenes.filter((s) => sceneInputFiles(s).some((f) => changedPaths.has(f)));
+}
+
+/** The files changed since a git ref (`git diff --name-only <ref>`), as absolute paths. */
+export function gitChangedFiles(ref: string, root: string): Set<string> {
+  const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim();
+  const out = execFileSync('git', ['diff', '--name-only', ref], { cwd: root, encoding: 'utf8' });
+  const files = new Set<string>();
+  for (const line of out.split('\n')) {
+    const rel = line.trim();
+    if (rel) files.add(resolve(top, rel));
+  }
+  return files;
+}
+
 // ── content hash ─────────────────────────────────────────────────────────────
 export function hashInputs(paths: readonly string[], salt: string): string {
   const h = createHash('sha256').update(salt).update('\0');
@@ -243,6 +287,10 @@ function saveManifest(root: string, m: BuildManifest): void {
 export interface BuildDeps {
   /** Execute one pipeline step for a scene. Default delegates to the shipped commands. */
   runStep: (scene: string, step: BuildStep, cfg: ProjectConfig, videoPath: string) => Promise<void>;
+  /** Master the whole project to a shared target (0.43). Default delegates to `runMaster`;
+   *  injectable so the two-phase orchestration is testable without ffmpeg. Returns the
+   *  number of members mastered (it commits each member's `loudness.json`). */
+  runMaster?: (members: readonly string[], opts: MasterRunOptions, log: (l: string) => void) => Promise<number>;
 }
 
 export interface BuildOptions {
@@ -251,6 +299,10 @@ export interface BuildOptions {
   explain?: boolean;
   /** restrict to scenes whose path contains one of these substrings (`gs build e07`). */
   only?: string[];
+  /** restrict to scenes a git diff since this ref TOUCHED (`gs build --affected main`) —
+   *  the "rebuild only what this change set touched" pre-filter, composed with the
+   *  normal content-hash staleness within the selected scenes. */
+  affected?: string;
   onLog?: (line: string) => void;
 }
 
@@ -259,48 +311,101 @@ export interface BuildResult {
   ran: number;
   skipped: number;
   plans: StepPlan[];
+  /** members mastered in the shared-target phase (0 when no `master` config). */
+  mastered: number;
 }
 
-export async function buildCommand(opts: BuildOptions, deps: BuildDeps = { runStep: defaultRunStep }): Promise<BuildResult> {
-  const cfg = await loadConfig(opts.config);
-  const root = dirname(resolve(opts.config));
-  let scenes = resolveScenes(cfg.scenes, root);
-  if (opts.only?.length) scenes = scenes.filter((s) => opts.only!.some((o) => s.includes(o)));
-  const version = glissadeVersion();
-  const manifest = loadManifest(root);
-  const log = opts.onLog ?? (() => {});
-  const allPlans: StepPlan[] = [];
+/** One pass of the per-scene pipeline (plan run/skip per step, execute the stale ones,
+ *  record hashes). Shared by the render phase and the post-master remux phase — the
+ *  same staleness machinery, so the master's committed loudness re-runs exactly the
+ *  render steps whose `loudness.json` changed. Mutates `manifest` in place. */
+async function runScenePass(
+  scenes: readonly string[],
+  cfg: ProjectConfig,
+  root: string,
+  version: string,
+  manifest: BuildManifest,
+  deps: BuildDeps,
+  explain: boolean,
+  log: (line: string) => void,
+): Promise<{ ran: number; skipped: number; plans: StepPlan[] }> {
+  const plans: StepPlan[] = [];
   let ran = 0;
   let skipped = 0;
-
   for (const scene of scenes) {
     const key = relative(root, scene);
     const rec = manifest.scenes[key] ?? {};
     const videoPath = outputVideo(scene, cfg, root);
     const steps = applicableSteps(scene);
-    const plans = planScene(key, steps, {
+    const scenePlans = planScene(key, steps, {
       currentHash: (step) => hashInputs(stepInputs(scene, step), stepSalt(step, cfg, version)),
       recordedHash: (step) => rec[step],
       outputExists: (step) => existsSync(stepOutput(scene, step, videoPath)),
     });
-    for (const plan of plans) {
+    for (const plan of scenePlans) {
       log(`${key}  ${plan.step}: ${plan.action} (${plan.reason})`);
       if (plan.action === 'skip') {
         skipped++;
         continue;
       }
       ran++;
-      if (!opts.explain) {
+      if (!explain) {
         await deps.runStep(scene, plan.step, cfg, videoPath);
         // record the input hash AFTER the step ran (upstream outputs are now fresh)
         rec[plan.step] = hashInputs(stepInputs(scene, plan.step), stepSalt(plan.step, cfg, version));
       }
     }
     manifest.scenes[key] = rec;
-    allPlans.push(...plans);
+    plans.push(...scenePlans);
   }
+  return { ran, skipped, plans };
+}
+
+export async function buildCommand(opts: BuildOptions, deps: BuildDeps = { runStep: defaultRunStep }): Promise<BuildResult> {
+  const cfg = await loadConfig(opts.config);
+  const root = dirname(resolve(opts.config));
+  const allScenes = resolveScenes(cfg.scenes, root);
+  let renderScenes = allScenes;
+  if (opts.only?.length) renderScenes = renderScenes.filter((s) => opts.only!.some((o) => s.includes(o)));
+  if (opts.affected !== undefined) renderScenes = affectedScenes(renderScenes, gitChangedFiles(opts.affected, root));
+  const version = glissadeVersion();
+  const manifest = loadManifest(root);
+  const log = opts.onLog ?? (() => {});
+
+  // ── Phase 1: the per-scene pipeline for the selected scenes ──
+  const p1 = await runScenePass(renderScenes, cfg, root, version, manifest, deps, !!opts.explain, log);
+  let ran = p1.ran;
+  let skipped = p1.skipped;
+  const allPlans = [...p1.plans];
+  let mastered = 0;
+
+  // ── Phase 2+3 (project runtime): master the WHOLE project to a shared target, then
+  // remux the members whose loudness moved. Master needs ALL members (the shared
+  // target is the quietest member's reach), so it uses the full set, not --affected. ──
+  if (cfg.master && allScenes.length > 0) {
+    if (opts.explain) {
+      log(`master: WOULD master ${allScenes.length} member(s) to a shared target, then remux any whose loudness moves`);
+    } else {
+      log('master: shared-target loudness across the project');
+      const doMaster = deps.runMaster ?? defaultRunMaster;
+      mastered = await doMaster(allScenes, cfg.master, log);
+      // The render staleness (a changed loudness.json) re-runs render as a mix-only remux.
+      const p3 = await runScenePass(allScenes, cfg, root, version, manifest, deps, false, log);
+      ran += p3.ran;
+      skipped += p3.skipped;
+      allPlans.push(...p3.plans);
+    }
+  }
+
   if (!opts.explain) saveManifest(root, manifest);
-  return { scenes: scenes.length, ran, skipped, plans: allPlans };
+  return { scenes: renderScenes.length, ran, skipped, plans: allPlans, mastered };
+}
+
+/** Default project-master executor — the real shared-target `runMaster`. */
+async function defaultRunMaster(members: readonly string[], opts: MasterRunOptions, log: (l: string) => void): Promise<number> {
+  const { runMaster } = await import('./master.js');
+  const res = await runMaster(members, opts, log);
+  return res.members.length;
 }
 
 /** Default step executor — the shipped commands. */

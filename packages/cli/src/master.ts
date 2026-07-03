@@ -208,16 +208,42 @@ export interface MasterCommandOptions {
 export async function masterCommand(opts: MasterCommandOptions): Promise<MasterResult> {
   const raw = JSON.parse(readFileSync(opts.configPath, 'utf8')) as unknown;
   const cfg = normalizeMasterConfig(raw);
-  const profile = resolveProfile(cfg.profile);
-  const log = opts.onLog ?? ((): void => {});
-
   const { resolveScenes } = await import('./build.js');
-  const { buildMixWav, collectMixAudioInputs } = await import('./render.js');
   const members = resolveScenes(cfg.members, process.cwd());
   if (members.length === 0) throw new MasterError(`master: no scenes matched members ${JSON.stringify(cfg.members)}`);
+  return runMaster(members, { profile: cfg.profile, limiter: cfg.limiter, consistency: cfg.consistency }, opts.onLog);
+}
 
-  const ceilingDb = cfg.limiter?.ceilingDb ?? profile.truePeakDb;
-  const committedLimiter: CommittedLimiter | null = cfg.limiter ? { mode: 'truepeak', ceilingDb } : null;
+/** The shared-target loudness options a master pass needs, minus the member list. */
+export interface MasterRunOptions {
+  profile?: string;
+  limiter?: MasterLimiter | false | null;
+  consistency?: 'shared-target' | 'per-asset';
+}
+
+/**
+ * The master core, callable with ALREADY-RESOLVED member paths + options — so both
+ * `gs master <glissade.master.json>` and the 0.43 project runtime's shared-master
+ * phase drive it (the runtime passes the project's scenes as members directly, no
+ * temp config file). Measures every member's mix, plans one shared target, and
+ * commits `<scene>.loudness.json` ×N with the limiter block (render applies it as a
+ * mix-only remux under the mixHash preflight).
+ */
+export async function runMaster(
+  members: readonly string[],
+  opts: MasterRunOptions = {},
+  onLog?: (line: string) => void,
+): Promise<MasterResult> {
+  const profile = resolveProfile(opts.profile ?? 'youtube');
+  const consistency: 'shared-target' | 'per-asset' = opts.consistency ?? 'shared-target';
+  const limiter: MasterLimiter | null = opts.limiter || null;
+  const log = onLog ?? ((): void => {});
+
+  const { buildMixWav, collectMixAudioInputs } = await import('./render.js');
+  if (members.length === 0) throw new MasterError('master: no members to master');
+
+  const ceilingDb = limiter?.ceilingDb ?? profile.truePeakDb;
+  const committedLimiter: CommittedLimiter | null = limiter ? { mode: 'truepeak', ceilingDb } : null;
 
   const tmp = mkdtempSync(join(tmpdir(), 'glissade-master-'));
   try {
@@ -239,7 +265,7 @@ export async function masterCommand(opts: MasterCommandOptions): Promise<MasterR
     const plan = planMaster(
       measured.map((m) => ({ id: m.id, inputI: m.inputI, inputTp: m.inputTp })),
       profile,
-      { limiter: cfg.limiter, consistency: cfg.consistency },
+      { limiter, consistency },
     );
     log(`shared target ${plan.sharedTarget} LUFS, ceiling ${ceilingDb} dBTP${plan.limiter ? '' : ' (no limiter — legacy peak-clamp)'}`);
 

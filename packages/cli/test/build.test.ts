@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildCommand, hashInputs, mixDefaults, renderDefaults, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
+import { affectedScenes, buildCommand, hashInputs, mixDefaults, renderDefaults, sceneInputFiles, stepInputs, stepOutput, stepSalt, type BuildDeps } from '../src/build.js';
 
 let root: string;
 let calls: string[];
@@ -150,5 +150,84 @@ describe('gs build — render-option defaults (0.33, the burned-captions gap)', 
     const r = await buildCommand({ config: config() }, recorder);
     expect(calls).toEqual([]);
     expect(r.ran).toBe(0);
+  });
+});
+
+describe('affected-scene selection (0.43 gs build --affected)', () => {
+  // Non-existent paths → applicableSteps resolves to ['render'] deterministically,
+  // so sceneInputFiles = the render inputs (source + the four sidecars) — no fixtures.
+  const scenes = ['/proj/a.ts', '/proj/b.ts', '/proj/c.ts'];
+
+  it('sceneInputFiles includes the source + its (upstream) sidecar inputs', () => {
+    const files = sceneInputFiles('/proj/a.ts');
+    expect(files).toContain('/proj/a.ts');
+    expect(files).toContain('/proj/a.narration.timing.json'); // a render input
+    expect(files).toContain('/proj/a.loudness.json');
+  });
+
+  it('selects a scene whose SOURCE changed', () => {
+    expect(affectedScenes(scenes, new Set(['/proj/b.ts']))).toEqual(['/proj/b.ts']);
+  });
+
+  it('selects a scene whose SIDECAR input changed (upstream edit)', () => {
+    expect(affectedScenes(scenes, new Set(['/proj/c.narration.timing.json']))).toEqual(['/proj/c.ts']);
+  });
+
+  it('selects MULTIPLE affected scenes, preserving order', () => {
+    expect(affectedScenes(scenes, new Set(['/proj/a.ts', '/proj/c.loudness.json']))).toEqual(['/proj/a.ts', '/proj/c.ts']);
+  });
+
+  it('selects NOTHING when the diff touched no scene input (the CI no-op fast path)', () => {
+    expect(affectedScenes(scenes, new Set(['/proj/README.md', '/proj/unrelated.ts']))).toEqual([]);
+  });
+});
+
+describe('project runtime — shared-master phase (0.43 sub-card A)', () => {
+  // A master stub that commits a NEW loudness.json per member (as the real runMaster
+  // does), so the render staleness (loudness.json is a render input) remuxes them.
+  const masterCalls: string[] = [];
+  const withMaster: BuildDeps = {
+    runStep: recorder.runStep,
+    runMaster: async (members) => {
+      for (const m of members) {
+        masterCalls.push(basename(m));
+        writeFileSync(m.replace(/\.ts$/, '.loudness.json'), `MASTERED ${basename(m)}`); // shared-target commit
+      }
+      return members.length;
+    },
+  };
+  const withMasterConfig = () =>
+    writeFileSync(join(root, 'glissade.config.ts'), `export default { scenes: ['e01.ts', 'e02.ts'], master: { limiter: false } };\n`);
+
+  beforeEach(() => { masterCalls.length = 0; });
+
+  it('renders all → masters the whole project → remuxes each member (render re-runs after the barrier)', async () => {
+    withMasterConfig();
+    const r = await buildCommand({ config: config() }, withMaster);
+    expect(r.mastered).toBe(2); // both members mastered
+    expect(masterCalls.sort()).toEqual(['e01.ts', 'e02.ts']); // master ran over the full project
+    // render appears TWICE per scene: phase-1 render + phase-3 remux (loudness moved)
+    expect(calls.filter((c) => c === 'e01.ts:render')).toHaveLength(2);
+    expect(calls.filter((c) => c === 'e02.ts:render')).toHaveLength(2);
+    // narrate/measure-loudness ran ONCE (fresh in phase 3 — their inputs didn't change)
+    expect(calls.filter((c) => c === 'e01.ts:narrate')).toHaveLength(1);
+    expect(calls.filter((c) => c === 'e01.ts:measure-loudness')).toHaveLength(1);
+  });
+
+  it('a no-change rebuild masters + settles (only the master pass runs, no re-render)', async () => {
+    withMasterConfig();
+    await buildCommand({ config: config() }, withMaster);
+    calls.length = 0; masterCalls.length = 0;
+    const r = await buildCommand({ config: config() }, withMaster);
+    expect(r.mastered).toBe(2); // master re-runs (measures the set every build — MVP)
+    // but the committed loudness is byte-identical → render stays fresh, no remux
+    expect(calls.filter((c) => c.endsWith(':render'))).toEqual([]);
+  });
+
+  it('NO master config → the classic single-phase pipeline (mastered=0, back-compat)', async () => {
+    const r = await buildCommand({ config: config() }, withMaster); // config() has no master
+    expect(r.mastered).toBe(0);
+    expect(masterCalls).toEqual([]);
+    expect(calls.filter((c) => c === 'e01.ts:render')).toHaveLength(1); // rendered once, no remux phase
   });
 });

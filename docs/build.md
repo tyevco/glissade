@@ -53,3 +53,39 @@ The per-scene state lives in `.gsbuild.json` next to the config; the committed
 step outputs (`*.timing.json`, `*.loudness.json`, the videos) are the artifacts.
 Deleting `.gsbuild.json` forces a full rebuild — outputs are re-verified by
 content, so an unchanged project settles back to all-fresh after one pass.
+
+## Project runtime: `--affected` + a shared master (0.43)
+
+`gs build` is a project runtime, not just a per-scene loop.
+
+### Rebuild only what a change touched — `--affected`
+
+In CI you rarely want to re-hash every scene's inputs. `gs build --affected <git-ref>` pre-filters to the scenes a git diff since `<ref>` **touched** — a scene is affected when its source or any of its sidecar inputs changed:
+
+```sh
+gs build --affected origin/main       # only scenes this branch changed
+gs build --affected HEAD~1 --explain  # what would the last commit rebuild?
+```
+
+It composes with the normal content-hash staleness: `--affected` narrows the set, then each kept scene is still hash-checked (so a scene the diff touched but whose *output-affecting* inputs are unchanged still skips). It never runs a scene the diff didn't touch, and never skips a real change within the ones it keeps.
+
+### Master the whole project to a shared target
+
+Add a `master` block to the config and `gs build` runs a second, cross-scene phase after rendering — the series-level [shared-target loudness](/mastering) applied as part of the build:
+
+```ts
+// glissade.config.ts
+import { defineProject } from '@glissade/cli/config';
+export default defineProject({
+  scenes: ['episodes/**/*.ts'],
+  master: { profile: 'youtube', consistency: 'shared-target' }, // limiter on by default
+});
+```
+
+The runtime is then a two-phase schedule with an explicit barrier:
+
+1. **render** every stale scene (each with its own per-scene loudness), then
+2. **barrier** → **master**: measure every member, plan one shared LUFS target + true-peak limiter across the whole project, and commit each `<scene>.loudness.json`, then
+3. the render staleness takes over — a member whose committed loudness *moved* is now stale, so it **remuxes** (a fast mix-only re-encode, not a full re-render) to apply the shared gain. A member whose loudness is unchanged stays fresh.
+
+The master phase always measures **all** members (the shared target is the quietest member's reach, so it can't be computed from a subset) — so `--affected` narrows the expensive *render* phase, while the master + remux still consider the whole project. An unchanged project settles: the master re-commits byte-identical loudness, so nothing remuxes on the second pass.

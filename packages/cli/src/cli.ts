@@ -47,7 +47,7 @@ const USAGE = `usage:
   gs fonts audit <scene-module>   list registered families, formats, and missing-glyph runs (§3.6)
   gs cache verify <scene-module> [--range a..b] [--sample <n>]   assert cache hits == cold renders (§3.5)
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
-  gs build [filter...] [--config <glissade.config.ts>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree
+  gs build [filter...] [--config <glissade.config.ts>] [--affected <git-ref>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree. --affected <ref> pre-filters to scenes a git diff since <ref> touched (rebuild only what a change set touched; composed with the per-step content-hash staleness)
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
@@ -197,6 +197,7 @@ async function main(): Promise<void> {
         config,
         explain,
         ...(bp.length ? { only: bp } : {}),
+        ...(bf.get('affected') ? { affected: bf.get('affected')! } : {}),
         onLog: (line) => process.stderr.write(`${line}\n`),
       });
       process.stderr.write(
