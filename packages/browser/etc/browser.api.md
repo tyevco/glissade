@@ -5,6 +5,9 @@
 ```ts
 
 import { bandScale } from '@glissade/scene/chart';
+import { Camera } from '@glissade/scene/motion';
+import { camera } from '@glissade/scene/motion';
+import { CameraError } from '@glissade/scene/motion';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { Chart } from '@glissade/scene/chart';
 import { childId } from '@glissade/scene/component';
@@ -48,11 +51,19 @@ import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 import { Row } from '@glissade/scene/layout-ctors';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
+import { shake } from '@glissade/scene/motion';
+import { shakeOffset } from '@glissade/scene/motion';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
 
 export { bandScale }
+
+export { Camera }
+
+export { camera }
+
+export { CameraError }
 
 export { Canvas2DBackend }
 
@@ -139,6 +150,10 @@ export { renderToDataURL }
 export { Row }
 
 export { setShaderRunner }
+
+export { shake }
+
+export { shakeOffset }
 
 export { snapshotCanvas }
 

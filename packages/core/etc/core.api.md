@@ -831,6 +831,9 @@ export interface ValidateFontsOptions {
 // @public (undocumented)
 export function validateTrack(track: Track): void;
 
+// @public
+export function valueNoise(seed: number, t: number): number;
+
 // @public (undocumented)
 export interface ValueType<T> {
     add?(a: T, b: T): T;

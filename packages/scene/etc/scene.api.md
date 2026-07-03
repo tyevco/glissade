@@ -462,6 +462,10 @@ export interface EvalContext {
     readonly frame: number;
     readonly measurer: TextMeasurer;
     readonly playhead?: Playhead;
+    readonly size?: {
+        readonly w: number;
+        readonly h: number;
+    };
     readonly time: number;
 }
 

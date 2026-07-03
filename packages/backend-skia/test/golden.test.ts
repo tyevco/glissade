@@ -30,6 +30,7 @@ import goldenMotionPath from '../../examples/src/scenes/golden-motionpath.js';
 import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
+import goldenCamera from '../../examples/src/scenes/golden-camera.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
 import goldenGauge from '../../examples/src/scenes/golden-gauge.js';
 import goldenExpr from '../../examples/src/scenes/golden-expr.js';
@@ -173,6 +174,11 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // shutter and averaged (running-mean) → a real smear, vs a crisp reference dot.
   // Pure multi-time re-eval (playhead re-addressed + restored), byte-stable on Skia.
   { name: 'motionblur', mod: goldenMotionBlur },
+  // 0.55 Camera rig: a push-in (cam/zoom ramp + cam/center pan) over a 2-depth
+  // parallax layer stack under a fixed-seed whole-frame shake, with an anchor:'left'
+  // bar (no-double-shift composition contract) and a pinned caption SIBLING. Pose is
+  // keyed tracks + closed-form shake → a pure function of time, byte-stable on Skia.
+  { name: 'camera', mod: goldenCamera },
   // the data-motion stack: a table → bar chart (build-time fan-out), a staggered
   // rise-in then a bar-chart race from ordinary per-bar height tracks
   { name: 'chart', mod: goldenChart },

@@ -86,6 +86,10 @@ export { followPath, motionPath, pointAtLength, pathLength, FollowPath } from '@
 // design agent reaches for `window.glissade.orientToPath` / `.lookAt`, so the
 // convenience bundle re-exports them here too (same rationale as followPath).
 export { orientToPath, lookAt, OrientToPath, LookAt } from '@glissade/scene/motion';
+// 0.55 Camera rig + shake driver (cinematic camera moves + deterministic pose
+// jitter): the no-build design agent reaches for window.glissade.camera / .shake,
+// so the convenience bundle re-exports them here (same rationale as followPath).
+export { Camera, camera, CameraError, shake, shakeOffset } from '@glissade/scene/motion';
 // `tokenHighlight` (the PRODUCTION token-highlight render component — visible
 // sub-line token tell-tags) lives on the tree-shakeable `@glissade/scene/tokens`
 // subpath (off the base scene index for the scene budget; the ai-training finding

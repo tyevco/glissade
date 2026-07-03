@@ -86,6 +86,15 @@ export interface EvalContext {
    * playhead-dependent node degrades gracefully (Echo → a plain group).
    */
   readonly playhead?: Playhead;
+  /**
+   * The scene VIEWPORT size (`scene.size`) this evaluate targets — the only
+   * ambient-frame datum a node may read (a Camera needs the screen center to pan
+   * about / zoom into a RELATIVE focal point). OPTIONAL: `evaluate()`/
+   * `emitWithIds()` supply it; a bare hand-built ctx (a unit test emitting one
+   * node) may omit it, and a size-dependent node fails loud when it's absent.
+   * Reading it is byte-neutral for every existing node — nothing else consults it.
+   */
+  readonly size?: { readonly w: number; readonly h: number };
 }
 
 /** A property initializer: a value, or a computed source (§2.1). */

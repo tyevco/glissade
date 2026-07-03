@@ -23,6 +23,7 @@ import marker from './scenes/golden-marker.js';
 import orient from './scenes/golden-orient.js';
 import echoTrail from './scenes/golden-echo.js';
 import motionblur from './scenes/golden-motionblur.js';
+import cameraRig from './scenes/golden-camera.js';
 import chart from './scenes/golden-chart.js';
 import gauge from './scenes/golden-gauge.js';
 import expr from './scenes/golden-expr.js';
@@ -62,6 +63,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   orient: { mod: orient, blurb: 'Orientation drivers: a rocket laps a track with its POSITION owned by followPath and its ROTATION by a separate orientToPath (banking to the tangent), while a center turret uses lookAt to always face the orbiting rocket — pure, tree-shakeable motion helpers.' },
   echo: { mod: echoTrail, blurb: 'Echo motion trails: a dot orbits leaving six fading ghost copies at earlier playhead offsets — Echo re-addresses the scene playhead per copy and restores it, so the whole comet trail is a PURE function of the current time (byte-compared on Skia in CI).' },
   motionblur: { mod: motionblur, blurb: 'Sampled motion blur: a fast dot is rendered at 16 sub-frame times across the shutter and AVERAGED (running-mean), so it smears like a real analog shutter while the crisp reference dot stays sharp — a pure multi-time re-eval, byte-exact on Skia.' },
+  camera: { mod: cameraRig, blurb: 'Camera rig: a push-in (cam/zoom ramps while cam/center pans) over a 2-depth layer stack — the far backdrop parallaxes (pans less) while the focal plane leads — under a fixed-seed whole-frame shake. The camera transforms the WORLD as a parent transform, so an anchor:\'left\' bar stays anchored (no double-shift), and the caption is a SIBLING outside the rig so it stays pinned. Byte-compared on Skia.' },
   chart: { mod: chart, blurb: 'The data-motion stack: Chart() binds a table → bar chart as a pure build-time fan-out (like Grid), each bar a Rect pinned to the axis and grown from its base. The bars rise in staggered, then RACE to a second dataset — all from ordinary per-bar height tracks, colours from a value ramp. Byte-compared on Skia in CI.' },
   expr: { mod: expr, blurb: 'The Expr authoring stack: every animated prop is a FORMULA of the playhead t via tl.expr(target, formula) — no keyframes. Three orbs ride Lissajous paths (cx + A*sin(t*a)) with radii/opacity pulsing on sin/cos, a whitelist of pure math functions + seeded rand. Binds through the same time channel as keyframes → byte-compared on Skia in CI.' },
   gauge: { mod: gauge, blurb: 'The radial data-viz stack: Gauge() fans a spec → N stroked-arc zones + boundary ticks + a needle + separate labels (a build-time fan-out, like Chart). The needle is scripted — it overshoots into the left zone, whips right, then settles dead center — while the extreme zones dim independently of their labels (zone opacity and label opacity are separate channels). value→angle Meter mode is one prop away. Byte-compared on Skia in CI.' },

@@ -630,6 +630,28 @@ const HELPERS: DescribedHelper[] = [
     usage: 'echo(child: Node, opts?: { id?, count?: number, spacing?: number, decay?: number }): Echo',
   },
   {
+    name: 'camera',
+    summary:
+      "A cinematic camera rig (FACTORY, no `new`): a Group subclass that applies the inverse camera pose as a parent transform over layered content — push-ins, pans, rolls, and pan-only parallax by layer depth. The pose (center/zoom/roll) are keyframeable track targets; the world moves while nodes stay node-local (no double-apply with anchors). Captions belong as SIBLINGS of the camera (outside the rig) so they stay pinned. Tree-shakeable (@glissade/scene/motion).",
+    import: '@glissade/scene/motion',
+    usage:
+      "camera(layers: { content: Node, depth? }[], props?: { id?, center?, zoom?, roll?, shake? }): Camera  —  center is RELATIVE viewport coords ([0.5,0.5]=center, never px); animate 'cam/center(.x/.y)', 'cam/zoom', 'cam/roll'. depth<1 = far (parallax pans less).",
+  },
+  {
+    name: 'shake',
+    summary:
+      'A standalone jitter driver (mutate-and-return, like orientToPath): wobbles ANY node’s pose with deterministic value noise, folded in at emit as a parent-space offset so it composes with whatever else drives the node. SEPARATE translate (px) / rotate (deg) / frequency (Hz) amplitudes; pure and byte-identical run-to-run (seeded, no Date/Math.random). Tree-shakeable (@glissade/scene/motion).',
+    import: '@glissade/scene/motion',
+    usage: 'shake(node: Node, opts: { seed: number, translate?: number, rotate?: number, frequency?: number }): Node',
+  },
+  {
+    name: 'valueNoise',
+    summary:
+      'Closed-form smooth value noise: a PURE function of (seed, t) — lerp(rand(⌊t⌋), rand(⌊t⌋+1), smoothstep(fract t)) with core’s seeded hash. No state, no bake; deterministic by construction (byte-identical run-to-run), fps-independent, O(1), seekable — the closed-form sibling of a spring. Range [0,1); center a signed wobble with *2-1. The primitive behind shake + camera shake.',
+    import: '@glissade/core',
+    usage: 'valueNoise(seed: number, t: number): number  //  jitterX = () => 3 * (valueNoise(7, t) * 2 - 1)',
+  },
+  {
     name: 'motionBlur',
     summary:
       'Real sampled motion blur: wrap a child so it renders at N sub-frame times across a shutter interval (centered on the frame) and AVERAGES them — tracks every animated prop, not a faked directional blur. A pure multi-time re-eval (playhead re-addressed per sample, running-mean opacity, restored), byte-exact on Skia; browser↔Skia is perceptual-tier for blur.',

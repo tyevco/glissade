@@ -194,6 +194,11 @@ export {
 
 export { random, type Rng } from './rng.js';
 
+// Closed-form smooth value noise (pure fn of seed+t) — a deterministic wobble
+// primitive reused by the shake driver + camera whole-frame shake. On the base
+// core index (a small, reusable §5.5 sibling of `random`).
+export { valueNoise } from './noise.js';
+
 export {
   bake,
   bakeCheckpointed,

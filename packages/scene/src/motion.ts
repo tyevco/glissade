@@ -27,3 +27,8 @@ export {
   type OrientToPathProps,
   type LookAtProps,
 } from './orient.js';
+
+// 0.55 Camera rig + the standalone shake driver — cinematic camera moves
+// (push-in/pan/roll/parallax) + deterministic pose jitter. Off the base embed.
+export { Camera, camera, CameraError, type CameraLayer, type CameraProps } from './camera.js';
+export { shake, shakeOffset, type ShakeSpec } from './shake.js';
