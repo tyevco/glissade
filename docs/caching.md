@@ -87,3 +87,16 @@ This is the contract that makes it safe: a warm splice is **byte-for-byte identi
 - **An encode-param change** — a different codec, container, fps, or frame range; a kept segment is only byte-faithful under an identical surrounding encode.
 - **A GPU/shader scene** — its output isn't reproducible across the child-process boundary the splice re-renders in (pass `--allow-gpu-shards` to override, at your own risk).
 - **A pre-0.41 manifest** — one without the per-frame key vector; the next render adds it.
+
+### Where the win comes from — it's front-loaded, not uniform
+
+`--incremental` re-renders the changed frame runs and splices the rest, so the saving is proportional to **how much of the timeline precedes your edit** — it saves everything *before* the edit, not "the one beat you touched." On a timeline where beats are anchored to narration (or anything that shifts every later beat when one changes), a **mid-timeline** edit re-flows the entire downstream tail, so only the head before the edit splices:
+
+| edit location | changed frames | typical win |
+| --- | --- | --- |
+| a late / last beat | ~none downstream | large — a truly-final-line edit collapses the warm render to just the FFV1→final-encode pass (length-bound, not the full re-render) |
+| mid-timeline | the whole tail after the edit | modest — only the head before the edit is saved |
+
+Measured on a real ~52-minute narration-anchored episode (1530-frame short segment): a last-segment word change re-rendered **0/1530** frames (**5.06×** faster than a cold render); a mid-timeline word change re-rendered **637/1530** (**1.23×**). Both were byte-identical to a cold `--incremental` render. So `--incremental` retires the full re-render for **late-edit** iteration — the common "fix the ending / tweak the last line" loop — and still helps, less dramatically, for mid-timeline edits.
+
+One eligibility subtlety for narration-driven projects: a re-narration usually changes the audio *duration*, and if your render length is derived from that duration the **frame count changes → full-render fallback** (the key vectors can't align). Padding the render to a **fixed, duration-invariant length** keeps `--incremental` eligible across re-narrations — the frame count stays constant, so only the content keys of the shifted beats differ.
