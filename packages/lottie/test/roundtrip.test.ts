@@ -12,7 +12,7 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { key, track, type Timeline } from '@glissade/core';
-import { createScene, evaluate, Group, Rect, Text, type SceneModule } from '@glissade/scene';
+import { breakLines, createScene, evaluate, Group, Rect, Text, type FontSpec, type SceneModule } from '@glissade/scene';
 import { SkiaBackend, ssim, createMeasurer } from '@glissade/backend-skia';
 import { exportLottie } from '../src/export.js';
 import { importLottie } from '../src/index.js';
@@ -27,7 +27,9 @@ const FPS = 60;
 // family (memory: sans-serif diverges byte-wise in CI; a real registered face is
 // stable). Both scenes reference it, so the export→import→render loop is exercised.
 const FAMILY = 'DejaVu Sans';
-createMeasurer({ fonts: { [FAMILY]: fileURLToPath(new URL('../../examples/assets/fonts/DejaVuSans.ttf', import.meta.url)) } });
+// Capture the Skia measurer instance (also registers the face globally) so the
+// width-wrap tests can hand it to exportLottie for a faithful wrap bake.
+const MEASURER = createMeasurer({ fonts: { [FAMILY]: fileURLToPath(new URL('../../examples/assets/fonts/DejaVuSans.ttf', import.meta.url)) } });
 
 /** A Rect animated on position (cubicBezier), rotation, and opacity + a hold tail. */
 function mappableScene(): SceneModule {
@@ -402,5 +404,82 @@ describe('Lottie Text export round-trip (Skia SSIM)', () => {
       const b = await renderPixels(roundTripped, t);
       expect(ssim(a, b, W, H), `frame ${frame}`).toBeGreaterThanOrEqual(0.98);
     }
+  });
+});
+
+// --- width-wrap bake ---
+
+const WRAP_TEXT = 'Glissade renders motion graphics deterministically from data';
+const WRAP_WIDTH = 200;
+const WRAP_SIZE = 26;
+// Matches the FontSpec exportLottie builds for the node (weight 400 default) so a
+// direct breakLines() computes the SAME wrap points the exporter bakes.
+const WRAP_FONT: FontSpec = { family: FAMILY, size: WRAP_SIZE, weight: 400 };
+
+/** A left-aligned Text with a wrap `width` (and NO explicit '\n'): the collapse case. */
+function wrapTextScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Text({ id: 'para', text: WRAP_TEXT, fill: '#222222', fontSize: WRAP_SIZE, fontFamily: FAMILY, width: WRAP_WIDTH, position: [20, 40] })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+/** The same paragraph whose wrap `width` animates 120 → 220 (narrow → wide). */
+function animatedWrapWidthScene(): SceneModule {
+  const timeline: Timeline = {
+    version: 1,
+    duration: 1,
+    fps: FPS,
+    tracks: [track('para/width', 'number', [key(0, 120), key(1, 220)])],
+  };
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Text({ id: 'para', text: WRAP_TEXT, fill: '#222222', fontSize: WRAP_SIZE, fontFamily: FAMILY, width: 120, position: [20, 40] })],
+      }),
+    timeline,
+  };
+}
+
+describe('Lottie width-wrap Text export bake', () => {
+  it('bakes the wrapped lines into the doc `t` at the exact breakLines wrap points', () => {
+    const doc = exportLottie(wrapTextScene(), { width: W, height: H, fps: FPS, measurer: MEASURER });
+    const layer = doc.layers.find((l) => l.ty === 5)!;
+    const bakedT = layer.t!.d.k[0]!.s.t;
+    const expected = breakLines(WRAP_TEXT, WRAP_FONT, WRAP_WIDTH, MEASURER).join('\n');
+    expect(expected.split('\n').length).toBeGreaterThan(1); // the width actually wraps
+    expect(bakedT).toBe(expected);
+  });
+
+  it('WITHOUT a measurer keeps the raw string (byte-identical passthrough — no bake)', () => {
+    const doc = exportLottie(wrapTextScene(), { width: W, height: H, fps: FPS });
+    const bakedT = doc.layers.find((l) => l.ty === 5)!.t!.d.k[0]!.s.t;
+    expect(bakedT).toBe(WRAP_TEXT); // unchanged, still collapses on import
+    expect(bakedT).not.toContain('\n');
+  });
+
+  it('recovers the round-trip collapse: baked wrap SSIM ≥ 0.98 (> the raw-passthrough collapse)', async () => {
+    const original = wrapTextScene();
+    const baked = importLottie(exportLottie(original, { width: W, height: H, fps: FPS, measurer: MEASURER })).toSceneModule();
+    const collapsed = importLottie(exportLottie(original, { width: W, height: H, fps: FPS })).toSceneModule();
+    const ref = await renderPixels(original, 0);
+    const bakedSsim = ssim(ref, await renderPixels(baked, 0), W, H);
+    const collapsedSsim = ssim(ref, await renderPixels(collapsed, 0), W, H);
+    expect(bakedSsim).toBeGreaterThanOrEqual(0.98); // faithful wrap
+    expect(collapsedSsim).toBeLessThan(bakedSsim); // the bug: one-line collapse is worse
+  });
+
+  it('re-wraps an ANIMATED width per frame (narrow early → more lines than wide late)', () => {
+    const doc = exportLottie(animatedWrapWidthScene(), { width: W, height: H, fps: FPS, measurer: MEASURER });
+    const keys = doc.layers.find((l) => l.ty === 5)!.t!.d.k;
+    expect(keys.length).toBeGreaterThan(1); // per-frame rewrap, not one static doc
+    const firstLines = keys[0]!.s.t.split('\n').length;
+    const lastLines = keys[keys.length - 1]!.s.t.split('\n').length;
+    expect(firstLines).toBeGreaterThan(lastLines); // width grows → fewer lines
   });
 });

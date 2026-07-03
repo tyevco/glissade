@@ -61,7 +61,7 @@ import {
   type Track,
   type Vec2,
 } from '@glissade/core';
-import { Circle, Group, Node, Path, Rect, Text, type SceneModule } from '@glissade/scene';
+import { breakLines, Circle, Group, Node, Path, Rect, Text, type FontSpec, type SceneModule, type TextMeasurer } from '@glissade/scene';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
@@ -88,6 +88,16 @@ export interface ExportOptions {
   fps?: number;
   /** Sink for scope-out / degrade warnings; default `console.warn`. */
   onWarn?: (message: string) => void;
+  /**
+   * Real text measurer (a backend's — e.g. the Skia measurer). When present, a
+   * width-wrapped Text node has its wrapped lines BAKED into the Lottie text
+   * document `t` (joined by '\n') so the round-trip reproduces glissade's line
+   * breaks — the importer copies `t` verbatim and drops the wrap `width`, so
+   * without the bake wrapped text collapses onto one line. Absent, the raw
+   * string passes through unchanged (the estimating measurer's wrap points
+   * wouldn't match a faithful render, so we don't bake with it).
+   */
+  measurer?: TextMeasurer;
 }
 
 interface Ctx {
@@ -99,6 +109,8 @@ interface Ctx {
   ind: number;
   /** Font references de-duped by fName across every Text node (pure/deterministic). */
   fonts: Map<string, LottieFont>;
+  /** Real measurer for baking width-wrapped Text into the doc `t`; undefined = raw passthrough. */
+  measurer: TextMeasurer | undefined;
 }
 
 type NodeTracks = ReadonlyMap<string, Track>;
@@ -123,6 +135,10 @@ const IDENTITY_OPACITY: OpacityAccum = { factor: 1, tracks: [] };
 /** Convert a SceneModule to a Lottie document. Pure over (scene, timeline). */
 export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocument {
   const scene = mod.createScene();
+  // Inject the real measurer so any node-level geometry pull (and the width-wrap
+  // bake below) measures with the rasterizer that will draw — else the internal
+  // scene falls back to the estimating measurer (§3.6).
+  if (opts.measurer) scene.setTextMeasurer(opts.measurer);
   const fr = opts.fps ?? mod.timeline.fps ?? 60;
   const warn = opts.onWarn ?? ((m: string) => console.warn(`gs export: ${m}`));
 
@@ -156,7 +172,7 @@ export function exportLottie(mod: SceneModule, opts: ExportOptions): LottieDocum
   }
 
   const op = computeOp(mod.timeline, fr);
-  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map() };
+  const ctx: Ctx = { fr, ip: 0, op, warn, layers: [], ind: 0, fonts: new Map(), measurer: opts.measurer };
   walkChildren(ctx, scene.root.children, undefined, byNode, IDENTITY_OPACITY);
 
   // fonts.list is built by the walk (insertion order = deterministic first-seen)
@@ -523,11 +539,40 @@ function alignToJustification(align: 'left' | 'center' | 'right'): number {
   return align === 'left' ? 0 : align === 'right' ? 1 : 2;
 }
 
+/**
+ * The FontSpec at `t` for the wrap measurement, mirroring `Text.fontSpec()` but
+ * with the SAMPLED size so animated `fontSize` re-wraps per frame. Weight, style,
+ * static variable-font axes, and letter-spacing all feed `measureText` (they move
+ * wrap points), so they must be present to match the reference render's breaks.
+ */
+function wrapFontSpec(node: Text, size: number): FontSpec {
+  return {
+    family: node.fontFamily,
+    size,
+    weight: node.fontWeight,
+    ...(node.fontStyle === 'italic' ? { style: 'italic' as const } : {}),
+    ...(node.fontVariationSettings !== undefined ? { fontVariationSettings: node.fontVariationSettings } : {}),
+    ...(node.letterSpacing !== undefined ? { letterSpacing: node.letterSpacing } : {}),
+  };
+}
+
 /** The text document at time `t`, sampling the animatable text/fill/fontSize props. */
-function textDocAt(node: Text, fName: string, tracks: NodeTracks, t: number): LottieTextDocument {
-  const text = sampleStr(tracks, 'text', node.text(), t);
+function textDocAt(ctx: Ctx, node: Text, fName: string, tracks: NodeTracks, t: number): LottieTextDocument {
+  const rawText = sampleStr(tracks, 'text', node.text(), t);
   const fill = sampleColor(tracks, 'fill', node.fill(), t);
   const size = sampleNum(tracks, 'fontSize', node.fontSize(), t);
+  // WIDTH-WRAP BAKE: the importer copies `t` verbatim and drops the wrap `width`,
+  // so a width-wrapped Text would round-trip collapsed onto one line. With a real
+  // measurer, materialize glissade's own line breaks into `t` (join '\n' — the
+  // same path explicit-'\n' text round-trips through, re-split by breakLines on
+  // import). Sample-time bake so ANIMATED text/fontSize/width re-wrap per frame.
+  // Gated on `width > 0` AND a measurer, so non-wrapped Text and the no-measurer
+  // path stay byte-identical to the pre-feature raw passthrough.
+  const width = sampleNum(tracks, 'width', node.width(), t);
+  const text =
+    width > 0 && ctx.measurer !== undefined
+      ? breakLines(rawText, wrapFontSpec(node, size), width, ctx.measurer).join('\n')
+      : rawText;
   const doc: LottieTextDocument = {
     t: text,
     f: fName,
@@ -564,15 +609,24 @@ const sampleColor = (tracks: NodeTracks, prop: string, staticVal: string, t: num
  */
 function buildTextDocKeyframes(ctx: Ctx, node: Text, fName: string, tracks: NodeTracks): LottieTextDocKeyframe[] {
   const docProps = ['text', 'fill', 'fontSize'];
-  if (!docProps.some((p) => tracks.has(p))) {
-    return [{ t: ctx.ip, s: textDocAt(node, fName, tracks, ctx.ip / ctx.fr) }];
+  // An animated wrap `width` re-wraps the baked `t` per frame, so it also drives
+  // the per-frame stream — but ONLY when a measurer is baking (else the raw docs
+  // are identical every frame and the static path stays byte-identical).
+  const wrapAnimated = ctx.measurer !== undefined && tracks.has('width');
+  const streamProps = wrapAnimated ? [...docProps, 'width'] : docProps;
+  if (!streamProps.some((p) => tracks.has(p))) {
+    return [{ t: ctx.ip, s: textDocAt(ctx, node, fName, tracks, ctx.ip / ctx.fr) }];
   }
-  ctx.warn(`${describe(node)}: animated text/fill/fontSize is sampled at ${ctx.fr} fps into stepped text documents (not smoothly interpolated)`);
-  const [f0, f1] = frameSpan(ctx, docProps.map((p) => tracks.get(p)));
+  // Warn about the stepped-document degrade only for smooth props (text/fill/
+  // fontSize); a width-only rewrap is EXACT per frame, so it needs no warning.
+  if (docProps.some((p) => tracks.has(p))) {
+    ctx.warn(`${describe(node)}: animated text/fill/fontSize is sampled at ${ctx.fr} fps into stepped text documents (not smoothly interpolated)`);
+  }
+  const [f0, f1] = frameSpan(ctx, streamProps.map((p) => tracks.get(p)));
   const keys: LottieTextDocKeyframe[] = [];
   let prev: string | undefined;
   for (let f = f0; f <= f1; f++) {
-    const s = textDocAt(node, fName, tracks, f / ctx.fr);
+    const s = textDocAt(ctx, node, fName, tracks, f / ctx.fr);
     const sig = JSON.stringify(s);
     if (sig === prev) continue; // hold: a document persists until it changes
     keys.push({ t: f, s });
@@ -595,7 +649,10 @@ function warnTextUnsupported(ctx: Ctx, node: Text, tracks: NodeTracks): void {
   if (node.box !== undefined) {
     ctx.warn(`${describe(node)}: box valign is approximated as baseline-anchored (no Lottie ink-box anchor) — vertical placement may shift`);
   }
-  if (tracks.has('width') || node.width() > 0) {
+  // With a real measurer the wrap is BAKED into the doc `t` (faithful) — no warn.
+  // Without one, the raw string passes through and the player self-reflows (the
+  // wrapping may diverge from glissade's), which is the honest degrade to warn on.
+  if (ctx.measurer === undefined && (tracks.has('width') || node.width() > 0)) {
     ctx.warn(`${describe(node)}: wrap 'width' relies on the player's own line reflow — wrapping may diverge from glissade's`);
   }
 }

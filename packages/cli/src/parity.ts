@@ -207,7 +207,14 @@ async function skiaSource(mod: SceneModule, w: number, h: number, modulePath: st
  * Lottie bijection per frame — e.g. the dropped `fontAxes` surfaces as a real SSIM drop.
  */
 async function lottieSource(mod: SceneModule, w: number, h: number, fps: number, modulePath: string): Promise<FrameSource> {
-  const doc = exportLottie(mod, { width: w, height: h, fps });
+  // Register the scene's font faces + get a faithful Skia measurer (a SkiaBackend
+  // IS a TextMeasurer) so the exporter BAKES width-wrapped Text into the doc `t`
+  // with the SAME line breaks the reference render produces — else wrapped text
+  // round-trips collapsed onto one line (the wrap-bake fix).
+  const measureScene = mod.createScene();
+  const measurer = new SkiaBackend(w, h);
+  await prepareSkiaRenderEnv({ scene: measureScene, doc: mod.timeline, backend: measurer, modulePath });
+  const doc = exportLottie(mod, { width: w, height: h, fps, measurer });
   const roundTripped = importLottie(doc).toSceneModule();
   return skiaSource(roundTripped, w, h, modulePath);
 }

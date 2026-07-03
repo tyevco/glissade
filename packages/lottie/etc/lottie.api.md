@@ -10,6 +10,7 @@ import { Paint } from '@glissade/core';
 import { PathContour } from '@glissade/core';
 import { PathValue } from '@glissade/core';
 import { SceneModule } from '@glissade/scene';
+import { TextMeasurer } from '@glissade/scene';
 import { Timeline } from '@glissade/core';
 import { Vec2 } from '@glissade/core';
 
@@ -38,6 +39,7 @@ export interface ExportOptions {
     fps?: number;
     // (undocumented)
     height: number;
+    measurer?: TextMeasurer;
     onWarn?: (message: string) => void;
     // (undocumented)
     width: number;
