@@ -506,6 +506,51 @@ describe('decimateLinearKeys', () => {
   });
 });
 
+describe('exportLottie: non-center anchor → ks.a', () => {
+  // A node with an EXPLICIT anchor must emit that anchor point as ks.a so Lottie's
+  // (content − a) + p places the box top-left at P − (ax·w, ay·h), matching the
+  // scene. Pre-fix ks.a was hard-coded [0,0], mispositioning a non-center node by
+  // (ax·w, ay·h) — half its size for a top-left full-canvas background (SSIM ~0.28).
+  function anchoredRect(anchor: 'top-left' | 'center', pos: [number, number]): SceneModule {
+    return {
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+      createScene: () =>
+        createScene({
+          size: { w: 400, h: 300 },
+          children: [new Rect({ id: 'box', width: 200, height: 100, position: pos, anchor, fill: '#3366cc' })],
+        }),
+    };
+  }
+
+  it('emits ks.a at the content-space anchor point for a top-left anchor', () => {
+    const doc = exportLottie(anchoredRect('top-left', [30, 40]), { width: 400, height: 300, fps: 60 });
+    const ks = doc.layers[0]!.ks!;
+    // drawOffset [-w/2,-h/2] = [-100,-50] plus anchor·size [0,0] → [-100,-50].
+    expect((ks.a as LottieProp).k).toEqual([-100, -50]);
+    // ks.p stays the node position (unchanged by the fix).
+    expect((ks.p as LottieProp).k).toEqual([30, 40]);
+  });
+
+  it('a center anchor is byte-identical to legacy: ks.a stays [0,0]', () => {
+    const doc = exportLottie(anchoredRect('center', [30, 40]), { width: 400, height: 300, fps: 60 });
+    const ks = doc.layers[0]!.ks!;
+    // drawOffset [-100,-50] + 0.5·size [100,50] = [0,0] — the no-op guard.
+    expect((ks.a as LottieProp).k).toEqual([0, 0]);
+    expect((ks.p as LottieProp).k).toEqual([30, 40]);
+  });
+
+  it('an UNSET anchor (legacy origin) also emits ks.a [0,0]', () => {
+    // hasAnchor === false → the gate returns [0,0] before any measurer/size read.
+    const mod: SceneModule = {
+      timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+      createScene: () =>
+        createScene({ size: { w: 400, h: 300 }, children: [new Rect({ id: 'box', width: 200, height: 100, fill: '#3366cc' })] }),
+    };
+    const doc = exportLottie(mod, { width: 400, height: 300, fps: 60 });
+    expect((doc.layers[0]!.ks!.a as LottieProp).k).toEqual([0, 0]);
+  });
+});
+
 describe('exportLottie: fill:transparent (the stroke-only-shape idiom)', () => {
   // Regression: `fill:'transparent'` hard-threw ColorParseError in exportLottie
   // (colorToLottie→parseColor rejected the CSS keyword) — exit-1, breaking export

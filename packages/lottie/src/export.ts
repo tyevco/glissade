@@ -286,12 +286,33 @@ const describe = (node: Node): string => `${node.describeType}${node.id !== unde
 
 // --- transforms ---
 
+/**
+ * The Lottie anchor point (`ks.a`) honoring a node's explicit anchor. Lottie draws
+ * a layer at `(content − a) + p`; glissade's on-screen box top-left is `P − (ax·w,
+ * ay·h)`, so emitting `a = drawOffset + anchor·size` (= −anchorShift, node.ts) makes
+ * the two agree AND makes the anchor the rotation/scale pivot, exactly as the scene.
+ *
+ * NO-OP for every currently-correct export: an unset/legacy anchor → [0,0]; a group
+ * (no intrinsic box) → [0,0]; a CENTER anchor → drawOffset + 0.5·size = [0,0]. So
+ * `ks.a` moves off the origin ONLY for an explicitly non-center-anchored SIZED node.
+ * `drawOffset`/`intrinsicSize` are used (not a raw −w/2) so Text baseline / Path
+ * author-bounds origins stay correct. The measurer is resolved as anchorShift does
+ * (ctx's, else the node's injected source); absent it, the safe no-op [0,0].
+ */
+function anchorPoint(ctx: Ctx, node: Node): [number, number] {
+  if (!node.hasAnchor) return [0, 0];
+  const m = ctx.measurer ?? node.measurerSource?.();
+  if (!m) return [0, 0];
+  const size = node.intrinsicSize(m);
+  if (!size) return [0, 0]; // groups / boxless nodes stay at the origin
+  const d = node.drawOffset(m);
+  const [ax, ay] = node.anchor;
+  return [d.x + ax * size.w, d.y + ay * size.h];
+}
+
 function buildTransform(ctx: Ctx, node: Node, tracks: NodeTracks, o: LottieProp): LottieTransform {
-  if (node.hasAnchor && (node.anchor[0] !== 0.5 || node.anchor[1] !== 0.5)) {
-    ctx.warn(`${describe(node)}: a non-center anchor is not exported (MVP centers geometry) — placement may shift`);
-  }
   return {
-    a: { a: 0, k: [0, 0] }, // glissade shapes draw centered; anchor stays at origin
+    a: { a: 0, k: anchorPoint(ctx, node) }, // honors an explicit anchor; [0,0] for center/legacy/groups
     p: positionProp(ctx, tracks, node.position()),
     s: vecProp(ctx, tracks, 'scale', node.scale(), (v) => [v[0] * 100, v[1] * 100]),
     r: scalarProp(ctx, tracks, 'rotation', node.rotation(), (v) => v), // rotation is degrees both sides (identity)

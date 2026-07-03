@@ -483,3 +483,41 @@ describe('Lottie width-wrap Text export bake', () => {
     expect(firstLines).toBeGreaterThan(lastLines); // width grows → fewer lines
   });
 });
+
+// --- non-center anchor ---
+
+/**
+ * A FULL-CANVAS top-left-anchored background (position [0,0], anchor 'top-left', so
+ * its box top-left sits at the canvas origin) + a small centered foreground marker.
+ * Pre-fix the exporter hard-coded ks.a=[0,0], so the re-imported background centered
+ * on [0,0] — shifted by half the canvas — and this SSIM collapsed to ~0.28. Honoring
+ * the anchor (ks.a = drawOffset + anchor·size) recovers a faithful ≥0.98 round-trip.
+ */
+function topLeftBackgroundScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [
+          new Rect({ id: 'bg', width: W, height: H, position: [0, 0], anchor: 'top-left', fill: '#22314f' }),
+          new Rect({ id: 'marker', width: 60, height: 60, position: [120, 120], fill: '#f0a500' }),
+        ],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
+describe('Lottie non-center-anchor export round-trip (Skia SSIM)', () => {
+  it('a top-left full-canvas background re-imports in the right place (SSIM ≥ 0.98)', async () => {
+    const original = topLeftBackgroundScene();
+    const doc = exportLottie(original, { width: W, height: H, fps: FPS });
+    // the background layer carries the honored anchor point (−anchorShift), not [0,0].
+    const bg = doc.layers.find((l) => l.nm === 'bg')!;
+    expect((bg.ks!.a as { k: number[] }).k).toEqual([-W / 2, -H / 2]);
+    const roundTripped = importLottie(doc).toSceneModule();
+    const a = await renderPixels(original, 0);
+    const b = await renderPixels(roundTripped, 0);
+    // pre-fix this scored ~0.28 (half-canvas mispositioning of the bg).
+    expect(ssim(a, b, W, H)).toBeGreaterThanOrEqual(0.98);
+  });
+});
