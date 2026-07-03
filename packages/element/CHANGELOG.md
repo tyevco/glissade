@@ -1,5 +1,14 @@
 # @glissade/element
 
+## 0.54.0
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.54.0
+- @glissade/core@0.54.0
+- @glissade/player@0.54.0
+- @glissade/scene@0.54.0
+
 ## 0.54.0-pre.0
 
 ### Patch Changes
