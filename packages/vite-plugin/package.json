@@ -1,6 +1,6 @@
 {
   "name": "@glissade/vite-plugin",
-  "version": "0.41.1-pre.0",
+  "version": "0.41.1",
   "description": "glissade dev-server integration: sidecar read/write endpoint for the studio (DESIGN.md §6.1).",
   "license": "Apache-2.0",
   "engines": {
