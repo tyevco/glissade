@@ -1,5 +1,12 @@
 # @glissade/effects-webgpu
 
+## 0.44.0-pre.0
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.44.0-pre.0
+- @glissade/scene@0.44.0-pre.0
+
 ## 0.43.1
 
 ### Patch Changes

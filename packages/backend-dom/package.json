@@ -1,6 +1,6 @@
 {
   "name": "@glissade/backend-dom",
-  "version": "0.43.1",
+  "version": "0.44.0-pre.0",
   "description": "glissade DOM render backend: DisplayList -> HTML/SVG elements. A preview / non-parity realtime tier (accessibility, selectable text, CSS-native embedding) — NOT a Skia-export twin.",
   "license": "Apache-2.0",
   "engines": {

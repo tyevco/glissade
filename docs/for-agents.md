@@ -141,3 +141,26 @@ for the exact method/option signatures.
 truth, fail-loud guards turn silent landmines into caught errors, and determinism
 makes verification reproducible. Query the manifest, read the errors, verify a pure
 frame, and pick the right tier — and you skip the stale-blurb hour entirely.
+
+## Make guessing a track target a *type error* (`gs types`)
+
+`describe()` tells an agent which props are animatable and their value types — but that's a *runtime* manifest; nothing stops it authoring `track('circle/opasity', 'color', …)` and only finding out at bind time (`UnboundTargetError`, or a `BindTypeMismatchError`). `gs types` closes that loop by codegen-ing a **type-checked `track()`** from the manifest:
+
+```sh
+gs types --out src/glissade-targets.ts          # generate from your installed version's manifest
+gs types --out src/glissade-targets.ts --check  # CI gate: fail if it drifted from describe()
+```
+
+Then import `track` from the generated file instead of `@glissade/core`:
+
+```ts
+import { track } from './glissade-targets';
+
+track('circle/opacity', 'number', [key(0, 0), key(1, 1)]);  // ✓
+track('circle/opasity', 'number', [key(0, 0)]);             // ✗ compile error — unknown path
+track('circle/opacity', 'color',  [key(0, '#fff')]);        // ✗ compile error — opacity is a number
+```
+
+The generated file is **zero-runtime** — a `KnownTrackPath` union + per-path value-type maps, plus a re-typed re-export whose runtime *is* `@glissade/core`'s `track`. Regenerate it on a glissade upgrade (or after adding a `defineComponent` target); `--check` keeps it honest in CI, the same drift-guard the generated API reference uses.
+
+Scope: the manifest is instance-free (`target` is the template `<id>/<path>`), so this checks the prop-**path** and its value type — it can't verify a specific scene's `<id>` is a real node (that still fails loud at bind time). It catches the common class: typo'd paths and value-type mismatches.

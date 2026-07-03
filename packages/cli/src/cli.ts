@@ -49,6 +49,7 @@ const USAGE = `usage:
   gs mcp <scene-module>   start an MCP stdio server for this scene: describe / list_targets / apply_patch / undo / render_frame (the AI-native write layer)
   gs build [filter...] [--config <glissade.config.ts>] [--affected <git-ref>] [--explain]   content-graph DAG runner: narrate→sfx→loudness→render per scene, runs ONLY the stale subtree. --affected <ref> pre-filters to scenes a git diff since <ref> touched (rebuild only what a change set touched; composed with the per-step content-hash staleness)
   gs describe [--out <api.json>] [--examples]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate
+  gs types [--out <file.ts>] [--from <api.json>] [--check]   codegen a type-checked track() SDK from the describe() manifest: only registered animatable paths + their value types compile, so a typo'd path or wrong value-type id is a COMPILE error (import track from the generated file). --check fails if --out is stale. Zero-runtime (types + a re-typed re-export of the real track)
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
   gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--strict] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json (re-localize CARRIES existing translations over — never clobbers); --strict refuses to write on a preflight failure
@@ -156,7 +157,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master' && command !== 'localize') {
+  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'master' && command !== 'localize' && command !== 'types') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -298,6 +299,50 @@ async function main(): Promise<void> {
       process.stderr.write(`gs describe: wrote ${manifest.version} API manifest → ${outPath}\n`);
     } else {
       process.stdout.write(json);
+    }
+    return;
+  }
+
+  // gs types [--out <file>] [--from <api.json>] [--check] — codegen a typed `track()`
+  // surface from the describe() manifest so a typo'd prop-path or wrong value-type id
+  // is a COMPILE error. Reads the LIVE manifest (or a committed --from api.json). The
+  // output is types + a re-typed re-export of the real `track` — zero runtime.
+  if (command === 'types') {
+    const { flags: tf } = parseArgs(rest);
+    const { generateTypedSdk } = await import('./typedSdk.js');
+    const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
+    const from = tf.get('from');
+    let manifest: import('@glissade/scene/describe').ApiManifest;
+    if (from) {
+      try {
+        manifest = JSON.parse(readFileSync(from, 'utf8')) as import('@glissade/scene/describe').ApiManifest;
+      } catch (err) {
+        fail(`gs types: could not read manifest '${from}': ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (typeof manifest!.version !== 'string' || manifest!.nodes === undefined) {
+        fail(`'${from}' is not a describe() API manifest (missing version/nodes)`);
+      }
+    } else {
+      const { describe } = await import('@glissade/scene/describe');
+      manifest = describe();
+    }
+    const src = generateTypedSdk(manifest!);
+    const outPath = tf.get('out');
+    if (tf.has('check')) {
+      if (!outPath) fail('gs types --check needs --out <file> (the committed typed-SDK file to verify)');
+      const current = existsSync(outPath) ? readFileSync(outPath, 'utf8') : '';
+      if (current !== src) {
+        process.stderr.write(`gs types: ${outPath} is STALE — run \`gs types --out ${outPath}\` to regenerate\n`);
+        process.exit(1);
+      }
+      process.stderr.write(`gs types: ${outPath} is up to date\n`);
+      return;
+    }
+    if (outPath) {
+      writeFileSync(outPath, src);
+      process.stderr.write(`gs types: wrote a typed track() SDK (${Object.keys(manifest!.nodes).length} node types) → ${outPath}\n`);
+    } else {
+      process.stdout.write(src);
     }
     return;
   }
