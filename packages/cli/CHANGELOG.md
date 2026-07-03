@@ -1,5 +1,42 @@
 # @glissade/cli
 
+## 0.49.0
+
+### Minor Changes
+
+- fd7eb5f: `gs parity <scene> --backends skia,lottie [--ssim] [--heatmap <dir>] [--min <ssim>]` — a
+  cross-backend fidelity command: render one scene across backends and report per-frame SSIM
+  plus a worst-tile heatmap, in one command (productizes the hand-rolled cross-backend read).
+  Skia is the reference; the `lottie` leg is the export→import→Skia round-trip, so `gs parity`
+  measures Lottie interchange fidelity directly and localizes any gap with a heatmap PNG. Exits
+  non-zero on any frame below the SSIM floor (default 0.98). Read-only measurement — zero
+  determinism impact, no new dependencies, off the base embed. The `dom` backend leg (a
+  Playwright browser-render harness) fails loud as a not-yet-shipped Phase B; unknown backends
+  fail loud too — a requested backend is never silently skipped.
+
+### Patch Changes
+
+- e89e0e2: `gs parity` pre.1 — render through the same environment as `gs render` (fix a silent
+  false-PASS). The parity command's Skia reference render only set the text measurer and
+  evaluated — it skipped the font-face + variable-font-axis registration, Yoga layout init,
+  asset decode, and determinism guard that `gs render` performs. So a variable-font scene
+  rendered at the font's default weight on BOTH legs (the reference never registered the
+  face), and `gs parity` reported a false SSIM 1.0 / PASS on a real interchange loss (the
+  Lottie export drops `fontAxes`); Layout and media scenes errored outright. The render-env
+  setup is now a shared `prepareSkiaRenderEnv` helper that both `gs render` and both parity
+  legs use, so parity matches render by construction: a variable-font scene now correctly
+  surfaces the ~0.79 loss, and Layout/media scenes render instead of erroring. `gs render`
+  output is byte-identical (the extraction changed no render behavior).
+  - @glissade/backend-skia@0.49.0
+  - @glissade/core@0.49.0
+  - @glissade/interact@0.49.0
+  - @glissade/lottie@0.49.0
+  - @glissade/narrate@0.49.0
+  - @glissade/player@0.49.0
+  - @glissade/scene@0.49.0
+  - @glissade/sfx@0.49.0
+  - @glissade/svg@0.49.0
+
 ## 0.49.0-pre.1
 
 ### Patch Changes
