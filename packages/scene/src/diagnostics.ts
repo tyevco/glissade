@@ -43,3 +43,22 @@ export {
   type FontByteLoader,
   type ValidateSceneFontsOptions,
 } from './fontUsage.js';
+
+// 0.59 "fail-loud ground floor": the eager scene validator + the truthful read
+// primitive (resolveAt) + the instance-level bound indicator + nearest-id
+// (Levenshtein). All DIAGNOSTIC — they live here, OFF the base scene index, so
+// the sacred base embed pays zero bytes for them (the "base scene excludes
+// diagnostics" metafile guard covers validate.ts too).
+export {
+  validateScene,
+  resolveAt,
+  instanceProps,
+  nearestId,
+  levenshtein,
+  DIAGNOSTIC_SCHEMA_VERSION,
+  type ValidateSceneResult,
+  type SceneDiagnostic,
+  type DiagnosticCode,
+  type DiagnosticSeverity,
+  type InstancePropState,
+} from './validate.js';

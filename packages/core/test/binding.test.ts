@@ -15,6 +15,7 @@ import {
   UnboundTargetError,
   BindTypeMismatchError,
   WriteDuringEvaluationError,
+  setDevWarning,
   type BindTarget,
   type Paint,
   type ValueTypeId,
@@ -114,6 +115,23 @@ describe('bindTimeline (§2.4)', () => {
   it('throws on unbound targets', () => {
     const doc = timeline({ tracks: [track('ghost/x', 'number', [key(0, 0)])] });
     expect(() => bindTimeline(compileTimeline(doc), () => undefined)).toThrow(UnboundTargetError);
+  });
+
+  it("0.59 mode gate — onUnbound:'warn' downgrades the throw to a dev-warning and skips the dead track", () => {
+    const warn = vi.fn();
+    setDevWarning(warn);
+    try {
+      const doc = timeline({ tracks: [track('ghost/x', 'number', [key(0, 0)])] });
+      // default (throw) still throws
+      expect(() => bindTimeline(compileTimeline(doc), () => undefined)).toThrow(UnboundTargetError);
+      // 'warn' does NOT throw — it warns and skips
+      const bound = bindTimeline(compileTimeline(doc), () => undefined, createPlayhead(), { onUnbound: 'warn' });
+      expect(bound.samplers.size).toBe(0); // the dead track installed no sampler
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toMatch(/ghost\/x/);
+    } finally {
+      setDevWarning((m) => (globalThis.console?.warn(`[glissade] ${m}`), undefined));
+    }
   });
 
   it('throws BindTypeMismatchError when a track type ≠ the target.expects (§2.2 silent-NaN guard)', () => {

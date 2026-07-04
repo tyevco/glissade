@@ -23,7 +23,12 @@
 import { timeline, track, key, type Track, type Vec2, type EaseSpec } from '@glissade/core';
 import { Group, Text, type GraphemeBox, type LineBox, type TextProps, type WordBox } from './nodes.js';
 import type { FontSpec } from './displayList.js';
-import { fallbackMeasurer, measureWrappedText, quantize, segmentGraphemes, warnIfEstimating, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, measureWrappedText, MeasurerRequiredError, quantize, segmentGraphemes, warnIfEstimating, type TextMeasurer } from './text.js';
+
+// 0.59 measurer fail-loud: re-exported on the @glissade/scene/type subpath (where
+// splitText/fitText live) so consumers can `catch (e instanceof MeasurerRequiredError)`
+// without pulling it onto the base scene index (budget).
+export { MeasurerRequiredError };
 import { textCursor, type TextCursor, type TextCursorProps } from './textCursor.js';
 import { typewriter, type EditMark } from './typewriter.js';
 
@@ -44,6 +49,14 @@ export interface SplitTextOpts {
    * Text geometry getters use.
    */
   measurer?: TextMeasurer;
+  /**
+   * 0.59 measurer fail-loud OPT-IN. By default a split with no real measurer
+   * warns once and degrades to the rough per-character estimate. Set
+   * `requireMeasurer: true` to instead THROW `MeasurerRequiredError` — for a
+   * pipeline that must not silently ship estimated geometry. Default false
+   * (warn) — behavior-neutral.
+   */
+  requireMeasurer?: boolean;
 }
 
 /** One part of a split, in the source Text's draw space (group-local coords). */
@@ -133,7 +146,7 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
   // Silent footgun: with no real backend (split before setTextMeasurer, no
   // { measurer } passed) the part geometry is a rough per-character estimate
   // whose error accumulates left-to-right. Tell the author exactly why.
-  warnIfEstimating(m, 'splitText');
+  warnIfEstimating(m, 'splitText', opts.requireMeasurer === true);
 
   const font: SplitFont = {
     fontFamily: text.fontFamily,
@@ -211,6 +224,11 @@ export interface FitTextOpts {
   /** measurer for exact fit — pass one (or call setTextMeasurer first), else the
    *  estimating fallback is used with a one-time dev warning (the splitText footgun). */
   measurer?: TextMeasurer;
+  /**
+   * 0.59 measurer fail-loud OPT-IN (as splitText): `true` THROWs
+   * `MeasurerRequiredError` when no real measurer is available instead of
+   * warn-once + estimate. Default false. */
+  requireMeasurer?: boolean;
 }
 
 /** Build a measurement FontSpec for `text` at a candidate size (public fields only). */
@@ -247,7 +265,7 @@ function fits(text: Text, size: number, opts: FitTextOpts, m: TextMeasurer): boo
  */
 export function fitTextSize(text: Text, opts: FitTextOpts): number {
   const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
-  warnIfEstimating(m, 'fitText');
+  warnIfEstimating(m, 'fitText', opts.requireMeasurer === true);
   const minPx = opts.minPx ?? 6;
   const hi = Math.max(minPx, Math.floor(text.fontSize()));
   if (fits(text, hi, opts, m)) return hi; // already fits at its authored size

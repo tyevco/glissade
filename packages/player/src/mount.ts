@@ -5,7 +5,7 @@
  */
 
 import { buildFontRegistry, compileTimeline, type Timeline } from '@glissade/core';
-import { evaluate, type RenderBackend, type Scene } from '@glissade/scene';
+import { bindScene, evaluate, type RenderBackend, type Scene } from '@glissade/scene';
 import { validateSceneFonts } from '@glissade/scene/diagnostics';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { createPlayer, type Player, type PlayerOptions } from './player.js';
@@ -62,7 +62,17 @@ export function mount(
     opts,
   );
 
-  const renderNow = () => backend.render(evaluate(scene, doc, playhead.peek()));
+  // 0.59 mode gate: prod embeds downgrade an unresolved track target throw→warn.
+  // Warm the binding memo with the chosen mode BEFORE evaluate() (which binds
+  // cache-cold in the default 'throw' mode) so the whole render loop — including
+  // the very first bind of whatever doc is live — runs in the selected mode. The
+  // bind is memoized per (scene, doc), so this is a WeakMap hit after the first
+  // frame; byte-identical to evaluate()'s own bind for every valid scene.
+  const unboundMode: 'throw' | 'warn' = opts.production ? 'warn' : 'throw';
+  const renderNow = () => {
+    bindScene(scene, doc, { onUnbound: unboundMode });
+    backend.render(evaluate(scene, doc, playhead.peek()));
+  };
 
   let scheduled = false;
   const schedule = () => {

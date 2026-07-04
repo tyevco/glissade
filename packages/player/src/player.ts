@@ -40,6 +40,17 @@ export interface PlayerOptions {
   /** OS-installed families to treat as registered for strict mode. */
   osFonts?: ReadonlySet<string>;
   /**
+   * 0.59 "fail-loud ground floor" prod escape hatch. By DEFAULT an unresolvable
+   * track target (a typo'd `<id>/<prop>`) HARD-THROWS `UnboundTargetError` at
+   * bind — the loud dev behavior. Set `production: true` on a SHIPPED embed to
+   * DOWNGRADE that to a one-line dev-warning and skip the dead track, so an
+   * external/unaudited scene degrades instead of failing the whole render. The
+   * burden-to-remember moves to the shipping step (React dev/prod-invariant
+   * polarity); authoring stays loud. Byte-neutral for every valid scene — only
+   * an INVALID scene's behavior differs (throw vs warn).
+   */
+  production?: boolean;
+  /**
    * Backend-injection seam (dom-backend memo, Seam 2 — the S3 foundation). A
    * factory that builds the `RenderBackend` mount() drives, given the render
    * target. Defaults to `Canvas2DBackend`, so EVERY existing call site is

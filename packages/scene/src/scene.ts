@@ -182,7 +182,19 @@ function constructionPropMessage(nodes: ReadonlyMap<string, Node>, target: strin
   return undefined;
 }
 
-export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
+/** Options for {@link bindScene}. */
+export interface BindSceneOptions {
+  /**
+   * 0.59 mode gate (threaded to {@link BindOptions.onUnbound}): `'throw'`
+   * (default, loud) vs `'warn'` (prod embeds — downgrade an unresolved target to
+   * a dev-warning and skip the track). `mount({ production: true })` passes
+   * `'warn'` here on its first (memo-warming) bind, so the whole render loop runs
+   * in the chosen mode. Byte-neutral for every valid scene (see BindOptions).
+   */
+  onUnbound?: 'throw' | 'warn';
+}
+
+export function bindScene(scene: Scene, doc: Timeline, opts: BindSceneOptions = {}): BindingCacheEntry {
   let perScene = bindings.get(scene);
   if (!perScene) {
     perScene = new WeakMap();
@@ -193,6 +205,7 @@ export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry {
     const compiled = compileTimeline(doc);
     const bound = bindTimeline(compiled, scene.resolveTarget, scene.playhead, {
       unboundMessage: (target) => constructionPropMessage(scene.nodes, target),
+      ...(opts.onUnbound !== undefined ? { onUnbound: opts.onUnbound } : {}),
     });
     entry = { compiled, bound };
     perScene.set(doc, entry);

@@ -6,6 +6,7 @@
  */
 
 import { beginReadPhase, endReadPhase, signal, type BindableSignal } from './signal.js';
+import { emitDevWarning } from './devWarning.js';
 import { sampleTrack, velocityAt, type Track } from './track.js';
 import { type CompiledTimeline } from './timeline.js';
 import { reprOf, type ValueTypeId } from './valueTypes.js';
@@ -101,6 +102,23 @@ export interface BindOptions {
    * the generic "no property signal resolves to it".
    */
   unboundMessage?: (target: string) => string | undefined;
+  /**
+   * 0.59 "fail-loud ground floor" MODE GATE. What binding does when a track
+   * target fails to resolve to any property signal:
+   *
+   * - `'throw'` (DEFAULT — loud) raises {@link UnboundTargetError} at bind, the
+   *   dev/CI behavior authors want (a typo'd target is a build error, §2.2).
+   * - `'warn'` DOWNGRADES the throw to a one-line dev-warning and SKIPS the
+   *   track. Shipped/prod embeds opt into this via `mount({ production: true })`,
+   *   so an external scene degrades (the offending track simply doesn't apply)
+   *   instead of hard-failing the whole render.
+   *
+   * DETERMINISM (0.59 invariant): the leaf `if (!sig)` below is the ONLY branch
+   * that differs between modes. A VALID scene (every target resolves) never
+   * reaches it, so both modes install the IDENTICAL bindings and produce
+   * byte-identical output — the mode is byte-neutral for every valid scene.
+   */
+  onUnbound?: 'throw' | 'warn';
 }
 
 /**
@@ -118,7 +136,20 @@ export function bindTimeline(
   const samplers = new Map<string, CurveSampler>();
   for (const [target, tr] of compiled.tracks) {
     const sig = resolve(target);
-    if (!sig) throw new UnboundTargetError(target, options.unboundMessage?.(target));
+    if (!sig) {
+      // 0.59 MODE GATE — the SOLE throw-vs-warn branch (byte-neutral for valid
+      // scenes: they never enter this arm). Default (`'throw'`) is loud; a prod
+      // embed's `'warn'` downgrades to a dev-warning and skips the dead track.
+      const message = options.unboundMessage?.(target);
+      if (options.onUnbound === 'warn') {
+        emitDevWarning(
+          message ??
+            `timeline targets '${target}' but no property signal resolves to it — track skipped (production mode)`,
+        );
+        continue;
+      }
+      throw new UnboundTargetError(target, message);
+    }
     const got = (tr as Track).type;
     const expects = sig.expects;
     // An UNtagged target (expects === undefined) skips the guard — back-compat

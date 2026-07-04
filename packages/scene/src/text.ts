@@ -99,13 +99,36 @@ export function isEstimatingMeasurer(m: TextMeasurer): boolean {
 const warnedEstimate = new Set<string>();
 
 /**
+ * Thrown by a measurer-requiring helper (`splitText`/`fitText`) when it resolved
+ * to the estimating fallback AND the caller opted into fail-loud
+ * (`requireMeasurer: true`, 0.59 measurer fail-loud). The default stays
+ * warn-once (below) — this is the opt-in that turns the silent geometry
+ * DEGRADATION into a hard error for pipelines that need exact layout.
+ */
+export class MeasurerRequiredError extends Error {
+  constructor(site: string) {
+    super(
+      `${site}: no real text measurer available and { requireMeasurer: true } was set — part geometry ` +
+        'would use a rough per-character estimate. Pass { measurer } or call setTextMeasurer()/setDefaultMeasurer() first.',
+    );
+    this.name = 'MeasurerRequiredError';
+  }
+}
+
+/**
  * One-shot dev-warning when a build-time geometry getter resolved its measurer
  * to the rough per-character estimate (no backend, no `setDefaultMeasurer`).
  * `site` keys the de-dupe so each distinct caller warns at most once. Silent
  * when a real measurer is in play — the estimate is the only footgun here.
+ *
+ * 0.59: pass `strict` to make the same fallback FAIL LOUD ({@link
+ * MeasurerRequiredError}) instead of warn-once — the `requireMeasurer` opt-in on
+ * splitText/fitText. Default (`strict` falsy) preserves the exact prior
+ * warn-once behavior (byte/behavior-neutral).
  */
-export function warnIfEstimating(m: TextMeasurer, site: string): void {
+export function warnIfEstimating(m: TextMeasurer, site: string, strict = false): void {
   if (!isEstimatingMeasurer(m)) return;
+  if (strict) throw new MeasurerRequiredError(site);
   if (warnedEstimate.has(site)) return;
   warnedEstimate.add(site);
   emitDevWarning(

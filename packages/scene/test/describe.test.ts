@@ -296,6 +296,44 @@ vdescribe('describe() helpers section', () => {
   });
 });
 
+// 0.59 F "manifest conventions": unit (curated) + bindable (generated) on nodes,
+// requiresMeasurer on measurer-dependent helpers. All ADDITIVE — the exact-shape
+// prop assertions above (Rect.position etc.) still hold because those props carry
+// no unit and `bindable` is a node-level field, not a per-prop one.
+vdescribe('describe() 0.59 manifest conventions (F)', () => {
+  const m = describe();
+
+  it('stamps a curated UNIT on rotation (degrees) and Video time offsets (seconds)', () => {
+    expect(m.nodes.Rect!.props.rotation!.unit).toBe('degrees');
+    expect(m.nodes.Video!.props.at!.unit).toBe('seconds');
+    expect(m.nodes.Video!.props.trimStart!.unit).toBe('seconds');
+    // a unitless/px prop carries NO unit (keeps the exact-shape props stable)
+    expect(m.nodes.Rect!.props.position!.unit).toBeUndefined();
+    expect(m.nodes.Rect!.props.opacity!.unit).toBeUndefined();
+  });
+
+  it('generates a node-level bindable list = the animatable prop names (no drift)', () => {
+    for (const [name, node] of Object.entries(m.nodes)) {
+      const animatable = Object.entries(node.props)
+        .filter(([, p]) => p.animatable)
+        .map(([k]) => k)
+        .sort();
+      expect([...(node.bindable ?? [])].sort(), `${name}.bindable`).toEqual(animatable);
+    }
+    expect(m.nodes.Rect!.bindable).toContain('position');
+    expect(m.nodes.Rect!.bindable).not.toContain('cache'); // construction-only excluded
+  });
+
+  it('flags requiresMeasurer on the measurer-dependent helpers only', () => {
+    const byName = new Map(m.helpers.map((h) => [h.name, h]));
+    for (const n of ['splitText', 'fitText', 'fitTextGroup', 'revealWords', 'measureWrappedText']) {
+      expect(byName.get(n)!.requiresMeasurer, `${n} requiresMeasurer`).toBe(true);
+    }
+    // a non-text helper does NOT carry it
+    expect(byName.get('motionPath')!.requiresMeasurer).toBeUndefined();
+  });
+});
+
 vdescribe('describe() docs-honesty', () => {
   const m = describe();
 

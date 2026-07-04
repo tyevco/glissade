@@ -63,6 +63,14 @@ export interface DescribedProp {
   arity?: number;
   /** Construction-only props: `true` when the constructor REQUIRES it (e.g. Image/Video `assetId`). */
   required?: boolean;
+  /**
+   * 0.59 F "manifest conventions": the physical UNIT of the value, when one
+   * applies — e.g. `'degrees'` for rotation, `'seconds'` for a Video time offset.
+   * ADDITIVE + curated (a small per-prop table, like `positionAnchor`), present
+   * ONLY where a unit is meaningful; absent for unitless/px props. Lets a
+   * consumer stop guessing whether `rotation` is degrees or radians.
+   */
+  unit?: string;
 }
 
 export interface DescribedNode {
@@ -81,6 +89,17 @@ export interface DescribedNode {
    * shape-vs-Text anchor mismatch by pixel-measuring.
    */
   positionAnchor: string;
+  /**
+   * 0.59 F ride-along "type-level bindable discovery aid": the prop names on this
+   * node a Track CAN drive (i.e. the animatable ones) — a flat, at-a-glance list
+   * so a consumer sees the bindable surface without filtering `props`. GENERATED
+   * from the same `listTargets()` the animatable props are, so it can't drift.
+   * This is the TYPE-level "can be animated" aid; the INSTANCE-level "is CURRENTLY
+   * bound on THIS node" truth (the anti-false-conclusion guard) is
+   * `instanceProps(node).bound` on `@glissade/scene/diagnostics`. Optional so a
+   * manifest captured before 0.59 (no `bindable`) still type-checks.
+   */
+  bindable?: string[];
   /**
    * The tree-shakeable subpath this node is imported from, when not the base
    * `@glissade/scene` index (e.g. the Layout family lives on
@@ -127,6 +146,14 @@ export interface DescribedHelper {
   usage: string;
   /** Runnable example snippets — see {@link DescribedNode.examples}. */
   examples?: readonly string[];
+  /**
+   * 0.59 F/E "manifest conventions": `true` when this helper needs a real text
+   * MEASURER for correct geometry (splitText/fitText/…). Without one it degrades
+   * to a rough per-character estimate (or, with `{ requireMeasurer: true }`,
+   * throws) — so a consumer knows to pass `{ measurer }` / call setTextMeasurer()
+   * first. Absent (⇒ not measurer-dependent) for every other helper.
+   */
+  requiresMeasurer?: boolean;
 }
 
 /**
@@ -426,6 +453,35 @@ const BASE_CONSTRUCTION_PROP_META: { [prop: string]: ConstructionProp } = {
  * coords. Surfaced per node so a consumer aligning a card + its label stops
  * pixel-measuring the mismatch — and knows `anchor` (above) overrides it.
  */
+/**
+ * 0.59 F "manifest conventions" — the curated per-prop UNIT table (the
+ * POSITION_ANCHOR precedent applied to units). Keyed by prop NAME; a prop absent
+ * here carries no `unit` (unitless or px). Deliberately minimal: rotation is the
+ * classic degrees-vs-radians ambiguity, Video's time offsets are seconds.
+ */
+const PROP_UNITS: { [prop: string]: string } = {
+  rotation: 'degrees',
+  at: 'seconds',
+  trimStart: 'seconds',
+  clipDuration: 'seconds',
+  sourceFps: 'fps',
+};
+
+/**
+ * 0.59 F/E — helpers that need a real text measurer for correct geometry (they
+ * snapshot part/fit geometry through it). Surfaced as `requiresMeasurer:true`.
+ */
+const MEASURER_HELPERS = new Set<string>([
+  'measureWrappedText',
+  'splitText',
+  'fitText',
+  'fitTextSize',
+  'fitTextGroup',
+  'revealWords',
+  'revealLines',
+  'emphasizeWords',
+]);
+
 const POSITION_ANCHOR: { [typeName: string]: string } = {
   Rect: 'center',
   Circle: 'center',
@@ -450,6 +506,7 @@ function describeNode(node: Node, typeName: string): DescribedNode {
       animatable: true,
       target: `<id>/${path}`,
       ...(arity !== undefined ? { arity } : {}),
+      ...(PROP_UNITS[path] !== undefined ? { unit: PROP_UNITS[path] } : {}),
     };
   }
   // Construction-only props: base NodeProps + this node's own. No `target`:
@@ -465,9 +522,18 @@ function describeNode(node: Node, typeName: string): DescribedNode {
       type: spec.type,
       animatable: false,
       ...(spec.required ? { required: true } : {}),
+      ...(PROP_UNITS[prop] !== undefined ? { unit: PROP_UNITS[prop] } : {}),
     };
   }
-  return { props, positionAnchor: POSITION_ANCHOR[typeName] ?? 'center' };
+  return { props, positionAnchor: POSITION_ANCHOR[typeName] ?? 'center', bindable: bindableProps(props) };
+}
+
+/** The animatable (Track-drivable) prop names of a manifest — the generated
+ *  0.59 `DescribedNode.bindable` discovery aid (can't drift from `props`). */
+function bindableProps(props: { [prop: string]: DescribedProp }): string[] {
+  return Object.entries(props)
+    .filter(([, p]) => p.animatable)
+    .map(([name]) => name);
 }
 
 /**
@@ -521,7 +587,7 @@ function describeLayoutNode(): DescribedNode {
     if (spec === undefined) throw new Error(`describe(): Layout construction prop '${prop}' has no type metadata`);
     props[prop] = { type: spec.type, animatable: false, ...(spec.required ? { required: true } : {}) };
   }
-  return { props, positionAnchor: 'top-left', subpath: LAYOUT_SUBPATH };
+  return { props, positionAnchor: 'top-left', bindable: bindableProps(props), subpath: LAYOUT_SUBPATH };
 }
 
 // The built-in node taxonomy members that have a concrete class on the base scene
@@ -973,7 +1039,14 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     // The curated helper/factory surface (transport, motion-path, clips,
     // snapshot, splitText) — several live above scene in the dep graph, so this
     // is a hand-kept literal, drift-guarded by @glissade/browser's smoke test.
-    helpers: withEx ? HELPERS.map((h) => ({ ...h, ...ex(h.name) })) : HELPERS,
+    // 0.59 F: stamp requiresMeasurer:true on the measurer-dependent helpers
+    // (curated set, generated onto the entries so it can't drift), plus examples
+    // when requested. A helper with neither is byte-identical to its literal.
+    helpers: HELPERS.map((h) => ({
+      ...h,
+      ...(MEASURER_HELPERS.has(h.name) ? { requiresMeasurer: true } : {}),
+      ...(withEx ? ex(h.name) : undefined),
+    })),
     // 0.36: user-defined components from the live registry (empty by default)
     components: listComponents().map((c) => ({ name: c.name, props: mapComponentProps(c.props) })),
     // The full construct-a-scene surface: the size + children AND the asset

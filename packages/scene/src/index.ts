@@ -183,6 +183,7 @@ export {
   type Scene,
   type SceneInit,
   type SceneModule,
+  type BindSceneOptions,
 } from './scene.js';
 
 // the LayoutEngine seam lives in the base entry; the Yoga implementation and

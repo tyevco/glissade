@@ -74,6 +74,7 @@ export interface BindableSignal<T> extends Signal<T> {
 
 // @public
 export interface BindOptions {
+    onUnbound?: 'throw' | 'warn';
     unboundMessage?: (target: string) => string | undefined;
 }
 

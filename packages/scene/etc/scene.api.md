@@ -62,7 +62,12 @@ export interface BindablePropTarget {
 // Warning: (ae-forgotten-export) The symbol "BindingCacheEntry" needs to be exported by the entry point index.d.ts
 //
 // @public (undocumented)
-export function bindScene(scene: Scene, doc: Timeline): BindingCacheEntry;
+export function bindScene(scene: Scene, doc: Timeline, opts?: BindSceneOptions): BindingCacheEntry;
+
+// @public
+export interface BindSceneOptions {
+    onUnbound?: 'throw' | 'warn';
+}
 
 // @public (undocumented)
 export type BlendMode = 'source-over' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';

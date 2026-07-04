@@ -125,6 +125,7 @@ export interface PlayerOptions {
     loop?: LoopMode;
     osFonts?: ReadonlySet<string>;
     prefersReducedMotion?: () => boolean;
+    production?: boolean;
     // (undocumented)
     rate?: number;
     reducedMotion?: ReducedMotionMode;
