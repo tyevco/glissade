@@ -19,12 +19,18 @@ import { ComponentDef } from '@glissade/scene/component';
 import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
+import { critique } from '@glissade/scene/diagnostics';
+import { CritiqueOptions } from '@glissade/scene/diagnostics';
+import { CritiqueResult } from '@glissade/scene/diagnostics';
 import { defineComponent } from '@glissade/scene/component';
 import { DIAGNOSTIC_SCHEMA_VERSION } from '@glissade/scene/diagnostics';
 import { DiagnosticCode } from '@glissade/scene/diagnostics';
 import { DiagnosticSeverity } from '@glissade/scene/diagnostics';
+import { DiagnosticSource } from '@glissade/scene/diagnostics';
 import { dispense } from '@glissade/scene/motion';
 import { drift } from '@glissade/scene/motion';
+import { emitWithIds } from '@glissade/scene/identity';
+import { EmitWithIdsResult } from '@glissade/scene/identity';
 import { EmphasizeOpts } from '@glissade/scene/type';
 import { emphasizeWords } from '@glissade/scene/type';
 import { EXPR_CONSTANTS } from '@glissade/core/expr';
@@ -55,6 +61,7 @@ import { lookAt } from '@glissade/scene/motion';
 import { MeasurerRequiredError } from '@glissade/scene/type';
 import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
+import { NodeIdStream } from '@glissade/scene/identity';
 import { OrientToPath } from '@glissade/scene/motion';
 import { orientToPath } from '@glissade/scene/motion';
 import { ParticleError } from '@glissade/scene/motion';
@@ -113,6 +120,12 @@ export { ComponentInstance }
 
 export { ComponentPropSpec }
 
+export { critique }
+
+export { CritiqueOptions }
+
+export { CritiqueResult }
+
 export { defineComponent }
 
 export { DIAGNOSTIC_SCHEMA_VERSION }
@@ -121,9 +134,15 @@ export { DiagnosticCode }
 
 export { DiagnosticSeverity }
 
+export { DiagnosticSource }
+
 export { dispense }
 
 export { drift }
+
+export { emitWithIds }
+
+export { EmitWithIdsResult }
 
 export { EmphasizeOpts }
 
@@ -184,6 +203,8 @@ export { MeasurerRequiredError }
 export { Meter }
 
 export { motionPath }
+
+export { NodeIdStream }
 
 export { OrientToPath }
 

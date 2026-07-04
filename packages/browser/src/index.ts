@@ -157,6 +157,20 @@ export {
   type DiagnosticSeverity,
   type InstancePropState,
 } from '@glissade/scene/diagnostics';
+// 0.60 critique() — machine-readable RENDERED diagnostics (OFF_CANVAS / TEXT_OVERFLOW
+// / OCCLUSION) from the DisplayList, the rendered-geometric half of validateScene.
+// The no-build author works ONLY against this IIFE, so the author→render→critique→
+// self-fix loop needs critique on window.glissade (same rationale as validateScene).
+// It needs the node-id stream, so emitWithIds (@glissade/scene/identity — previously
+// only on the separate dom.js bundle) is exposed alongside it. Both live on
+// tree-shakeable subpaths off the SACRED base embed; the base pays zero bytes.
+export {
+  critique,
+  type CritiqueOptions,
+  type CritiqueResult,
+  type DiagnosticSource,
+} from '@glissade/scene/diagnostics';
+export { emitWithIds, type EmitWithIdsResult, type NodeIdStream } from '@glissade/scene/identity';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified
 // snippet per node/builder method/helper — the no-build agent's primary

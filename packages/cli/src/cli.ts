@@ -35,6 +35,7 @@ function parseCaptionsModeOrFail(raw: string | undefined): CaptionsMode {
 const USAGE = `usage:
   gs render <scene-module> [options]
   gs diff <scene-module> --at <t> --against <baseline.dl.json|.png>
+  gs critique <scene-module> [--json]   machine-readable RENDERED diagnostics (OFF_CANVAS/TEXT_OVERFLOW/OCCLUSION) from the DisplayList — the rendered-geometric half of validateScene; samples an integer-frame grid, prints the flat canonically-sorted diagnostics (--json for the raw result)
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
@@ -168,7 +169,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types') {
+  if (command !== 'render' && command !== 'diff' && command !== 'critique' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -731,6 +732,21 @@ async function main(): Promise<void> {
       const result = await diffCommand({ modulePath, at, against });
       process.stdout.write(`${result.report}\n`);
       if (!result.equal) process.exit(1);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  // critique: machine-readable RENDERED diagnostics (OFF_CANVAS / TEXT_OVERFLOW /
+  // OCCLUSION) from the DisplayList — the rendered-geometric half of validateScene.
+  // Self-contained block (mirrors diff; hand-merges cleanly).
+  if (command === 'critique') {
+    const { critiqueCommand } = await import('./critique.js');
+    try {
+      const out = await critiqueCommand({ modulePath, json: flags.has('json') });
+      process.stdout.write(`${out.report}\n`);
+      if (out.hasErrors) process.exit(1);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

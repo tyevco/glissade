@@ -86,6 +86,10 @@ const EXEMPT_INTERNALS = new Set<string>([
   // "fundamentals"), so they are exempt-internal rather than describe().surface
   // entries. MeasurerRequiredError is pattern-exempt via /Error$/.
   'validateScene', 'resolveAt', 'instanceProps', 'DIAGNOSTIC_SCHEMA_VERSION',
+  // 0.60 critique() (rendered diagnostics) + emitWithIds (its node-id-stream
+  // producer, previously only on the dom.js bundle) — same DEV/authoring
+  // diagnostic class as the 0.59 subset above, so exempt-internal, not surface.
+  'critique', 'emitWithIds',
 ]);
 
 /**

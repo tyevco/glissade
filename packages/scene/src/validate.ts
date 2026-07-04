@@ -66,10 +66,26 @@ export type DiagnosticCode =
   | 'ID_COLLISION'
   | 'OFF_CANVAS'
   | 'YOGA_CHILD_POSITION'
-  | 'MEASURER_FALLBACK';
+  | 'MEASURER_FALLBACK'
+  // 0.60 critique() RENDERED codes — additive to the wire contract (no schema
+  // bump). TEXT_OVERFLOW: measured glyph ink exceeds a Text node's own wrap box.
+  // OCCLUSION: a node's on-frame box is fully covered by opaque occluder(s) for
+  // its whole on-stage span. (OFF_CANVAS above, reserved from 0.59, is emitted
+  // here too.)
+  | 'TEXT_OVERFLOW'
+  | 'OCCLUSION';
+
+/**
+ * 0.60: which enforcement SURFACE produced a diagnostic — distinguishes a CERTAIN
+ * static fact (`validateScene`) from a HEURISTIC rendered judgment (`critique`,
+ * which CAN false-positive) from a perceptual parity result (`parity`). Additive,
+ * optional (a pre-0.60 consumer ignores it). Certification reads it to keep "zero
+ * static errors" and "zero critique false-positives" as distinct claims.
+ */
+export type DiagnosticSource = 'validateScene' | 'critique' | 'parity';
 
 /** One diagnostic. The `{schemaVersion, code, severity, message, node?, track?}`
- *  core shape is PINNED; future fields are ADDITIVE only. */
+ *  core shape is PINNED; future fields (`source`/`detail`, 0.60) are ADDITIVE only. */
 export interface SceneDiagnostic {
   schemaVersion: typeof DIAGNOSTIC_SCHEMA_VERSION;
   code: DiagnosticCode;
@@ -79,6 +95,11 @@ export interface SceneDiagnostic {
   node?: string;
   /** The track target string the diagnostic concerns, when applicable. */
   track?: string;
+  /** 0.60: the enforcement surface that produced this diagnostic. */
+  source?: DiagnosticSource;
+  /** 0.60: structured evidence (e.g. `{ measured, threshold }` for a critique
+   *  code), so a consumer digs into the numbers without parsing the message. */
+  detail?: Record<string, unknown>;
 }
 
 /** `validateScene` result — the CLI-lint `{ hasErrors, diagnostics }` shape,
@@ -188,6 +209,7 @@ export function validateScene(scene: Scene, doc?: Timeline): ValidateSceneResult
       code,
       severity,
       message,
+      source: 'validateScene',
       ...(extra?.node !== undefined ? { node: extra.node } : {}),
       ...(extra?.track !== undefined ? { track: extra.track } : {}),
     });

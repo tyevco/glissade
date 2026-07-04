@@ -60,5 +60,18 @@ export {
   type SceneDiagnostic,
   type DiagnosticCode,
   type DiagnosticSeverity,
+  type DiagnosticSource,
   type InstancePropState,
 } from './validate.js';
+
+// 0.60 critique() — machine-readable RENDERED diagnostics (OFF_CANVAS / TEXT_OVERFLOW
+// / OCCLUSION) from the DisplayList IR, the rendered-geometric half of the boundary
+// 0.59 drew. Co-located here with validateScene/resolveAt (OFF the base scene index),
+// re-exported onto the browser IIFE. `sortDiagnostics` is exposed for the
+// sort-invariance golden guard.
+export {
+  critique,
+  sortDiagnostics,
+  type CritiqueOptions,
+  type CritiqueResult,
+} from './critique.js';
