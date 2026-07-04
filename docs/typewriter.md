@@ -107,6 +107,119 @@ When `splitText` does fall back to the estimate, it emits a one-shot dev-warning
 
 Compose `splitText` with `revealFraction` and `tl.stagger` for richer kinetic typography — e.g. a word-staggered entrance over the top line and a fraction-driven typewriter on the body.
 
+## Kinetic-type presets
+
+For the common moves — type a line in, cascade words or lines, pulse a word — the
+`@glissade/scene/type` subpath ships a **one-call sugar layer** over the primitives
+above (`typewriter()` / `textCursor` / `splitText` / `tl.stagger` / `Text.reveal`).
+Each preset is a lowercase factory returning a `{ node, … }` result; nothing new
+runs at play time — every preset compiles to **ordinary nodes + keyframe tracks**
+(or, for the render-only caret/mask paths, a closed-form custom draw), so the
+goldens hold by construction.
+
+```ts
+import { typeOn, revealWords, revealLines, emphasizeWords } from '@glissade/scene/type';
+```
+
+### `typeOn` — a whole line types in
+
+`typeOn(source, opts)` wraps `typewriter()` so a Text types in with a single call:
+
+```ts
+const t = typeOn({ id: 'prompt', text: 'make it pop', fontSize: 40 }, { cursor: true });
+// scene children: [t.node, t.cursor]      timeline: tl.tracks([t.track])
+```
+
+It returns `{ node, cursor?, track, marks, duration }` — draw `node` (plus
+`cursor` when present), inject the single `track`, and `marks` feeds keystroke SFX
+(see [Keystroke sync](#keystroke-sync-the-sfx-contract) below). The source needs a
+stable `id` (the track binds against `<id>/text` or `<id>/reveal`).
+
+| `TypeOnOpts` | Default | Meaning |
+| --- | --- | --- |
+| `perChar` | `0.06` | Seconds per grapheme (keystroke cadence). |
+| `start` | `0` | Absolute timeline start of the first keystroke. |
+| `cursor` | `false` | Attach a `textCursor` sibling that rides the type head. **Render-only** — add both `.node` and `.cursor` to the scene. |
+| `mask` | `false` | Reveal via the `Text.reveal` grapheme mask instead of the string track. **Render-only.** |
+| `cursorWidth` / `blinkPeriod` | — | Caret width (px) / blink period (s) when `cursor: true`. |
+| `cursorFill` | `''` (follow the Text's fill) | Caret color when `cursor: true` — bindable via `<id>/cursor/fill`. |
+| `cursorProps` | — | Escape hatch: any other `textCursor` prop for the caret sibling. |
+
+By **default** (mask off, cursor off) `typeOn` drives `<id>/text` with the string
+hold-key track from `typewriter()` — so it **round-trips to Lottie** as stepped
+text documents. `{ mask: true }` swaps to a `<id>/reveal` grapheme mask that is
+Skia-identical but **render-only** (the exporter drops it and warns "reveal is not
+exported"), and `{ cursor: true }` adds a **render-only** caret sibling (the
+exporter warns + drops the caret node). Reach for the default when you want export
+fidelity; reach for `mask`/`cursor` when the render is the deliverable.
+
+### `revealWords` / `revealLines` — cascade parts in
+
+Split a Text into words (or lines) and cascade each in — a fade, optionally rising
+from below or dropping from above. Both are `splitText` + `tl.stagger` compiled to
+**real opacity (+ position) tracks**, so they **round-trip to Lottie**:
+
+```ts
+const r = revealWords(
+  { id: 'title', text: 'kinetic type', fontSize: 38, align: 'center', position: [320, 66] },
+  { from: 'below', each: 0.14, duration: 0.4, at: 0.1, measurer: backend },
+);
+// scene children: [r.node]   (the split Group — REPLACES the source)
+// timeline: tl.tracks(r.tracks)
+```
+
+| `RevealOpts` | Default | Meaning |
+| --- | --- | --- |
+| `each` | `0.08` | Per-part cascade delay (s). |
+| `from` | `'fade'` | Entrance: `'below'` (rise), `'above'` (drop), or `'fade'` only. |
+| `distance` | `24` | Position offset (px) for `'below'`/`'above'`. |
+| `duration` | `0.4` | Per-part tween duration (s). |
+| `ease` | `'easeOutCubic'` | Arriving ease. |
+| `at` | `0` | Absolute start of the cascade (s). |
+| `id` / `measurer` | — | Stable id namespace (else the source's id) / measurer for exact part geometry. |
+
+Like `splitText`, these snapshot part geometry at **build time**, so pass
+`{ measurer }` (or call `setTextMeasurer` first) for exact positions — see
+[`splitText` needs the backend text measurer](#splittext-needs-the-backend-text-measurer).
+`result.node` is the split `Group` and **replaces** the source (draw it, not the
+original Text).
+
+### `emphasizeWords` — pulse specific words
+
+`emphasizeWords(source, indices, opts)` pulses (scale up-and-back) the words at
+`indices` in reading order, cascaded — real **scale** tracks, so it round-trips:
+
+```ts
+// pulse words 0 and 3, one after the other
+const e = emphasizeWords(title, [0, 3], { scale: 1.2, each: 0.12, measurer: backend });
+```
+
+| `EmphasizeOpts` | Default | Meaning |
+| --- | --- | --- |
+| `scale` | `1.15` | Peak scale of the pulse. |
+| `duration` | `0.4` | Per-word pulse duration (s). |
+| `each` | `0.12` | Delay between successive emphasized words (s). |
+| `ease` | `'easeInOutSine'` | Ease of the up/down halves. |
+| `at` | `0` | Absolute start (s). |
+| `by` | `'word'` | Split unit to index against (`'word'` or `'grapheme'`). |
+
+It is **fail-loud**: an out-of-range or non-integer index **throws** (never
+silently ignored) — the split has a fixed part count, so a stale index is a bug.
+
+### Interchange verdict, per preset
+
+The presets carry the never-silent export rule of the compositing/motion layers:
+
+| Preset | Lottie export |
+| --- | --- |
+| `revealWords` / `revealLines` / `emphasizeWords` | ✅ **Round-trips** — real opacity / position / scale tracks. |
+| `typeOn` (default) | ✅ **Round-trips** — a string hold-key track → stepped text documents. |
+| `typeOn { cursor: true }` | ❌ Render-only caret sibling — the exporter **warns + drops** the caret. |
+| `typeOn { mask: true }` | ❌ Render-only `reveal` grapheme mask — the exporter **warns + drops** it. |
+
+The [`golden-kinetic`](https://github.com/tyevco/glissade/blob/main/packages/examples/src/scenes/golden-kinetic.ts)
+scene runs all five, top to bottom, as the worked example.
+
 ## The cursor
 
 `textCursor(text)` is a sibling node that rides the reveal head — a thin caret at `Text.revealHead()`, the point just after the last revealed grapheme. It re-flows with wrap width, font, and align, and follows the text's own transform. Place it after the text so it paints on top:

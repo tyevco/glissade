@@ -29,7 +29,7 @@ https://cdn.jsdelivr.net/npm/@glissade/browser@latest/dist/glissade.browser.js
 https://cdn.jsdelivr.net/npm/@glissade/browser@pre/dist/glissade.browser.js
 
 # PIN an exact version (fully reproducible)
-https://cdn.jsdelivr.net/npm/@glissade/browser@0.32.0/dist/glissade.browser.js
+https://cdn.jsdelivr.net/npm/@glissade/browser@0.58.1/dist/glissade.browser.js
 ```
 
 `unpkg.com/@glissade/browser@<tag-or-version>/dist/glissade.browser.js` works identically. Each GitHub Release also attaches the file as an asset (`https://github.com/tyevco/glissade/releases/download/v<version>/glissade.browser.js`) — note that asset URL is **version-specific** (the tag is in the path), and `/releases/latest/download/` follows the latest **stable** release only (not pre-releases). For a single URL that tracks pre-releases, use the CDN `@pre` tag above. *(CDN dist-tag resolution caches briefly, so a brand-new publish can take a few minutes to appear on the `@latest`/`@pre` URLs.)*

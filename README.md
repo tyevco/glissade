@@ -49,7 +49,13 @@ One contract underneath everything: `evaluate(scene, timeline, t)` is a **pure f
 - **`@glissade/backend-canvas2d` / `@glissade/backend-skia`** — the same command stream rasterized in the browser and headless (both Skia-family; SSIM-gated parity suite).
 - **`@glissade/player`** — time-based Player (reverse = negative rate, drop-safe), Driver seam (rAF clock, scroll), `mount()`.
 - **`@glissade/cli`** — `gs render` to PNG sequences or mp4/webm with mixed audio (plus a persistent frame cache and an audio-only remux fast path); FFmpeg-extracted video assets; `gs build` / `gs mcp` / `gs migrate` / `gs describe` for tooling and agents.
-- **Motion craft** — `orientToPath`/`lookAt` rotation drivers, `retime` (speed ramps, reverse, ping-pong), `Echo` motion trails, per-subtree motion blur, and `Chart()` + serializable scales (bind a table to an animatable bar chart).
+- **Motion craft** — `orientToPath`/`lookAt` rotation drivers, `retime` (speed ramps, reverse, ping-pong), `Echo` motion trails, per-subtree `motionBlur`, and `Chart()` + serializable scales (bind a table to an animatable bar chart).
+- **Flexbox layout** — a Yoga-backed `Layout` with `Stack`/`Row`/`Column` and a `Grid`, on the tree-shakeable `@glissade/scene/layout` entry (the base embed never pays for it).
+- **Kinetic type** — `Text.reveal` typewriter, `splitText` per-part sub-targets, and the one-call `typeOn` / `revealWords` / `revealLines` / `emphasizeWords` presets (`@glissade/scene/type`).
+- **Particles & camera** — a seeded, baked `particles()` emitter with `drift`/`sparks`/`dispense` presets, a cinematic `camera()` rig (push-in / pan / roll + depth parallax), and a standalone `shake()` pose-jitter driver (`@glissade/scene/motion`).
+- **Gradients, gauges & components** — animatable linear / radial / **mesh** gradient `Paint` (with `smooth` and `gaussian` no-band ramps), radial `Gauge` / `Meter`, and reusable `defineComponent` factories.
+- **Lottie interchange** — `importLottie` (`.json` / `gs import` → scene nodes) and `exportLottie` / `gs export` (a scene → a Lottie document, with render-only effects warned honestly, never silently dropped).
+- **Audio pipeline** — offline TTS narration (`gs narrate`), procedural sound design (`gs sfx`), localized mixes (`gs localize`), and series loudness mastering (`gs master`) — render stays offline consuming committed `*.timing.json` sidecars.
 - **`@glissade/export-web`** — WebCodecs + Mediabunny export with feature-detected codecs; Mediabunny video decode with bidirectional scrub.
 - **`@glissade/studio` + `@glissade/vite-plugin` + `@glissade/react`** — viewport, transport, timeline panel with draggable keys, live inspector; GUI edits persist to `*.edits.json` sidecars and survive code edits (code owns structure, the editor owns the keys you touch).
 
@@ -69,7 +75,7 @@ pnpm --filter @glissade/examples dev   # the showcase is the landing page; minim
 
 ## Status
 
-Pre-release (`0.x`, published to npm — latest stable `0.32.0`): APIs may move, the Timeline document schema is versioned and stable-intentioned. Packages version in lockstep; in `0.x` a minor bump may break — see [BREAKING.md](BREAKING.md) for the policy and change log. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
+Pre-release (`0.x`, published to npm — latest stable `0.58.1`): APIs may move, the Timeline document schema is versioned and stable-intentioned. Packages version in lockstep; in `0.x` a minor bump may break — see [BREAKING.md](BREAKING.md) for the policy and change log. Inspired by [Motion Canvas](https://github.com/motion-canvas/motion-canvas) (MIT) and, at the concept level only, Remotion — this is a clean-room design; no Remotion code is referenced or used (see CONTRIBUTING).
 
 ## License
 

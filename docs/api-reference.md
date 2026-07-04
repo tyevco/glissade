@@ -613,6 +613,76 @@ const dot = new Circle({ id: 'dot', radius: 8, fill: '#39e0ff' });
 const trail = echo(dot, { count: 6, spacing: 0.05, decay: 0.7 });
 ```
 
+### `camera`
+
+A cinematic camera rig (FACTORY, no `new`): a Group subclass that applies the inverse camera pose as a parent transform over layered content — push-ins, pans, rolls, and pan-only parallax by layer depth. The pose (center/zoom/roll) are keyframeable track targets; the world moves while nodes stay node-local (no double-apply with anchors). Captions belong as SIBLINGS of the camera (outside the rig) so they stay pinned. Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+camera(layers: { content: Node, depth? }[], props?: { id?, center?, zoom?, roll?, shake? }): Camera  —  center is RELATIVE viewport coords ([0.5,0.5]=center, never px); animate 'cam/center(.x/.y)', 'cam/zoom', 'cam/roll'. depth<1 = far (parallax pans less).
+```
+
+### `shake`
+
+A standalone jitter driver (mutate-and-return, like orientToPath): wobbles ANY node’s pose with deterministic value noise, folded in at emit as a parent-space offset so it composes with whatever else drives the node. SEPARATE translate (px) / rotate (deg) / frequency (Hz) amplitudes; pure and byte-identical run-to-run (seeded, no Date/Math.random). Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+shake(node: Node, opts: { seed: number, translate?: number, rotate?: number, frequency?: number }): Node
+```
+
+### `particles`
+
+A small SEEDED, BAKED particle emitter (FACTORY, no `new`): composes each() (count fixed slot nodes at `${id}/${i}`) + bake() (seeded physics → position/opacity/scale/rotation tracks on those SAME ids). Every slot is a real node with real tracks → a real exportable Lottie layer, faithful BY CONSTRUCTION (no render-only/custom-draw path). `count` is the MAX-CONCURRENT ring-buffer pool (bounded 200 — over THROWS, never clamps), NOT total emitted; opacity-0-for-the-whole-window slots are pruned so the layer count stays proportional. Seed defaults to hashStr(id); byte-identical run-to-run, a different seed varies. ESCAPE HATCH: `appearance` (any Node/glyph template), `step` (raw per-particle sim), `...` velocity/forces/lifetime. Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+particles(spec: { id, count, box: {w,h}, duration, fps, origin: [fx,fy], lifetime: number | [min,max], velocity: { speed:[min,max], angle:[min,max] (deg) }, appearance: (i, ctx) => Node | { node, opacityOverLife?, scaleOverLife? }, rate?, burst?: number | {at,n}[], seed?, area?, safeBottom? (relative [0,1] safe-area clamp — no spawn below this Y), forces?: { gravity?, drag?, wind? }, spin?, opacityOverLife?, scaleOverLife?, step?: (p, dt, rng) => void }): { node: Group, tracks: Track[], end }  —  supply rate and/or burst; count > 200 throws; safeBottom out-of-[0,1] or above the spawn-band top throws.
+```
+
+### `drift`
+
+Particles preset: ambient low-opacity motes floating gently up (a bokeh companion). Continuous low-rate; DEFAULTS to a small max-concurrent count (24) so the exported layer count stays proportional, NOT 200 near-empty layers. SAFE-AREA (0.57.1): the DEFAULT spawn band is centered + shallow (bottom ~0.68H) so bare drift() clears a standard lower-third caption safe-area by itself; pass `safeBottom` (relative [0,1]) to pin a consumer's exact captionTop, or override `area`/`origin` for a custom spawn region. `appearance` is the primary control (a themed dot); `...rest` forwards to particles() (velocity/forces/lifetime/area/safeBottom/step). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+drift(opts: { box: {w,h}, duration, fps, count?, rate?, origin?, color?, radius?, seed?, id?, area?, safeBottom? (relative [0,1] — no motes below this Y, e.g. just above captionTop), ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }
+```
+
+### `sparks`
+
+Particles preset: a subtle corporate-safe radial impact burst (win-beat / habit-stamp flourish) — short-life dots thrown outward from origin, shrinking + fading with a touch of gravity. LOW density by default. `...rest` forwards to particles() (the escape-hatch appearance/step/velocity). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+sparks(origin: [fx,fy], opts: { box: {w,h}, duration, fps, count?, at?, color?, radius?, seed?, id?, ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }
+```
+
+### `dispense`
+
+Particles preset: a DIRECTIONAL sparks variant — a small themed sparkle emanating one way at a beat (the vending "AS ASKED" flourish ON the drop, not a stream). Directional angle bias + an optional GLYPH node-template. `...rest` forwards to particles(). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).
+
+Import from `@glissade/scene/motion`.
+
+```ts
+dispense(origin: [fx,fy], opts: { box: {w,h}, duration, fps, angle?, spread?, glyph?, glyphSize?, glyphFamily?, count?, at?, color?, seed?, id?, ...rest (appearance/step/velocity/forces) }): { node: Group, tracks: Track[], end }
+```
+
+### `valueNoise`
+
+Closed-form smooth value noise: a PURE function of (seed, t) — lerp(rand(⌊t⌋), rand(⌊t⌋+1), smoothstep(fract t)) with core’s seeded hash. No state, no bake; deterministic by construction (byte-identical run-to-run), fps-independent, O(1), seekable — the closed-form sibling of a spring. Range [0,1); center a signed wobble with *2-1. The primitive behind shake + camera shake.
+
+Import from `@glissade/core`.
+
+```ts
+valueNoise(seed: number, t: number): number  //  jitterX = () => 3 * (valueNoise(7, t) * 2 - 1)
+```
+
 ### `motionBlur`
 
 Real sampled motion blur: wrap a child so it renders at N sub-frame times across a shutter interval (centered on the frame) and AVERAGES them — tracks every animated prop, not a faked directional blur. A pure multi-time re-eval (playhead re-addressed per sample, running-mean opacity, restored), byte-exact on Skia; browser↔Skia is perceptual-tier for blur.
@@ -744,6 +814,71 @@ Import from `@glissade/scene/type`.
 
 ```ts
 fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer? }): number
+```
+
+### `typeOn`
+
+Kinetic type: one-call typewriter over the shipped typewriter(). DEFAULT emits a STRING hold-key track on `<id>/text` (round-trips to Lottie as stepped text docs). { cursor: true } adds a render-only caret sibling (export warns+drops it); { mask: true } swaps to a render-only `<id>/reveal` grapheme mask (export warns 'reveal not exported'). Factory (no `new`). Inject with tl.tracks([r.track]); draw r.node (+ r.cursor). On @glissade/scene/type.
+
+Import from `@glissade/scene/type`.
+
+```ts
+typeOn(source: Text | TextProps, opts?: { perChar?, start?, cursor?: boolean, mask?: boolean, cursorWidth?, blinkPeriod?, cursorFill?, cursorProps? }): { node: Text, cursor?: TextCursor, track: Track, marks, duration } — cursorFill sets a contrasting caret color (default follows text fill); cursorProps forwards any other TextCursor prop
+```
+
+```ts
+import { typeOn } from '@glissade/scene/type';
+// one-call typewriter. DEFAULT = a string hold-key track on `<id>/text` (round-trips to Lottie).
+// children: [t.node, t.cursor]; timeline: tl.tracks([t.track])
+const t = typeOn({ id: 'prompt', text: 'make it pop', fontSize: 40 }, { cursor: true, perChar: 0.06 });
+```
+
+### `revealWords`
+
+Kinetic type: splitText(by:'word') → cascade each word in (opacity, optionally rising from 'below'/dropping from 'above', or 'fade'). Returns the split Group as `node` (draw THIS, not the source) plus REAL tracks that round-trip to Lottie. Factory (no `new`). Pass { measurer } for exact geometry. On @glissade/scene/type.
+
+Import from `@glissade/scene/type`.
+
+```ts
+revealWords(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }
+```
+
+```ts
+import { revealWords } from '@glissade/scene/type';
+// split into words + cascade each in. Draw r.node (the split Group), inject r.tracks via tl.tracks(r).
+const r = revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12 });
+```
+
+### `revealLines`
+
+Kinetic type: like revealWords but splitText(by:'line') — cascade each LINE in. Returns the split Group as `node` + REAL tracks (round-trip to Lottie). Factory (no `new`). On @glissade/scene/type.
+
+Import from `@glissade/scene/type`.
+
+```ts
+revealLines(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }
+```
+
+```ts
+import { revealLines } from '@glissade/scene/type';
+// like revealWords but per LINE. Draw r.node; tl.tracks(r).
+const r = revealLines({ id: 'body', text: 'line one\nline two', fontSize: 28 }, { each: 0.2 });
+```
+
+### `emphasizeWords`
+
+Kinetic type: pulse (scale up-and-back) the words at `indices` in reading order, cascaded. FAIL-LOUD: an out-of-range or non-integer index THROWS. Real scale tracks (round-trip to Lottie). Returns the split Group as `node`. Factory (no `new`). On @glissade/scene/type.
+
+Import from `@glissade/scene/type`.
+
+```ts
+emphasizeWords(source: Text | TextProps, indices: number[], opts?: { scale?, duration?, each?, ease?, at?, by?: 'word'|'grapheme', id?, measurer? }): { node: Group, tracks: Track[] }
+```
+
+```ts
+import { emphasizeWords } from '@glissade/scene/type';
+// pulse the words at the given indices (fails loud on an out-of-range index). Draw r.node; tl.tracks(r).
+const r = emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3 });
 ```
 
 ### `Grid`

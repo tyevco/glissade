@@ -41,7 +41,7 @@ gs migrate api-0.30.json --json      # machine-readable (feed an agent / codemod
 ```
 
 ```
-gs migrate: 0.13.0 → 0.31.0
+gs migrate: 0.13.0 → 0.58.1
   3 breaking · 5 additive · 8 total
 
 BREAKING — action needed:
