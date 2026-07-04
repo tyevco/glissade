@@ -20,6 +20,8 @@ import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
 import { defineComponent } from '@glissade/scene/component';
+import { dispense } from '@glissade/scene/motion';
+import { drift } from '@glissade/scene/motion';
 import { EmphasizeOpts } from '@glissade/scene/type';
 import { emphasizeWords } from '@glissade/scene/type';
 import { EXPR_CONSTANTS } from '@glissade/core/expr';
@@ -49,6 +51,8 @@ import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
 import { OrientToPath } from '@glissade/scene/motion';
 import { orientToPath } from '@glissade/scene/motion';
+import { ParticleError } from '@glissade/scene/motion';
+import { particles } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
@@ -62,6 +66,7 @@ import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { shake } from '@glissade/scene/motion';
 import { shakeOffset } from '@glissade/scene/motion';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
+import { sparks } from '@glissade/scene/motion';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
 import { typeOn } from '@glissade/scene/type';
@@ -99,6 +104,10 @@ export { ComponentInstance }
 export { ComponentPropSpec }
 
 export { defineComponent }
+
+export { dispense }
+
+export { drift }
 
 export { EmphasizeOpts }
 
@@ -158,6 +167,10 @@ export { OrientToPath }
 
 export { orientToPath }
 
+export { ParticleError }
+
+export { particles }
+
 export { pathLength }
 
 export { pointAtLength }
@@ -183,6 +196,8 @@ export { shake }
 export { shakeOffset }
 
 export { snapshotCanvas }
+
+export { sparks }
 
 export { splitText }
 

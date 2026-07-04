@@ -645,6 +645,38 @@ const HELPERS: DescribedHelper[] = [
     usage: 'shake(node: Node, opts: { seed: number, translate?: number, rotate?: number, frequency?: number }): Node',
   },
   {
+    name: 'particles',
+    summary:
+      "A small SEEDED, BAKED particle emitter (FACTORY, no `new`): composes each() (count fixed slot nodes at `${id}/${i}`) + bake() (seeded physics → position/opacity/scale/rotation tracks on those SAME ids). Every slot is a real node with real tracks → a real exportable Lottie layer, faithful BY CONSTRUCTION (no render-only/custom-draw path). `count` is the MAX-CONCURRENT ring-buffer pool (bounded 200 — over THROWS, never clamps), NOT total emitted; opacity-0-for-the-whole-window slots are pruned so the layer count stays proportional. Seed defaults to hashStr(id); byte-identical run-to-run, a different seed varies. ESCAPE HATCH: `appearance` (any Node/glyph template), `step` (raw per-particle sim), `...` velocity/forces/lifetime. Tree-shakeable (@glissade/scene/motion).",
+    import: '@glissade/scene/motion',
+    usage:
+      "particles(spec: { id, count, box: {w,h}, duration, fps, origin: [fx,fy], lifetime: number | [min,max], velocity: { speed:[min,max], angle:[min,max] (deg) }, appearance: (i, ctx) => Node | { node, opacityOverLife?, scaleOverLife? }, rate?, burst?: number | {at,n}[], seed?, area?, forces?: { gravity?, drag?, wind? }, spin?, opacityOverLife?, scaleOverLife?, step?: (p, dt, rng) => void }): { node: Group, tracks: Track[], end }  —  supply rate and/or burst; count > 200 throws.",
+  },
+  {
+    name: 'drift',
+    summary:
+      "Particles preset: ambient low-opacity motes floating gently up (a bokeh companion). Continuous low-rate; DEFAULTS to a small max-concurrent count (24) so the exported layer count stays proportional, NOT 200 near-empty layers. `appearance` is the primary control (a themed dot); `...rest` forwards to particles() (velocity/forces/lifetime/step). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).",
+    import: '@glissade/scene/motion',
+    usage:
+      "drift(opts: { box: {w,h}, duration, fps, count?, rate?, origin?, color?, radius?, seed?, id?, ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }",
+  },
+  {
+    name: 'sparks',
+    summary:
+      'Particles preset: a subtle corporate-safe radial impact burst (win-beat / habit-stamp flourish) — short-life dots thrown outward from origin, shrinking + fading with a touch of gravity. LOW density by default. `...rest` forwards to particles() (the escape-hatch appearance/step/velocity). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).',
+    import: '@glissade/scene/motion',
+    usage:
+      "sparks(origin: [fx,fy], opts: { box: {w,h}, duration, fps, count?, at?, color?, radius?, seed?, id?, ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }",
+  },
+  {
+    name: 'dispense',
+    summary:
+      "Particles preset: a DIRECTIONAL sparks variant — a small themed sparkle emanating one way at a beat (the vending \"AS ASKED\" flourish ON the drop, not a stream). Directional angle bias + an optional GLYPH node-template. `...rest` forwards to particles(). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).",
+    import: '@glissade/scene/motion',
+    usage:
+      "dispense(origin: [fx,fy], opts: { box: {w,h}, duration, fps, angle?, spread?, glyph?, glyphSize?, glyphFamily?, count?, at?, color?, seed?, id?, ...rest (appearance/step/velocity/forces) }): { node: Group, tracks: Track[], end }",
+  },
+  {
     name: 'valueNoise',
     summary:
       'Closed-form smooth value noise: a PURE function of (seed, t) — lerp(rand(⌊t⌋), rand(⌊t⌋+1), smoothstep(fract t)) with core’s seeded hash. No state, no bake; deterministic by construction (byte-identical run-to-run), fps-independent, O(1), seekable — the closed-form sibling of a spring. Range [0,1); center a signed wobble with *2-1. The primitive behind shake + camera shake.',

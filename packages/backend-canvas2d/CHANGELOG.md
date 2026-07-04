@@ -1,5 +1,13 @@
 # @glissade/backend-canvas2d
 
+## 0.57.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @glissade/scene@0.57.0-pre.0
+  - @glissade/core@0.57.0-pre.0
+
 ## 0.56.0
 
 ### Patch Changes

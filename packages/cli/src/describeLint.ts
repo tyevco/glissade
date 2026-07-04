@@ -65,7 +65,7 @@ const EXEMPT_INTERNALS = new Set<string>([
   // (Group…Layout) are the authoring entry, these are their return/instance types.
   'Camera', 'Canvas2DBackend', 'Custom', 'Echo', 'FollowPath', 'GsPlayerElement', 'Highlight', 'ImageNode', 'LookAt', 'MotionBlur', 'Node', 'OrientToPath', 'Raster2D', 'ShaderEffect', 'TextCursor', 'TrackMatte',
   // Constants / registries / sentinels (not callable authoring entry points).
-  'ALL_FILTER_KINDS', 'DEFAULT_EASE', 'EXPR_CONSTANTS', 'EXPR_FUNCTIONS', 'IDENTITY', 'MEASURE_QUANTUM_PX', 'MESH_DOWNSCALE', 'MESH_SHEPARD_POWER', 'MESH_SIGMA', 'NODE_TAXONOMY', 'TARGET_PATH', 'easingDerivatives', 'estimatingMeasurer', 'springPresets',
+  'ALL_FILTER_KINDS', 'DEFAULT_EASE', 'EXPR_CONSTANTS', 'EXPR_FUNCTIONS', 'IDENTITY', 'MAX_PARTICLE_COUNT', 'MEASURE_QUANTUM_PX', 'MESH_DOWNSCALE', 'MESH_SHEPARD_POWER', 'MESH_SIGMA', 'NODE_TAXONOMY', 'TARGET_PATH', 'easingDerivatives', 'estimatingMeasurer', 'springPresets',
   // Backend / element / player / driver / scheduler / layout-engine / measurer plumbing
   // (embed wiring done by mount()/the CLI, never hand-called by a no-build author).
   'clockDriver', 'scrollDriver', 'createPlayhead', 'createDisplayListBuilder', 'getLayoutEngine', 'setLayoutEngine', 'requireLayoutEngine', 'loadYogaLayoutEngine', 'swapOnHmr', 'setScheduler', 'synchronousScheduler', 'setDefaultMeasurer', 'setDevWarning', 'defineGsPlayer', 'buildFontRegistry', 'setShaderRunner',

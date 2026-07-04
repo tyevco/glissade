@@ -32,3 +32,27 @@ export {
 // (push-in/pan/roll/parallax) + deterministic pose jitter. Off the base embed.
 export { Camera, camera, CameraError, cameraLayerMatrix, type CameraLayer, type CameraProps } from './camera.js';
 export { shake, shakeOffset, shakenSpec, type ShakeSpec } from './shake.js';
+
+// 0.57 Particles/Emitters — a small seeded, baked emitter composing each()+bake()
+// (ring-buffer slot pool, opacity-gated, faithful-by-construction interchange) plus
+// the drift/sparks/dispense presets. Off the base embed (same /motion subpath).
+export {
+  particles,
+  drift,
+  sparks,
+  dispense,
+  ParticleError,
+  MAX_PARTICLE_COUNT,
+  type ParticleSpec,
+  type ParticlesResult,
+  type ParticleForces,
+  type ParticleState,
+  type ParticleAppearance,
+  type ParticleAppearanceContext,
+  type ParticlePresetRest,
+  type AreaSpec,
+  type OverLife,
+  type DriftOptions,
+  type SparksOptions,
+  type DispenseOptions,
+} from './particles.js';
