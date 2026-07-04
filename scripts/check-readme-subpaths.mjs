@@ -29,6 +29,7 @@ const SKIP = new Set([
   './identity',
   './examples',
   './tokens', // production token-highlight; niche, documented in DESIGN
+  './gradient', // 0.58 INFRA: the pure oklab stop densifier (densifyStops) reused by the Lottie exporter to honor smooth/gaussian interpolation — an internal render/export-parity helper, not a user-facing factory (like /diagnostics)
 ]);
 
 let failed = false;

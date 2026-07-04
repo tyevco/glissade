@@ -765,7 +765,7 @@ const HELPERS: DescribedHelper[] = [
       "Kinetic type: one-call typewriter over the shipped typewriter(). DEFAULT emits a STRING hold-key track on `<id>/text` (round-trips to Lottie as stepped text docs). { cursor: true } adds a render-only caret sibling (export warns+drops it); { mask: true } swaps to a render-only `<id>/reveal` grapheme mask (export warns 'reveal not exported'). Factory (no `new`). Inject with tl.tracks([r.track]); draw r.node (+ r.cursor). On @glissade/scene/type.",
     import: '@glissade/scene/type',
     usage:
-      "typeOn(source: Text | TextProps, opts?: { perChar?, start?, cursor?: boolean, mask?: boolean, cursorWidth?, blinkPeriod? }): { node: Text, cursor?: TextCursor, track: Track, marks, duration }",
+      "typeOn(source: Text | TextProps, opts?: { perChar?, start?, cursor?: boolean, mask?: boolean, cursorWidth?, blinkPeriod?, cursorFill?, cursorProps? }): { node: Text, cursor?: TextCursor, track: Track, marks, duration } — cursorFill sets a contrasting caret color (default follows text fill); cursorProps forwards any other TextCursor prop",
   },
   {
     name: 'revealWords',

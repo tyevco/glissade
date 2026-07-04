@@ -24,7 +24,7 @@ import { timeline, track, key, type Track, type Vec2, type EaseSpec } from '@gli
 import { Group, Text, type GraphemeBox, type LineBox, type TextProps, type WordBox } from './nodes.js';
 import type { FontSpec } from './displayList.js';
 import { fallbackMeasurer, measureWrappedText, quantize, segmentGraphemes, warnIfEstimating, type TextMeasurer } from './text.js';
-import { textCursor, type TextCursor } from './textCursor.js';
+import { textCursor, type TextCursor, type TextCursorProps } from './textCursor.js';
 import { typewriter, type EditMark } from './typewriter.js';
 
 export type SplitBy = 'word' | 'line' | 'grapheme';
@@ -359,6 +359,20 @@ export interface TypeOnOpts {
   cursorWidth?: number;
   /** Caret blink period seconds when `cursor: true` (passthrough to textCursor). */
   blinkPeriod?: number;
+  /**
+   * Caret COLOR when `cursor: true` (passthrough to the textCursor sibling's `fill`).
+   * Default '' = follow the Text's own fill; set a hex/PropInit for a deliberately
+   * contrasting caret (bindable via the `<id>/cursor/fill` track). Ignored without `cursor`.
+   */
+  cursorFill?: TextCursorProps['fill'];
+  /**
+   * Escape hatch: any other {@link TextCursor} construction prop (e.g. `blinkPeriod`,
+   * `width`, or a NodeProp) forwarded to the caret sibling when `cursor: true`. The
+   * explicit `cursorWidth`/`blinkPeriod`/`cursorFill` options win over the matching
+   * key here, and the caret's `id` (`<id>/cursor`) is always set by typeOn. Ignored
+   * without `cursor`.
+   */
+  cursorProps?: Omit<TextCursorProps, 'text' | 'id'>;
 }
 
 export interface TypeOnResult {
@@ -418,9 +432,11 @@ export function typeOn(source: Text | TextProps, opts: TypeOnOpts = {}): TypeOnR
   const result: TypeOnResult = { node, track: tr, marks: tw.marks, duration: tw.duration };
   if (opts.cursor) {
     result.cursor = textCursor(node, {
+      ...(opts.cursorProps ?? {}),
       id: `${id}/cursor`,
       ...(opts.cursorWidth !== undefined ? { width: opts.cursorWidth } : {}),
       ...(opts.blinkPeriod !== undefined ? { blinkPeriod: opts.blinkPeriod } : {}),
+      ...(opts.cursorFill !== undefined ? { fill: opts.cursorFill } : {}),
     });
   }
   return result;

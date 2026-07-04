@@ -440,6 +440,54 @@ describe('exportLottie gradient fill (gf)', () => {
     expect(gf.g!.p).toBe(2);
   });
 
+  it('densifies a RADIAL gaussian-bloom ramp to a 64-stop oklab approximation (not a hard linear ramp)', () => {
+    const warnings: string[] = [];
+    const doc = exportLottie(
+      {
+        createScene: () => createScene({ size: { w: 200, h: 200 }, children: [new Rect({ id: 'box', width: 100, height: 60, fill: {
+          kind: 'radial', center: [0, 0], radius: 40, interpolation: 'gaussian',
+          stops: [{ offset: 0, color: '#ffffff' }, { offset: 1, color: '#101858' }],
+        } as unknown as string })] }),
+        timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+      },
+      { width: 200, height: 200, fps: 60, onWarn: (m) => warnings.push(m) },
+    );
+    const gf = doc.layers[0]!.shapes!.find((s) => s.ty === 'gf')!;
+    expect(gf.t).toBe(2); // radial
+    // the ramp is densified to GRADIENT_RAMP_STEPS (64) stops, not the authored 2
+    expect(gf.g!.p).toBe(64);
+    const k = (gf.g!.k as { a: 0; k: number[] }).k;
+    expect(k).toHaveLength(64 * 4); // [offset,r,g,b] × 64 (both stops opaque → no alpha stops)
+    // offsets span [0,1] and are strictly monotonic increasing
+    const offsets = Array.from({ length: 64 }, (_, i) => k[i * 4]!);
+    expect(offsets[0]).toBeCloseTo(0);
+    expect(offsets[63]).toBeCloseTo(1);
+    for (let i = 1; i < 64; i++) expect(offsets[i]!).toBeGreaterThan(offsets[i - 1]!);
+    // the ramp runs from white (bright core) toward the dark rim — red channel decreases
+    expect(k[1]).toBeCloseTo(1); // first stop r ≈ 1 (white)
+    expect(k[63 * 4 + 1]!).toBeLessThan(0.3); // last stop r low (dark #101858)
+    // HONORED → SILENT: densification faithfully honors the mode (perceptual parity), so
+    // NO warn fires — a warn on a mode we actually respected would be spurious noise.
+    expect(warnings.some((w) => /gradient interpolation/.test(w))).toBe(false);
+  });
+
+  it('warns (never-silent) only when a non-linear ramp CANNOT be densified → hard linear ramp', () => {
+    // a zero-span gradient (both stops at the same offset) can't be resampled, so the
+    // densifier passes it through → a genuine hard-linear-ramp fallback → must warn.
+    const warnings: string[] = [];
+    exportLottie(
+      {
+        createScene: () => createScene({ size: { w: 200, h: 200 }, children: [new Rect({ id: 'box', width: 100, height: 60, fill: {
+          kind: 'radial', center: [0, 0], radius: 40, interpolation: 'smooth',
+          stops: [{ offset: 0.5, color: '#ffffff' }, { offset: 0.5, color: '#101858' }],
+        } as unknown as string })] }),
+        timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+      },
+      { width: 200, height: 200, fps: 60, onWarn: (m) => warnings.push(m) },
+    );
+    expect(warnings.some((w) => /could not be densified.*hard linear ramp/.test(w))).toBe(true);
+  });
+
   it('exports an ANIMATED linear gradient with keyframed s/e/g (a:1)', () => {
     const mod: SceneModule = {
       createScene: () => createScene({ size: { w: 200, h: 200 }, children: [new Rect({ id: 'box', width: 100, height: 60, fill: '#ff0000' })] }),

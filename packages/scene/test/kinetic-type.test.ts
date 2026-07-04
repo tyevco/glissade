@@ -55,6 +55,32 @@ describe('typeOn (one-call typewriter)', () => {
     expect(r.track.target).toBe('p/text');
   });
 
+  it('{ cursorFill } forwards a contrasting caret color to the TextCursor sibling fill', () => {
+    const r = typeOn(new Text({ id: 'p', text: 'yo', fontFamily: 'x', fill: '#ffffff' }), {
+      cursor: true,
+      cursorFill: '#ff0055',
+    });
+    expect(r.cursor!.fill()).toBe('#ff0055'); // the caret owns its own fill, not the text's
+    expect(r.cursor!.id).toBe('p/cursor');
+  });
+
+  it('DEFAULT caret fill is empty (follows the text fill) when cursorFill is omitted', () => {
+    const r = typeOn(new Text({ id: 'p', text: 'yo', fontFamily: 'x' }), { cursor: true });
+    expect(r.cursor!.fill()).toBe(''); // '' = follow the Text's own fill (existing default preserved)
+  });
+
+  it('{ cursorProps } forwards other TextCursor props; explicit cursor* options win', () => {
+    const r = typeOn(new Text({ id: 'p', text: 'yo', fontFamily: 'x' }), {
+      cursor: true,
+      cursorProps: { width: 9, blinkPeriod: 2, fill: '#00ff00' },
+      cursorWidth: 4, // explicit option overrides cursorProps.width
+    });
+    expect(r.cursor!.caretWidth).toBe(4); // explicit cursorWidth wins over cursorProps.width
+    expect(r.cursor!.blinkPeriod).toBe(2); // cursorProps passthrough (no explicit blinkPeriod)
+    expect(r.cursor!.fill()).toBe('#00ff00'); // cursorProps.fill passthrough
+    expect(r.cursor!.id).toBe('p/cursor'); // id is always fixed by typeOn
+  });
+
   it('FAIL-LOUD: a source without an id throws KineticTypeError', () => {
     expect(() => typeOn(new Text({ text: 'no id', fontFamily: 'x' }))).toThrow(KineticTypeError);
     expect(() => typeOn({ text: 'no id', fontFamily: 'x' })).toThrow(/needs a stable id/);

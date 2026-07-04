@@ -69,6 +69,11 @@ import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, R
 // camera move vanishes silently on export). `cameraLayerMatrix` is the SAME pure
 // pose math Camera.draw uses, so export and render agree by construction.
 import { Camera, cameraLayerMatrix, shakenSpec } from '@glissade/scene/motion';
+// 0.58 render↔export parity: the render path honors `interpolation: 'smooth'|'gaussian'`
+// on a gradient Paint via the pure oklab stop densifier (scene raster2d), but the Lottie
+// `gf` ramp used to flatten it to a hard linear ramp. Reuse the SAME densifier here so the
+// exported ramp matches the on-screen bloom (a 64-stop piecewise-linear oklab approximation).
+import { densifyStops, GRADIENT_RAMP_STEPS } from '@glissade/scene/gradient';
 import { ellipseContour, rectContour } from './pathvalue.js';
 import { contourToShData, pathValueToShData } from './emitGeometry.js';
 import { emitKeys, isDirectlyInvertible, toFrames } from './emitKeyframes.js';
@@ -965,8 +970,9 @@ function buildFill(ctx: Ctx, node: ShapeNode, tracks: NodeTracks, ind: number): 
     ctx.warn(`${describe(node)}: a mesh fill has no Lottie gradient ramp (MVP: solid / linear / radial) — dropped`);
     return undefined;
   }
-  warnGradientInterpolation(ctx, node, fill);
-  return gradientFillItem(fill, localBounds(node));
+  const stops = exportStops(fill);
+  warnGradientInterpolation(ctx, node, fill, stops);
+  return gradientFillItem(fill, localBounds(node), stops);
 }
 
 /**
@@ -1088,18 +1094,39 @@ function gradientStopArray(stops: ColorStop[]): number[] {
   return anyAlpha ? [...colors, ...alphas] : colors;
 }
 
-function warnGradientInterpolation(ctx: Ctx, node: ShapeNode, g: Gradient): void {
-  if (g.interpolation !== undefined && g.interpolation !== 'linear') {
-    ctx.warn(
-      `${describe(node)}: '${g.interpolation}' gradient interpolation is emitted as a linear Lottie ramp ` +
-        `(gf has no smooth/gaussian mode) — mid-stop banding may differ`,
-    );
-  }
+/**
+ * Densify a gradient's stops for export exactly as the render path does: `smooth`/
+ * `gaussian` → a GRADIENT_RAMP_STEPS-stop oklab ramp; `linear`/undefined → the input
+ * unchanged (byte-identical). Pure + deterministic (no RNG), so export stays reproducible.
+ */
+function exportStops(g: Gradient): ColorStop[] {
+  return g.interpolation ? densifyStops(g.stops, g.interpolation) : g.stops;
 }
 
-/** A static linear/radial gradient → a `gf` shape item (geometry from `bounds`). */
-function gradientFillItem(g: Gradient, bounds: FillBounds): LottieShapeItem {
-  const gk: LottieGradient = { p: g.stops.length, k: { a: 0, k: gradientStopArray(g.stops) } };
+/**
+ * NEVER-SILENT guard for a non-linear gradient. The `gf` has no smooth/gaussian mode, so
+ * we honor it by densifying the ramp into a GRADIENT_RAMP_STEPS-stop oklab approximation
+ * (see exportStops) — the same ramp the render path uses, round-tripping at perceptual
+ * parity (SSIM ~1.0). When densification APPLIES, the mode is faithfully honored, so we
+ * stay SILENT — a warn there would be spurious noise firing on a mode we actually respected
+ * (a stale warn is its own never-silent-adjacent bug). We warn ONLY on the genuine fallback:
+ * a degenerate gradient (<2 stops or a non-positive offset span) the densifier can't resample,
+ * which really does emit a hard linear ramp — that divergence must not be silent.
+ */
+function warnGradientInterpolation(ctx: Ctx, node: ShapeNode, g: Gradient, resolved: ColorStop[]): void {
+  const mode = g.interpolation;
+  if (mode === undefined || mode === 'linear') return;
+  if (resolved.length > g.stops.length) return; // densified → mode honored at perceptual parity → no warn
+  ctx.warn(
+    `${describe(node)}: '${mode}' gradient interpolation could not be densified ` +
+      `(needs ≥2 stops over a positive offset span) — emitted as a hard linear ramp; mid-stop banding may differ`,
+  );
+}
+
+/** A static linear/radial gradient → a `gf` shape item (geometry from `bounds`). Stops are
+ *  already resolved (densified for smooth/gaussian) by the caller. */
+function gradientFillItem(g: Gradient, bounds: FillBounds, stops: ColorStop[]): LottieShapeItem {
+  const gk: LottieGradient = { p: stops.length, k: { a: 0, k: gradientStopArray(stops) } };
   const s = gradientStart(g, bounds);
   const e = gradientEnd(g, bounds);
   if (g.kind === 'radial') {
@@ -1138,12 +1165,13 @@ function buildAnimatedGradientFill(ctx: Ctx, node: ShapeNode, tr: Track<Paint>, 
   const bounds = localBounds(node);
   const asGradient = (p: Paint): Gradient =>
     p.kind === 'linear' || p.kind === 'radial' ? p : ({ kind, stops: [{ offset: 0, color: '#000000' }] } as Gradient);
-  warnGradientInterpolation(ctx, node, first);
-  const p = first.stops.length;
+  const firstStops = exportStops(first);
+  warnGradientInterpolation(ctx, node, first, firstStops);
+  const p = firstStops.length;
 
   const sMap = (v: Paint): number[] => gradientStart(asGradient(v), bounds);
   const eMap = (v: Paint): number[] => gradientEnd(asGradient(v), bounds);
-  const gMap = (v: Paint): number[] => gradientStopArray(asGradient(v).stops);
+  const gMap = (v: Paint): number[] => gradientStopArray(exportStops(asGradient(v)));
 
   let sK: LottieKeyframe[];
   let eK: LottieKeyframe[];

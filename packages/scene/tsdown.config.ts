@@ -21,6 +21,7 @@ export default defineConfig({
     'src/diagnostics.ts',
     'src/tokens.ts',
     'src/motion.ts',
+    'src/gradient.ts',
     'src/identity.ts',
     'src/examples.ts',
   ],

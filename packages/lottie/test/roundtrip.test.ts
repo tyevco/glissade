@@ -319,6 +319,25 @@ function radialGradientScene(): SceneModule {
   };
 }
 
+/** A RADIAL gradient with `interpolation: 'gaussian'` — a soft BLOOM (bright plateau →
+ * gaussian tail), the ai-training bd-orb case. Pre-0.58 the exporter flattened this to a
+ * hard 2-stop linear ramp (a hard disc, not a bloom) and this SSIM diverged; post-fix the
+ * exporter densifies the ramp to match the render path's oklab bloom. A Rect (not Circle)
+ * so the geometry round-trips EXACTLY, isolating the ramp mapping. */
+function gaussianBloomScene(): SceneModule {
+  return {
+    createScene: () =>
+      createScene({
+        size: { w: W, h: H },
+        children: [new Rect({ id: 'orb', width: 180, height: 180, position: [120, 120], fill: {
+          kind: 'radial', center: [0, 0], radius: 90, interpolation: 'gaussian',
+          stops: [{ offset: 0, color: '#ffffff' }, { offset: 1, color: '#101858' }],
+        } })],
+      }),
+    timeline: { version: 1, duration: 1, fps: FPS, tracks: [] },
+  };
+}
+
 /** A MULTI-STOP linear gradient with a translucent middle stop (opacity ramp). */
 function multiStopGradientScene(): SceneModule {
   return {
@@ -365,6 +384,7 @@ describe('Lottie gradient-fill export round-trip (Skia SSIM)', () => {
   const cases: [string, () => SceneModule, number[]][] = [
     ['linear', linearGradientScene, [0]],
     ['radial', radialGradientScene, [0]],
+    ['radial gaussian bloom', gaussianBloomScene, [0]],
     ['multi-stop (translucent middle)', multiStopGradientScene, [0]],
     ['animated radial', animatedGradientScene, [0, 30, 60, 90, 119]],
   ];

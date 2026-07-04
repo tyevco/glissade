@@ -1,6 +1,6 @@
 {
   "name": "@glissade/scene",
-  "version": "0.57.1",
+  "version": "0.58.0-pre.0",
   "description": "glissade scene graph: nodes, transforms, DisplayList emission. Renderer-agnostic; zero DOM/Node dependencies.",
   "license": "Apache-2.0",
   "engines": {
@@ -62,6 +62,10 @@
     "./motion": {
       "types": "./dist/motion.d.ts",
       "default": "./dist/motion.js"
+    },
+    "./gradient": {
+      "types": "./dist/gradient.d.ts",
+      "default": "./dist/gradient.js"
     },
     "./identity": {
       "types": "./dist/identity.d.ts",
