@@ -114,6 +114,41 @@ describe('critique — nested-Group OFF_CANVAS (both composition axes)', () => {
   });
 });
 
+describe('critique — OFF_CANVAS offstage opt-out (author-declared intent, SUBTREE match)', () => {
+  /** A parked drawer GROUP (off-frame) with a slot child + an UNRELATED off-frame stray. */
+  const parkedScene = (): ReturnType<typeof createScene> => {
+    const scene = createScene({
+      size,
+      children: [
+        new Group({
+          id: 'drawer',
+          position: [-300, 50],
+          children: [new Rect({ id: 'slot', position: [0, 0], width: 40, height: 20, fill: '#f00' })],
+        }),
+        new Rect({ id: 'stray', position: [-100, 50], width: 40, height: 20, fill: '#f00' }), // off LEFT, NOT parked
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    return scene;
+  };
+
+  it('WITHOUT the opt-out, both the parked slot and the stray fire OFF_CANVAS', () => {
+    const off = critique(parkedScene(), empty).diagnostics.filter((x) => x.code === 'OFF_CANVAS');
+    expect(off.map((d) => d.node).sort()).toEqual(['slot', 'stray']);
+  });
+
+  it('offstage listing the GROUP id suppresses its whole SUBTREE (slot) but NOT a sibling stray', () => {
+    const off = critique(parkedScene(), empty, { offstage: ['drawer'] }).diagnostics.filter((x) => x.code === 'OFF_CANVAS');
+    // slot is silenced via its ancestor 'drawer'; the uncovered stray STILL fires
+    expect(off.map((d) => d.node)).toEqual(['stray']);
+  });
+
+  it('offstage matches an exact LEAF id too (self-match)', () => {
+    const off = critique(parkedScene(), empty, { offstage: ['stray'] }).diagnostics.filter((x) => x.code === 'OFF_CANVAS');
+    expect(off.map((d) => d.node)).toEqual(['slot']); // only the still-uncovered parked slot
+  });
+});
+
 describe('critique — TEXT_OVERFLOW (measured ink vs the node box, MEASURER_FALLBACK-aware)', () => {
   it('FIRES (warning) when a line overflows its wrap box under a REAL measurer', () => {
     const scene = createScene({
@@ -126,9 +161,67 @@ describe('critique — TEXT_OVERFLOW (measured ink vs the node box, MEASURER_FAL
     expect(d).toBeDefined();
     expect(d!.node).toBe('label');
     expect(d!.severity).toBe('warning');
-    expect(d!.detail).toMatchObject({ threshold: 50 });
+    expect(d!.detail).toMatchObject({ threshold: 50, dimension: 'width' });
     expect(Number((d!.detail as { overflowPx: number }).overflowPx)).toBeGreaterThan(0);
     expect(d!.message).toContain('fitText');
+  });
+
+  it('FIRES (warning) on a HEIGHT overflow — wrapped block TALLER than the box height (box.h)', () => {
+    const scene = createScene({
+      size,
+      // three explicit lines at fontSize 20 (step quantize(20·1.25)=25 → block 75) in a 20px box
+      children: [
+        new Text({ id: 'card', position: [100, 40], text: 'L1\nL2\nL3', fontSize: 20, fill: '#000', box: { valign: 'top', h: 20 } }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty);
+    const d = res.diagnostics.find((x) => x.code === 'TEXT_OVERFLOW' && (x.detail as { dimension?: string }).dimension === 'height');
+    expect(d, 'a height-dimension TEXT_OVERFLOW should fire').toBeDefined();
+    expect(d!.node).toBe('card');
+    expect(d!.severity).toBe('warning');
+    expect(d!.detail).toMatchObject({ dimension: 'height', threshold: 20 });
+    expect(Number((d!.detail as { measured: number }).measured)).toBeGreaterThan(20); // block ~75px
+    expect(Number((d!.detail as { overflowPx: number }).overflowPx)).toBeGreaterThan(0);
+    expect(d!.message).toContain('box height');
+    // width names the width lever, height names the height lever — distinct hints
+    expect(d!.message).not.toContain('fitText');
+  });
+
+  it('does NOT fire a HEIGHT overflow when the block fits box.h (auto-height / roomy box)', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Text({ id: 'card', position: [100, 40], text: 'L1\nL2', fontSize: 20, fill: '#000', box: { valign: 'top', h: 200 } }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    expect(critique(scene, empty).diagnostics.some((x) => x.code === 'TEXT_OVERFLOW')).toBe(false);
+  });
+
+  it('does NOT fire a HEIGHT overflow for auto-height text (no box.h to overflow)', () => {
+    const scene = createScene({
+      size,
+      children: [new Text({ id: 'card', position: [100, 40], text: 'L1\nL2\nL3', fontSize: 20, fill: '#000' })],
+    });
+    scene.setTextMeasurer(stub);
+    expect(critique(scene, empty).diagnostics.some((x) => x.code === 'TEXT_OVERFLOW')).toBe(false);
+  });
+
+  it('DOWNGRADES a height overflow to info under the estimating measurer', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Text({ id: 'card', position: [100, 40], text: 'L1\nL2\nL3', fontSize: 20, fill: '#000', box: { valign: 'top', h: 20 } }),
+      ],
+    });
+    // no setTextMeasurer → estimating fallback
+    const d = critique(scene, empty).diagnostics.find(
+      (x) => x.code === 'TEXT_OVERFLOW' && (x.detail as { dimension?: string }).dimension === 'height',
+    );
+    expect(d).toBeDefined();
+    expect(d!.severity).toBe('info');
+    expect(d!.message).toContain('ESTIMATED');
   });
 
   it('DOWNGRADES to info under the estimating measurer (no confident verdict from estimated metrics)', () => {

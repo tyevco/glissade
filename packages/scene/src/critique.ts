@@ -36,8 +36,8 @@ import {
 } from './displayList.js';
 import { emitWithIds } from './identity.js';
 import { bindScene, type Scene } from './scene.js';
-import { Group } from './nodes.js';
-import { isEstimatingMeasurer, type TextMeasurer } from './text.js';
+import { Group, Text } from './nodes.js';
+import { isEstimatingMeasurer, quantize, type TextMeasurer } from './text.js';
 import {
   validateScene,
   resolveAt,
@@ -54,6 +54,20 @@ export interface CritiqueOptions {
    * override for tooling; a fixed INTEGER-frame grid is the determinism contract.
    */
   fps?: number;
+  /**
+   * Author-declared INTENTIONALLY off-stage node ids — the OFF_CANVAS opt-out.
+   * A node is exempt from OFF_CANVAS iff its id is in this list OR ANY of its
+   * ancestors' ids is (SUBTREE match): list the parked GROUP id
+   * (`'sd1-drawer'`) and its whole subtree — current children AND any it later
+   * gains — is suppressed, while sibling groups stay fully checked. This lets an
+   * author silence the true-positive-but-intentional off-stage art (wing-parked
+   * drawers, hidden placeholder cards) without muting OFF_CANVAS wholesale. A
+   * PURE emission filter — determinism-neutral (it never changes the sampled
+   * geometry, only which off-frame nodes are reported). Same param-seam shape as
+   * a future `safeAreas`; a per-node `offstage:true` marker is a planned
+   * fast-follow, not this mechanism.
+   */
+  offstage?: readonly string[];
 }
 
 export interface CritiqueResult {
@@ -415,8 +429,17 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // OFF_CANVAS — a node off-frame its WHOLE on-stage life. Report only the
   // TOPMOST off-canvas node in a chain (a whole group moved off ⇒ one diagnostic,
   // not one per child).
+  // Author-declared off-stage subtree (FIX #3a): a node is exempt from OFF_CANVAS
+  // iff its id — or any ancestor's id — is in `offstage` (SUBTREE match), so a
+  // parked group id suppresses its whole subtree.
+  const offstageSet = new Set<string>(opts.offstage ?? []);
+  const isOffstage = (id: string): boolean =>
+    offstageSet.size > 0 && (offstageSet.has(id) || hasFlaggedAncestor(scene, id, offstageSet));
+
   const offCanvasIds = new Set<string>();
-  for (const [id, a] of agg) if (a.onStage > 0 && a.offCanvas === a.onStage) offCanvasIds.add(id);
+  for (const [id, a] of agg) {
+    if (a.onStage > 0 && a.offCanvas === a.onStage && !isOffstage(id)) offCanvasIds.add(id);
+  }
   const reportedOffCanvas = new Set<string>();
   for (const id of offCanvasIds) {
     if (hasFlaggedAncestor(scene, id, offCanvasIds)) continue;
@@ -425,27 +448,45 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     rendered.push(offCanvasDiagnostic(scene, id, a, w, h));
   }
 
-  // TEXT_OVERFLOW — measured glyph ink exceeds a Text node's OWN wrap box, at its
-  // resting (last text-bearing) frame. Respects MEASURER_FALLBACK.
+  // TEXT_OVERFLOW — measured glyph ink exceeds a Text node's OWN box, at its
+  // resting (last text-bearing) frame. Checked on BOTH axes (each fires only where
+  // an explicit box on that axis EXISTS to overflow): WIDTH vs the wrap box
+  // (`${id}/width`), HEIGHT vs the box height (`box.h`). Respects MEASURER_FALLBACK.
   for (const [id, a] of agg) {
     if (a.lastTexts.length === 0) continue;
     const node = scene.nodes.get(id);
-    if (!node || node.describeType !== 'Text') continue;
+    if (!(node instanceof Text)) continue;
+
+    // WIDTH: widest measured line ink vs the wrap box. width<=0 = no wrap box.
     const width = numberAt(scene, `${id}/width`, a.lastTextFrameT);
-    if (width === undefined || width <= 0) continue; // no wrap box → nothing to overflow
-    let widest = 0;
-    for (const run of a.lastTexts) {
-      let mw = 0;
-      try {
-        mw = measurer.measureText(run.text, run.font).width;
-      } catch {
-        mw = 0;
+    if (width !== undefined && width > 0) {
+      let widest = 0;
+      for (const run of a.lastTexts) {
+        let mw = 0;
+        try {
+          mw = measurer.measureText(run.text, run.font).width;
+        } catch {
+          mw = 0;
+        }
+        if (mw > widest) widest = mw;
       }
-      if (mw > widest) widest = mw;
+      const over = widest - width;
+      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating));
     }
-    const over = widest - width;
-    if (over <= 0.5) continue; // within the 0.5px measurement quantum
-    rendered.push(textOverflowDiagnostic(id, widest, width, over, estimating));
+
+    // HEIGHT: the wrapped-block height vs an explicit `box.h`. The block height is
+    // the DRAWN line grid — quantize(fontSize·lineHeight) · drawnLineCount — which
+    // mirrors Text.intrinsicSize; each fillText run is one drawn line, so the run
+    // count is the line count. Catches a caption/card whose wrapped text is TALLER
+    // than its box (fits horizontally, clipped vertically). Auto-height text (no
+    // `box.h`) has no vertical box, so it can't overflow one — no fire.
+    const boxH = node.box?.h;
+    if (boxH !== undefined && boxH > 0) {
+      const fontSize = a.lastTexts[0]!.font.size;
+      const blockH = quantize(fontSize * node.lineHeight) * a.lastTexts.length;
+      const overH = blockH - boxH;
+      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating));
+    }
   }
 
   // OCCLUSION — a NON-container node, on-frame + fully covered by opaque
@@ -512,15 +553,22 @@ function offCanvasDiagnostic(scene: Scene, id: string, a: NodeAgg, w: number, h:
 
 function textOverflowDiagnostic(
   id: string,
+  dimension: 'width' | 'height',
   measured: number,
   threshold: number,
   over: number,
   estimating: boolean,
 ): SceneDiagnostic {
+  // The fix-hint names the RIGHT lever per axis: a width overflow reaches for
+  // width/fitText, a height overflow for the box height / shorter text.
   const base =
-    `text of node '${id}' overflows its box by ${round(over)}px ` +
-    `(needs ${round(measured)}px, box width ${round(threshold)}px). ` +
-    `Reduce fontSize, widen width, or wrap it with fitText({ maxW: ${round(threshold)} }).`;
+    dimension === 'width'
+      ? `text of node '${id}' overflows its box WIDTH by ${round(over)}px ` +
+        `(needs ${round(measured)}px, box width ${round(threshold)}px). ` +
+        `Reduce fontSize, widen width, or wrap it with fitText({ maxW: ${round(threshold)} }).`
+      : `text of node '${id}' overflows its box HEIGHT by ${round(over)}px ` +
+        `(wrapped block ${round(measured)}px tall, box height ${round(threshold)}px). ` +
+        `Reduce fontSize, increase the box height, or shorten the text.`;
   return {
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
     code: 'TEXT_OVERFLOW',
@@ -532,7 +580,13 @@ function textOverflowDiagnostic(
     message: estimating
       ? `${base} (metrics ESTIMATED — no real text measurer injected; verify with the real backend measurer.)`
       : base,
-    detail: { measured: round(measured), threshold: round(threshold), overflowPx: round(over), estimated: estimating },
+    detail: {
+      dimension,
+      measured: round(measured),
+      threshold: round(threshold),
+      overflowPx: round(over),
+      estimated: estimating,
+    },
   };
 }
 

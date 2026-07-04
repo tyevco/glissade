@@ -20,15 +20,22 @@ describe('@glissade/browser — glissade-dom augmentation entry', () => {
     await expect(import('../src/dom.js')).rejects.toThrow(/load glissade\.browser\.js FIRST/i);
   });
 
-  it('AUGMENTS window.glissade with DomBackend + emitWithIds, never clobbering the base', async () => {
+  it('AUGMENTS window.glissade with DomBackend, never clobbering the base (incl. its emitWithIds)', async () => {
     const Rect = function Rect() {};
-    const base = { describe: () => ({ version: '0.0.0-test' }), Rect, marker: 42 };
+    // 0.60: emitWithIds is now owned by the BASE bundle (it backs critique()/
+    // resolveAt), so the base mock carries it; the DOM augmentation must NOT
+    // re-assign it (that collides with the base's getter-only export) — it only
+    // adds DomBackend and leaves everything the base already provides untouched.
+    const emitWithIds = function emitWithIds() {};
+    const base = { describe: () => ({ version: '0.0.0-test' }), Rect, emitWithIds, marker: 42 };
     (globalThis as Glob).glissade = base;
     await import('../src/dom.js');
     const g = (globalThis as Glob).glissade!;
     // the DOM tier is now present...
     expect(typeof g.DomBackend).toBe('function');
+    // ...emitWithIds still resolves (from the base, untouched by the augmentation)...
     expect(typeof g.emitWithIds).toBe('function');
+    expect(g.emitWithIds).toBe(emitWithIds);
     // ...and the base object is the SAME reference, untouched (no clobber).
     expect(g).toBe(base);
     expect(g.marker).toBe(42);

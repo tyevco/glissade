@@ -168,8 +168,16 @@ export interface DescribedHelper {
 export interface SurfaceEntry {
   /** The export name — also the `window.glissade.<name>` global on the IIFE. */
   name: string;
-  /** `'value'` = a runtime binding on the bundle (a class / function / object); `'type'` = a TS type-only name that erases at runtime (opaque, referenced by signatures). */
-  kind: 'value' | 'type';
+  /**
+   * `'value'` = a runtime binding on the bundle (a class / function / object);
+   * `'type'` = a TS type-only name that erases at runtime (opaque, referenced by
+   * signatures); `'diagnostic'` = a runtime AUTHORING-DIAGNOSTIC function
+   * (`critique`/`validateScene`/`resolveAt`/`instanceProps`, 0.60) — a real
+   * `window.glissade.<name>` callable that is PERCEPTION/self-check tooling, not
+   * scene-building surface. An agent BUILDING a scene filters `kind !== 'diagnostic'`;
+   * an agent CRITIQUING a rendered scene filters `kind === 'diagnostic'`.
+   */
+  kind: 'value' | 'type' | 'diagnostic';
   /** `true` when it is reachable as `window.glissade.<name>` on the single-file IIFE bundle. */
   iife: boolean;
   /** How to consume it: `'constructor'` needs `new`, `'function'` is a plain call, `'object'` is a value namespace (e.g. `easings`), `'type'` is type-only. */
@@ -302,6 +310,23 @@ const SURFACE_EXTRA: { name: string; arity: number }[] = [
 const SURFACE_VALUE_OBJECTS = ['easings'];
 
 /**
+ * The 0.60 machine-readable AUTHORING-DIAGNOSTIC functions on `window.glissade`
+ * (the `@glissade/scene/diagnostics` subpath, IIFE-re-exported off the base embed):
+ * `critique` (rendered geometry), `validateScene` (static structure), `resolveAt`
+ * (the truthful read primitive), `instanceProps` (instance-bound state). Marked
+ * `kind: 'diagnostic'` so a consumer can PARTITION the surface — build-a-scene
+ * tooling filters them OUT, render-critique/perception tooling filters them IN —
+ * instead of them being invisible (previously exempt-internal, discoverable only by
+ * reading the bundle). `arity` = the documented required positional-arg count.
+ */
+const SURFACE_DIAGNOSTICS: { name: string; arity: number }[] = [
+  { name: 'critique', arity: 2 },
+  { name: 'validateScene', arity: 2 },
+  { name: 'resolveAt', arity: 3 },
+  { name: 'instanceProps', arity: 1 },
+];
+
+/**
  * The opaque, type-ONLY names the API surface references (they erase at runtime —
  * `window.glissade.Paint` is `undefined`). `gs types --global` emits a best-effort
  * alias per name; `gs describe --lint` guards they stay type-only (a type surfaced
@@ -324,6 +349,7 @@ function buildSurface(): SurfaceEntry[] {
   for (const c of SURFACE_CORE) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
   for (const c of SURFACE_EXTRA) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
   for (const name of SURFACE_VALUE_OBJECTS) out.push({ name, kind: 'value', iife: true, form: 'object' });
+  for (const d of SURFACE_DIAGNOSTICS) out.push({ name: d.name, kind: 'diagnostic', iife: true, form: 'function', arity: d.arity });
   for (const name of SURFACE_TYPE_ONLY) out.push({ name, kind: 'type', iife: false, form: 'type' });
   const seen = new Set<string>();
   return out

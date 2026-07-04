@@ -139,7 +139,7 @@ vdescribe('describe() surface taxonomy', () => {
     for (const e of m.surface!) {
       expect(typeof e.name).toBe('string');
       expect(e.name.length).toBeGreaterThan(0);
-      expect(['value', 'type']).toContain(e.kind);
+      expect(['value', 'type', 'diagnostic']).toContain(e.kind);
       expect(['constructor', 'function', 'object', 'type']).toContain(e.form);
       expect(typeof e.iife).toBe('boolean');
     }
@@ -196,6 +196,26 @@ vdescribe('describe() surface taxonomy', () => {
     for (const n of ['key', 'signal', 'spring', 'cubicBezier', 'namedEasing', 'springTo', 'pathFromSvg', 'glow', 'morph', 'typewriter', 'pulse', 'popIn', 'slideIn', 'presence', 'highlight']) {
       expect(byName.get(n), `fundamental '${n}' missing from surface`).toMatchObject({ kind: 'value', iife: true, form: 'function' });
     }
+  });
+
+  // 0.60 FIX #2 (discoverability): the machine-readable diagnostics API is on
+  // window.glissade but was ABSENT from surface — an agent doing scene PERCEPTION
+  // couldn't discover it. It now appears as kind:'diagnostic', iife:true so the
+  // surface can be PARTITIONED (build tooling filters `!== 'diagnostic'`, perception
+  // tooling filters `=== 'diagnostic'`).
+  it('surfaces the diagnostics API (critique/validateScene/resolveAt/instanceProps) as kind:diagnostic iife functions', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    for (const n of ['critique', 'validateScene', 'resolveAt', 'instanceProps']) {
+      expect(byName.get(n), `diagnostic '${n}' missing from surface`).toMatchObject({
+        kind: 'diagnostic',
+        iife: true,
+        form: 'function',
+      });
+      expect(typeof byName.get(n)!.arity).toBe('number');
+    }
+    // an agent building a scene filters these OUT; one doing perception filters them IN
+    const diagnostics = m.surface!.filter((e) => e.kind === 'diagnostic').map((e) => e.name);
+    expect(diagnostics).toEqual(['critique', 'instanceProps', 'resolveAt', 'validateScene']); // sorted
   });
 
   it('every surface value name corresponds to a described node, helper, core callable, fundamental, or value object (no phantoms)', () => {

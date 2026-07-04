@@ -3,9 +3,14 @@
 // `scripts/build-browser-dom.mjs` bundles this into `dist/glissade-dom.browser.js`,
 // a SECOND `<script src>` a no-build editor page loads AFTER `glissade.browser.js`.
 // It AUGMENTS the existing `window.glissade` with the DOM render tier —
-// `DomBackend` (`@glissade/backend-dom`) + `emitWithIds` (`@glissade/scene/identity`,
-// the out-of-band node-id stream the reconciler keys on) — without bloating the
-// lean base playback bundle (which stays byte-identical, `DomBackend`-free).
+// `DomBackend` (`@glissade/backend-dom`) — without bloating the lean base
+// playback bundle (which stays byte-identical, `DomBackend`-free).
+//
+// NOTE (0.60): `emitWithIds` is now exported by the BASE bundle (it backs
+// `critique()` / `resolveAt` diagnostics), so this augmentation no longer
+// assigns it — the base owns it. Re-assigning here would collide with the
+// base's getter-only export (`Cannot set property emitWithIds … only a getter`)
+// on every two-script load; dropping it is the clean fix.
 //
 // It NEVER replaces `window.glissade`; it Object.assigns onto it. Load order is
 // fail-loud (the load-order robustness browser-canary specified on card
@@ -13,7 +18,6 @@
 // clear error instead of leaving a cryptic `undefined`.
 
 import { DomBackend } from '@glissade/backend-dom';
-import { emitWithIds } from '@glissade/scene/identity';
 
 // Injected at build time by scripts/build-browser-dom.mjs (esbuild `define`) from
 // this package's version, so the two bundles can detect a version skew. The
@@ -26,7 +30,6 @@ const domVersion: string | undefined =
 interface GlissadeGlobal {
   describe?: () => { version: string };
   DomBackend?: unknown;
-  emitWithIds?: unknown;
   [k: string]: unknown;
 }
 
@@ -46,4 +49,4 @@ if (domVersion !== undefined && baseVersion !== undefined && baseVersion !== dom
   );
 }
 
-Object.assign(g, { DomBackend, emitWithIds });
+Object.assign(g, { DomBackend });

@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.59.0"
   },
   "changesets": [
+    "critique-pre1-fixes",
     "critique-rendered-diagnostics"
   ]
 }

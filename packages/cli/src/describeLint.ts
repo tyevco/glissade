@@ -78,18 +78,29 @@ const EXEMPT_INTERNALS = new Set<string>([
   // pathLength are candidates to PROMOTE to surface if canaries request — exempt for
   // now, not principled internals.
   '__resetEstimateWarnings', 'applyToPoint', 'arcLength', 'assertFiniteFontSize', 'shakeOffset', 'shakenSpec', 'cameraLayerMatrix', 'audioOffsetSamples', 'breakLines', 'childId', 'coercePathData', 'cubicBezierDerivative', 'driftLoop', 'each', 'emitDevWarning', 'filtersToCanvasFilter', 'flatten', 'fontString', 'formatColor', 'fromTRS', 'hachureLines', 'invert', 'isEstimatingMeasurer', 'isExemptFamily', 'lerpColor', 'listValueTypes', 'matEquals', 'mediaPrefersReducedMotion', 'meshRasterSize', 'multiply', 'oklabToRgba', 'parseCmap', 'parseColor', 'parseSvgPathData', 'pathFromSegs', 'pathLength', 'planReducedMotion', 'pointAtLength', 'quantize', 'random', 'rasterizeMesh', 'reprOf', 'resolveAnchor', 'resolveEase', 'resolveEaseDerivative', 'resolveSketch', 'rgbaToOklab', 'roughen', 'roundedRectSegs', 'segmentGraphemes', 'segmentWords', 'sketchStrokes', 'springEasing', 'springEasingDerivative', 'textCursor', 'transitionToClip', 'usageArity', 'validateFilters', 'validateFonts', 'validateHachure', 'validateSketch', 'vec2Equals', 'vec2Signal', 'velocityAt',
-  // 0.59 "fail-loud ground floor" authoring diagnostics (re-exported onto the
-  // browser IIFE off the @glissade/scene/diagnostics subpath): the eager validator
-  // + the truthful read primitive + the instance bound indicator + the schema
-  // version constant. DEV/authoring diagnostic tooling (the same class as the
-  // diff/audit/fontUsage cluster on that subpath — not core authoring
-  // "fundamentals"), so they are exempt-internal rather than describe().surface
-  // entries. MeasurerRequiredError is pattern-exempt via /Error$/.
-  'validateScene', 'resolveAt', 'instanceProps', 'DIAGNOSTIC_SCHEMA_VERSION',
-  // 0.60 critique() (rendered diagnostics) + emitWithIds (its node-id-stream
-  // producer, previously only on the dom.js bundle) — same DEV/authoring
-  // diagnostic class as the 0.59 subset above, so exempt-internal, not surface.
-  'critique', 'emitWithIds',
+  // 0.60 (FIX #2): the AUTHORING-DIAGNOSTIC functions — validateScene / resolveAt /
+  // instanceProps / critique — are now FIRST-CLASS describe().surface entries
+  // (`kind: 'diagnostic'`, iife) so an agent doing scene PERCEPTION can discover
+  // them (partition the surface by kind) instead of reverse-engineering the bundle.
+  // They therefore MOVED OUT of this exempt-list: the bidirectional SURFACE lint now
+  // covers them (no-phantom: each maps to a real runtime fn; no-missing: a future
+  // diagnostic fn without a manifest entry goes RED). What stays exempt here: the
+  // schema-version CONSTANT (not callable authoring surface) and emitWithIds (a
+  // LOWER-LEVEL node-id-stream primitive, not a diagnostic an agent calls to
+  // perceive — the critique() it feeds is the surfaced entry point). Diagnostic
+  // error classes stay pattern-exempt via /Error$/.
+  'DIAGNOSTIC_SCHEMA_VERSION', 'emitWithIds',
+  // The HEAVY, ESM-only diagnostic cluster on `@glissade/scene/diagnostics` that is
+  // deliberately NOT on the browser IIFE (the determinism diff/snapshot machinery,
+  // the cache-cold audit, the font-usage collectors + scene-font validator, and the
+  // nearest-id primitives) — `gs diff`/`verify-determinism`/the golden harness reach
+  // them by npm import, never a no-build author. `sortDiagnostics` is the
+  // sort-invariance test hook, not authoring surface. (DlSnapshotError is /Error$/-
+  // exempt.) These surface only in a HEADLESS lint that imports the whole
+  // /diagnostics subpath; the browser bundle re-exports only the author subset.
+  'diffDisplayLists', 'formatDisplayDiff', 'serializeDisplayList', 'parseDisplaySnapshot', 'DL_SNAPSHOT_VERSION',
+  'auditCacheCold', 'collectTextUsages', 'collectLocalizedTextUsages', 'validateSceneFonts',
+  'nearestId', 'levenshtein', 'sortDiagnostics',
 ]);
 
 /**
@@ -161,7 +172,11 @@ export function describeLint(
   for (const name of Object.keys(manifest.nodes)) callables.add(name);
   for (const h of manifest.helpers) callables.add(h.name);
   for (const e of manifest.surface ?? []) {
-    if (e.kind === 'value' && (e.form === 'constructor' || e.form === 'function')) callables.add(e.name);
+    // 'diagnostic' entries (critique/validateScene/…) are real runtime callables,
+    // so the no-phantom check covers them exactly like 'value' functions.
+    if ((e.kind === 'value' || e.kind === 'diagnostic') && (e.form === 'constructor' || e.form === 'function')) {
+      callables.add(e.name);
+    }
   }
   for (const name of [...callables].sort()) {
     if (exempt.has(name) || isFn(name)) continue;
@@ -237,6 +252,7 @@ export async function collectRuntimeSurface(
     '@glissade/core/clips', // popIn/slideIn/pulse/presence/morph (surface EXTRA)
     '@glissade/scene',
     '@glissade/scene/describe',
+    '@glissade/scene/diagnostics', // critique/validateScene/resolveAt/instanceProps (surface DIAGNOSTICS)
     '@glissade/scene/layout-ctors',
     '@glissade/scene/path', // pathFromSvg (surface EXTRA)
   ]);
