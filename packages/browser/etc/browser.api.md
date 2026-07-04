@@ -20,6 +20,9 @@ import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
 import { defineComponent } from '@glissade/scene/component';
+import { DIAGNOSTIC_SCHEMA_VERSION } from '@glissade/scene/diagnostics';
+import { DiagnosticCode } from '@glissade/scene/diagnostics';
+import { DiagnosticSeverity } from '@glissade/scene/diagnostics';
 import { dispense } from '@glissade/scene/motion';
 import { drift } from '@glissade/scene/motion';
 import { EmphasizeOpts } from '@glissade/scene/type';
@@ -40,6 +43,8 @@ import { GaugeResult } from '@glissade/scene/gauge';
 import { GaugeSpec } from '@glissade/scene/gauge';
 import { GaugeZone } from '@glissade/scene/gauge';
 import { Grid } from '@glissade/scene/grid';
+import { instanceProps } from '@glissade/scene/diagnostics';
+import { InstancePropState } from '@glissade/scene/diagnostics';
 import { KineticTypeError } from '@glissade/scene/type';
 import { Layout } from '@glissade/scene/layout-ctors';
 import { linearScale } from '@glissade/scene/chart';
@@ -47,6 +52,7 @@ import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 import { logScale } from '@glissade/scene/chart';
 import { LookAt } from '@glissade/scene/motion';
 import { lookAt } from '@glissade/scene/motion';
+import { MeasurerRequiredError } from '@glissade/scene/type';
 import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
 import { OrientToPath } from '@glissade/scene/motion';
@@ -56,12 +62,14 @@ import { particles } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
+import { resolveAt } from '@glissade/scene/diagnostics';
 import { RevealFrom } from '@glissade/scene/type';
 import { revealLines } from '@glissade/scene/type';
 import { RevealOpts } from '@glissade/scene/type';
 import { RevealResult } from '@glissade/scene/type';
 import { revealWords } from '@glissade/scene/type';
 import { Row } from '@glissade/scene/layout-ctors';
+import { SceneDiagnostic } from '@glissade/scene/diagnostics';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { shake } from '@glissade/scene/motion';
 import { shakeOffset } from '@glissade/scene/motion';
@@ -72,6 +80,8 @@ import { Stack } from '@glissade/scene/layout-ctors';
 import { typeOn } from '@glissade/scene/type';
 import { TypeOnOpts } from '@glissade/scene/type';
 import { TypeOnResult } from '@glissade/scene/type';
+import { validateScene } from '@glissade/scene/diagnostics';
+import { ValidateSceneResult } from '@glissade/scene/diagnostics';
 
 export { bandScale }
 
@@ -104,6 +114,12 @@ export { ComponentInstance }
 export { ComponentPropSpec }
 
 export { defineComponent }
+
+export { DIAGNOSTIC_SCHEMA_VERSION }
+
+export { DiagnosticCode }
+
+export { DiagnosticSeverity }
 
 export { dispense }
 
@@ -145,6 +161,10 @@ export { GaugeZone }
 
 export { Grid }
 
+export { instanceProps }
+
+export { InstancePropState }
+
 export { KineticTypeError }
 
 export { Layout }
@@ -158,6 +178,8 @@ export { logScale }
 export { LookAt }
 
 export { lookAt }
+
+export { MeasurerRequiredError }
 
 export { Meter }
 
@@ -177,6 +199,8 @@ export { pointAtLength }
 
 export { renderToDataURL }
 
+export { resolveAt }
+
 export { RevealFrom }
 
 export { revealLines }
@@ -188,6 +212,8 @@ export { RevealResult }
 export { revealWords }
 
 export { Row }
+
+export { SceneDiagnostic }
 
 export { setShaderRunner }
 
@@ -208,6 +234,10 @@ export { typeOn }
 export { TypeOnOpts }
 
 export { TypeOnResult }
+
+export { validateScene }
+
+export { ValidateSceneResult }
 
 
 export * from "@glissade/core";
