@@ -9,7 +9,7 @@
  * THE THREE INVARIANTS THIS MODULE UPHOLDS:
  *  - `validateScene(scene, doc)` is a PURE READ: it walks track targets through
  *    the EXISTING `scene.resolveTarget` (no new resolution machinery), reads node
- *    bounds/flow-flags, and reports. It NEVER draws RNG, warms a signal memo,
+ *    flow-flags, and reports. It NEVER draws RNG, warms a signal memo,
  *    populates a measurer/font cache, or mutates a node — so `render(scene)` is
  *    byte-identical whether or not `validateScene` ran first. (Flowable-ness is
  *    probed with the STATELESS estimating measurer, not the scene's injected one,
@@ -34,22 +34,32 @@ export const DIAGNOSTIC_SCHEMA_VERSION = 1 as const;
 
 /** Closed severity ladder. `error` = a build error (unbound target); `warning`
  *  = a probable-mistake (position of a flow child); `info` = a valid-but-notable
- *  observation (off-canvas, estimating measurer). */
+ *  observation (estimating measurer). */
 export type DiagnosticSeverity = 'error' | 'warning' | 'info';
 
 /**
  * Stable, ADDITIVE-ONLY diagnostic codes (never renamed/removed — the wire
  * contract). Chosen with BOTH `validateScene` and the future
  * `gs parity --semantic` surface in mind.
- * - `UNKNOWN_TARGET` — a track targets an id/prop that resolves to no signal.
- * - `ID_COLLISION` — reserved: a duplicate node id (a built Scene rejects these
- *   at assembly, so it is unreachable here today; kept for the shared contract).
- * - `OFF_CANVAS` — a node's static position places its box fully outside the
- *   viewport (valid, but usually a mistake).
- * - `YOGA_CHILD_POSITION` — a track drives `position`/`position.*` of a FLOWABLE
- *   child of a Layout, whose flex slot overrides/confounds that position.
- * - `MEASURER_FALLBACK` — the scene carries Text but no real measurer is
- *   injected, so layout uses the rough per-character estimate.
+ *
+ * This enum is the shared diagnostic VOCABULARY — NOT "everything validateScene
+ * emits." Each code maps to a distinct ENFORCEMENT POINT:
+ * - `UNKNOWN_TARGET` — EMITTED by validateScene: a track targets an id/prop that
+ *   resolves to no signal.
+ * - `MEASURER_FALLBACK` — EMITTED by validateScene: the scene carries Text but no
+ *   real measurer is injected, so layout uses the rough per-character estimate.
+ * - `YOGA_CHILD_POSITION` — EMITTED by validateScene: a track drives
+ *   `position`/`position.*` of a FLOWABLE child of a Layout, whose flex slot
+ *   overrides/confounds that position.
+ * - `OFF_CANVAS` — RESERVED for `critique()` (0.60): a node's RENDERED box lands
+ *   fully outside the viewport. It is a composed-geometry check (needs ancestor
+ *   Group world transforms from the DisplayList), so validateScene — which reads
+ *   only static LOCAL positions — does NOT emit it (a nested child would
+ *   false-positive). Kept in the enum as the additive-only wire contract so 0.60
+ *   critique() can emit it without a schema bump.
+ * - `ID_COLLISION` — ENFORCED at `createScene()` (throws `DuplicateNodeIdError`):
+ *   a built Scene structurally cannot contain a duplicate id, so validateScene
+ *   never reaches this case. Kept for the shared contract / `gs parity` surface.
  */
 export type DiagnosticCode =
   | 'UNKNOWN_TARGET'
@@ -160,8 +170,10 @@ function isFlowableLayoutChild(node: Node): boolean {
  * `scene.resolveTarget`; an unresolved one becomes an `UNKNOWN_TARGET` error
  * with a Levenshtein nearest-id / nearest-prop suggestion, and a
  * `position`/`position.*` track on a flowable Layout child becomes a
- * `YOGA_CHILD_POSITION` warning. Scene-only checks (off-canvas, measurer
- * fallback) run regardless.
+ * `YOGA_CHILD_POSITION` warning. The scene-only MEASURER_FALLBACK check runs
+ * regardless. validateScene emits exactly three codes — UNKNOWN_TARGET,
+ * MEASURER_FALLBACK, YOGA_CHILD_POSITION; OFF_CANVAS/ID_COLLISION are reserved
+ * (see the DiagnosticCode doc for their enforcement points).
  */
 export function validateScene(scene: Scene, doc?: Timeline): ValidateSceneResult {
   const diagnostics: SceneDiagnostic[] = [];
@@ -213,37 +225,16 @@ export function validateScene(scene: Scene, doc?: Timeline): ValidateSceneResult
     }
 
     // ── scene-only checks (doc-independent) ──
-    // OFF_CANVAS + MEASURER_FALLBACK walk the node tree once. A position driven
-    // by a track is ANIMATED — its static value may be an off-screen START, a
-    // valid pattern — so skip those ids (the vec2 sub-signals are internally
-    // always "bound", so track-target membership, not isBound, is the honest
-    // animation signal).
-    const animatedPos = new Set<string>();
-    if (doc) {
-      for (const tr of doc.tracks) {
-        const m = /^(.+)\/position(?:\.[xy])?$/.exec(tr.target);
-        if (m) animatedPos.add(m[1]!);
-      }
-    }
-    const { w, h } = scene.size;
+    // Walk the node tree once to detect Text (for MEASURER_FALLBACK). NOTE:
+    // OFF_CANVAS is deliberately NOT emitted here — it is a RENDERED-geometry
+    // check (a node's box outside the viewport once ancestor Group world
+    // transforms compose), so a static LOCAL-position read false-positives on
+    // every nested child of a factory→Group architecture. The code stays
+    // RESERVED in the enum for 0.60 `critique()`, which reads composed transforms
+    // from the DisplayList. See the DiagnosticCode doc above.
     let sawText = false;
     const visit = (node: Node): void => {
       if (isTextNode(node)) sawText = true;
-      // OFF_CANVAS: a node with a STATIC position placed fully outside the
-      // viewport. Pure bounds read (peek the position); never for an animated one.
-      const pos = (node as unknown as { position?: () => [number, number] }).position;
-      if (node.id !== undefined && !animatedPos.has(node.id) && typeof pos === 'function') {
-        const [px, py] = pos();
-        if (Number.isFinite(px) && Number.isFinite(py) && (px < 0 || py < 0 || px > w || py > h)) {
-          push(
-            'OFF_CANVAS',
-            'info',
-            `node '${node.id}' has a static position [${px}, ${py}] outside the ${w}×${h} viewport — ` +
-              `it may not be visible (fine if intentional, e.g. an off-screen start).`,
-            { node: node.id },
-          );
-        }
-      }
       const children = (node as unknown as { children?: Node[] }).children;
       if (Array.isArray(children)) for (const c of children) visit(c);
     };

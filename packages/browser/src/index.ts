@@ -44,6 +44,13 @@ export { splitText } from '@glissade/scene/type';
 // 0.35 fitText (shrink-to-fit + wrap-to-max-lines) — same /type subpath, same
 // measurer plumbing as splitText; a no-build author reaches for window.glissade.fitText.
 export { fitText, fitTextSize, fitTextGroup, type FitTextOpts } from '@glissade/scene/type';
+// 0.59 MeasurerRequiredError — the fail-loud error splitText/fitText THROW under
+// `{ requireMeasurer: true }` when no real measurer is available. Every other
+// fail-loud error class (UnboundTargetError/ParticleError/KineticTypeError) is on
+// window.glissade so a no-build author can `catch (e) { if (e instanceof …) }`;
+// this one lived only on the /type subpath, so it wasn't instanceof-catchable off
+// the IIFE. Re-export it here (type-error class, ~0 bytes) to close that gap.
+export { MeasurerRequiredError } from '@glissade/scene/type';
 // 0.56 kinetic type presets — one-call sugar over typewriter/splitText/tl.stagger,
 // same /type subpath. The no-build kinetic-typography author reaches for
 // window.glissade.typeOn / revealWords / revealLines / emphasizeWords.
@@ -126,6 +133,30 @@ export { particles, drift, sparks, dispense, ParticleError } from '@glissade/sce
 // `glissade.describe()` lands on `window.glissade`, and the build writes its
 // JSON.stringify(describe()) to dist/glissade.api.json.
 export * from '@glissade/scene/describe';
+// 0.59 "fail-loud ground floor" authoring diagnostics: the eager scene validator
+// (validateScene), the truthful read primitive (resolveAt), the instance-level
+// bound indicator (instanceProps), and the pinned diagnostic SCHEMA surface
+// (DIAGNOSTIC_SCHEMA_VERSION + the code/severity/result types). These live on the
+// tree-shakeable `@glissade/scene/diagnostics` subpath, off the SACRED base embed
+// — the no-build author works ONLY against this IIFE, so an author-facing
+// fail-loud tool absent from window.glissade is unusable to them (same rationale
+// as gauge/component/motionPath). Only the AUTHOR-facing fail-loud subset is
+// re-exported here; the heavy determinism/diff tooling on the same subpath
+// (diffDisplayLists/serializeDisplayList/auditCacheCold/the fontUsage validators)
+// stays ESM-only (same reasoning as i18n/layout being ESM-only). The SACRED base
+// embed pays ZERO bytes — diagnostics never touches the base scene index (the
+// "base scene excludes diagnostics" metafile guard covers validate.ts).
+export {
+  validateScene,
+  resolveAt,
+  instanceProps,
+  DIAGNOSTIC_SCHEMA_VERSION,
+  type ValidateSceneResult,
+  type SceneDiagnostic,
+  type DiagnosticCode,
+  type DiagnosticSeverity,
+  type InstancePropState,
+} from '@glissade/scene/diagnostics';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified
 // snippet per node/builder method/helper — the no-build agent's primary

@@ -181,6 +181,44 @@ describe('@glissade/browser entry surface', () => {
     expect(glissade.describe().nodes.Rect?.examples).toBeUndefined();
   });
 
+  it('exposes the 0.59 fail-loud authoring diagnostics (validateScene/resolveAt/instanceProps + schema) on the IIFE', () => {
+    // The 0.59 authoring diagnostics ship off the base embed on the tree-shaken
+    // @glissade/scene/diagnostics subpath; the no-build author works ONLY against
+    // window.glissade, so the author-facing fail-loud subset MUST reach the IIFE.
+    expect(typeof glissade.validateScene).toBe('function');
+    expect(typeof glissade.resolveAt).toBe('function');
+    expect(typeof glissade.instanceProps).toBe('function');
+    expect(glissade.DIAGNOSTIC_SCHEMA_VERSION).toBe(1);
+    // validateScene actually runs against a real scene off the IIFE.
+    const scene = glissade.createScene({
+      size: { w: 200, h: 100 },
+      children: [new glissade.Rect({ id: 'box', width: 10, height: 10 })],
+    });
+    const doc = glissade.timeline((tl: any) => tl.to('ghost/opacity', 0, { from: 1, duration: 1 }));
+    const res = glissade.validateScene(scene, doc);
+    expect(res.hasErrors).toBe(true);
+    expect(res.diagnostics.some((d: any) => d.code === 'UNKNOWN_TARGET')).toBe(true);
+    // The heavy determinism/diff + fontUsage tooling stays ESM-only — NOT on the IIFE.
+    expect((glissade as any).diffDisplayLists).toBeUndefined();
+    expect((glissade as any).serializeDisplayList).toBeUndefined();
+    expect((glissade as any).auditCacheCold).toBeUndefined();
+    expect((glissade as any).validateSceneFonts).toBeUndefined();
+  });
+
+  it('exposes MeasurerRequiredError so splitText/fitText requireMeasurer throws are instanceof-catchable (0.59)', () => {
+    // Every other fail-loud error class is on window.glissade; MeasurerRequiredError
+    // lived only on the /type subpath, so it wasn't instanceof-catchable off the IIFE.
+    expect(typeof glissade.MeasurerRequiredError).toBe('function');
+    glissade.setDefaultMeasurer(null); // force the estimating fallback
+    let caught: unknown;
+    try {
+      glissade.splitText(new glissade.Text({ id: 't', text: 'a b c' }), { by: 'word', requireMeasurer: true });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(glissade.MeasurerRequiredError);
+  });
+
   it('the curated describe().helpers names ALL resolve to real window.glissade.<name> functions (0.20 drift guard)', () => {
     // CROSS-PACKAGE DRIFT GUARD. describe() lives in `scene`, but several helpers
     // it documents (createPlayer/mount, renderToDataURL/snapshotCanvas) live ABOVE

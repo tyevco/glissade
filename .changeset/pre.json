@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.58.1"
   },
   "changesets": [
-    "fail-loud-ground-floor"
+    "fail-loud-ground-floor",
+    "fail-loud-pre1-fixes"
   ]
 }

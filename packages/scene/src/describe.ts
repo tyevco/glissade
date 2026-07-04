@@ -651,7 +651,7 @@ const HELPERS: DescribedHelper[] = [
       'Build the transport object (play / pause / seek / rate / loop / marker + cue callbacks) directly — what mount() returns as mounted.player.',
     import: '@glissade/player',
     usage:
-      "createPlayer({ playhead: createPlayhead(), duration: 2 }, { loop?: boolean }): Player  —  player.play() → { finished }, player.pause(), player.seek(u), player.rate = 2, player.onMarker(name, cb), player.onCue(kind, cb)",
+      "createPlayer({ playhead: createPlayhead(), duration: 2 }, { loop?: boolean }): Player  —  player.play() → { finished }, player.pause(), player.seek(t: seconds), player.rate = 2, player.onMarker(name, cb), player.onCue(kind, cb)",
   },
   {
     name: 'mount',

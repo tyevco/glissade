@@ -75,14 +75,24 @@ describe('validateScene — eager aggregating validator', () => {
     expect(JSON.parse(JSON.stringify(res))).toEqual(res);
   });
 
-  it('flags an OFF_CANVAS static position as info (valid-but-degenerate, never an error)', () => {
+  it('does NOT emit OFF_CANVAS — it is reserved for critique() (0.60), a composed-geometry check', () => {
+    // OFF_CANVAS is a RENDERED-geometry check (needs ancestor Group world
+    // transforms), so validateScene — which reads only static LOCAL positions —
+    // must NOT emit it (a nested child would false-positive). The code stays
+    // reserved in the enum for 0.60 critique().
     const scene = createScene({ size, children: [new Rect({ id: 'far', position: [9999, 9999], width: 10, height: 10 })] });
     const res = validateScene(scene);
-    const off = res.diagnostics.find((d) => d.code === 'OFF_CANVAS');
-    expect(off).toBeDefined();
-    expect(off!.severity).toBe('info');
-    expect(off!.node).toBe('far');
-    expect(res.hasErrors).toBe(false); // off-canvas never escalates to error
+    expect(res.diagnostics.find((d) => d.code === 'OFF_CANVAS')).toBeUndefined();
+    expect(res.hasErrors).toBe(false);
+  });
+
+  it('emits ONLY the three static codes (UNKNOWN_TARGET, MEASURER_FALLBACK, YOGA_CHILD_POSITION)', () => {
+    const scene = createScene({ size, children: [new Rect({ id: 'far', position: [9999, 9999], width: 10, height: 10 })] });
+    const doc = timeline((tl) => tl.to('ghost/opacity', 0, { from: 1, duration: 1 }));
+    const emitted = new Set(validateScene(scene, doc).diagnostics.map((d) => d.code));
+    for (const c of emitted) {
+      expect(['UNKNOWN_TARGET', 'MEASURER_FALLBACK', 'YOGA_CHILD_POSITION']).toContain(c);
+    }
   });
 });
 

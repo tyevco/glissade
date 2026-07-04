@@ -78,6 +78,14 @@ const EXEMPT_INTERNALS = new Set<string>([
   // pathLength are candidates to PROMOTE to surface if canaries request — exempt for
   // now, not principled internals.
   '__resetEstimateWarnings', 'applyToPoint', 'arcLength', 'assertFiniteFontSize', 'shakeOffset', 'shakenSpec', 'cameraLayerMatrix', 'audioOffsetSamples', 'breakLines', 'childId', 'coercePathData', 'cubicBezierDerivative', 'driftLoop', 'each', 'emitDevWarning', 'filtersToCanvasFilter', 'flatten', 'fontString', 'formatColor', 'fromTRS', 'hachureLines', 'invert', 'isEstimatingMeasurer', 'isExemptFamily', 'lerpColor', 'listValueTypes', 'matEquals', 'mediaPrefersReducedMotion', 'meshRasterSize', 'multiply', 'oklabToRgba', 'parseCmap', 'parseColor', 'parseSvgPathData', 'pathFromSegs', 'pathLength', 'planReducedMotion', 'pointAtLength', 'quantize', 'random', 'rasterizeMesh', 'reprOf', 'resolveAnchor', 'resolveEase', 'resolveEaseDerivative', 'resolveSketch', 'rgbaToOklab', 'roughen', 'roundedRectSegs', 'segmentGraphemes', 'segmentWords', 'sketchStrokes', 'springEasing', 'springEasingDerivative', 'textCursor', 'transitionToClip', 'usageArity', 'validateFilters', 'validateFonts', 'validateHachure', 'validateSketch', 'vec2Equals', 'vec2Signal', 'velocityAt',
+  // 0.59 "fail-loud ground floor" authoring diagnostics (re-exported onto the
+  // browser IIFE off the @glissade/scene/diagnostics subpath): the eager validator
+  // + the truthful read primitive + the instance bound indicator + the schema
+  // version constant. DEV/authoring diagnostic tooling (the same class as the
+  // diff/audit/fontUsage cluster on that subpath — not core authoring
+  // "fundamentals"), so they are exempt-internal rather than describe().surface
+  // entries. MeasurerRequiredError is pattern-exempt via /Error$/.
+  'validateScene', 'resolveAt', 'instanceProps', 'DIAGNOSTIC_SCHEMA_VERSION',
 ]);
 
 /**

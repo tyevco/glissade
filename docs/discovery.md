@@ -31,7 +31,7 @@ const player = mounted.player;
 
 player.play();                       // → { finished: Promise<boolean> }  (true = completed, false = interrupted)
 player.pause();
-player.seek(0.5);                    // pure playhead write — never fires marker callbacks
+player.seek(0.5);                    // seek(t: seconds) — pure playhead write, never fires marker callbacks
 player.rate = 2;                     // playback speed
 player.play({ range: [1, 3] });      // play only a sub-range
 
