@@ -56,9 +56,12 @@ after its lifetime ends; any slot that is opacity-0 for the **entire** sim windo
 is **pruned** from the output. So a low-density `drift` exports a layer count
 proportional to its live particles, not `count` near-empty layers.
 
-The pool is hard-capped at `MAX_PARTICLE_COUNT` (200) — this is baked-only (v1);
-there is no GPU or unbounded mode. A `count` over the cap **throws** (never a
-silent clamp), like every other mis-built field.
+The pool is hard-capped at **200**: a `count` over the cap **throws**
+(`particles(): count N exceeds max 200` — never a silent clamp), like every other
+mis-built field. This is baked-only (v1); there is no GPU or unbounded mode. The
+enforced contract is the throw — every consumer (including the no-build IIFE) gets
+it; the cap is also exported as the `MAX_PARTICLE_COUNT` constant on
+`@glissade/scene/motion` for npm callers who want to reference the number.
 
 ## The spec
 
