@@ -286,3 +286,56 @@ describe('presets — drift / sparks / dispense', () => {
     expect(r.node.children.every((c) => c instanceof Rect)).toBe(true);
   });
 });
+
+describe('particles — safe-area (0.57.1: conservative default + safeBottom clamp)', () => {
+  // The lowest visible point is the SPAWN (motes drift up + before-emit position is [0,0]),
+  // so the max Y across every position key is the deepest spawn.
+  const maxPosY = (tracks: Track[]): number =>
+    Math.max(
+      ...tracks
+        .filter((t) => /\/position$/.test(t.target))
+        .flatMap((t) => t.keys.map((k) => (k.value as [number, number])[1])),
+    );
+
+  it('bare drift() default spawn band clears a standard lower-third caption safe-area', () => {
+    // default: origin [0.5,0.5] + area.h = box.h*0.36 → band bottom 0.68H. A standard
+    // broadcast lower-third caption safe-area sits ~0.84–0.90H, so 0.68H clears it.
+    const r = drift({ box: BOX, duration: 2, fps: 30 });
+    const deepest = maxPosY(r.tracks);
+    expect(deepest).toBeLessThanOrEqual(0.69 * BOX.h); // the 0.68H band bottom
+    expect(deepest).toBeLessThan(0.84 * BOX.h); // clears a lower-third by construction
+  });
+
+  it('safeBottom clamps the SPAWN above the safe line (no mote spawns below it)', () => {
+    // safeBottom clamps the spawn region, not the trajectory — so pair it with an UPWARD
+    // velocity (its intended ambient-drift use), where the spawn IS the lowest point. A wide
+    // area would otherwise spawn down to 0.8H; safeBottom 0.5 clamps the deepest spawn to 0.5H.
+    const r = particles(
+      spec({
+        id: 'sb',
+        origin: [0.5, 0.5],
+        area: { kind: 'box', w: 100, h: BOX.h * 0.6 },
+        safeBottom: 0.5,
+        velocity: { speed: [8, 16], angle: [-100, -80] }, // gently upward
+      }),
+    );
+    expect(maxPosY(r.tracks)).toBeLessThanOrEqual(0.5 * BOX.h + 1e-6);
+  });
+
+  it('drift forwards safeBottom through `...rest` (the wrapper escape hatch)', () => {
+    const r = drift({ box: BOX, duration: 2, fps: 30, safeBottom: 0.5 });
+    expect(maxPosY(r.tracks)).toBeLessThanOrEqual(0.5 * BOX.h + 1e-6);
+  });
+
+  it('safeBottom fail-loud: non-finite, out-of-[0,1] (the px mistake), and above-band-top all THROW', () => {
+    expect(() => particles(spec({ safeBottom: Number.NaN }))).toThrow(/safeBottom/);
+    // the most likely footgun: a captionTop passed in px instead of relative [0,1]
+    expect(() => particles(spec({ safeBottom: 907 }))).toThrow(/safeBottom.*\[0,1\]|RELATIVE/);
+    expect(() => particles(spec({ safeBottom: -0.1 }))).toThrow(/safeBottom/);
+    // a safeBottom ABOVE the spawn band top → no valid spawn region (empty-region guard).
+    // origin [0.5,0.5] + area h=box.h*0.6 → band top 0.2H; safeBottom 0.1 < 0.2 → throw.
+    expect(() =>
+      particles(spec({ origin: [0.5, 0.5], area: { kind: 'box', w: 100, h: BOX.h * 0.6 }, safeBottom: 0.1 })),
+    ).toThrow(/no valid spawn region|spawn band top/);
+  });
+});

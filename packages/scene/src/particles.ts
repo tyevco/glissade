@@ -122,6 +122,15 @@ export interface ParticleSpec {
   origin: Place;
   /** Optional spread around the origin (px). */
   area?: AreaSpec;
+  /**
+   * Safe-area clamp (0.57.1): no particle spawns BELOW this RELATIVE Y (`safeBottom *
+   * box.h`), so ambient motes never drift into a lower-third caption band. Relative
+   * [0,1] — NOT a pixel Y. Must sit at/below the spawn band's top (a `safeBottom` above
+   * the band top leaves no valid spawn region → throws). The framework can't know a
+   * consumer's captionTop, so this is the opt-in PRECISE clamp; the `drift` preset also
+   * ships a conservative DEFAULT band that clears a standard lower-third by itself.
+   */
+  safeBottom?: number;
   /** Polar initial velocity — `speed` px/s, `angle` degrees (0 = +x / right). */
   velocity: { speed: readonly [number, number]; angle: readonly [number, number] };
   /** Constant forces. */
@@ -276,6 +285,26 @@ export function particles(spec: ParticleSpec): ParticlesResult {
   } else if (spec.area?.kind === 'disc') {
     assertFiniteNum(spec.area.radius, 'area.radius');
   }
+  // safe-area clamp (0.57.1): relative [0,1], and it must sit at/below the spawn band
+  // TOP (else every spawn collapses above it → no valid region). Fail loud on all three.
+  if (spec.safeBottom !== undefined) {
+    const sb = assertFiniteNum(spec.safeBottom, 'safeBottom');
+    if (sb < 0 || sb > 1) {
+      throw new ParticleError(
+        `particles(): safeBottom must be a RELATIVE fraction in [0,1] (got ${sb}) — it is safeBottom*box.h, not a pixel Y (did you pass a captionTop in px?).`,
+      );
+    }
+    const areaHalfHRel =
+      spec.area?.kind === 'box' ? spec.area.h / 2 / spec.box.h
+      : spec.area?.kind === 'disc' ? spec.area.radius / spec.box.h
+      : 0;
+    const bandTopRel = spec.origin[1] - areaHalfHRel;
+    if (sb < bandTopRel) {
+      throw new ParticleError(
+        `particles(): safeBottom ${sb} is above the spawn band top (${bandTopRel.toFixed(3)}) — no valid spawn region (raise safeBottom, or lower the origin/shrink the area).`,
+      );
+    }
+  }
 
   const emitTimes = buildEmitTimes(spec);
 
@@ -315,6 +344,7 @@ export function particles(spec: ParticleSpec): ParticlesResult {
   const ox = spec.origin[0] * spec.box.w;
   const oy = spec.origin[1] * spec.box.h;
   const area = spec.area;
+  const safeBottomPx = spec.safeBottom !== undefined ? spec.safeBottom * spec.box.h : undefined;
 
   const emitDue = (w: World, rng: Rng): void => {
     const t = w.frame / spec.fps;
@@ -340,6 +370,8 @@ export function particles(spec: ParticleSpec): ParticlesResult {
         px += Math.cos(th) * rr;
         py += Math.sin(th) * rr;
       }
+      // safe-area clamp: never spawn below the safe line (motes drift up from here).
+      if (safeBottomPx !== undefined && py > safeBottomPx) py = safeBottomPx;
       s.x = px;
       s.y = py;
       s.rot = 0;
@@ -438,6 +470,8 @@ export interface ParticlePresetRest {
   forces?: ParticleForces;
   spin?: readonly [number, number];
   area?: AreaSpec;
+  /** Safe-area clamp (relative [0,1]) — no spawn below this Y. See ParticleSpec.safeBottom. */
+  safeBottom?: number;
   opacityOverLife?: OverLife;
   scaleOverLife?: OverLife;
   appearance?: (i: number, ctx: ParticleAppearanceContext) => Node | ParticleAppearance;
@@ -455,6 +489,7 @@ function mergeSpec(base: ParticleSpec, rest: ParticlePresetRest): ParticleSpec {
     ...(rest.forces !== undefined ? { forces: rest.forces } : {}),
     ...(rest.spin !== undefined ? { spin: rest.spin } : {}),
     ...(rest.area !== undefined ? { area: rest.area } : {}),
+    ...(rest.safeBottom !== undefined ? { safeBottom: rest.safeBottom } : {}),
     ...(rest.opacityOverLife !== undefined ? { opacityOverLife: rest.opacityOverLife } : {}),
     ...(rest.scaleOverLife !== undefined ? { scaleOverLife: rest.scaleOverLife } : {}),
     ...(rest.appearance !== undefined ? { appearance: rest.appearance } : {}),
@@ -475,7 +510,7 @@ export interface DriftOptions extends ParticlePresetRest {
   count?: number;
   /** Continuous emission rate, particles/sec (default 8). */
   rate?: number;
-  /** Spawn point, relative viewport coords (default centered-lower [0.5,0.6]). */
+  /** Spawn point, relative viewport coords (default centered [0.5,0.5] — the conservative caption-safe band). */
   origin?: Place;
   /** Themed mote color (default a soft blue). */
   color?: string;
@@ -500,11 +535,16 @@ export function drift(opts: DriftOptions): ParticlesResult {
     duration: opts.duration,
     fps: opts.fps,
     rate: opts.rate ?? 8,
-    origin: opts.origin ?? [0.5, 0.6],
+    origin: opts.origin ?? [0.5, 0.5],
     lifetime: [3, 6],
     velocity: { speed: [4, 14], angle: [-110, -70] }, // gently upward (y-down)
     forces: { drag: 0.2 },
-    area: { kind: 'box', w: opts.box.w * 0.8, h: opts.box.h * 0.5 },
+    // Conservative DEFAULT spawn band (0.57.1 safe-area fix): centered, height 0.36H →
+    // spawn Y in ~[0.32H, 0.68H]; the 0.68H bottom clears a standard lower-third caption
+    // safe-area (~0.84–0.90H), so bare drift() honors safe-area by default. Motes drift UP,
+    // so the spawn bottom is the lowest point. Pass an explicit `area` and/or `safeBottom`
+    // to tune for a consumer's exact captionTop.
+    area: { kind: 'box', w: opts.box.w * 0.8, h: opts.box.h * 0.36 },
     opacityOverLife: fadeCurve(0.5, 0.2, 0.35),
     appearance: dotAppearance(color, radius),
   };

@@ -650,15 +650,15 @@ const HELPERS: DescribedHelper[] = [
       "A small SEEDED, BAKED particle emitter (FACTORY, no `new`): composes each() (count fixed slot nodes at `${id}/${i}`) + bake() (seeded physics → position/opacity/scale/rotation tracks on those SAME ids). Every slot is a real node with real tracks → a real exportable Lottie layer, faithful BY CONSTRUCTION (no render-only/custom-draw path). `count` is the MAX-CONCURRENT ring-buffer pool (bounded 200 — over THROWS, never clamps), NOT total emitted; opacity-0-for-the-whole-window slots are pruned so the layer count stays proportional. Seed defaults to hashStr(id); byte-identical run-to-run, a different seed varies. ESCAPE HATCH: `appearance` (any Node/glyph template), `step` (raw per-particle sim), `...` velocity/forces/lifetime. Tree-shakeable (@glissade/scene/motion).",
     import: '@glissade/scene/motion',
     usage:
-      "particles(spec: { id, count, box: {w,h}, duration, fps, origin: [fx,fy], lifetime: number | [min,max], velocity: { speed:[min,max], angle:[min,max] (deg) }, appearance: (i, ctx) => Node | { node, opacityOverLife?, scaleOverLife? }, rate?, burst?: number | {at,n}[], seed?, area?, forces?: { gravity?, drag?, wind? }, spin?, opacityOverLife?, scaleOverLife?, step?: (p, dt, rng) => void }): { node: Group, tracks: Track[], end }  —  supply rate and/or burst; count > 200 throws.",
+      "particles(spec: { id, count, box: {w,h}, duration, fps, origin: [fx,fy], lifetime: number | [min,max], velocity: { speed:[min,max], angle:[min,max] (deg) }, appearance: (i, ctx) => Node | { node, opacityOverLife?, scaleOverLife? }, rate?, burst?: number | {at,n}[], seed?, area?, safeBottom? (relative [0,1] safe-area clamp — no spawn below this Y), forces?: { gravity?, drag?, wind? }, spin?, opacityOverLife?, scaleOverLife?, step?: (p, dt, rng) => void }): { node: Group, tracks: Track[], end }  —  supply rate and/or burst; count > 200 throws; safeBottom out-of-[0,1] or above the spawn-band top throws.",
   },
   {
     name: 'drift',
     summary:
-      "Particles preset: ambient low-opacity motes floating gently up (a bokeh companion). Continuous low-rate; DEFAULTS to a small max-concurrent count (24) so the exported layer count stays proportional, NOT 200 near-empty layers. `appearance` is the primary control (a themed dot); `...rest` forwards to particles() (velocity/forces/lifetime/step). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).",
+      "Particles preset: ambient low-opacity motes floating gently up (a bokeh companion). Continuous low-rate; DEFAULTS to a small max-concurrent count (24) so the exported layer count stays proportional, NOT 200 near-empty layers. SAFE-AREA (0.57.1): the DEFAULT spawn band is centered + shallow (bottom ~0.68H) so bare drift() clears a standard lower-third caption safe-area by itself; pass `safeBottom` (relative [0,1]) to pin a consumer's exact captionTop, or override `area`/`origin` for a custom spawn region. `appearance` is the primary control (a themed dot); `...rest` forwards to particles() (velocity/forces/lifetime/area/safeBottom/step). Factory (no `new`). Tree-shakeable (@glissade/scene/motion).",
     import: '@glissade/scene/motion',
     usage:
-      "drift(opts: { box: {w,h}, duration, fps, count?, rate?, origin?, color?, radius?, seed?, id?, ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }",
+      "drift(opts: { box: {w,h}, duration, fps, count?, rate?, origin?, color?, radius?, seed?, id?, area?, safeBottom? (relative [0,1] — no motes below this Y, e.g. just above captionTop), ...rest (lifetime/velocity/forces/appearance/step) }): { node: Group, tracks: Track[], end }",
   },
   {
     name: 'sparks',
