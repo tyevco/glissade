@@ -1,6 +1,6 @@
 {
   "name": "@glissade/backend-canvas2d",
-  "version": "0.57.0-pre.0",
+  "version": "0.57.0",
   "description": "glissade Canvas 2D render backend: DisplayList -> CanvasRenderingContext2D/OffscreenCanvas.",
   "license": "Apache-2.0",
   "engines": {

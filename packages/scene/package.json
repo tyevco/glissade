@@ -1,6 +1,6 @@
 {
   "name": "@glissade/scene",
-  "version": "0.57.0-pre.0",
+  "version": "0.57.0",
   "description": "glissade scene graph: nodes, transforms, DisplayList emission. Renderer-agnostic; zero DOM/Node dependencies.",
   "license": "Apache-2.0",
   "engines": {
