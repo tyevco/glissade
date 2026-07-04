@@ -1,5 +1,14 @@
 # @glissade/backend-dom
 
+## 0.59.0
+
+### Patch Changes
+
+- Updated dependencies [600eec2]
+- Updated dependencies [6191235]
+  - @glissade/scene@0.59.0
+  - @glissade/core@0.59.0
+
 ## 0.59.0-pre.1
 
 ### Patch Changes
