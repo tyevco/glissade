@@ -62,7 +62,7 @@ import {
   type Track,
   type Vec2,
 } from '@glissade/core';
-import { breakLines, Circle, Group, meshRasterSize, Node, Path, rasterizeMesh, Rect, Text, type FontSpec, type Mat2x3, type SceneModule, type TextMeasurer } from '@glissade/scene';
+import { breakLines, Circle, Echo, Group, MotionBlur, meshRasterSize, Node, Path, rasterizeMesh, Rect, Text, type FontSpec, type Mat2x3, type SceneModule, type TextMeasurer } from '@glissade/scene';
 // 0.55 Camera rig: the pose (zoom/center/roll) lives in a custom draw transform,
 // not the node's p/s/r signals — so the exporter must be camera-aware and sample
 // the per-layer inverse pose into the Lottie null-parent hierarchy (else the whole
@@ -273,6 +273,21 @@ function walkChildren(
     if (shakenSpec(node) !== undefined) {
       ctx.warn(
         `${describe(node)}: shake() jitter is render-only — NOT exported to Lottie (it is a closed-form jitter, not a keyframe track)`,
+      );
+    }
+    // 0.58.1: MotionBlur / Echo are Group subclasses whose EFFECT (the analog-shutter
+    // smear / the ghost trails) is a draw-time re-evaluation, not child nodes or tracks —
+    // so the generic Group walk below emits the BASE children faithfully but the effect
+    // has no Lottie representation. Warn ONCE (never a silent drop — the never-silent
+    // contract), then let the base export; the round-trip shows the un-blurred / un-trailed
+    // shape. Same class as camera-shake / mesh-anim / vf-axes.
+    if (node instanceof MotionBlur) {
+      ctx.warn(
+        `${describe(node)}: motionBlur (analog-shutter smear) is render-only — NOT exported to Lottie (the round-trip shows the un-blurred shape)`,
+      );
+    } else if (node instanceof Echo) {
+      ctx.warn(
+        `${describe(node)}: echo trails are render-only — NOT exported to Lottie (only the base shape exports, no ghost copies)`,
       );
     }
     const kind = classify(node);

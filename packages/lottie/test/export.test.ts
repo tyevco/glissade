@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { key, sampleTrack, track, type Timeline } from '@glissade/core';
-import { createScene, Circle, Group, Rect, type SceneModule } from '@glissade/scene';
+import { createScene, Circle, Group, Rect, echo, motionBlur, type SceneModule } from '@glissade/scene';
 import { exportLottie, importLottie } from '../src/index.js';
 import { decimateLinearKeys } from '../src/sampleFallback.js';
 import type { LottieKeyframe, LottieLayer, LottieProp } from '../src/types.js';
@@ -686,3 +686,30 @@ describe('exportLottie: fill:transparent (the stroke-only-shape idiom)', () => {
     expect(() => importLottie(doc).toSceneModule().createScene()).not.toThrow();
   });
 });
+
+describe('exportLottie render-only Group effects (never-silent: MotionBlur / Echo)', () => {
+  const modWith = (child: import('@glissade/scene').Node): SceneModule => ({
+    createScene: () => createScene({ size: { w: 200, h: 200 }, children: [child] }),
+    timeline: { version: 1, duration: 1, fps: 60, tracks: [] },
+  });
+
+  it('WARNS that motionBlur is render-only — and the base shape still exports (never a silent drop)', () => {
+    const warnings: string[] = [];
+    const doc = exportLottie(
+      modWith(motionBlur(new Circle({ id: 'dot', radius: 10, position: [100, 100], fill: '#fff' }), { shutter: 0.05, samples: 8 })),
+      { width: 200, height: 200, fps: 60, onWarn: (m) => warnings.push(m) },
+    );
+    expect(warnings.some((w) => /motionBlur.*render-only|un-blurred/.test(w))).toBe(true);
+    expect(doc.layers.some((l) => l.ty === 4)).toBe(true); // base dot still exported
+  });
+
+  it('WARNS that echo trails are render-only — and the base shape still exports', () => {
+    const warnings: string[] = [];
+    const doc = exportLottie(
+      modWith(echo(new Circle({ id: 'dot', radius: 10, position: [100, 100], fill: '#fff' }), { count: 6, spacing: 0.1 })),
+      { width: 200, height: 200, fps: 60, onWarn: (m) => warnings.push(m) },
+    );
+    expect(warnings.some((w) => /echo.*render-only|ghost copies/.test(w))).toBe(true);
+    expect(doc.layers.some((l) => l.ty === 4)).toBe(true); // base dot still exported
+  });
+})
