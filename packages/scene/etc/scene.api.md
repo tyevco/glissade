@@ -9,11 +9,8 @@ import { BoundTimeline } from '@glissade/core';
 import { ChannelOverride } from '@glissade/core/clips';
 import { Clip } from '@glissade/core/clips';
 import { CompiledTimeline } from '@glissade/core';
-import { CoverageReport } from '@glissade/core';
 import { EaseSpec } from '@glissade/core';
 import { FontAxes } from '@glissade/core';
-import { FontMode } from '@glissade/core';
-import { FontUsage } from '@glissade/core';
 import { MeshInterpolation } from '@glissade/core';
 import { MeshPaint } from '@glissade/core';
 import { MeshPoint } from '@glissade/core';
@@ -136,12 +133,6 @@ export class ColdAssetError extends Error {
 
 // @public
 export function collapseReplacer(_key: string, value: unknown): unknown;
-
-// @public
-export function collectLocalizedTextUsages(scene: Scene, doc: Timeline): FontUsage[];
-
-// @public
-export function collectTextUsages(scene: Scene): FontUsage[];
 
 // @public (undocumented)
 export function createDisplayListBuilder(size: {
@@ -509,9 +500,6 @@ export class FilterValidationError extends Error {
 
 // @public
 export function flatten(segs: readonly PathSeg[], steps?: number): Polyline[];
-
-// @public
-export type FontByteLoader = (url: string) => Promise<ArrayBuffer | undefined>;
 
 // @public (undocumented)
 export interface FontSpec {
@@ -1483,17 +1471,6 @@ export function validateFilters(filters: readonly FilterSpec[]): void;
 
 // @public (undocumented)
 export function validateHachure(h: HachureSpec): void;
-
-// @public
-export function validateSceneFonts(scene: Scene, doc: Timeline, loadBytes: FontByteLoader, options?: ValidateSceneFontsOptions): Promise<CoverageReport>;
-
-// @public (undocumented)
-export interface ValidateSceneFontsOptions {
-    extraUsages?: readonly FontUsage[] | undefined;
-    // (undocumented)
-    mode?: FontMode;
-    osFamilies?: ReadonlySet<string> | undefined;
-}
 
 // @public
 export function validateSketch(s: SketchStyle): void;

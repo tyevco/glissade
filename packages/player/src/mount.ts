@@ -5,7 +5,8 @@
  */
 
 import { buildFontRegistry, compileTimeline, type Timeline } from '@glissade/core';
-import { evaluate, validateSceneFonts, type RenderBackend, type Scene } from '@glissade/scene';
+import { evaluate, type RenderBackend, type Scene } from '@glissade/scene';
+import { validateSceneFonts } from '@glissade/scene/diagnostics';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { createPlayer, type Player, type PlayerOptions } from './player.js';
 import { planReducedMotion, mediaPrefersReducedMotion } from './reducedMotion.js';

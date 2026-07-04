@@ -31,3 +31,15 @@ export {
 } from './displayDiff.js';
 
 export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
+
+// 0.57 base-budget review: the font-usage collectors + scene-font validator moved
+// here off the base scene index (they are CLI / localize / export-path helpers,
+// never on the evaluate/render hot path — the same "DEV/CLI surface" rationale as
+// the diff/audit machinery above). Recovers ~1.5 kB from the base embed.
+export {
+  collectTextUsages,
+  collectLocalizedTextUsages,
+  validateSceneFonts,
+  type FontByteLoader,
+  type ValidateSceneFontsOptions,
+} from './fontUsage.js';

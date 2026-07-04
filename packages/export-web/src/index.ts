@@ -30,7 +30,8 @@ import {
   type Timeline,
   type Track,
 } from '@glissade/core';
-import { evaluate, validateSceneFonts, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
+import { evaluate, ColdAssetError, type Scene, type VideoFrameSource } from '@glissade/scene';
+import { validateSceneFonts } from '@glissade/scene/diagnostics';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
 import { MediabunnyVideoFrameSource } from './videoSource.js';
 

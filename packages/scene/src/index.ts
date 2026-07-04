@@ -119,13 +119,15 @@ export {
   type FilterKind,
 } from './renderBackend.js';
 
-export {
-  collectTextUsages,
-  collectLocalizedTextUsages,
-  validateSceneFonts,
-  type FontByteLoader,
-  type ValidateSceneFontsOptions,
-} from './fontUsage.js';
+// 0.57 base-budget review (the 0.20/0.40 playbook): the font-usage collectors +
+// scene-font validator (collectTextUsages / collectLocalizedTextUsages /
+// validateSceneFonts) are CLI / localize / export-path helpers — NEVER reached by
+// evaluate() or the DisplayList render path — so they moved OFF the base scene
+// index onto the tree-shakeable `@glissade/scene/diagnostics` subpath, recovering
+// ~1.5 kB gz to keep the SACRED base embed under 39. `gs render` / `gs fonts` /
+// export-web / the player mount import them from there. Asserted off the base
+// graph by the "base scene excludes diagnostics" metafile guard (now covers
+// fontUsage.ts). See scripts/check-size.mjs.
 
 export { ColdAssetError, type VideoFrameSource, type ImageHandle } from './assets.js';
 export { ShaderEffect, type ShaderEffectProps } from './shaderEffect.js';

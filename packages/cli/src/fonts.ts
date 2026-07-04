@@ -12,7 +12,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { buildFontRegistry } from '@glissade/core';
-import { collectTextUsages } from '@glissade/scene';
+import { collectTextUsages } from '@glissade/scene/diagnostics';
 import { loadSceneModule } from './render.js';
 
 export interface FontAuditFaceReport {
