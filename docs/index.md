@@ -9,6 +9,9 @@ hero:
       text: Getting started
       link: /getting-started
     - theme: alt
+      text: The reel
+      link: /showcase.html
+    - theme: alt
       text: Live showcase
       link: https://tyevco.github.io/glissade/demo/app/
     - theme: alt
