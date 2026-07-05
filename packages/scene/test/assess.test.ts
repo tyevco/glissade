@@ -77,9 +77,16 @@ describe('assess — the composed verdict + clean-of-fixable gate', () => {
 
     const on = assess(scene, empty, { exportBound: true });
     expect(on.diagnostics.some((d) => d.code === 'RENDER_ONLY_EXPORT')).toBe(true);
-    // a render-only warning has no geometry lever → escalates, does NOT block clean.
+    // A render-only warning has NO mechanical lever → it must ESCALATE (the human
+    // decides: accept the export-fidelity loss or restructure), NOT sit unpartitioned.
+    // This is the meaning-veto's escalate half — the reachability edcc caught dead.
+    expect(on.escalated.some((d) => d.code === 'RENDER_ONLY_EXPORT')).toBe(true);
+    // ...and it is NEVER auto-fixable (no geometry lever to auto-apply).
+    expect(on.fixable.some((d) => d.code === 'RENDER_ONLY_EXPORT')).toBe(false);
+    // ...and it does NOT block `clean` — the loop has done all it mechanically can.
     expect(on.clean).toBe(true);
-    expect(on.escalated.length + on.diagnostics.filter((d) => d.code === 'RENDER_ONLY_EXPORT').length).toBeGreaterThan(0);
+    // Regression guard: `escalated` is a REACHABLE partition, not dead code.
+    expect(on.escalated.length).toBeGreaterThan(0);
   });
 
   it('attaches a blast-radius when a previous state is given (informational, never blocks clean)', () => {
@@ -93,9 +100,12 @@ describe('assess — the composed verdict + clean-of-fixable gate', () => {
 });
 
 describe('assess — per-lever fixClass (the meaning-preservation veto)', () => {
-  it('TEXT_OVERFLOW exposes ≥1 geometry lever (stays auto-fixable) + a content lever marked content', () => {
+  it('a FEASIBLE TEXT_OVERFLOW exposes ≥1 in-bounds geometry lever (stays auto-fixable) + a content lever marked content', () => {
+    // measured 5·20·0.6 = 60 > box 50 → over 10; shrinking to fit lands fontSize
+    // ~16.7px (≥ MIN_LEGIBLE_PX) and a 60px box fits the 200px canvas → BOTH
+    // geometry levers are in-bounds, so the overflow stays auto-fixable.
     const scene = sceneWith(
-      new Text({ id: 'cap', position: [100, 50], width: 30, text: 'a very long caption that overflows', fontSize: 12, fill: '#000' }),
+      new Text({ id: 'cap', position: [100, 50], width: 50, text: 'HELLO', fontSize: 20, fill: '#000' }),
     );
     const v = assess(scene, empty);
     const overflow = v.diagnostics.find((d) => d.code === 'TEXT_OVERFLOW');
@@ -103,10 +113,33 @@ describe('assess — per-lever fixClass (the meaning-preservation veto)', () => 
     const hints = fixHintsOf(overflow!);
     expect(hints.some((h) => h.fixClass === 'geometry')).toBe(true);
     expect(hints.some((h) => h.lever === 'text' && h.fixClass === 'content')).toBe(true);
-    // any geometry lever ⇒ auto-fixable ⇒ it's in the work queue, blocks clean.
+    // an in-bounds geometry lever ⇒ auto-fixable ⇒ it's in the work queue, blocks clean.
     expect(isGeometryFixable(overflow!)).toBe(true);
     expect(v.fixable).toContain(overflow);
     expect(v.clean).toBe(false);
+  });
+
+  it('an OUT-OF-BOUNDS TEXT_OVERFLOW ESCALATES — geometry exhausted (shrink goes sub-legible AND a box big enough runs off-canvas), never auto-shrunk sub-legible', () => {
+    // 40 chars at fontSize 20 in a 30px box on a 200px canvas: measured 480px.
+    // fontSize fix would need ~1.25px (< MIN_LEGIBLE_PX 6) and a 480px box exceeds
+    // the 200px canvas — BOTH geometry levers are infeasible, so the loop must NOT
+    // auto-produce a "clean" but unreadable caption; it ESCALATES to a human.
+    // (ai-training's content-seat catch: the string is preserved, but so is the RESULT.)
+    const scene = sceneWith(
+      new Text({ id: 'cap', position: [100, 50], width: 30, text: 'X'.repeat(40), fontSize: 20, fill: '#000' }),
+    );
+    const v = assess(scene, empty);
+    const esc = v.escalated.find((d) => d.code === 'TEXT_OVERFLOW');
+    expect(esc, 'an overflow with no in-bounds geometry fix must ESCALATE, not silently auto-shrink').toBeDefined();
+    // never in the auto-fix work queue…
+    expect(v.fixable.some((d) => d.code === 'TEXT_OVERFLOW')).toBe(false);
+    expect(isGeometryFixable(esc!)).toBe(false);
+    // …and its ONLY remaining lever is the content one (both geometry levers dropped).
+    const hints = fixHintsOf(esc!);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints.every((h) => h.fixClass === 'content')).toBe(true);
+    // the escalate reason is legible in the message.
+    expect(esc!.message).toContain('human decision');
   });
 
   it('a SYNTHETIC all-content diagnostic → isContentOnly → escalate (never auto-fixable)', () => {

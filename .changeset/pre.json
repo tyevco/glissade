@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.62.0"
   },
   "changesets": [
-    "author-loop-capstone"
+    "author-loop-capstone",
+    "escalate-reachability-fix"
   ]
 }

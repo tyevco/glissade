@@ -83,9 +83,14 @@ export interface AssessResult {
    */
   fixable: SceneDiagnostic[];
   /**
-   * Non-accepted diagnostics whose ONLY levers are content-class (all-content →
-   * changing them touches MEANING) — the mechanical/human boundary. The loop
-   * reports these UP; it never auto-applies them.
+   * Non-accepted WARNINGS the loop cannot mechanically auto-close — the
+   * mechanical/human boundary (the meaning-preservation veto's ESCALATE half).
+   * Two ways in: a diagnostic whose only levers are content-class (all-content →
+   * changing them touches MEANING, e.g. "shorten a caption"), OR one with no
+   * mechanical lever at all (a pure human-judgment fidelity/acceptance call, e.g.
+   * RENDER_ONLY_EXPORT: accept the export-fidelity loss or restructure the scene).
+   * The loop reports these UP and never auto-applies them; they do NOT block
+   * `clean` (the loop has done all it mechanically can — the human owns the rest).
    */
   escalated: SceneDiagnostic[];
   /** Diagnostics matched by `opts.accepted` — the knowingly-accepted residual. */
@@ -164,8 +169,14 @@ export function assess(scene: Scene, timeline: Timeline, opts: AssessOptions = {
       blocks = true; // a geometry-fixable warning is mechanical work still to do
       continue;
     }
-    if (isContentOnly(d)) escalated.push(d); // all-content → human owns it
-    // any other warning/info (no lever, or a parity note) reports up, doesn't block.
+    // ESCALATE — a non-accepted, non-error warning the loop could NOT auto-close
+    // (it failed the geometry-fixable check above). Two classes land here: an
+    // all-content diagnostic (the meaning veto — `isContentOnly`) AND one with no
+    // mechanical lever at all (RENDER_ONLY_EXPORT: a human-judgment fidelity call).
+    // Both are "the loop did all it mechanically can → the human owns this" — so
+    // they surface in `escalated` but do NOT block `clean`. INFO-level notes are
+    // advisory only (a parity residual) and report up without escalating.
+    if (d.severity === 'warning') escalated.push(d);
   }
 
   // 5. TRUST HANDLE + optional blast-radius. Both bind/evaluate the scene, which a

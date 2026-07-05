@@ -31,8 +31,8 @@ creative, meaning-laden decision that belongs to the author. So glissade ships:
 const v = assess(scene, timeline, opts);
 //  v.clean         → nothing MECHANICAL remains (the termination signal)
 //  v.diagnostics   → the unified, deduped, prioritized problem list
-//  v.fixable       → warnings with a GEOMETRY lever (the loop's work queue)
-//  v.escalated     → content-only diagnostics (the human owns these)
+//  v.fixable       → warnings with an IN-BOUNDS geometry lever (the work queue)
+//  v.escalated     → warnings the loop can't mechanically close (the human owns these)
 //  v.accepted      → knowingly-accepted residual (opts.accepted)
 //  v.certKey       → the trust handle (the render's content-address)
 //  v.signature     → a stable hash of the diagnostic set (convergence detector)
@@ -51,9 +51,14 @@ The merged diagnostics are **deduped** (by code · node · track · source · de
 and **prioritized** (severity first, then critique's canonical sort).
 
 `clean` = **no error-severity** diagnostic **and no geometry-fixable warning**
-remaining — after `accepted` diagnostics are removed and content-only ones
+remaining — after `accepted` diagnostics are removed and non-mechanical ones
 escalated. `clean` is *clean-of-fixable*, not *clean-of-everything*: an accepted
-export-drop or a content-only overflow can remain while `clean` is `true`.
+export-drop or an escalated overflow can remain while `clean` is `true`.
+
+> **`clean` is the loop's termination signal, not the ship gate.** The loop is
+> mechanically done when `clean` is `true` — but a non-empty `v.escalated` means a
+> human still owns something. **Ship iff `clean && v.escalated.length === 0`** (or
+> every escalated item has been reviewed and moved into `opts.accepted`).
 
 ## The meaning-preservation veto — per-lever `fixClass`
 
@@ -61,7 +66,8 @@ A critique diagnostic carries a **list** of fix hints (in `detail.fixHints`), ea
 tagged with a **`fixClass`**:
 
 ```jsonc
-// TEXT_OVERFLOW (width) offers three levers of two classes:
+// TEXT_OVERFLOW (width) offers up to three levers of two classes — a geometry
+// lever appears ONLY while it stays in-bounds (see below):
 "fixHints": [
   { "lever": "fontSize", "fixClass": "geometry", "hint": "reduce fontSize until the line fits" },
   { "lever": "width",    "fixClass": "geometry", "hint": "widen the wrap box…" },
@@ -71,15 +77,23 @@ tagged with a **`fixClass`**:
 
 The agent's rule:
 
-> **Any geometry lever exists → auto-fix (pick a geometry lever, never a content
-> one). All levers content-class → escalate to a human.**
+> **An in-bounds geometry lever exists → auto-fix (pick a geometry lever, never a
+> content one). No mechanical lever left → escalate to a human.**
 
-So `TEXT_OVERFLOW` stays fully auto-fixable via `fontSize`/`width` — the loop just
-never picks *"shorten text."* A caption is verified dialog; a mechanically-green
-caption that changed the teaching is worse than the overflow. `OFF_CANVAS`,
-`TEXT_OVERFLOW`, and `OCCLUSION` all expose at least one geometry lever, so they
-stay auto-fixable. `assess()` partitions this for you: `v.fixable` (geometry) vs
-`v.escalated` (content-only).
+So `TEXT_OVERFLOW` is auto-fixable via `fontSize`/`width` — the loop just never
+picks *"shorten text."* A caption is verified dialog; a mechanically-green caption
+that changed the teaching is worse than the overflow.
+
+**Geometry levers are feasibility-bounded.** A geometry fix is a fix only while it
+stays in-bounds: `fontSize` will not shrink below the legibility floor
+(`MIN_LEGIBLE_PX`, matching `fitText({ minPx })`), and a resize (`width` / `box.h`)
+will not grow off-canvas. When *both* geometry levers are out of bounds, only the
+content lever remains → the overflow **escalates** instead of the loop converging
+to a "clean" but unreadable caption. The string is preserved *and* so is the
+result. `OFF_CANVAS` and `OCCLUSION` always expose an in-bounds geometry lever
+(move / restack), so they stay auto-fixable. `assess()` partitions this for you:
+`v.fixable` (in-bounds geometry) vs `v.escalated` (no mechanical fix — human owns
+it), which also catches `RENDER_ONLY_EXPORT` (a fidelity decision with no lever).
 
 ## Accept — scoped intent
 

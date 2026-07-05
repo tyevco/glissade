@@ -494,7 +494,8 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         if (mw > widest) widest = mw;
       }
       const over = widest - width;
-      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating));
+      const wFontSize = a.lastTexts[0]!.font.size;
+      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating, wFontSize, w, h));
     }
 
     // HEIGHT: the wrapped-block height vs an explicit `box.h`. The block height is
@@ -508,7 +509,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       const fontSize = a.lastTexts[0]!.font.size;
       const blockH = quantize(fontSize * node.lineHeight) * a.lastTexts.length;
       const overH = blockH - boxH;
-      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating));
+      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating, fontSize, w, h));
     }
   }
 
@@ -579,6 +580,12 @@ function offCanvasDiagnostic(scene: Scene, id: string, a: NodeAgg, w: number, h:
   };
 }
 
+/** The legibility floor a geometry `fontSize` fix must not sink below. Mirrors
+ *  `fitText({ minPx })`'s default (type.ts) — the framework already refuses to
+ *  size text below this, so a critique fix that would is INFEASIBLE, not a fix.
+ *  Shrinking to fit is meaning-preserving ONLY while it stays legible. */
+const MIN_LEGIBLE_PX = 6;
+
 function textOverflowDiagnostic(
   id: string,
   dimension: 'width' | 'height',
@@ -586,17 +593,38 @@ function textOverflowDiagnostic(
   threshold: number,
   over: number,
   estimating: boolean,
+  fontSize: number,
+  canvasW: number,
+  canvasH: number,
 ): SceneDiagnostic {
+  // 0.63 — FEASIBILITY-BOUND the geometry levers (ai-training's content-seat catch:
+  // an unbounded geometry fix converges to a readable-STRING-but-unreadable-CAPTION
+  // — "clean" yet unshippable). A geometry lever is offered ONLY if it can stay
+  // in-bounds: `fontSize` shrink must land ≥ MIN_LEGIBLE_PX; the resize lever
+  // (width / box.h) must fit on-canvas. When BOTH are infeasible, only the content
+  // `text` lever remains → the diagnostic is not geometry-fixable → assess()
+  // ESCALATES it (the meaning-boundary one level deeper: the string is preserved,
+  // but the loop refuses to auto-produce an unshippable result). Estimated metrics
+  // are too coarse to drop a lever on, so bounding applies only to REAL measurement.
+  const fitFontPx = measured > 0 ? fontSize * (threshold / measured) : fontSize;
+  const fontFeasible = estimating || fitFontPx >= MIN_LEGIBLE_PX;
+  const resizeFeasible = estimating || measured <= (dimension === 'width' ? canvasW : canvasH);
+  const geometryExhausted = !fontFeasible && !resizeFeasible;
+
   // The fix-hint names the RIGHT lever per axis: a width overflow reaches for
   // width/fitText, a height overflow for the box height / shorter text.
   const base =
     dimension === 'width'
       ? `text of node '${id}' overflows its box WIDTH by ${round(over)}px ` +
         `(needs ${round(measured)}px, box width ${round(threshold)}px). ` +
-        `Reduce fontSize, widen width, or wrap it with fitText({ maxW: ${round(threshold)} }).`
+        (geometryExhausted
+          ? `No in-bounds geometry fix (fontSize would drop below ${MIN_LEGIBLE_PX}px, and a box wide enough runs off-canvas) — shortening the text is a human decision.`
+          : `Reduce fontSize, widen width, or wrap it with fitText({ maxW: ${round(threshold)} }).`)
       : `text of node '${id}' overflows its box HEIGHT by ${round(over)}px ` +
         `(wrapped block ${round(measured)}px tall, box height ${round(threshold)}px). ` +
-        `Reduce fontSize, increase the box height, or shorten the text.`;
+        (geometryExhausted
+          ? `No in-bounds geometry fix (fontSize would drop below ${MIN_LEGIBLE_PX}px, and a box tall enough runs off-canvas) — shortening the text is a human decision.`
+          : `Reduce fontSize, increase the box height, or shorten the text.`);
   return {
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
     code: 'TEXT_OVERFLOW',
@@ -614,20 +642,35 @@ function textOverflowDiagnostic(
       threshold: round(threshold),
       overflowPx: round(over),
       estimated: estimating,
-      // 0.63 per-lever fix classes — TWO geometry levers (so TEXT_OVERFLOW stays
-      // auto-fixable) PLUS one content lever ('shorten', never auto-applied: a
-      // caption is verified dialog). The loop always prefers a geometry lever.
-      fixHints: (dimension === 'width'
-        ? [
-            { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize until the line fits' },
-            { lever: 'width', fixClass: 'geometry', hint: `widen the wrap box to width ≥ ${round(measured)}` },
-            { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
-          ]
-        : [
-            { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize so the wrapped block fits' },
-            { lever: 'box.h', fixClass: 'geometry', hint: `increase the box height to ≥ ${round(measured)}` },
-            { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
-          ]) satisfies FixHint[],
+      // 0.63 per-lever fix classes — up to TWO geometry levers (so TEXT_OVERFLOW
+      // stays auto-fixable) PLUS one content lever ('shorten', never auto-applied:
+      // a caption is verified dialog). The loop always prefers a geometry lever —
+      // BUT a geometry lever is offered only while it stays IN-BOUNDS (fontSize ≥
+      // MIN_LEGIBLE_PX, resize on-canvas). When both are infeasible only the
+      // content lever remains → assess() escalates (human owns it). Estimated
+      // metrics keep both geometry levers (too coarse to drop one on).
+      fixHints: [
+        ...(fontFeasible
+          ? [
+              {
+                lever: 'fontSize',
+                fixClass: 'geometry',
+                hint:
+                  dimension === 'width'
+                    ? 'reduce fontSize until the line fits'
+                    : 'reduce fontSize so the wrapped block fits',
+              },
+            ]
+          : []),
+        ...(resizeFeasible
+          ? [
+              dimension === 'width'
+                ? { lever: 'width', fixClass: 'geometry', hint: `widen the wrap box to width ≥ ${round(measured)}` }
+                : { lever: 'box.h', fixClass: 'geometry', hint: `increase the box height to ≥ ${round(measured)}` },
+            ]
+          : []),
+        { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
+      ] satisfies FixHint[],
     },
   };
 }
