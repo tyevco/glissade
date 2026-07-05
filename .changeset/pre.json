@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.60.0"
   },
   "changesets": [
+    "parity-attribution-fix",
     "semantic-parity-diff"
   ]
 }

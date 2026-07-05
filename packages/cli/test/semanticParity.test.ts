@@ -17,8 +17,16 @@ import { semanticParityCommand, parseWarn, attributeResiduals } from '../src/sem
 import fixtureModule from './fixtures/parity-scene.js';
 import imageModule from './fixtures/parity-image.js';
 // Real corpus scenes through vitest's graph (instanceof-safe for the exporter's
-// node-kind checks — like the parity.test.ts pattern).
+// node-kind checks — like the parity.test.ts pattern). Each exercises a render-only
+// DROP whose residual lands on a node the warn doesn't name directly:
+//   camera — whole-frame shake, residual on the rig's CONTENT subtree.
+//   echo   — echo wraps its child; FollowPath drives a target.
+//   orient — followPath/orientToPath/lookAt DRIVERS whose (SIBLING) targets diverge.
+//   motionblur — the wrapped child is absorbed; an INDEPENDENT sibling stays loud.
 import cameraModule from '../../examples/src/scenes/golden-camera.js';
+import echoModule from '../../examples/src/scenes/golden-echo.js';
+import orientModule from '../../examples/src/scenes/golden-orient.js';
+import motionblurModule from '../../examples/src/scenes/golden-motionblur.js';
 
 const FIXTURES = fileURLToPath(new URL('./fixtures', import.meta.url));
 const EXAMPLES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -62,29 +70,56 @@ describe('gs parity --semantic — a warn-explained drop is fused + masked', () 
   });
 });
 
-describe('gs parity --semantic — a text scene with fonts set up does NOT false-fire on text', () => {
-  // golden-camera: DejaVu-Sans text caption + Circle content inside a camera() rig
-  // whose whole-frame SHAKE is render-only (the exporter drops it, warning on 'cam').
-  // Before the font-consistency + subtree-coalesce fixes this false-fired 4×
-  // UNEXPLAINED_RESIDUAL on the camera's content (far-a..far-d). Now: fonts are
-  // consistent across legs (no estimating-fallback divergence on the text), and the
-  // camera-shake residual coalesces to the ONE warn-explained (expected) 'cam' drop.
-  const CAMERA = { modulePath: join(EXAMPLES, 'golden-camera.ts'), module: cameraModule } as const;
+describe('gs parity --semantic — a WARNED drop must NOT false-fire UNEXPLAINED (the baseline-regression invariant)', () => {
+  // The pre.1 regression guard: a documented, warn-explained render-only drop whose
+  // residual lands on a node the warn doesn't name directly (a wrapper's SUBTREE, a
+  // driver's SIBLING target) must STRUCTURALLY coalesce to that ONE expected drop —
+  // NOT spam N spurious UNEXPLAINED_RESIDUAL leaves. Default error-only view = EMPTY.
+  const cases = [
+    { name: 'golden-camera', module: cameraModule },
+    { name: 'golden-echo', module: echoModule },
+    { name: 'golden-orient', module: orientModule },
+  ] as const;
 
-  it('ZERO UNEXPLAINED_RESIDUAL — the default error-only view is empty; the drop is warn-EXPECTED', async () => {
-    const r = await semanticParityCommand({ ...CAMERA, frames: [0, 30], min: 0.98, all: true });
-    // the never-silent teeth must NOT fire on faithful text/content:
-    expect(r.findings.filter((f) => f.code === 'UNEXPLAINED_RESIDUAL')).toEqual([]);
-    expect(r.hasErrors).toBe(false);
-    // default (error-only) view is EMPTY — the clean-empty gate holds on real text content.
-    const def = await semanticParityCommand({ ...CAMERA, frames: [0, 30], min: 0.98 });
-    expect(def.view).toEqual([]);
-    // the render-only camera SHAKE still surfaces (under --all) as a warn-EXPECTED drop,
-    // coalesced to the ONE camera node — not spammed across its content leaves.
+  for (const c of cases) {
+    it(`${c.name}: ZERO spurious UNEXPLAINED — the warned drops surface as EXPECTED, masked`, async () => {
+      const opts = { modulePath: join(EXAMPLES, `${c.name}.ts`), module: c.module, frames: [0, 30, 60], min: 0.98 };
+      const r = await semanticParityCommand({ ...opts, all: true });
+      expect(r.findings.filter((f) => f.code === 'UNEXPLAINED_RESIDUAL')).toEqual([]);
+      expect(r.hasErrors).toBe(false);
+      // every finding is a warn-EXPECTED drop (or an approximation), all masked:
+      expect(r.findings.every((f) => f.detail?.expected === true)).toBe(true);
+      expect(r.invariants.everyWarnHasFinding).toBe(true);
+      // default (error-only) view is EMPTY.
+      const def = await semanticParityCommand(opts);
+      expect(def.view).toEqual([]);
+    });
+  }
+
+  it('the coalesced finding RECORDS its absorbed descendants (masked, but never silent)', async () => {
+    const r = await semanticParityCommand({ modulePath: join(EXAMPLES, 'golden-camera.ts'), module: cameraModule, frames: [0, 30], min: 0.98, all: true });
     const camDrop = r.findings.find((f) => f.node === 'cam');
     expect(camDrop?.code).toBe('LOTTIE_DROP');
-    expect(camDrop?.detail?.expected).toBe(true);
-    expect(r.invariants.everyWarnHasFinding).toBe(true);
+    expect((camDrop?.detail?.coalesced as string[] | undefined)?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('gs parity --semantic — Direction-2: an INDEPENDENT residual inside a drop stays UNEXPLAINED (no silent false-negative)', () => {
+  // golden-motionblur: motionBlur('mb') wraps 'fast' (its SUBTREE) + a separate,
+  // INDEPENDENT 'crisp' reference dot rides the same rail. The wrapped 'fast' is
+  // absorbed into the 'mb' drop (structural), but 'crisp' — NOT in mb's subtree,
+  // merely overlapping the smear geometrically — must STAY UNEXPLAINED. This proves
+  // absorption is STRUCTURAL, not naive geometric containment (over-absorbing a real
+  // drop into a nearby wrapper would be a silent false-negative, worse than noise).
+  it('absorbs the wrapped child but keeps the independent sibling loud', async () => {
+    const r = await semanticParityCommand({ modulePath: join(EXAMPLES, 'golden-motionblur.ts'), module: motionblurModule, frames: [0, 30, 60], min: 0.98, all: true });
+    const mbDrop = r.findings.find((f) => f.node === 'mb');
+    expect(mbDrop?.code).toBe('LOTTIE_DROP'); // the motionBlur drop
+    expect(mbDrop?.detail?.coalesced as string[]).toContain('fast'); // wrapped child absorbed
+    // the INDEPENDENT sibling is NOT swept into the wrapper's expected drop:
+    const crisp = r.findings.find((f) => f.node === 'crisp');
+    expect(crisp?.code).toBe('UNEXPLAINED_RESIDUAL');
+    expect(crisp?.detail?.expected).toBe(false);
   });
 });
 

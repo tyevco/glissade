@@ -21,7 +21,7 @@
  * evaluate().
  */
 
-import { evaluate, withDeterminismGuards, type SceneModule, type Scene } from '@glissade/scene';
+import { evaluate, withDeterminismGuards, type SceneModule, type Scene, type Node } from '@glissade/scene';
 import type { Timeline } from '@glissade/core';
 import { emitWithIds } from '@glissade/scene/identity';
 import { sortDiagnostics, DIAGNOSTIC_SCHEMA_VERSION, type SceneDiagnostic } from '@glissade/scene/diagnostics';
@@ -251,6 +251,11 @@ const ORPHAN_RADIUS = 64; // px — a residual tile beyond this from any node = 
 const COVERAGE_MIN = 0.34;
 // A lone stray orphan tile is edge noise; a dropped BACKGROUND is a broad block.
 const MIN_ORPHAN_TILES = 3;
+// An UNWARNED residual whose tiles average ABOVE this is benign sub-pixel compositing
+// (Stack/sequence rounding, ~0.96-0.97), NOT a feature drop — tag it LOTTIE_APPROXIMATE
+// (masked) rather than alarm it as an episode-breaking UNEXPLAINED. A real feature drop
+// is far deeper (ssim ≲ 0.7 over its region), so this never masks a genuine loss.
+const BENIGN_MEAN_FLOOR = 0.92;
 
 /** How many 8×8 tiles a node's device bbox spans (≥1) — the coverage denominator. */
 function bboxTileArea(box: Box, win: number): number {
@@ -338,21 +343,81 @@ function edgeDistance(x: number, y: number, b: Box): number {
   return Math.hypot(dx, dy);
 }
 
-/** Walk `id`'s ided ancestor chain; return the nearest ancestor a DROP warn names
- *  (a render-only wrapper — camera/shake/motionBlur/echo — whose drop explains this
- *  descendant's divergence), so the residual coalesces to ONE finding at that drop
- *  instead of N unexplained leaves. Deterministic (the tree is fixed). */
-function nearestWarnedAncestor(
-  scene: Scene,
-  id: string,
-  warnByNode: ReadonlyMap<string, ParsedWarn>,
-): { id: string; warn: ParsedWarn } | undefined {
-  let p = scene.nodes.get(id)?.parent ?? null;
-  while (p) {
-    if (p.id !== undefined && warnByNode.has(p.id)) return { id: p.id, warn: warnByNode.get(p.id)! };
-    p = p.parent;
-  }
-  return undefined;
+// ── structural drop-extent resolver (the STRUCTURAL causal link, not geometry) ──
+
+/** One export-drop and the node ids it STRUCTURALLY explains — used to absorb a
+ *  descendant/target residual into its causing drop (NOT geometric containment, so
+ *  an independent node that merely OVERLAPS a drop's bbox is never absorbed). */
+interface DropExtent {
+  /** stable dedup/coalesce key (the warned node id, else `<property>@<warnIndex>`). */
+  key: string;
+  /** representative node id for the finding (the DROPPED node), when the warn names one. */
+  node?: string;
+  warn: ParsedWarn;
+  /** every scene node id this drop structurally explains (its subtree + any driver target). */
+  ids: Set<string>;
+}
+
+/** id-less render-only warns → the scene `describeType`(s) that produce them, so a
+ *  warn with no quoted id still resolves to its render-only node(s) structurally. */
+const FEATURE_TYPES: Record<string, readonly string[]> = {
+  'motion-blur': ['MotionBlur'],
+  'echo-trails': ['Echo'],
+  'camera-shake': ['Camera'],
+  shake: ['Camera'],
+  followpath: ['FollowPath'],
+  orienttopath: ['OrientToPath'],
+  lookat: ['LookAt'],
+  'text-cursor': ['TextCursor'],
+};
+
+/** Collect a node's id-bearing subtree (itself + descendants). */
+function collectSubtreeIds(node: Node, into: Set<string>): void {
+  if (node.id !== undefined) into.add(node.id);
+  const children = (node as unknown as { children?: Node[] }).children;
+  if (Array.isArray(children)) for (const c of children) collectSubtreeIds(c, into);
+}
+
+/**
+ * Resolve each export warn to the set of scene node ids its drop STRUCTURALLY
+ * explains: a WRAPPER (motionBlur/echo/camera) explains its whole SUBTREE; a DRIVER
+ * (followPath/orientToPath/lookAt) explains its `.target`'s subtree (the target is a
+ * SIBLING it mutates, which an ancestry walk would miss); a leaf (Image/Video/Text)
+ * explains only ITSELF. This structural link — never bare geometric overlap — is what
+ * keeps an INDEPENDENT residual that merely sits inside a drop's bbox UNEXPLAINED.
+ */
+function buildDropExtents(scene: Scene, warns: readonly ParsedWarn[]): DropExtent[] {
+  // index EVERY node by describeType — walking the ROOT tree (not scene.nodes, which
+  // only holds ID-BEARING nodes) so an ID-LESS render-only node (a bare
+  // `lookAt(...)` / `motionBlur(...)`) is still resolvable from its type + `.target`.
+  const byType = new Map<string, Node[]>();
+  const indexTree = (node: Node): void => {
+    const t = node.describeType;
+    (byType.get(t) ?? byType.set(t, []).get(t)!).push(node);
+    const children = (node as unknown as { children?: Node[] }).children;
+    if (Array.isArray(children)) for (const c of children) indexTree(c);
+  };
+  indexTree(scene.root);
+  const out: DropExtent[] = [];
+  warns.forEach((warn, i) => {
+    const resolved: Node[] = [];
+    if (warn.node !== undefined) {
+      const n = scene.nodes.get(warn.node);
+      if (n) resolved.push(n);
+    } else {
+      for (const type of FEATURE_TYPES[warn.property] ?? []) resolved.push(...(byType.get(type) ?? []));
+    }
+    if (resolved.length === 0) return; // a warn with no resolvable scene node explains nothing structurally
+    const ids = new Set<string>();
+    for (const n of resolved) {
+      collectSubtreeIds(n, ids);
+      // a DRIVER owns a SIBLING target's rotation/position — explain the target's subtree too.
+      const target = (n as unknown as { target?: Node }).target;
+      if (target && typeof target === 'object') collectSubtreeIds(target, ids);
+    }
+    out.push({ key: warn.node ?? `${warn.property}@${i}`, ...(warn.node !== undefined ? { node: warn.node } : {}), warn, ids });
+  });
+  return out;
 }
 
 // ── region role (severity RANKING only, never attribution) ────────────────────
@@ -426,11 +491,13 @@ export async function semanticParityCommand(opts: SemanticParityOptions): Promis
   const parsedWarns = warnings.map(parseWarn);
 
   // per-node residual accumulation across the sampled frames (worst wins), with the
-  // COVERAGE fraction (residual tiles / bbox tiles) that separates a real drop from
-  // sub-pixel edge-AA flicker.
+  // COVERAGE fraction (residual tiles / bbox tiles) + region MEAN — the two
+  // discriminators that separate a real drop from sub-pixel edge-AA/compositing.
   interface NodeAcc {
     region: Box;
     worst: number;
+    /** mean SSIM over the node's residual tiles at the worst frame (benign vs real). */
+    mean: number;
     frame: number;
     role: { role: string; weight: number };
     /** residual tiles / node bbox tiles at the worst frame — the drop discriminator. */
@@ -458,7 +525,7 @@ export async function semanticParityCommand(opts: SemanticParityOptions): Promis
       const coverage = nb ? res.count / bboxTileArea(nb.bounds, map.win) : 1;
       const ex = nodeAcc.get(id);
       if (!ex || res.worst < ex.worst) {
-        nodeAcc.set(id, { region: res.region, worst: res.worst, frame, role: regionRole(res.region, w, h), coverage });
+        nodeAcc.set(id, { region: res.region, worst: res.worst, mean: res.sum / res.count, frame, role: regionRole(res.region, w, h), coverage });
       }
     }
     if (orphan && orphan.count >= MIN_ORPHAN_TILES) {
@@ -471,30 +538,56 @@ export async function semanticParityCommand(opts: SemanticParityOptions): Promis
 
   // ── FUSE → findings ──
   const findings: SceneDiagnostic[] = [];
-  const warnedNodesEmitted = new Set<string>();
+  const emittedCauses = new Set<string>();
   const warnByNode = new Map<string, ParsedWarn>();
   for (const pw of parsedWarns) if (pw.node !== undefined && !warnByNode.has(pw.node)) warnByNode.set(pw.node, pw);
 
-  // (1) ATTRIBUTE + SUBTREE-COALESCE. Each residual node is attributed to the
-  // nearest render-only DROP that explains it: itself if a warn names it, ELSE the
-  // nearest ANCESTOR a warn names (a dropped camera/shake/motionBlur/echo wrapper
-  // explains ALL its content's divergence — the residual belongs to that ONE drop,
-  // not N unexplained leaves). Only a residual with NO warned self/ancestor is a
-  // candidate UNEXPLAINED/ANCHOR (and only past the coverage gate).
+  // STRUCTURAL drop extents + the inverse node→drops index. Absorption is by
+  // structural membership (subtree / driver-target), NEVER bare geometric overlap:
+  // an INDEPENDENT residual that merely sits inside a drop's bbox is NOT in its
+  // extent, so it stays UNEXPLAINED (the Direction-2 guard against silent false-negatives).
+  const dropExtents = buildDropExtents(refScene, parsedWarns);
+  const explainedBy = new Map<string, DropExtent[]>();
+  for (const ext of dropExtents) {
+    for (const id of ext.ids) {
+      const list = explainedBy.get(id);
+      if (list) list.push(ext);
+      else explainedBy.set(id, [ext]);
+    }
+  }
+
+  // (1) ATTRIBUTE + STRUCTURAL COALESCE. Each residual node → the drop that
+  // structurally explains it: (guard 2) its OWN warn first; else the drop whose
+  // structural extent CONTAINS it (subtree/driver-target — coalesced to ONE finding);
+  // else a candidate for UNEXPLAINED / ANCHOR_RECENTER / benign-compositing.
   interface Attribution {
     region: Box;
     worst: number;
+    mean: number;
     frame: number;
     role: { role: string; weight: number };
     warn?: ParsedWarn;
+    node?: string;
+    /** the residual node ids coalesced under this key (guard 4 — masked but recorded). */
+    coalesced: Set<string>;
     /** false when unwarned AND below the coverage gate (edge-AA, not a divergence). */
     real: boolean;
   }
   const attributed = new Map<string, Attribution>();
-  const mergeAttribution = (key: string, acc: NodeAcc, warn: ParsedWarn | undefined, real: boolean): void => {
+  const merge = (key: string, node: string | undefined, acc: NodeAcc, warn: ParsedWarn | undefined, real: boolean, from: string): void => {
     const ex = attributed.get(key);
     if (!ex) {
-      attributed.set(key, { region: { ...acc.region }, worst: acc.worst, frame: acc.frame, role: acc.role, ...(warn ? { warn } : {}), real });
+      attributed.set(key, {
+        region: { ...acc.region },
+        worst: acc.worst,
+        mean: acc.mean,
+        frame: acc.frame,
+        role: acc.role,
+        ...(warn ? { warn } : {}),
+        ...(node !== undefined ? { node } : {}),
+        coalesced: new Set(key === from ? [] : [from]),
+        real,
+      });
       return;
     }
     ex.region.minX = Math.min(ex.region.minX, acc.region.minX);
@@ -503,45 +596,56 @@ export async function semanticParityCommand(opts: SemanticParityOptions): Promis
     ex.region.maxY = Math.max(ex.region.maxY, acc.region.maxY);
     if (acc.worst < ex.worst) {
       ex.worst = acc.worst;
+      ex.mean = acc.mean;
       ex.frame = acc.frame;
       ex.role = acc.role;
     }
+    if (key !== from) ex.coalesced.add(from);
     ex.real = ex.real || real;
   };
   for (const [id, acc] of nodeAcc) {
     if (warnByNode.has(id)) {
-      mergeAttribution(id, acc, warnByNode.get(id)!, true); // self warn-explained
-    } else {
-      const anc = nearestWarnedAncestor(refScene, id, warnByNode);
-      if (anc) {
-        mergeAttribution(anc.id, acc, anc.warn, true); // coalesced to the warned ancestor's drop
-      } else {
-        // no warn explains it → real only past the coverage gate (a real drop, not edge-AA).
-        mergeAttribution(id, acc, undefined, acc.coverage >= COVERAGE_MIN);
-      }
+      merge(id, id, acc, warnByNode.get(id)!, true, id); // guard 2: own-warn-first
+      continue;
     }
+    const exts = explainedBy.get(id);
+    if (exts && exts.length > 0) {
+      // deterministic pick: smallest key (tie-free — keys are unique per warn).
+      const ext = exts.reduce((a, b) => (a.key <= b.key ? a : b));
+      merge(ext.key, ext.node, acc, ext.warn, true, id); // structural coalesce
+      continue;
+    }
+    // unwarned, not structurally explained → real only past the coverage gate.
+    merge(id, id, acc, undefined, acc.coverage >= COVERAGE_MIN, id);
   }
 
-  for (const [id, at] of attributed) {
+  for (const [, at] of attributed) {
     if (!at.real) continue; // sub-coverage edge-AA flicker — not a divergence
     anyResidual = true;
-    const mean = round(at.worst);
+    const coalesced = [...at.coalesced].sort();
     if (at.warn) {
-      warnedNodesEmitted.add(id);
-      findings.push(dropFinding(at.warn, id, at.region, at.frame, mean, at.role));
+      emittedCauses.add(at.warn.cause);
+      findings.push(dropFinding(at.warn, at.node, at.region, at.frame, round(at.worst), at.role, coalesced));
     } else {
-      const node = refScene.nodes.get(id);
+      const node = at.node !== undefined ? refScene.nodes.get(at.node) : undefined;
       const nonCenterAnchor = node?.hasAnchor === true && (node.anchor[0] !== 0.5 || node.anchor[1] !== 0.5);
-      if (nonCenterAnchor) findings.push(anchorFinding(id, node!.anchor, at.region, at.frame, mean, at.role));
-      else findings.push(unexplained(id, at.region, at.frame, mean, at.role));
+      if (nonCenterAnchor) {
+        // Class II: a non-center anchor mis-exports (Lottie re-centers) — REPORT-ONLY.
+        findings.push(anchorFinding(at.node!, node!.anchor, at.region, at.frame, round(at.worst), at.role));
+      } else if (at.mean >= BENIGN_MEAN_FLOOR) {
+        // Class III: benign sub-pixel compositing (Stack/sequence), not a feature drop.
+        findings.push(compositingApprox(at.node, at.region, at.frame, round(at.mean), at.role));
+      } else {
+        findings.push(unexplained(at.node, at.region, at.frame, round(at.worst), at.role));
+      }
     }
   }
 
   // (2) every warn → a finding even if no residual localized (invariant iii).
   for (const warn of parsedWarns) {
-    if (warn.node !== undefined && warnedNodesEmitted.has(warn.node)) continue;
-    findings.push(dropFinding(warn, warn.node, null, frames[0] ?? 0, null, null));
-    if (warn.node !== undefined) warnedNodesEmitted.add(warn.node);
+    if (emittedCauses.has(warn.cause)) continue;
+    findings.push(dropFinding(warn, warn.node, null, frames[0] ?? 0, null, null, []));
+    emittedCauses.add(warn.cause);
   }
 
   // (3) orphan residual tiles → UNEXPLAINED_RESIDUAL (never-silent).
@@ -605,6 +709,7 @@ function dropFinding(
   frame: number,
   ssim: number | null,
   role: { role: string; weight: number } | null,
+  coalesced: readonly string[] = [],
 ): SceneDiagnostic {
   const code = warn.approximate ? 'LOTTIE_APPROXIMATE' : 'LOTTIE_DROP';
   const severity = warn.approximate ? 'warning' : 'info'; // expected:true → masked from default
@@ -623,6 +728,40 @@ function dropFinding(
       ...(region ? { region: roundBox(region) } : {}),
       ...(ssim !== null ? { ssim } : {}),
       ...(role ? { role: role.role, roleWeight: role.weight } : {}),
+      // guard 4: the descendant/target residual node ids this drop structurally
+      // absorbed (masked-but-RECORDED — never fully silent).
+      ...(coalesced.length > 0 ? { coalesced } : {}),
+    },
+  };
+}
+
+/** Class III: an UNWARNED but BENIGN sub-pixel compositing residual (Stack/sequence
+ *  rounding) — tagged LOTTIE_APPROXIMATE (expected:true → masked from the default
+ *  error view) so it doesn't alarm as an episode-breaking UNEXPLAINED. */
+function compositingApprox(
+  node: string | undefined,
+  region: Box,
+  frame: number,
+  meanSsim: number,
+  role: { role: string; weight: number },
+): SceneDiagnostic {
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'LOTTIE_APPROXIMATE',
+    severity: 'warning', // masked from the default error-only view
+    source: 'parity',
+    ...(node !== undefined ? { node } : {}),
+    message:
+      `${node ? `node '${node}'` : 'a region'} shows a BENIGN sub-pixel compositing difference on the Lottie ` +
+      `round-trip (mean ssim ${meanSsim}, no feature dropped) — a rounding/layer-order approximation, not a loss.`,
+    detail: {
+      property: 'compositing-approx',
+      frame,
+      region: roundBox(region),
+      ssim: meanSsim,
+      expected: true,
+      role: role.role,
+      roleWeight: role.weight,
     },
   };
 }

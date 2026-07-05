@@ -24,6 +24,22 @@ function baseScene() {
   });
 }
 
+describe('diff — fail-loud arg validation', () => {
+  it('throws a CLEAR message when called with a raw Scene instead of a {scene} state pair', () => {
+    const scene = baseScene();
+    // the plausible misuse (critique/exportFidelity take (scene, timeline) two-args):
+    expect(() => diff(scene as never, scene as never)).toThrow(/diff expects \{ scene, timeline \} state objects \(got a Scene\)/);
+    // the actionable hint names the correct call shape:
+    expect(() => diff(scene as never, scene as never)).toThrow(/diff\(\{ scene, timeline \}, \{ scene, timeline \}\)/);
+  });
+
+  it('rejects a non-object argument with a clear message', () => {
+    const scene = baseScene();
+    expect(() => diff(undefined as never, { scene })).toThrow(/first argument must be a \{ scene, timeline \} state object/);
+    expect(() => diff({ scene }, null as never)).toThrow(/second argument must be a \{ scene, timeline \} state object/);
+  });
+});
+
 describe('diff — the EMPTY invariants', () => {
   it('diff(a, a) is EMPTY (a scene vs itself)', () => {
     const scene = baseScene();
