@@ -1,5 +1,17 @@
 # @glissade/browser
 
+## 0.62.0
+
+### Patch Changes
+
+- Updated dependencies [969585a]
+  - @glissade/scene@0.62.0
+  - @glissade/backend-canvas2d@0.62.0
+  - @glissade/backend-dom@0.62.0
+  - @glissade/element@0.62.0
+  - @glissade/player@0.62.0
+  - @glissade/core@0.62.0
+
 ## 0.62.0-pre.0
 
 ### Patch Changes
