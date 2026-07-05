@@ -1543,6 +1543,7 @@ export interface ViolationDetail {
     // (undocumented)
     readonly node?: string | undefined;
     readonly reason?: string | undefined;
+    readonly where?: string | undefined;
 }
 
 // @public

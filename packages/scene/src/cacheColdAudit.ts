@@ -133,13 +133,13 @@ export function locateViolation(createScene: () => Scene, doc: Timeline, t: numb
     // Independent builds agreed → genuinely couldn't reproduce; bare throw stands.
     if (!r.sharedInstances) return undefined;
     // Shared instances defeated the probe → say so LOUDLY (never a silent no-op).
-    return {
-      reason:
-        'createScene() returned SHARED node instances across builds, so the determinism probe could not localize the culprit (a shared impure signal memoizes across both re-evaluations). Rebuild the scene fresh on every createScene() call — e.g. a scene-frame helper must rebuild its children each call, not capture them once.',
-    };
+    // `where` (the message fragment) is built HERE, off the sacred base embed.
+    const reason =
+      "Couldn't localize the divergent node: createScene() returned SHARED node instances across builds, so the determinism probe could not localize the culprit (a shared impure signal memoizes across both re-evaluations). Rebuild the scene fresh on every createScene() call — e.g. a scene-frame helper must rebuild its children each call, not capture them once.";
+    return { reason, where: ` ${reason}` };
   }
   return {
-    ...(r.node !== undefined ? { node: r.node } : {}),
+    ...(r.node !== undefined ? { node: r.node, where: ` First divergent node '${r.node}'.` } : {}),
     ...(r.delta !== undefined ? { detail: r.delta } : {}),
   };
 }

@@ -29,6 +29,13 @@ export interface ViolationDetail {
    * fix it, rather than silently degrading to a bare violation.
    */
   readonly reason?: string | undefined;
+  /**
+   * The message fragment appended to the thrown error, PREBUILT by the locator
+   * (off the SACRED base embed) from `node`/`reason` — so the base
+   * `DeterminismViolationError` constructor carries no per-branch message
+   * literals, only the interpolation. `undefined` ⇒ nothing to append.
+   */
+  readonly where?: string | undefined;
 }
 
 /**
@@ -64,15 +71,14 @@ export class DeterminismViolationError extends Error {
    */
   readonly reason?: string | undefined;
   constructor(api: string, located?: ViolationDetail | undefined) {
-    const where =
-      located?.node !== undefined
-        ? ` First divergent node '${located.node}'.`
-        : located?.reason !== undefined
-          ? ` (Couldn't localize the divergent node: ${located.reason})`
-          : '';
+    // The message fragment is PREBUILT off-base by the locator (locateViolation)
+    // and passed as `where`, so the SACRED base embed carries no per-branch
+    // message literals here — just the interpolation. A bare trap-throw passes
+    // no `located`, so a browser embed's DVE message stays minimal.
+    const where = located?.where ?? '';
     super(
       `'${api}' was called inside evaluate() — scene code must be a pure function of time (§5.5).${where} ` +
-        'Read ctx.time/frame, use the seeded random(seed) from @glissade/core, and resolve assets before rendering.',
+        'Use the seeded random(seed) from @glissade/core; resolve assets before rendering.',
     );
     this.name = 'DeterminismViolationError';
     this.api = api;
