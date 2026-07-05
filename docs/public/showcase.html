@@ -291,7 +291,7 @@
   footer b{ color:var(--cyan); font-weight:400; }
   footer .amb{ color:var(--amber); }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@glissade/browser@0.61.0/dist/glissade.browser.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@glissade/browser@0.63.0/dist/glissade.browser.js"></script>
 </head>
 <body>
 
@@ -325,7 +325,7 @@
     <input id="hero-scrub" type="range" min="0" max="3" step="0.01" value="0" aria-label="Scrub the hero playhead" />
     <span class="scrubtime mono" id="hero-time">0.00s / 3.00s</span>
   </div>
-  <p class="metaline">v0.61.0 · Apache-2.0 · determinism <b>b4e6060006</b> unbroken 0.20→0.61</p>
+  <p class="metaline">v0.63.0 · Apache-2.0 · determinism <b>b4e6060006</b> unbroken 0.20→0.63</p>
 </header>
 
 <main class="wrap">
@@ -344,9 +344,9 @@
       <div class="panel">
         <span class="eyebrow">01 · No build</span>
         <h3>One script tag. The whole authoring surface.</h3>
-        <p>This entire page is a single <span class="mono" style="color:var(--amber)">&lt;script src=…glissade.browser.js&gt;</span> off a pinned CDN — no toolchain, no bundler, no server. <span class="mono">window.glissade</span> carries 220+ names: the nodes, the timeline, <span class="mono">mount</span>, the Canvas2D backend — and the whole verification surface below (<span class="mono">validateScene</span> / <span class="mono">critique</span> / <span class="mono">diff</span>).</p>
+        <p>This entire page is a single <span class="mono" style="color:var(--amber)">&lt;script src=…glissade.browser.js&gt;</span> off a pinned CDN — no toolchain, no bundler, no server. <span class="mono">window.glissade</span> carries 220+ names: the nodes, the timeline, <span class="mono">mount</span>, the Canvas2D backend — and the whole verification surface below (<span class="mono">validateScene</span> / <span class="mono">critique</span> / <span class="mono">diff</span>, composed by <span class="mono">assess()</span> into the one closed author→verify→fix loop of 0.63).</p>
 <div class="code"><span class="c">&lt;!-- drop one tag; nothing else --&gt;</span>
-&lt;<span class="k">script</span> <span class="s">src</span>=<span class="s">"https://cdn.jsdelivr.net/npm/@glissade/browser@0.61.0/dist/glissade.browser.js"</span>&gt;&lt;/<span class="k">script</span>&gt;
+&lt;<span class="k">script</span> <span class="s">src</span>=<span class="s">"https://cdn.jsdelivr.net/npm/@glissade/browser@0.63.0/dist/glissade.browser.js"</span>&gt;&lt;/<span class="k">script</span>&gt;
 
 <span class="k">const</span> { camera, mount, createScene } = <span class="f">window</span>.glissade;
 <span class="k">const</span> { player } = <span class="f">mount</span>(scene, timeline, canvas, { loop: <span class="k">true</span> });
@@ -589,7 +589,7 @@ new T({ id: <span class="s">'headline'</span>, text: <span class="s">'far too lo
 </main>
 
 <footer class="wrap">
-  glissade <span class="amb">v0.61.0</span> · Apache-2.0 · github.com/tyevco/glissade · determinism <b>b4e6060006</b> · this page is one pinned &lt;script&gt;, rendered live.
+  glissade <span class="amb">v0.63.0</span> · Apache-2.0 · github.com/tyevco/glissade · determinism <b>b4e6060006</b> · this page is one pinned &lt;script&gt;, rendered live.
 </footer>
 
 <!-- =============== app: build every scene in IIFE form, mount live =============== -->
