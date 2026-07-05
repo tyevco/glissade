@@ -1,5 +1,25 @@
 # @glissade/cli
 
+## 0.65.0
+
+### Minor Changes
+
+- 5be0122: Determinism trace: `DeterminismViolationError` now names the first node that disagrees. When a scene trips the render-time purity guard (`gs render`/`verifyCert`), the throw runs the shipped per-node cold-re-eval locator (`auditCacheCold`) on the violation branch only — enriching the error with a structured `node` id and first `detail` command-delta, and naming the culprit in the message ("First divergent node 'x'."). Click-to-line instead of a hand-bisect across a long episode. Dev-only and off the render hot path (a clean render re-evaluates nothing and pays nothing); a locator failure can never mask the original violation. Adds `withDeterminismGuards(mode, fn, locate?)`, the `locateViolation(createScene, doc, t)` export on the `@glissade/scene/diagnostics` subpath, and `ViolationDetail`/`ViolationLocator` types.
+
+### Patch Changes
+
+- Updated dependencies [5be0122]
+- Updated dependencies [73f347f]
+  - @glissade/scene@0.65.0
+  - @glissade/backend-skia@0.65.0
+  - @glissade/interact@0.65.0
+  - @glissade/lottie@0.65.0
+  - @glissade/narrate@0.65.0
+  - @glissade/player@0.65.0
+  - @glissade/svg@0.65.0
+  - @glissade/core@0.65.0
+  - @glissade/sfx@0.65.0
+
 ## 0.65.0-pre.2
 
 ### Patch Changes
