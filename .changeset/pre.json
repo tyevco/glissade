@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.64.0"
   },
   "changesets": [
-    "determinism-trace-node-locator"
+    "determinism-trace-node-locator",
+    "gs-player-poster-persist"
   ]
 }

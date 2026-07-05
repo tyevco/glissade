@@ -16,11 +16,22 @@
 
 import { type SceneModule } from '@glissade/scene';
 import { mount, type Mounted } from '@glissade/player';
+import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 
 const TEMPLATE = `
 <style>
   :host { display: inline-block; }
+  /* Only when a poster overlay is present do we make the host a positioning
+     context — a bare <gs-player> is byte/behavior-identical (no positioned
+     descendants, no stacking change). */
+  :host(.has-poster) { position: relative; }
   canvas { display: block; width: 100%; height: auto; }
+  /* The poster is a real <img> overlaying the canvas region (same intrinsic
+     aspect → exact cover): pre-play still, prefers-reduced-motion rest state,
+     and a DOM paint a screenshotter can capture. Absolute so it never disturbs
+     controls flow; [hidden] reveals the live canvas once playback begins. */
+  img[part='poster'] { position: absolute; top: 0; left: 0; width: 100%; height: auto; display: block; }
+  img[part='poster'][hidden] { display: none; }
   .controls { display: flex; gap: 8px; align-items: center; padding: 6px 4px; font: 12px system-ui, sans-serif; }
   button { font: inherit; cursor: pointer; }
   input[type='range'] { flex: 1; }
@@ -39,7 +50,16 @@ interface Controls {
 }
 
 export class GsPlayerElement extends HTMLElement {
-  static observedAttributes = ['loop', 'pingpong', 'yoyo', 'autoplay', 'controls'];
+  static observedAttributes = [
+    'loop',
+    'pingpong',
+    'yoyo',
+    'autoplay',
+    'controls',
+    'poster',
+    'poster-t',
+    'persist',
+  ];
 
   #mounted: Mounted | null = null;
   #scene: SceneModule | null = null;
@@ -50,6 +70,14 @@ export class GsPlayerElement extends HTMLElement {
   #shadow: ShadowRoot;
   #canvas: HTMLCanvasElement;
   #controls: Controls | null = null;
+  /** The <img> poster overlay (opt-in via the `poster` attribute), or null. */
+  #poster: HTMLImageElement | null = null;
+  /** Guards the async snapshot against a stale remount overwriting a newer one. */
+  #posterToken = 0;
+  /** Subscription that hides the poster once real playback begins. */
+  #posterUnsub: (() => void) | null = null;
+  /** Subscription that write-throughs the playhead to localStorage (persist). */
+  #persistUnsub: (() => void) | null = null;
 
   constructor() {
     super();
@@ -91,6 +119,21 @@ export class GsPlayerElement extends HTMLElement {
       // stop playback). loop/autoplay still remount since they change mount().
       this.#syncControls();
       this.#syncControlsSubscription();
+      return;
+    }
+    if (name === 'poster' || name === 'poster-t') {
+      // Poster is an overlay, not a mount() input — toggle/refresh it against
+      // the CURRENT scene without remounting (a remount would reset the
+      // playhead). No-op until a scene is mounted (nothing to snapshot yet).
+      if (this.isConnected) this.#syncPoster();
+      return;
+    }
+    if (name === 'persist') {
+      // Persist only reads/writes the already-writable playhead — rewire it
+      // in place (no remount, no playhead reset).
+      this.#persistUnsub?.();
+      this.#persistUnsub = null;
+      if (this.isConnected) this.#syncPersist();
       return;
     }
     if (this.isConnected && this.#scene) this.#remount();
@@ -186,6 +229,10 @@ export class GsPlayerElement extends HTMLElement {
   #teardown(): void {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#persistUnsub?.();
+    this.#persistUnsub = null;
+    this.#posterUnsub?.();
+    this.#posterUnsub = null;
     this.#mounted?.dispose();
     this.#mounted = null;
     this.#playhead = null;
@@ -211,6 +258,116 @@ export class GsPlayerElement extends HTMLElement {
     // (and do the initial readout) only when controls are present, so no
     // per-frame work runs without them.
     this.#syncControlsSubscription();
+    // persist BEFORE poster: restore the stored playhead (if any) and start
+    // write-through — both opt-in, both no-ops without their attribute.
+    this.#syncPersist();
+    this.#syncPoster();
+  }
+
+  // --- poster (opt-in `poster` / `poster-t`) --------------------------------
+
+  /** Build/destroy the poster overlay to match the `poster` attribute, then
+   * (re)render its still for the current scene. All no-ops when `poster` is
+   * absent — a bare <gs-player> paints no poster and touches no <img>. */
+  #syncPoster(): void {
+    const want = this.hasAttribute('poster');
+    if (want && !this.#poster) this.#buildPoster();
+    else if (!want && this.#poster) this.#destroyPoster();
+    if (this.#poster) this.#refreshPoster();
+  }
+
+  #buildPoster(): void {
+    const img = document.createElement('img');
+    img.setAttribute('part', 'poster');
+    img.setAttribute('alt', '');
+    img.setAttribute('aria-hidden', 'true');
+    this.classList.add('has-poster');
+    this.#shadow.append(img);
+    this.#poster = img;
+  }
+
+  #destroyPoster(): void {
+    this.#posterUnsub?.();
+    this.#posterUnsub = null;
+    this.#poster?.remove();
+    this.#poster = null;
+    this.classList.remove('has-poster');
+  }
+
+  /** `poster-t="<seconds>"` selects the frame to snapshot; default 0. */
+  #posterTime(): number {
+    const raw = this.getAttribute('poster-t');
+    if (raw === null) return 0;
+    const t = Number.parseFloat(raw);
+    return Number.isFinite(t) && t >= 0 ? t : 0;
+  }
+
+  /** Render the poster still off a FRESH scene (evaluate() writes the playhead,
+   * so the live mounted scene must never be used) and set it as the <img> src.
+   * Reuses the shipped @glissade/backend-canvas2d/snapshot seam. */
+  #refreshPoster(): void {
+    const mod = this.#scene;
+    const img = this.#poster;
+    if (!mod || !img || !this.isConnected) return;
+    const token = ++this.#posterToken;
+    img.hidden = false;
+    // A throwaway scene: renderToDataURL → evaluate() forceSets its playhead to
+    // the poster time; keeping that off the mounted scene preserves playback.
+    const still = mod.createScene();
+    void renderToDataURL(still, mod.timeline, this.#posterTime()).then(
+      (url) => {
+        if (token === this.#posterToken && this.#poster) this.#poster.src = url;
+      },
+      () => {
+        /* snapshot unavailable (non-browser canvas) — leave the poster empty */
+      },
+    );
+    this.#wirePosterHide();
+  }
+
+  /** Reveal the live canvas (hide the poster) the moment playback begins. Under
+   * prefers-reduced-motion, mount() suppresses autoplay, so `playing` never
+   * flips true and the poster stays as the rest state. */
+  #wirePosterHide(): void {
+    this.#posterUnsub?.();
+    this.#posterUnsub = null;
+    const player = this.#mounted?.player;
+    const img = this.#poster;
+    if (!player || !img) return;
+    if (player.playing) {
+      img.hidden = true;
+      return;
+    }
+    const sig = player.playingSignal;
+    if (!sig) return;
+    this.#posterUnsub = sig.subscribe(() => {
+      if (this.#mounted?.player.playing && this.#poster) {
+        this.#poster.hidden = true;
+        this.#posterUnsub?.();
+        this.#posterUnsub = null;
+      }
+    });
+  }
+
+  // --- persist (opt-in `persist="key"`) -------------------------------------
+
+  /** Restore the playhead from localStorage (if a value was stored under the
+   * key) and write it back on every change. No-op without the attribute or a
+   * localStorage — a bare <gs-player> writes nothing. Only the already-writable
+   * playhead signal is touched; evaluate() is never involved. */
+  #syncPersist(): void {
+    const key = this.getAttribute('persist');
+    const player = this.#mounted?.player;
+    const ph = this.#playhead;
+    if (key === null || key === '' || !player || !ph || typeof localStorage === 'undefined') return;
+    const stored = safeGetItem(key);
+    if (stored !== null) {
+      const t = Number.parseFloat(stored);
+      if (Number.isFinite(t)) player.seek(t); // clamped by the player to [0, duration]
+    }
+    this.#persistUnsub = ph.subscribe(() => {
+      safeSetItem(key, String(ph.peek()));
+    });
   }
 
   #syncReadout(): void {
@@ -229,6 +386,23 @@ export class GsPlayerElement extends HTMLElement {
     if (!c) return;
     const playing = this.#mounted?.player.playing ?? false;
     c.button.textContent = playing ? 'Pause' : 'Play';
+  }
+}
+
+/** localStorage access can throw (private-mode SecurityError, quota) — persist
+ * is best-effort and must never break playback, so both accessors swallow. */
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode / quota exceeded — silently skip */
   }
 }
 
