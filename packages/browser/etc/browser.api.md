@@ -9,6 +9,9 @@ import { Camera } from '@glissade/scene/motion';
 import { camera } from '@glissade/scene/motion';
 import { CameraError } from '@glissade/scene/motion';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { Change } from '@glissade/scene/diagnostics';
+import { ChangeOp } from '@glissade/scene/diagnostics';
+import { ChangeSet } from '@glissade/scene/diagnostics';
 import { Chart } from '@glissade/scene/chart';
 import { childId } from '@glissade/scene/component';
 import { colorRamp } from '@glissade/scene/chart';
@@ -27,12 +30,17 @@ import { DIAGNOSTIC_SCHEMA_VERSION } from '@glissade/scene/diagnostics';
 import { DiagnosticCode } from '@glissade/scene/diagnostics';
 import { DiagnosticSeverity } from '@glissade/scene/diagnostics';
 import { DiagnosticSource } from '@glissade/scene/diagnostics';
+import { diff } from '@glissade/scene/diagnostics';
+import { DiffInput } from '@glissade/scene/diagnostics';
+import { DiffOptions } from '@glissade/scene/diagnostics';
 import { dispense } from '@glissade/scene/motion';
 import { drift } from '@glissade/scene/motion';
 import { emitWithIds } from '@glissade/scene/identity';
 import { EmitWithIdsResult } from '@glissade/scene/identity';
 import { EmphasizeOpts } from '@glissade/scene/type';
 import { emphasizeWords } from '@glissade/scene/type';
+import { exportFidelity } from '@glissade/scene/diagnostics';
+import { ExportFidelityResult } from '@glissade/scene/diagnostics';
 import { EXPR_CONSTANTS } from '@glissade/core/expr';
 import { EXPR_FUNCTIONS } from '@glissade/core/expr';
 import { ExprError } from '@glissade/core/expr';
@@ -62,12 +70,14 @@ import { MeasurerRequiredError } from '@glissade/scene/type';
 import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
 import { NodeIdStream } from '@glissade/scene/identity';
+import { NodeRef } from '@glissade/scene/diagnostics';
 import { OrientToPath } from '@glissade/scene/motion';
 import { orientToPath } from '@glissade/scene/motion';
 import { ParticleError } from '@glissade/scene/motion';
 import { particles } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
+import { Region } from '@glissade/scene/diagnostics';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 import { resolveAt } from '@glissade/scene/diagnostics';
 import { RevealFrom } from '@glissade/scene/type';
@@ -99,6 +109,12 @@ export { camera }
 export { CameraError }
 
 export { Canvas2DBackend }
+
+export { Change }
+
+export { ChangeOp }
+
+export { ChangeSet }
 
 export { Chart }
 
@@ -136,6 +152,12 @@ export { DiagnosticSeverity }
 
 export { DiagnosticSource }
 
+export { diff }
+
+export { DiffInput }
+
+export { DiffOptions }
+
 export { dispense }
 
 export { drift }
@@ -147,6 +169,10 @@ export { EmitWithIdsResult }
 export { EmphasizeOpts }
 
 export { emphasizeWords }
+
+export { exportFidelity }
+
+export { ExportFidelityResult }
 
 export { EXPR_CONSTANTS }
 
@@ -206,6 +232,8 @@ export { motionPath }
 
 export { NodeIdStream }
 
+export { NodeRef }
+
 export { OrientToPath }
 
 export { orientToPath }
@@ -217,6 +245,8 @@ export { particles }
 export { pathLength }
 
 export { pointAtLength }
+
+export { Region }
 
 export { renderToDataURL }
 

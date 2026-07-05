@@ -31,6 +31,8 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'global', // gs types --global (0.47): emit the ambient window.glissade .d.ts
   'iife', // alias of --global
   'update-baseline', // gs parity --update-baseline: re-pin the known-drop baseline
+  'semantic', // gs parity --semantic: the structured Skia↔Lottie round-trip drop-diff
+  'all', // gs parity --semantic --all: show every finding (not just error-only view)
 ]);
 
 export interface ParsedArgs {

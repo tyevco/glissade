@@ -170,6 +170,22 @@ export {
   type CritiqueResult,
   type DiagnosticSource,
 } from '@glissade/scene/diagnostics';
+// 0.61 — the interchange/edit half of the verification suite on the IIFE: diff(a,b)
+// (a ChangeSet TOOL — the no-build author→patch→diff→verify loop) + exportFidelity
+// (the static render-only-export DIAGNOSTIC). Both ride the tree-shakeable
+// @glissade/scene/diagnostics subpath, off the SACRED base embed.
+export {
+  diff,
+  exportFidelity,
+  type ChangeSet,
+  type Change,
+  type ChangeOp,
+  type NodeRef,
+  type Region,
+  type DiffInput,
+  type DiffOptions,
+  type ExportFidelityResult,
+} from '@glissade/scene/diagnostics';
 export { emitWithIds, type EmitWithIdsResult, type NodeIdStream } from '@glissade/scene/identity';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified

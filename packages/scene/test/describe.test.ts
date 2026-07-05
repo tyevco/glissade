@@ -139,7 +139,7 @@ vdescribe('describe() surface taxonomy', () => {
     for (const e of m.surface!) {
       expect(typeof e.name).toBe('string');
       expect(e.name.length).toBeGreaterThan(0);
-      expect(['value', 'type', 'diagnostic']).toContain(e.kind);
+      expect(['value', 'type', 'diagnostic', 'tool']).toContain(e.kind);
       expect(['constructor', 'function', 'object', 'type']).toContain(e.form);
       expect(typeof e.iife).toBe('boolean');
     }
@@ -203,9 +203,9 @@ vdescribe('describe() surface taxonomy', () => {
   // couldn't discover it. It now appears as kind:'diagnostic', iife:true so the
   // surface can be PARTITIONED (build tooling filters `!== 'diagnostic'`, perception
   // tooling filters `=== 'diagnostic'`).
-  it('surfaces the diagnostics API (critique/validateScene/resolveAt/instanceProps) as kind:diagnostic iife functions', () => {
+  it('surfaces the diagnostics API (critique/validateScene/resolveAt/instanceProps/exportFidelity) as kind:diagnostic iife functions', () => {
     const byName = new Map(m.surface!.map((e) => [e.name, e]));
-    for (const n of ['critique', 'validateScene', 'resolveAt', 'instanceProps']) {
+    for (const n of ['critique', 'validateScene', 'resolveAt', 'instanceProps', 'exportFidelity']) {
       expect(byName.get(n), `diagnostic '${n}' missing from surface`).toMatchObject({
         kind: 'diagnostic',
         iife: true,
@@ -215,7 +215,15 @@ vdescribe('describe() surface taxonomy', () => {
     }
     // an agent building a scene filters these OUT; one doing perception filters them IN
     const diagnostics = m.surface!.filter((e) => e.kind === 'diagnostic').map((e) => e.name);
-    expect(diagnostics).toEqual(['critique', 'instanceProps', 'resolveAt', 'validateScene']); // sorted
+    expect(diagnostics).toEqual(['critique', 'exportFidelity', 'instanceProps', 'resolveAt', 'validateScene']); // sorted
+  });
+
+  // 0.61: diff(a,b) is a kind:'tool' (an operation returning a ChangeSet), distinct
+  // from a diagnostic (a problem list) so a consumer never misuses its output.
+  it('surfaces diff() as a kind:tool iife function', () => {
+    const byName = new Map(m.surface!.map((e) => [e.name, e]));
+    expect(byName.get('diff')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 2 });
+    expect(m.surface!.filter((e) => e.kind === 'tool').map((e) => e.name)).toEqual(['diff']);
   });
 
   it('every surface value name corresponds to a described node, helper, core callable, fundamental, or value object (no phantoms)', () => {

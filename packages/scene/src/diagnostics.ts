@@ -75,3 +75,25 @@ export {
   type CritiqueOptions,
   type CritiqueResult,
 } from './critique.js';
+
+// 0.61 — the interchange/edit half of the structured-verification suite:
+//   • diff(a,b) — a ChangeSet (kind:'tool', NOT a diagnostic — CHANGES not PROBLEMS):
+//     the semantic scene-graph + timeline blast-radius of an edit, rendered layer
+//     opt-in. Load-bearing invariant: construction-order-only differences → EMPTY.
+//   • exportFidelity(scene,timeline?) — a static (no-export) DIAGNOSTIC scan for
+//     render-only features (motionBlur/echo/shake/mesh/text-cursor/reveal) that the
+//     Lottie exporter drops, hoisted to authoring-time. clean-scene-empty.
+// Both live OFF the base scene index (the "base scene excludes diagnostics" guard
+// covers diff.ts + fidelity.ts) and are re-exported onto the browser IIFE.
+export {
+  diff,
+  type ChangeSet,
+  type Change,
+  type ChangeOp,
+  type NodeRef,
+  type Region,
+  type DiffInput,
+  type DiffOptions,
+} from './diff.js';
+
+export { exportFidelity, type ExportFidelityResult } from './fidelity.js';

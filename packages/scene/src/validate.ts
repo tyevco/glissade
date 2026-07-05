@@ -73,7 +73,29 @@ export type DiagnosticCode =
   // its whole on-stage span. (OFF_CANVAS above, reserved from 0.59, is emitted
   // here too.)
   | 'TEXT_OVERFLOW'
-  | 'OCCLUSION';
+  | 'OCCLUSION'
+  // 0.61 static export-fidelity code — additive to the wire contract (no schema
+  // bump). RENDER_ONLY_EXPORT: a node uses a RENDER-ONLY feature (motionBlur /
+  // echo / shake / camera-shake / mesh fill / text-cursor / reveal mask) that the
+  // Lottie exporter drops — surfaced STATICALLY (no export run) by `exportFidelity`
+  // so an export-bound author sees it at authoring time. source:'parity'.
+  | 'RENDER_ONLY_EXPORT'
+  // 0.61 `gs parity --semantic` MEASURED round-trip codes (source:'parity'). These
+  // fuse the exporter's warn-list with the SSIM residual localized to each node's
+  // rendered bbox (see cli/semanticParity.ts). All additive to the wire contract.
+  // - LOTTIE_DROP — an element the exporter dropped; a WARN names it → expected:true.
+  // - LOTTIE_APPROXIMATE — exported but degraded (box-valign / wrap-reflow / gradient).
+  // - ANCHOR_RECENTER — a non-center anchor re-centers on export (MIS-export, wrong
+  //   pixels not absent); REPORT-ONLY in 0.61 (the fix is 0.68).
+  // - UNEXPLAINED_RESIDUAL — an SSIM residual with NO matching warn (real breakage,
+  //   expected:false → severity:error, the never-silent teeth).
+  // - BACKEND_DIVERGE — RESERVED (ships with the deferred DOM-parity leg); in the
+  //   enum so it emits without a schema bump, never emitted in 0.61.
+  | 'LOTTIE_DROP'
+  | 'LOTTIE_APPROXIMATE'
+  | 'ANCHOR_RECENTER'
+  | 'UNEXPLAINED_RESIDUAL'
+  | 'BACKEND_DIVERGE';
 
 /**
  * 0.60: which enforcement SURFACE produced a diagnostic — distinguishes a CERTAIN

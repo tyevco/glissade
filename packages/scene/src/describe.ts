@@ -172,12 +172,16 @@ export interface SurfaceEntry {
    * `'value'` = a runtime binding on the bundle (a class / function / object);
    * `'type'` = a TS type-only name that erases at runtime (opaque, referenced by
    * signatures); `'diagnostic'` = a runtime AUTHORING-DIAGNOSTIC function
-   * (`critique`/`validateScene`/`resolveAt`/`instanceProps`, 0.60) — a real
-   * `window.glissade.<name>` callable that is PERCEPTION/self-check tooling, not
-   * scene-building surface. An agent BUILDING a scene filters `kind !== 'diagnostic'`;
-   * an agent CRITIQUING a rendered scene filters `kind === 'diagnostic'`.
+   * (`critique`/`validateScene`/`resolveAt`/`instanceProps`/`exportFidelity`) — a
+   * real `window.glissade.<name>` callable that reports PROBLEMS (self-check tooling),
+   * not scene-building surface; `'tool'` (0.61) = a runtime OPERATION function
+   * (`diff`) that transforms/compares scenes and returns a RESULT (a ChangeSet), not
+   * a problem list — distinct from a diagnostic so a consumer never misuses its
+   * output as a defect report. A scalable CATEGORY (diagnostics=problems /
+   * tools=operations / values=authoring surface): an agent BUILDING a scene filters
+   * `kind === 'value'`; a self-check agent filters `kind === 'diagnostic'`.
    */
-  kind: 'value' | 'type' | 'diagnostic';
+  kind: 'value' | 'type' | 'diagnostic' | 'tool';
   /** `true` when it is reachable as `window.glissade.<name>` on the single-file IIFE bundle. */
   iife: boolean;
   /** How to consume it: `'constructor'` needs `new`, `'function'` is a plain call, `'object'` is a value namespace (e.g. `easings`), `'type'` is type-only. */
@@ -324,6 +328,19 @@ const SURFACE_DIAGNOSTICS: { name: string; arity: number }[] = [
   { name: 'validateScene', arity: 2 },
   { name: 'resolveAt', arity: 3 },
   { name: 'instanceProps', arity: 1 },
+  // 0.61: the static render-only export-fidelity scan (kind:'diagnostic', source:'parity').
+  { name: 'exportFidelity', arity: 1 },
+];
+
+/**
+ * 0.61 machine-readable TOOL functions on `window.glissade` — runtime OPERATIONS
+ * that transform/compare scenes and return a RESULT, not a problem list. `diff(a,b)`
+ * returns a ChangeSet (the blast-radius of an edit). Marked `kind:'tool'` so a
+ * consumer never treats its output as a diagnostic (no severity/defect semantics).
+ * `arity` = the documented required positional-arg count.
+ */
+const SURFACE_TOOLS: { name: string; arity: number }[] = [
+  { name: 'diff', arity: 2 },
 ];
 
 /**
@@ -350,6 +367,7 @@ function buildSurface(): SurfaceEntry[] {
   for (const c of SURFACE_EXTRA) out.push({ name: c.name, kind: 'value', iife: true, form: 'function', arity: c.arity });
   for (const name of SURFACE_VALUE_OBJECTS) out.push({ name, kind: 'value', iife: true, form: 'object' });
   for (const d of SURFACE_DIAGNOSTICS) out.push({ name: d.name, kind: 'diagnostic', iife: true, form: 'function', arity: d.arity });
+  for (const t of SURFACE_TOOLS) out.push({ name: t.name, kind: 'tool', iife: true, form: 'function', arity: t.arity });
   for (const name of SURFACE_TYPE_ONLY) out.push({ name, kind: 'type', iife: false, form: 'type' });
   const seen = new Set<string>();
   return out

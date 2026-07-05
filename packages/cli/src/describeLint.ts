@@ -172,9 +172,13 @@ export function describeLint(
   for (const name of Object.keys(manifest.nodes)) callables.add(name);
   for (const h of manifest.helpers) callables.add(h.name);
   for (const e of manifest.surface ?? []) {
-    // 'diagnostic' entries (critique/validateScene/…) are real runtime callables,
-    // so the no-phantom check covers them exactly like 'value' functions.
-    if ((e.kind === 'value' || e.kind === 'diagnostic') && (e.form === 'constructor' || e.form === 'function')) {
+    // 'diagnostic' entries (critique/validateScene/…) and 'tool' entries (diff, 0.61)
+    // are real runtime callables, so the no-phantom check covers them exactly like
+    // 'value' functions.
+    if (
+      (e.kind === 'value' || e.kind === 'diagnostic' || e.kind === 'tool') &&
+      (e.form === 'constructor' || e.form === 'function')
+    ) {
       callables.add(e.name);
     }
   }

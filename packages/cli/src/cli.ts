@@ -55,6 +55,7 @@ const USAGE = `usage:
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
   gs parity <scene-module> [--backends skia,lottie] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--heatmap <dir>] [--min <ssim>] [--baseline <file>] [--update-baseline] [--tolerance <eps>]   cross-backend perceptual review: render ONE scene across backends and report per-frame SSIM vs the Skia reference + the worst 8×8 tile (skia = reference, lottie = export↔import round-trip). --heatmap writes a thermal PNG per frame; --min is the SSIM floor (default 0.98) — a below-floor frame exits non-zero. --baseline turns it into a KNOWN-DROP regression gate: compare each mean vs a committed per-scene baseline of EXPECTED drops and fail ONLY on a deviation (a new/worse drop), so documented scope-outs that legitimately fail the floor PASS while a real regression FAILs; --update-baseline (re)writes that baseline from the live run; --tolerance is the expected-SSIM band (default 1e-4). --baseline takes precedence over --min. (dom = Phase B, not yet shipped)
+  gs parity <scene-module> --semantic [--all] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--min <ssim>] [--baseline <file>] [--update-baseline] [--json]   the STRUCTURED Skia↔Lottie round-trip drop-diff: fuse the exporter's own warn-list (which element dropped + why) with the SSIM residual localized to each node's rendered bbox → source:'parity' diagnostics (LOTTIE_DROP/APPROXIMATE = warn-explained expected drops masked from the default view; ANCHOR_RECENTER = report-only; UNEXPLAINED_RESIDUAL = a residual with NO matching warn, the only thing in the default error-only view). --all shows every finding; --baseline pins the expected-drop keys (a NEW expected drop still flags); --update-baseline re-pins
   gs localize <scene-module> --to <locale> [--from <locale>] [--write] [--strict] [--keep-voice] [--json]   fork a narration into a new locale (clone segment/pause structure, PRESERVING beat ids so .start() anchors survive) + stub messages.<locale>.json from the scene's t() ids, running the render path's parity + localize checks BEFORE any TTS. Default dry-run (exits non-zero on drift); --write emits <base>.<locale>.narration.json + messages.<locale>.json (re-localize CARRIES existing translations over — never clobbers); --strict refuses to write on a preflight failure
   gs --version   print the engine version
 
@@ -489,6 +490,56 @@ async function main(): Promise<void> {
       min = Number(minRaw);
       if (!(min >= -1 && min <= 1)) fail(`parity: --min must be an SSIM floor in [-1, 1], got '${minRaw}'`);
     }
+
+    // --semantic: the structured Skia↔Lottie round-trip drop-diff (fuses the export
+    // warn-list with the SSIM residual per node → source:'parity' diagnostics). A
+    // DIFFERENT lane from the cross-backend SSIM reviewer below — dispatch here.
+    if (pf.has('semantic')) {
+      const { semanticParityCommand } = await import('./semanticParity.js');
+      const { existsSync, readFileSync, writeFileSync } = await import('node:fs');
+      // --baseline (semantic) pins EXPECTED-drop finding keys as a JSON string[]; a
+      // NEW expected drop absent from the pin still flags. --update-baseline re-pins.
+      const sBaselinePath = pf.get('baseline');
+      const sUpdate = pf.has('update-baseline');
+      let sBaseline: string[] | undefined;
+      if (sBaselinePath !== undefined && !sUpdate && existsSync(sBaselinePath)) {
+        try {
+          const raw = JSON.parse(readFileSync(sBaselinePath, 'utf8')) as unknown;
+          sBaseline = Array.isArray(raw) ? (raw as string[]) : ((raw as { keys?: string[] }).keys ?? []);
+        } catch (err) {
+          fail(`parity --semantic: could not read baseline '${sBaselinePath}': ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      try {
+        const result = await semanticParityCommand({
+          modulePath: sceneModule,
+          ...(nums(pf.get('frames')) ? { frames: nums(pf.get('frames'))! } : {}),
+          ...(pf.get('fps') ? { fps: parseFpsOrFail(pf.get('fps')!) } : {}),
+          ...(dim('width') !== undefined ? { width: dim('width')! } : {}),
+          ...(dim('height') !== undefined ? { height: dim('height')! } : {}),
+          ...(min !== undefined ? { min } : {}),
+          ...(pf.has('all') ? { all: true } : {}),
+          ...(sBaseline !== undefined ? { baseline: sBaseline } : {}),
+          ...(pf.has('json') ? { json: true } : {}),
+        });
+        if (sUpdate && sBaselinePath !== undefined) {
+          const keys = result.findings
+            .filter((f) => f.detail?.expected === true)
+            .map((f) => `${f.node ?? ''}|${f.code}|${String(f.detail?.property ?? '')}`);
+          writeFileSync(sBaselinePath, `${JSON.stringify([...new Set(keys)].sort(), null, 2)}\n`);
+          process.stdout.write(`gs parity --semantic: wrote ${keys.length} expected-drop key(s) → ${sBaselinePath}\n`);
+          return;
+        }
+        process.stdout.write(pf.has('json') ? `${JSON.stringify(result, null, 2)}\n` : `${result.report}\n`);
+        // default view gates on UNEXPLAINED residuals (errors); baseline mode also
+        // fails on a NEW expected drop.
+        if (result.hasErrors || (sBaseline !== undefined && result.newExpected.length > 0)) process.exit(1);
+      } catch (err) {
+        fail(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+
     // known-drop regression gate: --baseline pins EXPECTED drops (gate mode, takes
     // precedence over --min); --update-baseline re-pins the live numbers; --tolerance
     // is the expected-SSIM band. --update-baseline without --baseline fails loud.

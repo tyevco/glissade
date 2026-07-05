@@ -205,6 +205,32 @@ describe('@glissade/browser entry surface', () => {
     expect((glissade as any).validateSceneFonts).toBeUndefined();
   });
 
+  it('exposes the 0.61 diff (tool) + exportFidelity (diagnostic) on the IIFE', () => {
+    // diff(a,b) — a ChangeSet TOOL (kind:'tool'); exportFidelity — a static
+    // render-only export DIAGNOSTIC. Both ride @glissade/scene/diagnostics.
+    expect(typeof glissade.diff).toBe('function');
+    expect(typeof glissade.exportFidelity).toBe('function');
+    // diff runs off the IIFE: a scene vs itself is EMPTY.
+    const scene = glissade.createScene({
+      size: { w: 200, h: 100 },
+      children: [new glissade.Rect({ id: 'box', width: 10, height: 10, position: [50, 50] })],
+    });
+    const d = glissade.diff({ scene }, { scene });
+    expect(d.empty).toBe(true);
+    // exportFidelity: a render-only motionBlur is flagged; a plain scene is clean.
+    const blurred = glissade.createScene({
+      size: { w: 200, h: 100 },
+      children: [glissade.motionBlur(new glissade.Rect({ id: 'title', width: 10, height: 10, position: [50, 50] }))],
+    });
+    expect(glissade.exportFidelity(blurred).diagnostics[0]?.code).toBe('RENDER_ONLY_EXPORT');
+    expect(glissade.exportFidelity(scene).diagnostics).toEqual([]);
+    // the surface taxonomy tags them correctly (tool vs diagnostic).
+    const m = glissade.describe();
+    const bykind = (n: string) => m.surface?.find((e: any) => e.name === n)?.kind;
+    expect(bykind('diff')).toBe('tool');
+    expect(bykind('exportFidelity')).toBe('diagnostic');
+  });
+
   it('exposes MeasurerRequiredError so splitText/fitText requireMeasurer throws are instanceof-catchable (0.59)', () => {
     // Every other fail-loud error class is on window.glissade; MeasurerRequiredError
     // lived only on the /type subpath, so it wasn't instanceof-catchable off the IIFE.
