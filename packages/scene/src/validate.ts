@@ -381,16 +381,29 @@ export interface InstancePropState {
    * says the prop CAN be animated; this says it currently IS.
    */
   bound: boolean;
+  /**
+   * 0.65 — TRUE when the target is DERIVED / read-only: it exposes a computed value
+   * for inspection (read via `resolveAt`) but rejects a `set`/track bind (e.g. a
+   * Camera's `resolvedCenter`, derived from `centerOn`). An author must NOT attempt
+   * to drive it. Absent (⇒ a normal settable prop) for every other target.
+   */
+  derived?: boolean;
 }
 
 /**
  * Announce which props are CURRENTLY bound on THIS node instance (not just
  * type-level bindable). Reads `signal.isBound` per registered target — a pure
- * inspection read. Pair with `resolveAt` to read a bound prop's real value.
+ * inspection read. Pair with `resolveAt` to read a bound prop's real value. A
+ * DERIVED, read-only target (a Camera's `resolvedCenter`) is flagged `derived:true`.
  */
 export function instanceProps(node: Node): InstancePropState[] {
   return node.listTargets().map(({ path, expects }) => {
-    const sig = node.resolveTarget(path) as unknown as { isBound?: boolean } | undefined;
-    return { path, expects, bound: sig?.isBound === true };
+    const sig = node.resolveTarget(path) as unknown as { isBound?: boolean; derived?: boolean } | undefined;
+    return {
+      path,
+      expects,
+      bound: sig?.isBound === true,
+      ...(sig?.derived === true ? { derived: true } : {}),
+    };
   });
 }

@@ -112,6 +112,7 @@ export function emitWithIds(scene: Scene, doc: Timeline, t: number): EmitWithIds
     measurer: scene.textMeasurer,
     playhead: scene.playhead,
     size: scene.size,
+    resolveNode: (id) => scene.nodes.get(id),
   };
   return evaluateAt(scene.playhead, t, () => {
     const builder = instrument(createDisplayListBuilder(scene.size));

@@ -36,6 +36,7 @@ import {
 } from './displayList.js';
 import { emitWithIds } from './identity.js';
 import { type Region } from './diff.js';
+import { validateRegion } from './region.js';
 import { bindScene, type Scene } from './scene.js';
 import { Group, Text } from './nodes.js';
 import { isEstimatingMeasurer, quantize, type TextMeasurer } from './text.js';
@@ -448,7 +449,14 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   const minLegiblePx = opts.minLegiblePx ?? MIN_LEGIBLE_PX;
   // 0.64 — the reserved SafeArea bands (CAPTION_COLLISION + the owned-band
   // effective-box + the resize-feasibility bound). Empty ⇒ byte-identical behaviour.
-  const safeAreas = opts.safeAreas ?? [];
+  // 0.65 — every band's Region is INGESTED through the SHARED validateRegion (the
+  // SAME boundary centerOn's `clear` uses): float bounds quantize to integers, a
+  // negative-extent / non-finite band fails loud. So a hand-built Region and a
+  // captionSafeArea(size) Region reach the collision check byte-identically.
+  const safeAreas: readonly SafeArea[] = (opts.safeAreas ?? []).map((sa) => ({
+    ...sa,
+    bounds: validateRegion(sa.bounds, 'critique safeAreas'),
+  }));
   const duration = compileTimeline(timeline).duration;
   const lastFrame = Math.max(0, Math.floor(duration * fps));
 

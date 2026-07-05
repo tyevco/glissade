@@ -193,7 +193,8 @@ describe('critique — determinism: same scene + safeAreas ⇒ identical diagnos
 describe('describe() — SafeArea discoverability (types registry + options schema)', () => {
   it('exposes the Region + SafeArea structured types so a no-build agent can BUILD one', () => {
     const m = apiDescribe();
-    expect(m.types?.Region).toEqual({ minX: 'number', minY: 'number', maxX: 'number', maxY: 'number', space: 'px' });
+    // 0.65 — bounds signal `integer` (ingested through validateRegion; quantize-or-fail-loud).
+    expect(m.types?.Region).toEqual({ minX: 'integer', minY: 'integer', maxX: 'integer', maxY: 'integer', space: 'px' });
     expect(m.types?.SafeArea).toEqual({ bounds: 'Region', owner: 'string?' });
   });
 

@@ -1,5 +1,14 @@
 # @glissade/player
 
+## 0.66.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @glissade/scene@0.66.0-pre.0
+  - @glissade/backend-canvas2d@0.66.0-pre.0
+  - @glissade/core@0.66.0-pre.0
+
 ## 0.65.0
 
 ### Patch Changes

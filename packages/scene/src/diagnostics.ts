@@ -103,6 +103,14 @@ export {
 
 export { exportFidelity, type ExportFidelityResult } from './fidelity.js';
 
+// 0.65 — the SHARED Region-ingest validator (quantize-to-integer / fail-loud on
+// negative-extent) lives in region.ts and is the ONE canonical boundary both
+// critique/assess `safeAreas` and the Camera `clear` ingest through (imported
+// directly at each call site). It is INTERNAL (not re-exported onto window.glissade)
+// — a no-build agent builds an INTEGER Region from `describe().types.Region` and the
+// ingest validates automatically, so the validator never needs to be a public
+// callable. RegionError surfaces through whichever primitive threw (critique/camera).
+
 // 0.62 — certKey(scene, timeline?): the PURE semantic content-address (kind:'tool',
 // NOT a diagnostic — it returns an ADDRESS, not a problem list). = sha256(sceneHash ·
 // timelineHash), NO raster render. The "will this render be a cache hit?" primitive

@@ -31,6 +31,7 @@ import goldenOrient from '../../examples/src/scenes/golden-orient.js';
 import goldenEcho from '../../examples/src/scenes/golden-echo.js';
 import goldenMotionBlur from '../../examples/src/scenes/golden-motionblur.js';
 import goldenCamera from '../../examples/src/scenes/golden-camera.js';
+import goldenCameraFrame from '../../examples/src/scenes/golden-camera-frame.js';
 import goldenChart from '../../examples/src/scenes/golden-chart.js';
 import goldenGauge from '../../examples/src/scenes/golden-gauge.js';
 import goldenExpr from '../../examples/src/scenes/golden-expr.js';
@@ -184,6 +185,11 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // bar (no-double-shift composition contract) and a pinned caption SIBLING. Pose is
   // keyed tracks + closed-form shake → a pure function of time, byte-stable on Skia.
   { name: 'camera', mod: goldenCamera },
+  // 0.65 Camera NODE-FRAMING: centerOn tracks the `hero` node by id in WORLD space
+  // (a far grid at depth 0.4 pans less), and a `clear` reserved band nudges the tall
+  // hero's bounds above the caption zone. The focal is a pure function of time (the
+  // hero's live worldMatrix + a constant clear nudge) → byte-stable on Skia.
+  { name: 'camera-frame', mod: goldenCameraFrame },
   // the data-motion stack: a table → bar chart (build-time fan-out), a staggered
   // rise-in then a bar-chart race from ordinary per-bar height tracks
   { name: 'chart', mod: goldenChart },

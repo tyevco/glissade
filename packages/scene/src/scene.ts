@@ -252,6 +252,7 @@ export function evaluate(scene: Scene, doc?: Timeline, t = 0): DisplayList {
     measurer: scene.textMeasurer,
     playhead: scene.playhead,
     size: scene.size,
+    resolveNode: (id) => scene.nodes.get(id),
   };
   return evaluateAt(scene.playhead, t, () => {
     const out = createDisplayListBuilder(scene.size);

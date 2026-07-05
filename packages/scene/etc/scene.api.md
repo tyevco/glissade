@@ -463,6 +463,7 @@ export interface EvalContext {
     readonly frame: number;
     readonly measurer: TextMeasurer;
     readonly playhead?: Playhead;
+    readonly resolveNode?: (id: string) => Node_2 | undefined;
     readonly size?: {
         readonly w: number;
         readonly h: number;

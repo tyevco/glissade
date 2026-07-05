@@ -1,5 +1,15 @@
 # @glissade/scene
 
+## 0.66.0-pre.0
+
+### Minor Changes
+
+- Node-framing: a camera can target a node by id. `camera(layers, { centerOn: 'hero' })` centers the focal point on that node's world position, resolved at eval time via a new `EvalContext.resolveNode` channel (injected from the scene's node map, like `measurer`/`size`) — an explicit scene-graph edge, not a captured closure. World-space "B" mode keeps the single `worldPx÷size` division inside `cameraLayerMatrix` (split into a px-native `cameraLayerMatrixPx` core; the relative-center path is byte-identical to before), so the size-derived focal never touches the trackable `cam/center` signal. An optional declarative `clear: Region | SafeArea` nudges the focal point so the target's bounds clear a reserved region (direction DERIVED from node-vs-region — up for a bottom band, down for a top band, canonical tie-break toward the larger free area; fails loud when the node can't fit). The resolved focal point is exposed INSPECTION-ONLY via `resolveAt('<cam>/resolvedCenter', t)` (== the focal point the render used — one sample, three consumers; setting it fails loud). Also bundles a shared Region-ingest validator (`validateRegion`): a float Region quantizes to integer bounds (Math.round, matching `captionSafeArea`), a negative-extent Region fails loud — enforced at the ONE shared boundary that feeds both `critique`'s `safeAreas` and centerOn's `clear`, so a hand-built and a helper Region are byte-interchangeable; `describe().types.Region` now signals `integer`. Camera without `centerOn` emits a byte-identical DisplayList (opt-in; all existing goldens unchanged, determinism hash held). New `camera-frame` showcase golden.
+
+### Patch Changes
+
+- @glissade/core@0.66.0-pre.0
+
 ## 0.65.0
 
 ### Minor Changes

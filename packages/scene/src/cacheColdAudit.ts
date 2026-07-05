@@ -85,8 +85,8 @@ export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: numbe
   }
 
   const frame = doc.fps !== undefined ? Math.round(t * doc.fps) : -1;
-  const ctxA: EvalContext = { time: t, frame, measurer: warm.textMeasurer, playhead: warm.playhead };
-  const ctxB: EvalContext = { time: t, frame, measurer: cold.textMeasurer, playhead: cold.playhead };
+  const ctxA: EvalContext = { time: t, frame, measurer: warm.textMeasurer, playhead: warm.playhead, resolveNode: (id) => warm.nodes.get(id) };
+  const ctxB: EvalContext = { time: t, frame, measurer: cold.textMeasurer, playhead: cold.playhead, resolveNode: (id) => cold.nodes.get(id) };
   // A Group's emit() recurses into its children, so it diverges whenever any
   // descendant does — prefer the specific leaf, falling back to the Group only
   // if its own transform/props (not a child) are what diverged.

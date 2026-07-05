@@ -95,6 +95,18 @@ export interface EvalContext {
    * Reading it is byte-neutral for every existing node — nothing else consults it.
    */
   readonly size?: { readonly w: number; readonly h: number };
+  /**
+   * 0.65 node-by-id resolution (the same node map `scene.resolveTarget` walks) —
+   * the ONE ambient way a node reaches ANOTHER node's live world transform without
+   * a captured back-reference. A Camera with `centerOn: '<id>'` calls this at emit
+   * to resolve the target node, then reads its `worldMatrix()`/measured bounds as a
+   * pure, re-entrant sample at the current playhead (the Echo/orient discipline).
+   * OPTIONAL: `evaluate()`/`emitWithIds()` inject it from `scene.nodes`; a bare
+   * hand-built ctx (a unit test emitting one node) may omit it, and a node that
+   * needs it (centerOn) fails loud when it's absent. Reading it is byte-neutral for
+   * every existing node — nothing else consults it.
+   */
+  readonly resolveNode?: (id: string) => Node | undefined;
 }
 
 /** A property initializer: a value, or a computed source (§2.1). */

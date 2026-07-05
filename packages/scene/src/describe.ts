@@ -444,7 +444,11 @@ const SURFACE_TYPE_ONLY = ['Paint', 'PathValue', 'FontAxes'];
  * `SafeArea` (critique.ts) interfaces; drift-guarded by `describe.test.ts`.
  */
 const STRUCTURED_TYPES: { [typeName: string]: { [field: string]: string } } = {
-  Region: { minX: 'number', minY: 'number', maxX: 'number', maxY: 'number', space: 'px' },
+  // 0.65 — bounds signal `integer`: a Region is ingested through the shared
+  // validateRegion (quantize-or-fail-loud), so a well-behaved agent builds integer
+  // bounds and never trips the fail-loud belt. Feeds critique/assess `safeAreas`
+  // AND the Camera `clear`.
+  Region: { minX: 'integer', minY: 'integer', maxX: 'integer', maxY: 'integer', space: 'px' },
   SafeArea: { bounds: 'Region', owner: 'string?' },
 };
 
@@ -906,7 +910,7 @@ const HELPERS: DescribedHelper[] = [
       "A cinematic camera rig (FACTORY, no `new`): a Group subclass that applies the inverse camera pose as a parent transform over layered content — push-ins, pans, rolls, and pan-only parallax by layer depth. The pose (center/zoom/roll) are keyframeable track targets; the world moves while nodes stay node-local (no double-apply with anchors). Captions belong as SIBLINGS of the camera (outside the rig) so they stay pinned. Tree-shakeable (@glissade/scene/motion).",
     import: '@glissade/scene/motion',
     usage:
-      "camera(layers: { content: Node, depth? }[], props?: { id?, center?, zoom?, roll?, shake? }): Camera  —  center is RELATIVE viewport coords ([0.5,0.5]=center, never px); animate 'cam/center(.x/.y)', 'cam/zoom', 'cam/roll'. depth<1 = far (parallax pans less).",
+      "camera(layers: { content: Node, depth? }[], props?: { id?, center?, zoom?, roll?, shake?, centerOn?: string, clear?: Region }): Camera  —  center is RELATIVE viewport coords ([0.5,0.5]=center, never px); animate 'cam/center(.x/.y)', 'cam/zoom', 'cam/roll'. depth<1 = far (parallax pans less). centerOn: a node id the focal tracks in WORLD space (read the resolved focal via resolveAt(scene,'<camId>/resolvedCenter',t)); clear: a Region (integer bounds — describe().types.Region / captionSafeArea(size)) the framed node's bounds are nudged to clear.",
   },
   {
     name: 'shake',
