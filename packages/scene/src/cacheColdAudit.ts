@@ -37,6 +37,32 @@ export interface CacheColdResult {
    * verify-determinism --bisect` consumes this to name the (frame, node, op).
    */
   delta?: CommandDelta;
+  /**
+   * `true` when the two `createScene()` builds returned SHARED node instances
+   * (identity-equal) rather than independent ones — so the twice-eval is
+   * INCONCLUSIVE: a shared impure signal is evaluated once and memoized, making
+   * the two DisplayLists identical by construction even for an impure node. The
+   * audit can neither confirm purity nor localize a divergence. Set alongside
+   * `ok:true` (nothing diverged, but the probe was defeated). The caller must
+   * surface this LOUDLY, never read it as "pure". Root cause is almost always a
+   * scene-frame helper that captures its `children` once and reuses them across
+   * calls; the fix is to rebuild children per `createScene()`.
+   */
+  sharedInstances?: boolean;
+}
+
+/**
+ * Do the two builds share ANY node instance (identity-equal for the same id)?
+ * A `createScene` that returns independent trees shares nothing; a frame helper
+ * that captures `children` once and reuses them shares its whole subtree. One
+ * shared instance is enough to defeat the twice-eval (a shared impure signal
+ * memoizes across both evaluates), so the first hit short-circuits.
+ */
+function sharesNodeInstances(a: Scene, b: Scene): boolean {
+  for (const [id, nodeA] of a.nodes) {
+    if (b.nodes.get(id) === nodeA) return true;
+  }
+  return false;
 }
 
 /**
@@ -48,9 +74,15 @@ export interface CacheColdResult {
 export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: number): CacheColdResult {
   const warm = createScene();
   const cold = createScene();
+  // Detect the shared-instance trap BEFORE evaluating: if the two builds reuse
+  // the same node instances, a shared impure signal memoizes across both evals
+  // and the DisplayLists match by construction — the probe is defeated, not pure.
+  const shared = sharesNodeInstances(warm, cold);
   const a = evaluate(warm, doc, t);
   const b = evaluate(cold, doc, t);
-  if (hashDisplayList(a) === hashDisplayList(b)) return { ok: true };
+  if (hashDisplayList(a) === hashDisplayList(b)) {
+    return shared ? { ok: true, sharedInstances: true } : { ok: true };
+  }
 
   const frame = doc.fps !== undefined ? Math.round(t * doc.fps) : -1;
   const ctxA: EvalContext = { time: t, frame, measurer: warm.textMeasurer, playhead: warm.playhead };
@@ -87,14 +119,25 @@ export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: numbe
 /**
  * Adapt {@link auditCacheCold} into a {@link ViolationLocator} payload for
  * `withDeterminismGuards('throw', fn, locate)`: name the first node whose cold
- * re-eval disagrees (plus its first command-level delta), or `undefined` when
- * the twice-eval happens to agree (a rare timing-only impurity the cold probe
- * can't reproduce — the bare violation throw then stands). DEV-only — this
- * re-evaluates two FRESH scenes and is only ever called on the throw branch.
+ * re-eval disagrees (plus its first command-level delta). Returns a `reason`
+ * (no node) when the twice-eval was DEFEATED by shared node instances — so the
+ * throw says out loud WHY it couldn't localize instead of silently degrading to
+ * a bare violation (the gap that let long frame-helper episodes get no culprit).
+ * Returns `undefined` only when the probe ran with independent builds and still
+ * agreed (a rare timing-only impurity the cold probe can't reproduce — the bare
+ * throw then stands). DEV-only — re-evaluates two FRESH scenes, throw branch only.
  */
 export function locateViolation(createScene: () => Scene, doc: Timeline, t: number): ViolationDetail | undefined {
   const r = auditCacheCold(createScene, doc, t);
-  if (r.ok) return undefined;
+  if (r.ok) {
+    // Independent builds agreed → genuinely couldn't reproduce; bare throw stands.
+    if (!r.sharedInstances) return undefined;
+    // Shared instances defeated the probe → say so LOUDLY (never a silent no-op).
+    return {
+      reason:
+        'createScene() returned SHARED node instances across builds, so the determinism probe could not localize the culprit (a shared impure signal memoizes across both re-evaluations). Rebuild the scene fresh on every createScene() call — e.g. a scene-frame helper must rebuild its children each call, not capture them once.',
+    };
+  }
   return {
     ...(r.node !== undefined ? { node: r.node } : {}),
     ...(r.delta !== undefined ? { detail: r.delta } : {}),

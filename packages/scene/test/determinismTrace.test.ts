@@ -141,4 +141,42 @@ describe('determinism trace (card knEFdGXC99rw)', () => {
       createScene({ size: { w: 20, h: 20 }, children: [new Rect({ id: 'ok', width: 10, height: 10, fill: '#fff' })] });
     expect(locateViolation(make, doc, 0)).toBeUndefined();
   });
+
+  // The gap a real-episode read caught (ai-training, e04): a scene-frame helper
+  // that captures its `children` ONCE and reuses them across createScene() calls
+  // returns SHARED node instances, so the twice-eval probe memoizes the impure
+  // signal and can't localize. It must NOT silently degrade to a bare throw — it
+  // must say WHY it couldn't localize and how to fix it.
+  it('SHARED-instance builds: throws a LOUD reason, never a silent bare throw', () => {
+    // `children` built once, reused every call — the frame-helper pattern.
+    const children = [
+      new Rect({ id: 'pure', width: 10, height: 10, fill: '#111' }),
+      new Rect({ id: 'nchip', width: () => Math.random() * 10, height: 10, fill: '#f00' }),
+    ];
+    const make = (): Scene => createScene({ size: { w: 40, h: 40 }, children });
+    let caught: DeterminismViolationError | undefined;
+    try {
+      guardedEvaluate(make);
+    } catch (e) {
+      caught = e as DeterminismViolationError;
+    }
+    expect(caught).toBeInstanceOf(DeterminismViolationError);
+    // could NOT name a node (shared instances defeat the cold probe)...
+    expect(caught!.node).toBeUndefined();
+    // ...but is LOUD about why + the remedy — this is the never-silent contract.
+    expect(caught!.reason).toBeDefined();
+    expect(caught!.reason!.toLowerCase()).toContain('shared node instances');
+    expect(caught!.message).toContain("Couldn't localize");
+    expect(caught!.message.toLowerCase()).toContain('createscene()');
+    expect(caught!.api).toBe('Math.random');
+  });
+
+  it('locateViolation surfaces a reason (not undefined) when builds share instances', () => {
+    const children = [new Rect({ id: 'x', width: () => Math.random() * 10, height: 10, fill: '#f00' })];
+    const make = (): Scene => createScene({ size: { w: 20, h: 20 }, children });
+    const located = locateViolation(make, doc, 0);
+    expect(located).toBeDefined();
+    expect(located!.node).toBeUndefined();
+    expect(located!.reason!.toLowerCase()).toContain('shared node instances');
+  });
 });

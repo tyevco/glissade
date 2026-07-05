@@ -1,5 +1,13 @@
 # @glissade/lottie
 
+## 0.65.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @glissade/scene@0.65.0-pre.2
+  - @glissade/core@0.65.0-pre.2
+
 ## 0.65.0-pre.1
 
 ### Patch Changes

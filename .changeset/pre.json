@@ -27,6 +27,7 @@
   },
   "changesets": [
     "determinism-trace-node-locator",
+    "determinism-trace-shared-instance-loud",
     "gs-player-poster-persist"
   ]
 }

@@ -21,6 +21,14 @@ import type { CommandDelta } from './displayDiff.js';
 export interface ViolationDetail {
   readonly node?: string | undefined;
   readonly detail?: CommandDelta | undefined;
+  /**
+   * Why the locator could NOT name a node, when it ran but was defeated (e.g.
+   * `createScene()` returned shared node instances, so the twice-eval probe
+   * memoized an impure signal and couldn't localize). Present INSTEAD of `node`
+   * — it makes the throw say out loud why click-to-line didn't fire, and how to
+   * fix it, rather than silently degrading to a bare violation.
+   */
+  readonly reason?: string | undefined;
 }
 
 /**
@@ -49,8 +57,19 @@ export class DeterminismViolationError extends Error {
    * produced on the render hot path.
    */
   readonly detail?: CommandDelta | undefined;
+  /**
+   * Why localization was unavailable, when the locator ran but couldn't name a
+   * node (set INSTEAD of `node` — e.g. shared-instance builds defeated the cold
+   * probe). `undefined` for a bare throw or a successfully-localized one.
+   */
+  readonly reason?: string | undefined;
   constructor(api: string, located?: ViolationDetail | undefined) {
-    const where = located?.node !== undefined ? ` First divergent node '${located.node}'.` : '';
+    const where =
+      located?.node !== undefined
+        ? ` First divergent node '${located.node}'.`
+        : located?.reason !== undefined
+          ? ` (Couldn't localize the divergent node: ${located.reason})`
+          : '';
     super(
       `'${api}' was called inside evaluate() — scene code must be a pure function of time (§5.5).${where} ` +
         'Read ctx.time/frame, use the seeded random(seed) from @glissade/core, and resolve assets before rendering.',
@@ -60,6 +79,7 @@ export class DeterminismViolationError extends Error {
     // exactOptionalPropertyTypes: assign only when present (never write `undefined`).
     if (located?.node !== undefined) this.node = located.node;
     if (located?.detail !== undefined) this.detail = located.detail;
+    if (located?.reason !== undefined) this.reason = located.reason;
   }
 }
 
@@ -133,10 +153,13 @@ export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T, locate?: 
       mode === 'throw' &&
       locate !== undefined &&
       err instanceof DeterminismViolationError &&
-      err.node === undefined
+      err.node === undefined &&
+      err.reason === undefined
     ) {
       const located = safeLocate(locate);
-      if (located !== undefined && located.node !== undefined) {
+      // Re-throw enriched whether the locator NAMED the node or only explained
+      // (reason) why it couldn't — both beat a silent bare throw.
+      if (located !== undefined && (located.node !== undefined || located.reason !== undefined)) {
         throw new DeterminismViolationError(err.api, located);
       }
     }

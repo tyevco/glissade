@@ -233,6 +233,7 @@ export class DeterminismViolationError extends Error {
     // Warning: (ae-forgotten-export) The symbol "CommandDelta" needs to be exported by the entry point index.d.ts
     readonly detail?: CommandDelta | undefined;
     readonly node?: string | undefined;
+    readonly reason?: string | undefined;
 }
 
 // @public (undocumented)
@@ -1541,6 +1542,7 @@ export interface ViolationDetail {
     readonly detail?: CommandDelta | undefined;
     // (undocumented)
     readonly node?: string | undefined;
+    readonly reason?: string | undefined;
 }
 
 // @public
