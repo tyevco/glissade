@@ -85,6 +85,11 @@ render options:
   --cache-mode <m> read-write (default with --cache) | read-only (serve hits, never write) | off (bypass = baseline)
   --cache-max-size <bytes|2GB>  LRU size cap; oldest entries evicted when exceeded (default 2GB). Whole-frame RGBA is
                    ~MBs/frame (tens of GB/episode) — the cap keeps .gscache from eating the disk
+  --certify        emit the per-frame determinism certificate (<out>.cert.json + <out>.audio-cert.json); populates --cert-cache
+  --cert-cache[=<dir>]  content-addressed render cache keyed by certHash (default .gscertcache); a HIT skips render, byte-identical
+  --cert-cache-mode <m> read-write (default) | read-only | off
+  --verify <cert>  re-render from the cert's inputs and assert every frame's byteHash matches (self-verify the determinism carry)
+  --verify-cache <cert> [--sample <n>]  spot-audit: re-render a SAMPLE of the certified frames, confirm byteHash
   --trace <file>   replay an InputTrace and bake it (machine scenes, §A.6)
   --state <name>   render one machine state's timeline linearly
   --force          downgrade a trace hash mismatch to a warning
@@ -960,6 +965,65 @@ async function main(): Promise<void> {
     }
     cache = { dir, mode, ...(maxSize !== undefined ? { maxSize } : {}) };
   }
+
+  // 0.62 --certify / --cert-cache / --verify / --verify-cache. The verify paths run
+  // INSTEAD of a render (re-render → byteHash-match = the determinism carry keyed by
+  // cert). --cert-cache[=<dir>] enables the content-addressed render cache.
+  if (flags.has('verify') || flags.has('verify-cache')) {
+    const certPath = flags.get('verify') || flags.get('verify-cache');
+    if (!certPath) fail('--verify / --verify-cache needs a cert manifest path (e.g. --verify out.cert.json)');
+    let sample: number | undefined;
+    if (flags.has('verify-cache')) {
+      const sFlag = flags.get('sample');
+      if (sFlag !== undefined && sFlag !== '') {
+        if (!/^\d+$/.test(sFlag) || Number(sFlag) < 1) fail(`--sample must be a positive integer, got '${sFlag}'`);
+        sample = Number(sFlag);
+      }
+    }
+    try {
+      const { verifyCert } = await import('./render.js');
+      const res = await verifyCert({
+        modulePath,
+        certPath: certPath!,
+        ...(sample !== undefined ? { sample } : {}),
+        ...(flags.has('locale') && flags.get('locale') ? { locale: flags.get('locale')! } : {}),
+        ...(flags.has('strict') ? { strictFonts: true } : {}),
+        ...(flags.has('allow-system-fonts') ? { allowSystemFonts: true } : {}),
+      });
+      if (!res.baseMatches) {
+        process.stderr.write('verify: WARNING — re-derived cert base does not match the manifest (an input drifted)\n');
+      }
+      if (res.mismatches.length > 0) {
+        for (const m of res.mismatches) {
+          process.stderr.write(`verify: frame ${m.i} MISMATCH — cert ${m.expected.slice(0, 12)} != render ${m.got.slice(0, 12)}\n`);
+        }
+        fail(`verify FAILED: ${res.mismatches.length}/${res.checked} frame(s) diverged (a determinism break)`);
+      }
+      process.stderr.write(
+        `verify ok: ${res.ok}/${res.checked} frame${res.checked === 1 ? '' : 's'} byte-match the cert` +
+          `${res.baseMatches ? '' : ' (base drift — see warning)'}\n`,
+      );
+      return;
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // --cert-cache[=<dir>] [--cert-cache-mode <m>]: the content-addressed render cache.
+  let certCache: { dir: string; mode: import('./cert.js').CertCacheMode } | undefined;
+  if (flags.has('cert-cache')) {
+    const dir = flags.get('cert-cache') || '.gscertcache';
+    const modeFlag = flags.get('cert-cache-mode');
+    let mode: import('./cert.js').CertCacheMode = 'read-write';
+    if (modeFlag !== undefined && modeFlag !== '') {
+      if (modeFlag !== 'read-write' && modeFlag !== 'read-only' && modeFlag !== 'off') {
+        fail(`--cert-cache-mode must be read-write|read-only|off, got '${modeFlag}'`);
+      }
+      mode = modeFlag;
+    }
+    certCache = { dir, mode };
+  }
+
   if (flags.has('watch')) {
     process.stderr.write('note: --watch is not yet implemented in this release; rendering once\n');
   }
@@ -1004,6 +1068,8 @@ async function main(): Promise<void> {
       ...(flags.has('incremental') ? { incremental: true } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
+      ...(flags.has('certify') ? { certify: true } : {}),
+      ...(certCache !== undefined ? { certCache } : {}),
       captions: parseCaptionsModeOrFail(flags.get('captions')),
       narration: flags.get('narration') === 'off' ? ('off' as const) : ('auto' as const),
       music: flags.get('music') === 'off' ? ('off' as const) : ('auto' as const),

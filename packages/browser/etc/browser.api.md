@@ -9,6 +9,7 @@ import { Camera } from '@glissade/scene/motion';
 import { camera } from '@glissade/scene/motion';
 import { CameraError } from '@glissade/scene/motion';
 import { Canvas2DBackend } from '@glissade/backend-canvas2d';
+import { certKey } from '@glissade/scene/diagnostics';
 import { Change } from '@glissade/scene/diagnostics';
 import { ChangeOp } from '@glissade/scene/diagnostics';
 import { ChangeSet } from '@glissade/scene/diagnostics';
@@ -87,6 +88,7 @@ import { RevealResult } from '@glissade/scene/type';
 import { revealWords } from '@glissade/scene/type';
 import { Row } from '@glissade/scene/layout-ctors';
 import { SceneDiagnostic } from '@glissade/scene/diagnostics';
+import { sceneHash } from '@glissade/scene/diagnostics';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
 import { shake } from '@glissade/scene/motion';
 import { shakeOffset } from '@glissade/scene/motion';
@@ -94,6 +96,7 @@ import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { sparks } from '@glissade/scene/motion';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
+import { timelineHash } from '@glissade/scene/diagnostics';
 import { typeOn } from '@glissade/scene/type';
 import { TypeOnOpts } from '@glissade/scene/type';
 import { TypeOnResult } from '@glissade/scene/type';
@@ -109,6 +112,8 @@ export { camera }
 export { CameraError }
 
 export { Canvas2DBackend }
+
+export { certKey }
 
 export { Change }
 
@@ -266,6 +271,8 @@ export { Row }
 
 export { SceneDiagnostic }
 
+export { sceneHash }
+
 export { setShaderRunner }
 
 export { shake }
@@ -279,6 +286,8 @@ export { sparks }
 export { splitText }
 
 export { Stack }
+
+export { timelineHash }
 
 export { typeOn }
 

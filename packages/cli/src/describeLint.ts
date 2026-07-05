@@ -101,6 +101,12 @@ const EXEMPT_INTERNALS = new Set<string>([
   'diffDisplayLists', 'formatDisplayDiff', 'serializeDisplayList', 'parseDisplaySnapshot', 'DL_SNAPSHOT_VERSION',
   'auditCacheCold', 'collectTextUsages', 'collectLocalizedTextUsages', 'validateSceneFonts',
   'nearestId', 'levenshtein', 'sortDiagnostics',
+  // 0.62 certKey internals on /diagnostics: the SHARED canonical serialization
+  // (canonicalSceneForm/canonicalTimelineForm — lower-level than the surfaced
+  // certKey/sceneHash/timelineHash) and the pure-TS SHA-256 (certSha256/
+  // certSha256Bytes — a hash primitive, not authoring surface). The author reaches
+  // certKey/sceneHash/timelineHash (surfaced); these are the machinery beneath.
+  'canonicalSceneForm', 'canonicalTimelineForm', 'certSha256', 'certSha256Bytes',
 ]);
 
 /**

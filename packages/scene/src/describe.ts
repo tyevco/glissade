@@ -341,6 +341,16 @@ const SURFACE_DIAGNOSTICS: { name: string; arity: number }[] = [
  */
 const SURFACE_TOOLS: { name: string; arity: number }[] = [
   { name: 'diff', arity: 2 },
+  // 0.62: certKey(scene, timeline?) — the pure semantic content-address (= the
+  // scene+timeline half of the render certificate). An OPERATION returning an
+  // ADDRESS (the "will this be a cache hit?" primitive), not a problem list — so
+  // kind:'tool' like diff, never kind:'diagnostic'. Consistent with diff by
+  // construction (shared canonicalization). timeline is optional (arity 1 required).
+  { name: 'certKey', arity: 1 },
+  // 0.62: the two halves of certKey, exposed so an author can inspect WHICH half
+  // (scene vs timeline) changed. Pure semantic-hash operations (kind:'tool').
+  { name: 'sceneHash', arity: 1 },
+  { name: 'timelineHash', arity: 1 },
 ];
 
 /**

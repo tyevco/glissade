@@ -105,7 +105,7 @@ export interface CaptionProbe {
 // @public
 export function clearFrameCache(dir: string): void;
 
-// @public (undocumented)
+// @public
 export function collectAudioClips(opts: Pick<RenderOptions, 'modulePath' | 'narration' | 'music' | 'sfx' | 'locale'>, timelineClips: AudioClip[]): Promise<AudioClip[]>;
 
 // @public
@@ -626,6 +626,11 @@ export interface RenderOptions {
         maxSize?: number;
     };
     captions?: 'burn' | 'sidecar' | 'off';
+    certCache?: {
+        dir: string;
+        mode: CertCacheMode;
+    };
+    certify?: boolean;
     chapterKinds?: ReadonlySet<string>;
     chapters?: 'vtt' | 'off';
     force?: boolean;
@@ -796,10 +801,14 @@ export interface VideoInfo {
     width: number;
 }
 
-// @public (undocumented)
+// @public
 export class VideoProbeError extends Error {
     constructor(path: string, detail: string);
 }
+
+// Warnings were encountered during analysis:
+//
+// dist/index.d.ts:288:5 - (ae-forgotten-export) The symbol "CertCacheMode" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

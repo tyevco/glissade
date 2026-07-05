@@ -223,7 +223,15 @@ vdescribe('describe() surface taxonomy', () => {
   it('surfaces diff() as a kind:tool iife function', () => {
     const byName = new Map(m.surface!.map((e) => [e.name, e]));
     expect(byName.get('diff')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 2 });
-    expect(m.surface!.filter((e) => e.kind === 'tool').map((e) => e.name)).toEqual(['diff']);
+    // 0.62 certKey (+ its sceneHash/timelineHash halves) join diff as kind:'tool'
+    // OPERATIONS (return an address/changeset, not a problem list).
+    expect(byName.get('certKey')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 1 });
+    expect(m.surface!.filter((e) => e.kind === 'tool').map((e) => e.name)).toEqual([
+      'certKey',
+      'diff',
+      'sceneHash',
+      'timelineHash',
+    ]);
   });
 
   it('every surface value name corresponds to a described node, helper, core callable, fundamental, or value object (no phantoms)', () => {

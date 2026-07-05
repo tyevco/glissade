@@ -187,6 +187,14 @@ export {
   type ExportFidelityResult,
 } from '@glissade/scene/diagnostics';
 export { emitWithIds, type EmitWithIdsResult, type NodeIdStream } from '@glissade/scene/identity';
+// 0.62 — certKey(scene, timeline?) on window.glissade (kind:'tool'): the pure
+// semantic content-address (= sceneHash · timelineHash, NO render) a no-build author
+// queries as "will this render be a cache hit?" BEFORE spending the render farm. The
+// certify layer's author-facing primitive; joins diff on the tree-shakeable
+// @glissade/scene/diagnostics subpath, OFF the SACRED base embed. Consistent with
+// diff by construction (shared canonicalScene). sceneHash/timelineHash ride along so
+// an author can inspect either half.
+export { certKey, sceneHash, timelineHash } from '@glissade/scene/diagnostics';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified
 // snippet per node/builder method/helper — the no-build agent's primary

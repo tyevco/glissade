@@ -107,6 +107,23 @@ export interface RenderOptions {
    */
   cache?: { dir: string; mode: import('./frameCache.js').CacheMode; maxSize?: number };
   /**
+   * --certify (0.62): emit the per-frame determinism certificate manifest
+   * (`<out>.cert.json`) + the audio-cert, and (when a cert cache is enabled)
+   * populate the content-addressed render cache. Additive READ — the render path
+   * is byte-identical to a non-certified render (the cert reads the bytes, never
+   * alters them). Off by default.
+   */
+  certify?: boolean;
+  /**
+   * --cert-cache [<dir>] (0.62): the LOCAL content-addressed render cache keyed by
+   * certHash (a PURE fn of inputs — computed WITHOUT rendering). Per-frame: a HIT
+   * serves the pinned artifact bytes (SKIPS evaluate+render), a MISS renders +
+   * stores {bytes, byteHash}. A HIT is byte-identical to a cold render (certHash
+   * captures every byte-determinant). Distinct from `--cache` (the §3.5 RGBA cache
+   * keyed by the post-evaluate DisplayList). Off by default.
+   */
+  certCache?: { dir: string; mode: import('./cert.js').CertCacheMode };
+  /**
    * --locale <code> (0.14 localization core): resolve the scene against a
    * per-locale message table (`messages.<code>.json`) and prefer the
    * locale-tagged narration sibling (`<base>.<code>.narration.timing.json`).
@@ -735,6 +752,39 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     );
   }
 
+  // ── 0.62 determinism CERTIFY + content-addressed render cache (opt-in) ────
+  // Additive READ: build the frame-INDEPENDENT video-cert base ONCE, then per
+  // frame compute certHash (PURE fn of inputs — no render). With a cert cache: a
+  // HIT serves pinned bytes (skips evaluate+render); a MISS renders + stores. The
+  // render bytes are UNCHANGED vs a non-certified render. certActive=false → the
+  // exact current baseline (goldens byte-identical).
+  const certActive = !!(opts.certify || (opts.certCache && opts.certCache.mode !== 'off'));
+  let certBase: import('./cert.js').VideoCertBase | undefined;
+  let certCache: import('./cert.js').CertCache | undefined;
+  const frameCerts: import('./cert.js').FrameCertRecord[] = [];
+  if (certActive) {
+    const cert = await import('./cert.js');
+    const { capsId } = await import('./frameCache.js');
+    certBase = await cert.buildVideoCertBase({
+      scene,
+      doc,
+      assetDigests,
+      capsId: capsId(backend.caps),
+      captionBurnMode: captionsMode,
+      narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),
+      renderConfig: {
+        width: scene.size.w,
+        height: scene.size.h,
+        pixelFormat: 'rgba8-straight',
+        imageSmoothing: true,
+      },
+      root: process.cwd(),
+    });
+    if (opts.certCache && opts.certCache.mode !== 'off') {
+      certCache = new cert.CertCache(opts.certCache);
+    }
+  }
+
   // ── 0.27 audio-only REMUX fast path (video + cache) ──────────────────────
   // A prior render leaves a manifest of the ordered per-frame content-key digest
   // beside the output. A key-only pre-pass (evaluate + hash, NO raster) recomputes
@@ -794,29 +844,51 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
 
   const frameKeys: string[] = []; // per-frame content keys, collected for the manifest
   if (!remuxDigest) {
+    const certMod = certActive ? await import('./cert.js') : undefined;
     for (let f = firstFrame; f <= lastFrame; f++) {
-      // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
-      const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
       let pngBytes: Buffer | undefined;
-      if (frameCache && keyCtx) {
-        const { frameCacheKey } = await import('./frameCache.js');
-        const key = frameCacheKey(dl, keyCtx);
-        frameKeys.push(key);
-        const cached = frameCache.get(key);
-        if (cached) {
-          // HIT: blit the stored RGBA into the backend, then encode via the EXACT
-          // same path a miss takes → byte-identical to a cold render.
-          backend.putPixels(cached);
-          pngBytes = backend.encodePng();
+      // 0.62 cert-cache: certHash is PURE (no evaluate). A HIT serves pinned bytes
+      // and SKIPS evaluate+render entirely — the lookup-before-you-spend property.
+      let certHash: string | undefined;
+      if (certActive && certBase && certMod) {
+        certHash = certMod.computeCertHash(certBase, certMod.frameKeyFor(f, fps));
+        const hit = certCache?.get(certHash);
+        if (hit) pngBytes = hit.bytes;
+      }
+      if (pngBytes === undefined) {
+        // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
+        const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+        if (frameCache && keyCtx) {
+          const { frameCacheKey } = await import('./frameCache.js');
+          const key = frameCacheKey(dl, keyCtx);
+          frameKeys.push(key);
+          const cached = frameCache.get(key);
+          if (cached) {
+            // HIT: blit the stored RGBA into the backend, then encode via the EXACT
+            // same path a miss takes → byte-identical to a cold render.
+            backend.putPixels(cached);
+            pngBytes = backend.encodePng();
+          } else {
+            backend.render(dl);
+            pngBytes = backend.encodePng();
+            // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
+            frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
+          }
         } else {
           backend.render(dl);
           pngBytes = backend.encodePng();
-          // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
-          frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
         }
-      } else {
-        backend.render(dl);
-        pngBytes = backend.encodePng();
+      }
+      // 0.62: record the per-frame cert + populate the content-addressed cache. The
+      // byteHash IS the determinism carry keyed by cert (spot-audited by --verify-cache).
+      if (certActive && certBase && certMod && certHash !== undefined) {
+        certCache?.put(certHash, pngBytes);
+        frameCerts.push({
+          i: f,
+          frameKey: certMod.frameKeyFor(f, fps),
+          certHash,
+          byteHash: certMod.byteHashOf(pngBytes),
+        });
       }
       const file = singleFile ? resolve(opts.out) : join(framesDir, `frame-${String(f).padStart(5, '0')}.png`);
       writeFileSync(file, pngBytes);
@@ -836,6 +908,37 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // the digest to record in the manifest (loop path only; remux reuses the prior)
   const newDigest = frameCache && !remuxDigest && frameKeys.length === total ? frameKeyDigest(frameKeys) : undefined;
   for (const source of videoSources) source.close();
+
+  // 0.62 --certify: emit the per-frame video-cert manifest + the SEPARATE audio-cert
+  // beside the output. The video-cert has NO audio determinant (invariant
+  // video≠f(audio)); the audio-cert keys the audio artifact independently.
+  if (certActive && opts.certify && certBase && frameCerts.length > 0) {
+    const cert = await import('./cert.js');
+    const manifest: import('./cert.js').VideoCertManifest = {
+      certVersion: cert.CERT_VERSION,
+      kind: 'video',
+      fps,
+      base: certBase,
+      frames: frameCerts,
+    };
+    const manifestPath = cert.certManifestPathFor(resolve(opts.out));
+    mkdirSync(dirname(manifestPath), { recursive: true });
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    // the audio-cert (per-stream split): narration audio + music + sfx + loudness,
+    // NONE of which the video-cert depends on. Built from the sibling audio sidecars.
+    const audioCert = await buildAudioCert(opts, compiled.audio ?? []);
+    const audioPath = `${resolve(opts.out).replace(/\/$/, '')}.audio-cert.json`;
+    writeFileSync(audioPath, `${JSON.stringify(audioCert, null, 2)}\n`);
+    process.stderr.write(
+      `certify: ${frameCerts.length} frame cert${frameCerts.length === 1 ? '' : 's'} → ${manifestPath}` +
+        (certCache ? ` (cache: ${JSON.stringify(certCache.getStats())} → ${opts.certCache!.dir})` : '') +
+        `\n`,
+    );
+  } else if (certCache && !opts.certify) {
+    process.stderr.write(
+      `cert-cache (${opts.certCache!.mode}): ${JSON.stringify(certCache.getStats())} → ${opts.certCache!.dir}\n`,
+    );
+  }
 
   // burn and sidecar modes both emit .srt/.vtt — the cues come from the same
   // timing manifest as the burned track, so they match by construction
@@ -950,6 +1053,139 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     });
   }
   return { frames: total, out: outAbs };
+}
+
+/**
+ * Build the SEPARATE audio-cert (the per-stream split): narration-audio + music +
+ * sfx + loudness. NONE of these are in the video-cert — an audio-only re-master
+ * busts THIS cert but leaves the video-cert (and its frame cache) untouched
+ * (invariant `video ≠ f(audio)`, preserving the 0.27 remux win). Hashes the sibling
+ * audio sidecars' bytes + the loudness mode + the compiled audio clip descriptors.
+ */
+async function buildAudioCert(
+  opts: RenderOptions,
+  audioClips: readonly AudioClip[],
+): Promise<import('./cert.js').AudioCert> {
+  const cert = await import('./cert.js');
+  const stem = opts.modulePath.replace(/\.[jt]sx?$/, '');
+  const sib = (suffix: string): string => cert.narrationTimingHash(`${stem}${suffix}`);
+  // narration AUDIO artifact: hash the voice source-of-truth sidecar (the timing
+  // manifest references the take). music/sfx: their sidecars. A change to any of
+  // these moves the audio-cert only.
+  const narrationAudioHash = cert.narrationTimingHash(
+    opts.locale ? `${stem}.${opts.locale}.narration.timing.json` : `${stem}.narration.timing.json`,
+  );
+  const musicHash = sib('.music.timing.json');
+  const sfxHash = sib('.sfx.timing.json');
+  const loudness = `${opts.loudness ?? 'auto'}|${cert.narrationTimingHash(`${stem}.loudness.json`)}`;
+  // fold the compiled clip descriptors so an in-doc audio edit (offset/gain) moves it too.
+  const clipsDigest = cert.byteHashOf(Buffer.from(JSON.stringify(audioClips)));
+  const base = { narrationAudioHash, musicHash, sfxHash, loudness: `${loudness}|clips:${clipsDigest}` };
+  return {
+    certVersion: cert.CERT_VERSION,
+    kind: 'audio',
+    ...base,
+    certHash: cert.computeAudioCertHash(base),
+  };
+}
+
+/** Options for `gs render --verify <cert>` / `--verify-cache`. */
+export interface VerifyCertOptions {
+  modulePath: string;
+  /** the video-cert manifest path. */
+  certPath: string;
+  /** spot-audit: re-render at most N sampled frames (default: all). */
+  sample?: number;
+  locale?: string;
+  strictFonts?: boolean;
+  allowSystemFonts?: boolean;
+}
+
+export interface VerifyCertResult {
+  checked: number;
+  ok: number;
+  /** frames whose re-render byteHash did NOT match the certified byteHash (a determinism break). */
+  mismatches: { i: number; expected: string; got: string }[];
+  /** true iff the re-derived video-cert base matches the manifest's base. */
+  baseMatches: boolean;
+}
+
+/**
+ * `gs render --verify <cert>` (self-verify = the determinism carry keyed by cert)
+ * and `--verify-cache` (spot-audit a SAMPLE). Re-renders the certified frames from
+ * the SAME scene inputs and asserts each re-render's byteHash matches the cert's —
+ * a mismatch is a determinism break (the b4e6060006 alarm). Also re-derives the
+ * video-cert base and confirms it reconciles with the manifest (an input drifted).
+ */
+export async function verifyCert(opts: VerifyCertOptions): Promise<VerifyCertResult> {
+  const cert = await import('./cert.js');
+  const manifest = cert.loadVideoCertManifest(opts.certPath);
+  const fps = manifest.fps;
+
+  const mod = await loadSceneModule(opts.modulePath, opts.locale);
+  const scene = mod.createScene();
+  const { resolveRenderDoc } = await import('./machines.js');
+  let doc = resolveRenderDoc(mod, scene, {});
+  if (opts.locale) {
+    const { loadMessageTable } = await import('./locale.js');
+    const table = loadMessageTable(opts.modulePath, opts.locale);
+    if (table) {
+      const { localize, getConsumedMessageIds } = await import('@glissade/core/i18n');
+      doc = localize(doc, table, { locale: opts.locale, consumedIds: getConsumedMessageIds() });
+    }
+  }
+  // hide caption node for non-burn modes so re-render matches the certified burn mode
+  const { hideCaptionsDoc, timingPathFor } = await import('./captions.js');
+  if (manifest.base.captionBurnMode !== 'burn' && scene.resolveTarget('captions/opacity') !== undefined) {
+    doc = hideCaptionsDoc(doc);
+  }
+
+  const backend = new SkiaBackend(scene.size.w, scene.size.h);
+  const { assetDigests } = await prepareSkiaRenderEnv({
+    scene,
+    doc,
+    backend,
+    modulePath: opts.modulePath,
+    ...(opts.strictFonts !== undefined ? { strictFonts: opts.strictFonts } : {}),
+    ...(opts.allowSystemFonts !== undefined ? { allowSystemFonts: opts.allowSystemFonts } : {}),
+    ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+  });
+
+  // re-derive the video-cert base and reconcile with the manifest (input-drift check).
+  const { capsId } = await import('./frameCache.js');
+  const rederivedBase = await cert.buildVideoCertBase({
+    scene,
+    doc,
+    assetDigests,
+    capsId: capsId(backend.caps),
+    captionBurnMode: manifest.base.captionBurnMode,
+    narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),
+    renderConfig: manifest.base.renderConfig,
+    root: process.cwd(),
+  });
+  const baseMatches = JSON.stringify(rederivedBase) === JSON.stringify(manifest.base);
+
+  // choose the frames to re-render (all, or an evenly-spaced sample for --verify-cache)
+  let frames = manifest.frames;
+  if (opts.sample !== undefined && opts.sample > 0 && opts.sample < frames.length) {
+    const step = frames.length / opts.sample;
+    const picked: typeof frames = [];
+    for (let k = 0; k < opts.sample; k++) picked.push(frames[Math.floor(k * step)]!);
+    frames = picked;
+  }
+
+  const mismatches: { i: number; expected: string; got: string }[] = [];
+  let okCount = 0;
+  for (const rec of frames) {
+    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, rec.i / fps));
+    backend.render(dl);
+    const png = backend.encodePng();
+    const got = cert.byteHashOf(png);
+    if (got === rec.byteHash) okCount++;
+    else mismatches.push({ i: rec.i, expected: rec.byteHash, got });
+  }
+  backend.dispose();
+  return { checked: frames.length, ok: okCount, mismatches, baseMatches };
 }
 
 /**

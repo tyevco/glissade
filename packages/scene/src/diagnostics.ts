@@ -97,3 +97,21 @@ export {
 } from './diff.js';
 
 export { exportFidelity, type ExportFidelityResult } from './fidelity.js';
+
+// 0.62 — certKey(scene, timeline?): the PURE semantic content-address (kind:'tool',
+// NOT a diagnostic — it returns an ADDRESS, not a problem list). = sha256(sceneHash ·
+// timelineHash), NO raster render. The "will this render be a cache hit?" primitive
+// the certify layer (gs render --certify + the content-addressed render cache) keys
+// on. Consistent with diff(a,b) BY CONSTRUCTION — both read canonicalScene.ts's ONE
+// canonicalization: `certKey(A)===certKey(B) ⟺ diff(A,B).empty`. sceneHash/
+// timelineHash are exposed so the CLI cert folds the SAME hashes (never a second
+// canonicalization). All OFF the base scene index; re-exported onto the browser IIFE.
+export {
+  certKey,
+  sceneHash,
+  timelineHash,
+  canonicalSceneForm,
+  canonicalTimelineForm,
+  sha256 as certSha256,
+  sha256Bytes as certSha256Bytes,
+} from './canonicalScene.js';
