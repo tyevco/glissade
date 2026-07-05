@@ -448,6 +448,15 @@ export interface VideoCertBaseInputs {
    * returns this. Used to decide `complete` (font-completeness).
    */
   registeredFamilies: ReadonlySet<string>;
+  /**
+   * The font families the render ACTUALLY DRAWS across the certified frame grid
+   * (case-folded) — every `fillText` family collected by the DL-sample pre-pass
+   * (see `collectDrawnFontFamilies` in render.ts). This is the eval-time truth, so
+   * it catches STATIC text AND TRACK-DRIVEN captions (a captionNode whose text is
+   * empty at construction but populated by a `Track<string>` at eval time — a
+   * static scene-walk misses it). `complete` = every drawn family is registered.
+   */
+  drawnFontFamilies: ReadonlySet<string>;
   capsId: string;
   captionBurnMode: string;
   narrationTimingPath: string | null | undefined;
@@ -457,46 +466,20 @@ export interface VideoCertBaseInputs {
 }
 
 /**
- * The set of font families the scene's Text nodes DRAW (a non-empty `.text()`).
- *
- * PROXY check (video-canary blessed): walk the scene for text-drawing nodes and
- * collect their resolved font families. We use a STRUCTURAL (duck-typed) walk over
- * `scene.nodes` — a node with a string `fontFamily` and a callable `text()`
- * returning a non-empty string is a drawing Text node — deliberately NOT
- * `collectTextUsages`'s `instanceof Text` check: the scene module is loaded through
- * jiti, which can resolve `@glissade/scene` to a DIFFERENT class instance than the
- * cert's, so an `instanceof` walk silently returns EMPTY across that boundary and
- * would OVER-mark `complete:true` — re-enabling the exact false-HIT this fix closes.
- * The structural walk is identity-independent, so it is correct across jiti.
- *
- * PROXY (not a precise fillText DL-walk) because `buildVideoCertBase` runs BEFORE
- * the frame loop — the render DisplayLists don't exist yet, so a fillText-font walk
- * would be an intrusive reorder. The proxy OVER-marks incomplete when a Text node
- * never actually draws (reveal=0 / opacity=0 / off-canvas) → a needless cache MISS
- * = a false-MISS = SAFE (the catastrophic direction is a false-HIT, which this
- * cannot produce).
- */
-function drawnTextFamilies(scene: Scene): string[] {
-  const out: string[] = [];
-  for (const node of scene.nodes.values()) {
-    const n = node as { fontFamily?: unknown; text?: unknown };
-    if (typeof n.fontFamily !== 'string' || typeof n.text !== 'function') continue;
-    const value = (n.text as () => unknown)();
-    if (typeof value === 'string' && value) out.push(n.fontFamily);
-  }
-  return out;
-}
-
-/**
  * `complete` — does the cert fully capture EVERY font the scene DRAWS? (0.63.2.)
  * `false` when a drawn family is NOT content-addressed (a SYSTEM family, or a
  * partial capture) — its glyph bytes aren't in fontDigest, so a font/system change
  * can't move certHash → such a cert must never read/write the render cache. A scene
- * with no drawn text → `true` (legitimately no font determinant). `registeredFamilies`
- * is case-folded (as `prepareSkiaRenderEnv` emits), so we compare lower-cased.
+ * that draws no text → the drawn set is EMPTY → `true` (legitimately no font
+ * determinant). `drawnFontFamilies` comes from the eval-time DL-sample pre-pass (so
+ * track-driven captions are seen); both sets are case-folded, so we compare
+ * lower-cased (idempotent — already lower-cased upstream).
  */
-function fontComplete(drawnFamilies: readonly string[], registeredFamilies: ReadonlySet<string>): boolean {
-  for (const family of drawnFamilies) {
+export function fontComplete(
+  drawnFontFamilies: ReadonlySet<string>,
+  registeredFamilies: ReadonlySet<string>,
+): boolean {
+  for (const family of drawnFontFamilies) {
     if (!registeredFamilies.has(family.toLowerCase())) return false;
   }
   return true;
@@ -519,7 +502,7 @@ export async function buildVideoCertBase(inputs: VideoCertBaseInputs): Promise<V
     toolchainHash: toolchainHash(inputs.root),
     backendHash: backendHash(inputs.capsId),
     renderConfig: inputs.renderConfig,
-    complete: fontComplete(drawnTextFamilies(inputs.scene), inputs.registeredFamilies),
+    complete: fontComplete(inputs.drawnFontFamilies, inputs.registeredFamilies),
   };
 }
 

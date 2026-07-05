@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.63.1"
   },
   "changesets": [
-    "cert-completeness-fontDigest"
+    "cert-completeness-fontDigest",
+    "cert-completeness-track-driven"
   ]
 }

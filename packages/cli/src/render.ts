@@ -579,6 +579,50 @@ export async function prepareSkiaRenderEnv(o: PrepareRenderEnvOptions): Promise<
   return { assetDigests, videoSources, registeredFamilies };
 }
 
+/**
+ * 0.63.2 pre.1 — the DRAWN-FONT pre-pass that feeds the cert `complete` flag.
+ *
+ * Evaluates the EXACT certified frame grid (`firstFrame..lastFrame` at `t=i/fps` —
+ * the SAME frames the cert cache keys) and collects the font family of every
+ * `fillText` the render actually DRAWS (lower-cased, to match `registeredFamilies`'
+ * case-folding). This is the eval-time truth, so it catches STATIC text AND
+ * TRACK-DRIVEN captions — a captionNode whose `text` is empty at construction but
+ * populated by a `Track<string>` at eval time, which a construction-time scene-walk
+ * would MISS (→ empty fontDigest + `complete:true` for a text-drawing scene = the
+ * silent false-HIT this fix closes). It scans the FULL certified range (never a
+ * subset — a caption that draws only in an unsampled frame would under-mark → a
+ * false-HIT, the catastrophic direction).
+ *
+ * RENDER-NEUTRAL: `evaluate(scene, doc, t)` is a PURE function of time (the
+ * determinism contract) — this pre-pass only reads DisplayLists, never touches the
+ * backend, so re-evaluating the same frames in the render loop afterward yields
+ * byte-identical bytes (the 415 goldens + the render-neutrality test prove it). Runs
+ * under the SAME determinism guards as the render loop. Early-exits the instant a
+ * drawn family is NOT registered (`complete` is already decidably false) — a pure,
+ * deterministic optimization (the completeness verdict is order-independent).
+ */
+function collectDrawnFontFamilies(
+  scene: ReturnType<SceneModule['createScene']>,
+  doc: import('@glissade/core').Timeline,
+  fps: number,
+  firstFrame: number,
+  lastFrame: number,
+  registeredFamilies: ReadonlySet<string>,
+): Set<string> {
+  const drawn = new Set<string>();
+  for (let f = firstFrame; f <= lastFrame; f++) {
+    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+    for (const cmd of dl.commands) {
+      if (cmd.op !== 'fillText') continue;
+      const family = cmd.font.family.toLowerCase();
+      drawn.add(family);
+      // already incomplete → the verdict can't change; stop (deterministic).
+      if (!registeredFamilies.has(family)) return drawn;
+    }
+  }
+  return drawn;
+}
+
 export async function render(opts: RenderOptions): Promise<{ frames: number; out: string }> {
   const mod = await loadSceneModule(opts.modulePath, opts.locale);
   const scene = mod.createScene();
@@ -765,11 +809,17 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   if (certActive) {
     const cert = await import('./cert.js');
     const { capsId } = await import('./frameCache.js');
+    // 0.63.2 pre.1: the DL-sample pre-pass over the certified grid — resolves the
+    // fonts the render actually DRAWS (static + track-driven captions) so `complete`
+    // is truthful. Render-neutral (a pure eval read); runs before the frame loop
+    // because `complete` gates the per-frame cache decision inside it.
+    const drawnFontFamilies = collectDrawnFontFamilies(scene, doc, fps, firstFrame, lastFrame, registeredFamilies);
     certBase = await cert.buildVideoCertBase({
       scene,
       doc,
       assetDigests,
       registeredFamilies,
+      drawnFontFamilies,
       capsId: capsId(backend.caps),
       captionBurnMode: captionsMode,
       narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),
@@ -1162,12 +1212,20 @@ export async function verifyCert(opts: VerifyCertOptions): Promise<VerifyCertRes
   });
 
   // re-derive the video-cert base and reconcile with the manifest (input-drift check).
+  // Re-run the same DL-sample pre-pass over the FULL certified grid (manifest.frames
+  // is the contiguous certified range) so the re-derived `complete` matches by
+  // construction — NOT the --sample subset (that only limits the byteHash re-render).
   const { capsId } = await import('./frameCache.js');
+  const certifiedFrames = manifest.frames.map((f) => f.i);
+  const firstFrame = certifiedFrames.length > 0 ? Math.min(...certifiedFrames) : 0;
+  const lastFrame = certifiedFrames.length > 0 ? Math.max(...certifiedFrames) : -1;
+  const drawnFontFamilies = collectDrawnFontFamilies(scene, doc, fps, firstFrame, lastFrame, registeredFamilies);
   const rederivedBase = await cert.buildVideoCertBase({
     scene,
     doc,
     assetDigests,
     registeredFamilies,
+    drawnFontFamilies,
     capsId: capsId(backend.caps),
     captionBurnMode: manifest.base.captionBurnMode,
     narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),

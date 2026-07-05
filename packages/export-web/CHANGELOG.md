@@ -1,5 +1,13 @@
 # @glissade/export-web
 
+## 0.63.2-pre.1
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.63.2-pre.1
+- @glissade/core@0.63.2-pre.1
+- @glissade/scene@0.63.2-pre.1
+
 ## 0.63.2-pre.0
 
 ### Patch Changes

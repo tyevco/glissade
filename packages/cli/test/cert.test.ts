@@ -30,11 +30,12 @@ import {
   buildVideoCertBase,
   byteHashOf,
   computeCertHash,
+  fontComplete,
   frameKeyFor,
   type VideoCertBase,
   type VideoCertBaseInputs,
 } from '../src/cert.js';
-import { createScene, Rect, Text } from '@glissade/scene';
+import { createScene, Rect } from '@glissade/scene';
 import { timeline } from '@glissade/core';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
@@ -274,62 +275,117 @@ describe('(d) diff.empty ⟹ byte-identical — construction-shuffle renders ide
 
 // ── 0.63.2 determinism-safety fix: font-completeness gates the render cache ──────
 
-describe('(0.63.2) complete — font-completeness (PROXY scene-walk)', () => {
-  const RC = { width: 100, height: 50, pixelFormat: 'rgba8-straight', imageSmoothing: true } as const;
-  const buildBase = (scene: ReturnType<typeof createScene>, families: string[]): Promise<VideoCertBase> => {
-    const inputs: VideoCertBaseInputs = {
-      scene,
-      doc: timeline({ tracks: [] }),
-      assetDigests: new Map(), // no font: entries → empty fontDigest
-      registeredFamilies: new Set(families), // case-folded, as prepareSkiaRenderEnv emits
-      capsId: 'caps',
-      captionBurnMode: 'burn',
-      narrationTimingPath: null,
-      renderConfig: RC,
-      root: process.cwd(),
+describe('(0.63.2) fontComplete — the completeness DECISION (pure)', () => {
+  const S = (...f: string[]) => new Set(f);
+  it('empty drawn set (no text drawn) → complete true (legitimately no font determinant)', () => {
+    expect(fontComplete(S(), S())).toBe(true);
+    expect(fontComplete(S(), S('brand'))).toBe(true);
+  });
+  it('every drawn family registered → true (case-insensitive)', () => {
+    expect(fontComplete(S('brand sans'), S('brand sans'))).toBe(true);
+    expect(fontComplete(S('Brand Sans'), S('brand sans'))).toBe(true); // drawn lower-cased on compare
+  });
+  it('any drawn family NOT registered → false (system font / partial capture)', () => {
+    expect(fontComplete(S('sans-serif'), S())).toBe(false); // system-only
+    expect(fontComplete(S('brand', 'sans-serif'), S('brand'))).toBe(false); // partial capture
+  });
+  it('buildVideoCertBase threads drawnFontFamilies into complete', async () => {
+    const RC = { width: 100, height: 50, pixelFormat: 'rgba8-straight', imageSmoothing: true } as const;
+    const scene = createScene({ size: { w: 100, h: 50 }, children: [new Rect({ id: 'r', position: [0, 0], width: 10, height: 10, fill: '#f00' })] });
+    const mk = (drawn: string[], reg: string[]): Promise<VideoCertBase> =>
+      buildVideoCertBase({
+        scene, doc: timeline({ tracks: [] }), assetDigests: new Map(),
+        registeredFamilies: new Set(reg), drawnFontFamilies: new Set(drawn),
+        capsId: 'caps', captionBurnMode: 'burn', narrationTimingPath: null, renderConfig: RC, root: process.cwd(),
+      } satisfies VideoCertBaseInputs);
+    expect((await mk([], [])).complete).toBe(true); // no drawn text
+    expect((await mk(['sans-serif'], [])).complete).toBe(false); // system font
+    expect((await mk(['brand'], ['brand'])).complete).toBe(true); // captured
+  });
+});
+
+describe('(0.63.2) complete — the DL-sample pre-pass sees what the render DRAWS', () => {
+  const mkText = (family: string) => `
+    import { createScene, Text } from '@glissade/scene';
+    import { timeline } from '@glissade/core';
+    const t = new Text({ id: 't', text: 'hi', fontFamily: '${family}', fontSize: 20, position: [10, 25] });
+    export default { createScene: () => createScene({ size: { w: 120, h: 60 }, children: [t] }), timeline: timeline({ tracks: [] }) };`;
+
+  it('STATIC system-font text (empty fontDigest) → complete === false', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-static-'));
+    const mod = join(dir, 'm.ts');
+    writeFileSync(mod, mkText('sans-serif'));
+    const out = join(dir, 'o');
+    await render({ modulePath: mod, out, frame: 0, format: 'png-seq', certify: true });
+    const m = readManifest(out);
+    expect(m.base.fontDigest).toBe(''); // no font: assetDigest → empty (the bug's trigger)
+    expect(m.base.complete).toBe(false); // the DL-walk saw a fillText with an uncaptured family
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a scene with NO text (pure geometry) → complete === true (NOT over-marked)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-geo-'));
+    const mod = join(dir, 'm.ts');
+    writeFileSync(mod, `
+      import { createScene, Rect } from '@glissade/scene';
+      import { timeline } from '@glissade/core';
+      const r = new Rect({ id: 'r', position: [10, 10], width: 40, height: 40, fill: '#f00' });
+      export default { createScene: () => createScene({ size: { w: 120, h: 60 }, children: [r] }), timeline: timeline({ tracks: [] }) };`);
+    const out = join(dir, 'o');
+    await render({ modulePath: mod, out, frame: 0, format: 'png-seq', certify: true });
+    const m = readManifest(out);
+    expect(m.base.fontDigest).toBe('');
+    expect(m.base.complete).toBe(true); // no fillText anywhere → no font determinant
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // ★ THE RED→GREEN acceptance target: TRACK-DRIVEN caption text. The captionNode's
+  // `text` is EMPTY at construction (a Track<string> populates it at EVAL time), so a
+  // construction-time scene-walk misses it → the old false-HIT. The DL-sample pre-pass
+  // evaluates the certified grid and SEES the caption's fillText at the frames it draws.
+  const captionMod = `
+    import { timeline } from '@glissade/core';
+    import { captionNode, captionTrack } from '@glissade/narrate';
+    import { createScene } from '@glissade/scene';
+    const SIZE = { w: 320, h: 180 };
+    const timing = {
+      timingVersion: 1, provider: 'test', providerVersion: 'test', totalDuration: 2, pauses: [],
+      segments: [{ id: 'seg-1', text: 'a track-driven caption line', start: 0.3, duration: 1.2, file: '', words: [] }],
     };
-    return buildVideoCertBase(inputs);
-  };
+    export default {
+      createScene: () => createScene({ size: SIZE, children: [captionNode(SIZE, { fontFamily: 'sans-serif' })] }),
+      timeline: timeline((tl) => { tl.tracks([captionTrack(timing)]); }, { fps: 10, duration: 2 }),
+    };`;
 
-  it('a text-DRAWING scene with only SYSTEM fonts (empty fontDigest) → complete === false', async () => {
-    const scene = createScene({
-      size: { w: 100, h: 50 },
-      children: [new Text({ id: 't', text: 'hello', fontFamily: 'sans-serif' })],
-    });
-    const cb = await buildBase(scene, []); // nothing registered
-    expect(cb.fontDigest).toBe(''); // no font: assetDigest → empty (the bug's trigger)
-    expect(cb.complete).toBe(false); // an uncaptured drawn font → NOT cacheable
+  it('★ TRACK-DRIVEN caption with an UNCAPTURED (system) font → complete === false', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-caption-'));
+    const mod = join(dir, 'cap.ts');
+    writeFileSync(mod, captionMod);
+    const out = join(dir, 'o');
+    // certify frames [0..15] @ fps 10 (t=0..1.5). The segment is active [0.3, 1.5] —
+    // frame 0 (t=0) draws NO caption; frames >=3 DO. The full-grid pre-pass catches it.
+    await render({ modulePath: mod, out, frameRange: [0, 15], format: 'png-seq', certify: true });
+    const m = readManifest(out);
+    expect(m.base.fontDigest).toBe(''); // the caption font is a SYSTEM family (uncaptured)
+    expect(m.base.complete).toBe(false); // the DL-sample saw the caption's fillText at t>=0.3
+    rmSync(dir, { recursive: true, force: true });
   });
 
-  it('a scene with NO text (pure geometry) + empty fontDigest → complete === true (NOT over-marked)', async () => {
-    const scene = createScene({
-      size: { w: 100, h: 50 },
-      children: [new Rect({ id: 'r', position: [0, 0], width: 10, height: 10, fill: '#f00' })],
-    });
-    const cb = await buildBase(scene, []);
-    expect(cb.fontDigest).toBe(''); // no fonts at all
-    expect(cb.complete).toBe(true); // legitimately no font determinant — must NOT be false
-  });
-
-  it('a text scene whose fonts are ALL registered/captured → complete === true (case-insensitive)', async () => {
-    const scene = createScene({
-      size: { w: 100, h: 50 },
-      children: [new Text({ id: 't', text: 'hi', fontFamily: 'Brand Sans' })],
-    });
-    const cb = await buildBase(scene, ['brand sans']); // registeredFamilies is case-folded
-    expect(cb.complete).toBe(true);
-  });
-
-  it('a PARTIAL capture (one registered face + one system face) → complete === false', async () => {
-    const scene = createScene({
-      size: { w: 100, h: 60 },
-      children: [
-        new Text({ id: 'a', text: 'A', fontFamily: 'Brand' }),
-        new Text({ id: 'b', text: 'B', fontFamily: 'sans-serif' }), // uncaptured
-      ],
-    });
-    const cb = await buildBase(scene, ['brand']);
-    expect(cb.complete).toBe(false);
+  it('RENDER-NEUTRALITY — the completeness pre-pass does NOT perturb the rendered bytes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-neutral-'));
+    const mod = join(dir, 'cap.ts');
+    writeFileSync(mod, captionMod);
+    // WITHOUT the pre-pass: a plain render (certActive=false → no pre-pass runs).
+    const plain = join(dir, 'plain');
+    await render({ modulePath: mod, out: plain, frameRange: [0, 15], format: 'png-seq' });
+    // WITH the pre-pass: --certify runs the DL-sample eval pass BEFORE the frame loop.
+    const certified = join(dir, 'certified');
+    await render({ modulePath: mod, out: certified, frameRange: [0, 15], format: 'png-seq', certify: true });
+    for (let i = 0; i <= 15; i++) {
+      const f = `frame-${String(i).padStart(5, '0')}.png`;
+      expect(Buffer.compare(readFileSync(join(plain, f)), readFileSync(join(certified, f)))).toBe(0);
+    }
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
