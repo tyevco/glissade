@@ -1,5 +1,60 @@
 # @glissade/scene
 
+## 0.63.0
+
+### Minor Changes
+
+- 9263f5c: **0.63 the closed-author-loop capstone** — composes the whole verification suite (validateScene + critique + parity + diff + certify) into the author→render→critique→self-fix cycle. The framework owns the _verdict_; the agent owns the _fix_.
+
+  - **`assess(scene, timeline, opts?) → { clean, diagnostics[], fixable, escalated, accepted, certKey, signature }`** (on `@glissade/scene/diagnostics` + the `window.glissade` IIFE, `kind:'tool'`) — one composed verdict: critique (which runs validateScene → the rendered pass), exportFidelity (when `exportBound`), a diff blast-radius (when a `previous` state is given), and certKey — unified, deduped, prioritized. `clean` means no error and no geometry-fixable warning remains. This is the single call an agent drives the loop from.
+  - **Per-lever `fixHints` with `fixClass: 'geometry' | 'content'`** — the meaning-preservation veto. A diagnostic offers multiple levers of different classes (TEXT_OVERFLOW: fontSize/width are geometry, "shorten text" is content); `assess()` partitions into `fixable` (a geometry lever exists → an agent may auto-apply) vs `escalated` (all levers content → a human decides). Geometry is auto-fixable; content is never auto-applied.
+  - **`accept`** (scoped-intent, subtree-matched like `offstage`) — a knowingly-accepted diagnostic (a deliberate render-only drop, a brand contrast) leaves the fixable set so the loop can converge.
+  - **`describe().recipes` + `recipe(name, props) → fragment`** — a registry of whole-scene scaffolds (lower-third, title-card, stat-reveal, cold-open) an agent discovers like it discovers nodes; every recipe validates `assess()`-clean at default props, so the loop starts near-clean.
+  - **`docs/authoring-loop.md`** + a runnable example — the agent-driven loop (author → assess → auto-apply a geometry lever → re-assess until clean-of-fixable or no-progress convergence), and the boundary: the loop closes the mechanical class unattended; a human owns meaning, truth, and aesthetic.
+
+  Additive/pure-read: all 415 goldens byte-identical, base embed unchanged (38.67/39), determinism b4e6060006 unbroken 0.20→0.63. The loop composes determinism-guarded primitives and terminates in a certificate — the invisible moat, composed into an author→verify→certify product.
+
+### Patch Changes
+
+- c7bcbc5: **0.63 fix — the meaning-veto's ESCALATE partition is now reachable.** `assess()`
+  partitioned a non-accepted warning into `escalated` only when _all_ its levers were
+  content-class (`isContentOnly`, which requires `hints.length > 0`). A warning with
+  **no** mechanical lever — `RENDER_ONLY_EXPORT` (a render-only feature that won't
+  survive Lottie export: motion-blur / echo / shake / partial-reveal) — has no
+  `fixHints`, so it fell through every partition branch and passed silently as
+  `clean: true`. The safety half of the loop (content-only / no-fix → a human decides)
+  was unreachable dead code.
+
+  The escalate rule is now broader and cleaner: **a non-accepted warning the loop
+  could not mechanically auto-close** (`severity === 'warning' && !isGeometryFixable`)
+  escalates — covering both the all-content case (the meaning veto) and the
+  no-mechanical-lever case (`RENDER_ONLY_EXPORT`, a pure human-judgment fidelity
+  decision: accept the export-fidelity loss, or restructure the scene). `escalated`
+  still never blocks `clean` — the loop has done all it mechanically can; the human
+  owns the rest. Info-level parity notes remain advisory (they don't escalate).
+
+  **And the geometry levers `assess()` DOES auto-apply are now feasibility-bounded.**
+  Previously an auto-applied geometry fix had no bounds, so the loop could converge to
+  a "clean" but unshippable result — a caption shrunk below legibility, or a wrap box
+  grown off-canvas (a readable _string_ but an unreadable _caption_). Now a geometry
+  lever is offered only while it stays in-bounds: `fontSize` will not shrink below the
+  legibility floor (`MIN_LEGIBLE_PX`, matching `fitText({ minPx })`'s default), and a
+  resize (`width` / `box.h`) will not grow past the canvas. When BOTH are out of
+  bounds, only the content lever remains → the overflow **escalates** (the meaning
+  boundary one level deeper: the loop refuses to auto-produce an unshippable caption,
+  and hands the shorten-the-text decision to a human). Estimated metrics keep both
+  levers (too coarse to drop one on). `docs/authoring-loop.md` now states the
+  ship-gate precisely: `clean` is the loop's _termination_ signal; ship iff
+  `clean && v.escalated.length === 0`.
+
+  Both halves caught by the capstone's own verification loop (edcc's SHAPE seat found
+  the dead partition; ai-training's content seat proved the unbounded-geometry gap on
+  real dialog) BEFORE release — the self-verifying engine verifying itself. Pure
+  diagnostic-metadata logic: all 415 goldens byte-identical, base embed unchanged
+  (38.67/39), determinism b4e6060006 intact.
+
+  - @glissade/core@0.63.0
+
 ## 0.63.0-pre.1
 
 ### Patch Changes
