@@ -205,6 +205,24 @@ export interface SurfaceEntry {
   form: 'constructor' | 'function' | 'object' | 'type';
   /** Documented positional-arg count for a callable (parsed from its usage), when known — absent for value objects and types. */
   arity?: number;
+  /**
+   * 0.63.1 — the OPTIONS schema for an opts-taking callable (the `opts` arg is
+   * otherwise opaque, so a no-build agent can't discover `minLegiblePx` /
+   * `exportBound` / …). Present only where a curated schema exists (`assess`,
+   * `critique`). Each entry: the option `name`, its `type` string (a value-type id
+   * or `'string[]'` / an opaque type name), an optional literal `default`, and a
+   * one-line `summary`. ADDITIVE — a manifest captured before 0.63.1 omits it.
+   */
+  options?: SurfaceOption[];
+}
+
+/** One entry in a {@link SurfaceEntry.options} schema — a single documented `opts`
+ *  field on an options-taking callable. */
+export interface SurfaceOption {
+  name: string;
+  type: string;
+  default?: string | number | boolean;
+  summary: string;
 }
 
 /** The full machine-readable manifest `describe()` returns. */
@@ -246,6 +264,14 @@ export interface ApiManifest {
    * before 0.47 (no `surface`) still type-checks.
    */
   surface?: SurfaceEntry[];
+  /**
+   * 0.63.1 — pointers to the prose GUIDES that live alongside the package (the
+   * author→verify→fix loop et al.), so a no-build agent discovers them from the
+   * manifest instead of hunting the docs site. Each entry: a `name`, a one-line
+   * `summary`, and an `href` into the docs. ADDITIVE — omitted on a manifest
+   * captured before 0.63.1.
+   */
+  guides?: { name: string; summary: string; href: string }[];
 }
 
 /**
@@ -394,6 +420,62 @@ const SURFACE_TOOLS: { name: string; arity: number }[] = [
 const SURFACE_TYPE_ONLY = ['Paint', 'PathValue', 'FontAxes'];
 
 /**
+ * 0.63.1 — curated OPTIONS schemas for the opts-taking diagnostic/tool callables,
+ * keyed by surface name and attached in {@link buildSurface}. The `opts` arg is
+ * otherwise opaque on the manifest, so a no-build agent can't discover the knobs
+ * (`minLegiblePx`/`exportBound`/…). Field names + types mirror `AssessOptions`
+ * (extends `CritiqueOptions`) and `CritiqueOptions` exactly. Declared as a typed
+ * map (NOT a `satisfies` over conditional spreads) so each literal keeps its field
+ * types narrowed under `tsc --noEmit`.
+ */
+const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
+  assess: [
+    {
+      name: 'minLegiblePx',
+      type: 'number',
+      default: 6,
+      summary:
+        "legibility floor in px; the fontSize auto-fix won't shrink text below this — an overflow that can't fit at ≥ this size escalates instead of auto-shrinking",
+    },
+    {
+      name: 'exportBound',
+      type: 'boolean',
+      default: false,
+      summary: 'fold export-fidelity (RENDER_ONLY_EXPORT) diagnostics into the verdict',
+    },
+    {
+      name: 'accepted',
+      type: 'string[]',
+      summary: "diagnostic codes / node ids / '<code>@<node>' to accept as known residual, removed from fixable",
+    },
+    {
+      name: 'previous',
+      type: 'SceneState',
+      summary: 'prior {scene,timeline} — attaches a diff blast-radius',
+    },
+  ],
+  critique: [
+    {
+      name: 'minLegiblePx',
+      type: 'number',
+      default: 6,
+      summary:
+        "legibility floor in px; the fontSize auto-fix won't shrink text below this — an overflow that can't fit at ≥ this size escalates instead of auto-shrinking",
+    },
+    {
+      name: 'fps',
+      type: 'number',
+      summary: 'frame-sampling rate for the rendered pass',
+    },
+    {
+      name: 'offstage',
+      type: 'string[]',
+      summary: 'node ids whose off-canvas is intentional — suppressed',
+    },
+  ],
+};
+
+/**
  * Assemble the {@link SurfaceEntry} taxonomy from the same curated registries the
  * rest of the manifest is built from (node factories + {@link HELPERS} + the core
  * callables), so it can't drift. Deterministic: deduped by name, sorted.
@@ -414,7 +496,12 @@ function buildSurface(): SurfaceEntry[] {
   const seen = new Set<string>();
   return out
     .filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => {
+      // 0.63.1: attach the curated options schema for opts-taking callables.
+      const options = SURFACE_OPTIONS[e.name];
+      return options ? { ...e, options } : e;
+    });
 }
 
 /** Arity of a value type's numeric repr: vec2/vec2-arc → 2, number → 1; others (color/paint/path/string/boolean) carry no scalar arity. */
@@ -1162,5 +1249,15 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     subpaths: SUBPATHS,
     // 0.47: the window.glissade runtime SURFACE taxonomy (drift guard + ambient .d.ts).
     surface: buildSurface(),
+    // 0.63.1: prose-guide pointers so a no-build agent discovers the authoring loop
+    // from the manifest, not by hunting the docs site.
+    guides: [
+      {
+        name: 'authoring-loop',
+        summary:
+          'author→assess→auto-fix-geometry→re-assess→clean; the meaning-veto escalates content-only diagnostics to a human',
+        href: '/authoring-loop.html',
+      },
+    ],
   };
 }

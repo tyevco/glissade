@@ -32,6 +32,29 @@ const scene = createScene({
 const displayList = evaluate(scene, doc, 1.25); // pure, serializable, renderer-agnostic
 ```
 
+## The author→verify→fix loop
+
+An agent authors **blind**. `assess()` (on the tree-shakeable `@glissade/scene/diagnostics` subpath) gives it eyes: one composed verdict over the whole verification suite (`validateScene` + `critique` + optional `exportFidelity` + `diff` + `certKey`), unified/deduped/prioritized.
+
+```ts
+const v = assess(scene, timeline, opts);
+//  v.clean       → nothing MECHANICAL remains (the termination signal)
+//  v.fixable     → warnings with an IN-BOUNDS geometry lever (the work queue)
+//  v.escalated   → warnings the loop can't mechanically close (a human owns these)
+//  v.certKey     → the trust handle (the render's content-address)
+```
+
+The agent drives the loop; the framework never picks a fix: **author → assess → auto-fix-geometry → re-assess → clean.** Each critique diagnostic carries per-lever `fixClass` hints — the loop auto-applies a `geometry` lever (move/resize/restack) but **never** a `content` one (shortening a caption changes MEANING). Geometry levers are feasibility-bounded: `fontSize` won't shrink below the legibility floor (`minLegiblePx`, default 6) and a resize won't grow off-canvas — when both are out of bounds the overflow **escalates** rather than converging to a "clean" but unreadable caption. `assess()` partitions this for you into `v.fixable` vs `v.escalated`.
+
+> **`clean` is the termination signal, not the ship gate.** Ship iff `clean && v.escalated.length === 0` (or every escalated item has been reviewed into `opts.accepted`).
+
+### Importing — two-consumer-honest
+
+Bundler consumers: `import { assess, critique, certKey, diff } from '@glissade/scene/diagnostics'`.
+No-build (IIFE) consumers: use `window.glissade.assess/critique/certKey/diff` (the composed API). The low-level classifiers `fixHintsOf`/`isGeometryFixable`/`isContentOnly` are bundler-only (not on `window.glissade`) and are already applied inside `assess()`'s partition — a no-build agent never needs them directly.
+
+Full guide: [docs/authoring-loop.md](https://github.com/tyevco/glissade/blob/main/docs/authoring-loop.md).
+
 ## Part of glissade
 
 *(glide & slide)* — programmatic motion graphics for TypeScript: realtime-first in any web page, deterministic headless video export from the same code, a visual studio over the same document. No generator functions.

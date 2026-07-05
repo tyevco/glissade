@@ -159,6 +159,14 @@ never a silent infinite loop).
 A runnable end-to-end example lives in
 `packages/scene/test/authoringLoop.test.ts`.
 
+## Importing — two-consumer-honest
+
+Bundler consumers: `import { assess, critique, certKey, diff } from '@glissade/scene/diagnostics'`.
+No-build (IIFE) consumers: use `window.glissade.assess/critique/certKey/diff` (the
+composed API). The low-level classifiers `fixHintsOf`/`isGeometryFixable`/`isContentOnly`
+are bundler-only (not on `window.glissade`) and are already applied inside `assess()`'s
+partition — a no-build agent never needs them directly.
+
 ## Where the loop STOPS — the boundary is the product
 
 The loop closes the **mechanical** half unattended: off-canvas, overflow,

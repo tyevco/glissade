@@ -68,6 +68,18 @@ export interface CritiqueOptions {
    * fast-follow, not this mechanism.
    */
   offstage?: readonly string[];
+  /**
+   * 0.63.1 — the legibility FLOOR (px) the geometry `fontSize` auto-fix must not
+   * sink below. A TEXT_OVERFLOW offers the `fontSize` geometry lever ONLY when the
+   * shrink-to-fit lands ≥ this floor (else the overflow escalates instead of
+   * auto-shrinking to an unreadable caption). Gates BOTH the width- and
+   * height-overflow feasibility. Default 6 (mirrors `fitText({ minPx })`) — omitting
+   * it is byte-identical to prior behaviour. A PURE feasibility-partition param: it
+   * never touches the sampled geometry / render path, so every golden stays
+   * byte-identical. Raise it for a stricter legibility bar, lower it (e.g. 1) to let
+   * the fix shrink text further.
+   */
+  minLegiblePx?: number;
 }
 
 /**
@@ -387,6 +399,10 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   const measurer = scene.textMeasurer;
   const estimating = isEstimatingMeasurer(measurer);
   const fps = opts.fps ?? timeline.fps ?? 60;
+  // 0.63.1 — resolve the legibility floor once (default MIN_LEGIBLE_PX). Threaded
+  // to BOTH textOverflowDiagnostic call sites (width + height) so a raised/lowered
+  // floor gates the fontSize feasibility on both overflow axes identically.
+  const minLegiblePx = opts.minLegiblePx ?? MIN_LEGIBLE_PX;
   const duration = compileTimeline(timeline).duration;
   const lastFrame = Math.max(0, Math.floor(duration * fps));
 
@@ -495,7 +511,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       }
       const over = widest - width;
       const wFontSize = a.lastTexts[0]!.font.size;
-      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating, wFontSize, w, h));
+      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating, wFontSize, w, h, minLegiblePx));
     }
 
     // HEIGHT: the wrapped-block height vs an explicit `box.h`. The block height is
@@ -509,7 +525,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       const fontSize = a.lastTexts[0]!.font.size;
       const blockH = quantize(fontSize * node.lineHeight) * a.lastTexts.length;
       const overH = blockH - boxH;
-      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating, fontSize, w, h));
+      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating, fontSize, w, h, minLegiblePx));
     }
   }
 
@@ -631,6 +647,7 @@ function textOverflowDiagnostic(
   fontSize: number,
   canvasW: number,
   canvasH: number,
+  minLegiblePx: number,
 ): SceneDiagnostic {
   // 0.63 — FEASIBILITY-BOUND the geometry levers (ai-training's content-seat catch:
   // an unbounded geometry fix converges to a readable-STRING-but-unreadable-CAPTION
@@ -642,7 +659,7 @@ function textOverflowDiagnostic(
   // but the loop refuses to auto-produce an unshippable result). Estimated metrics
   // are too coarse to drop a lever on, so bounding applies only to REAL measurement.
   const fitFontPx = measured > 0 ? fontSize * (threshold / measured) : fontSize;
-  const fontFeasible = estimating || fitFontPx >= MIN_LEGIBLE_PX;
+  const fontFeasible = estimating || fitFontPx >= minLegiblePx;
   const resizeFeasible = estimating || measured <= (dimension === 'width' ? canvasW : canvasH);
   const geometryExhausted = !fontFeasible && !resizeFeasible;
 
@@ -653,12 +670,12 @@ function textOverflowDiagnostic(
       ? `text of node '${id}' overflows its box WIDTH by ${round(over)}px ` +
         `(needs ${round(measured)}px, box width ${round(threshold)}px). ` +
         (geometryExhausted
-          ? `No in-bounds geometry fix (fontSize would drop below ${MIN_LEGIBLE_PX}px, and a box wide enough runs off-canvas) — shortening the text is a human decision.`
+          ? `No in-bounds geometry fix (fontSize would drop below ${minLegiblePx}px, and a box wide enough runs off-canvas) — shortening the text is a human decision.`
           : `Reduce fontSize, widen width, or wrap it with fitText({ maxW: ${round(threshold)} }).`)
       : `text of node '${id}' overflows its box HEIGHT by ${round(over)}px ` +
         `(wrapped block ${round(measured)}px tall, box height ${round(threshold)}px). ` +
         (geometryExhausted
-          ? `No in-bounds geometry fix (fontSize would drop below ${MIN_LEGIBLE_PX}px, and a box tall enough runs off-canvas) — shortening the text is a human decision.`
+          ? `No in-bounds geometry fix (fontSize would drop below ${minLegiblePx}px, and a box tall enough runs off-canvas) — shortening the text is a human decision.`
           : `Reduce fontSize, increase the box height, or shorten the text.`);
   return {
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,

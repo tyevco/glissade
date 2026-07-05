@@ -206,3 +206,92 @@ describe('assess — diff-convergence (the loop termination detector)', () => {
     expect(a.diagnostics).toEqual(b.diagnostics);
   });
 });
+
+// ── 0.63.1 minLegiblePx — the per-call legibility floor reaches the partition ──
+//
+// A caption whose fontSize auto-fix would land BELOW minLegiblePx is geometry-
+// EXHAUSTED (only the content lever remains) → assess ESCALATES it. Lowering the
+// floor lets the fontSize lever back in → FIXABLE; raising it escalates a modest
+// overflow sooner. edcc's anti-"schema-accepts-but-handler-ignores" guard: these
+// prove the option THREADS from assess() opts → critique → the feasibility check,
+// on BOTH the width and height overflow axes. Resize is held infeasible (measured
+// ink exceeds the canvas) so the fontSize lever is the SOLE geometry lever — the
+// clean toggle that flips fixable⇄escalated with the floor.
+
+const hasOverflow = (ds: SceneDiagnostic[], dim: 'width' | 'height'): boolean =>
+  ds.some((d) => d.code === 'TEXT_OVERFLOW' && (d.detail as { dimension?: string }).dimension === dim);
+
+// WIDTH: unbreakable 20-char word, fontSize 20 → measured ink 240px (> canvas 200,
+// so resize is infeasible). fitFontPx = 20·(boxWidth/240).
+//   box width 50  → fitFontPx ≈ 4.17  (EXHAUSTED at floor 6, FIXABLE at floor 1)
+//   box width 100 → fitFontPx ≈ 8.33  (FIXABLE at floor 6, EXHAUSTED at floor 40)
+const widthExhausted = () =>
+  sceneWith(new Text({ id: 'cap', position: [100, 50], width: 50, text: 'HELLOHELLOHELLOHELLO', fontSize: 20, fill: '#000' }));
+const widthModest = () =>
+  sceneWith(new Text({ id: 'cap', position: [100, 50], width: 100, text: 'HELLOHELLOHELLOHELLO', fontSize: 20, fill: '#000' }));
+
+// HEIGHT: 6 lines, fontSize 20, lineHeight 1.25 → block 150px tall (> canvas 100,
+// so resize is infeasible). fitFontPx = 20·(box.h/150).
+//   box.h 20 → fitFontPx ≈ 2.67  (EXHAUSTED at floor 6, FIXABLE at floor 1)
+//   box.h 90 → fitFontPx = 12    (FIXABLE at floor 6, EXHAUSTED at floor 40)
+const heightExhausted = () =>
+  sceneWith(new Text({ id: 'card', position: [100, 20], text: 'L1\nL2\nL3\nL4\nL5\nL6', fontSize: 20, fill: '#000', box: { valign: 'top', h: 20 } }));
+const heightModest = () =>
+  sceneWith(new Text({ id: 'card', position: [100, 20], text: 'L1\nL2\nL3\nL4\nL5\nL6', fontSize: 20, fill: '#000', box: { valign: 'top', h: 90 } }));
+
+describe('assess — minLegiblePx per-call floor threads into the fixable/escalated partition', () => {
+  it('WIDTH: a caption EXHAUSTED at the default floor (6) becomes FIXABLE at {minLegiblePx:1}', () => {
+    const def = assess(widthExhausted(), empty);
+    expect(hasOverflow(def.escalated, 'width')).toBe(true);
+    expect(hasOverflow(def.fixable, 'width')).toBe(false);
+    expect(def.clean).toBe(true); // escalated does not block clean
+
+    const lowered = assess(widthExhausted(), empty, { minLegiblePx: 1 });
+    expect(hasOverflow(lowered.fixable, 'width')).toBe(true);
+    expect(hasOverflow(lowered.escalated, 'width')).toBe(false);
+    expect(lowered.clean).toBe(false); // a geometry-fixable warning now blocks
+  });
+
+  it('WIDTH: a MODEST overflow FIXABLE at the default floor becomes ESCALATED at {minLegiblePx:40}', () => {
+    const def = assess(widthModest(), empty);
+    expect(hasOverflow(def.fixable, 'width')).toBe(true);
+    expect(hasOverflow(def.escalated, 'width')).toBe(false);
+
+    const raised = assess(widthModest(), empty, { minLegiblePx: 40 });
+    expect(hasOverflow(raised.escalated, 'width')).toBe(true);
+    expect(hasOverflow(raised.fixable, 'width')).toBe(false);
+    // the raised floor reads back in the escalated diagnostic's message
+    const d = raised.escalated.find((x) => x.code === 'TEXT_OVERFLOW');
+    expect(d!.message).toContain('below 40px');
+  });
+
+  it('HEIGHT: a card EXHAUSTED at the default floor (6) becomes FIXABLE at {minLegiblePx:1}', () => {
+    const def = assess(heightExhausted(), empty);
+    expect(hasOverflow(def.escalated, 'height')).toBe(true);
+    expect(hasOverflow(def.fixable, 'height')).toBe(false);
+
+    const lowered = assess(heightExhausted(), empty, { minLegiblePx: 1 });
+    expect(hasOverflow(lowered.fixable, 'height')).toBe(true);
+    expect(hasOverflow(lowered.escalated, 'height')).toBe(false);
+  });
+
+  it('HEIGHT: a MODEST overflow FIXABLE at the default floor becomes ESCALATED at {minLegiblePx:40}', () => {
+    const def = assess(heightModest(), empty);
+    expect(hasOverflow(def.fixable, 'height')).toBe(true);
+    expect(hasOverflow(def.escalated, 'height')).toBe(false);
+
+    const raised = assess(heightModest(), empty, { minLegiblePx: 40 });
+    expect(hasOverflow(raised.escalated, 'height')).toBe(true);
+    expect(hasOverflow(raised.fixable, 'height')).toBe(false);
+  });
+
+  it('default equals OMITTED — assess(scene, tl) deep-equals assess(scene, tl, {minLegiblePx: 6})', () => {
+    for (const make of [widthExhausted, widthModest, heightExhausted, heightModest]) {
+      const omitted = assess(make(), empty);
+      const explicit = assess(make(), empty, { minLegiblePx: 6 });
+      expect(explicit.fixable).toEqual(omitted.fixable);
+      expect(explicit.escalated).toEqual(omitted.escalated);
+      expect(explicit.diagnostics).toEqual(omitted.diagnostics);
+    }
+  });
+});
