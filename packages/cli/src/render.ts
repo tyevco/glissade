@@ -698,7 +698,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // Prepare the faithful Skia render environment (measurer, Yoga, font faces incl.
   // variable-font axes, font validation, image/video decode). SHARED with gs parity
   // via prepareSkiaRenderEnv so a parity render can't drift from a real render.
-  const { assetDigests, videoSources } = await prepareSkiaRenderEnv({
+  const { assetDigests, videoSources, registeredFamilies } = await prepareSkiaRenderEnv({
     scene,
     doc,
     backend,
@@ -769,6 +769,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       scene,
       doc,
       assetDigests,
+      registeredFamilies,
       capsId: capsId(backend.caps),
       captionBurnMode: captionsMode,
       narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),
@@ -849,11 +850,17 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       let pngBytes: Buffer | undefined;
       // 0.62 cert-cache: certHash is PURE (no evaluate). A HIT serves pinned bytes
       // and SKIPS evaluate+render entirely — the lookup-before-you-spend property.
+      // 0.63.2 SAFETY: an INCOMPLETE cert (certBase.complete === false — a font the
+      // scene draws is not content-addressed) NEVER reads the cache. Its certHash
+      // can collide across a font/system change (empty/partial fontDigest), so a
+      // cache read could serve STALE bytes (a false-HIT). Skip get → always re-render.
       let certHash: string | undefined;
       if (certActive && certBase && certMod) {
         certHash = certMod.computeCertHash(certBase, certMod.frameKeyFor(f, fps));
-        const hit = certCache?.get(certHash);
-        if (hit) pngBytes = hit.bytes;
+        if (certBase.complete) {
+          const hit = certCache?.get(certHash);
+          if (hit) pngBytes = hit.bytes;
+        }
       }
       if (pngBytes === undefined) {
         // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
@@ -882,7 +889,10 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       // 0.62: record the per-frame cert + populate the content-addressed cache. The
       // byteHash IS the determinism carry keyed by cert (spot-audited by --verify-cache).
       if (certActive && certBase && certMod && certHash !== undefined) {
-        certCache?.put(certHash, pngBytes);
+        // 0.63.2 SAFETY: an incomplete cert never WRITES the cache either — it must
+        // not seed a future false-HIT. The per-frame record is still emitted (the
+        // manifest documents the render; `complete:false` lives in the cert base).
+        if (certBase.complete) certCache?.put(certHash, pngBytes);
         frameCerts.push({
           i: f,
           frameKey: certMod.frameKeyFor(f, fps),
@@ -1141,7 +1151,7 @@ export async function verifyCert(opts: VerifyCertOptions): Promise<VerifyCertRes
   }
 
   const backend = new SkiaBackend(scene.size.w, scene.size.h);
-  const { assetDigests } = await prepareSkiaRenderEnv({
+  const { assetDigests, registeredFamilies } = await prepareSkiaRenderEnv({
     scene,
     doc,
     backend,
@@ -1157,6 +1167,7 @@ export async function verifyCert(opts: VerifyCertOptions): Promise<VerifyCertRes
     scene,
     doc,
     assetDigests,
+    registeredFamilies,
     capsId: capsId(backend.caps),
     captionBurnMode: manifest.base.captionBurnMode,
     narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),

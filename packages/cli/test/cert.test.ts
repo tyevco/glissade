@@ -27,11 +27,15 @@ import {
   CertCache,
   CertVersionError,
   assertCertVersion,
+  buildVideoCertBase,
   byteHashOf,
   computeCertHash,
   frameKeyFor,
   type VideoCertBase,
+  type VideoCertBaseInputs,
 } from '../src/cert.js';
+import { createScene, Rect, Text } from '@glissade/scene';
+import { timeline } from '@glissade/core';
 
 const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.url));
 const MODULE = join(SCENES, 'golden-shapes.ts');
@@ -47,7 +51,8 @@ function readManifest(out: string) {
 
 describe('cert schema — fail-loud on unknown version', () => {
   it('assertCertVersion throws CertVersionError on an unknown schema', () => {
-    expect(() => assertCertVersion(2)).toThrow(CertVersionError);
+    expect(() => assertCertVersion(99)).toThrow(CertVersionError);
+    expect(() => assertCertVersion(1)).toThrow(CertVersionError); // v1 is retired — a v2 gs rejects it
     expect(() => assertCertVersion(CERT_VERSION)).not.toThrow();
   });
 });
@@ -84,6 +89,7 @@ describe('(b) sensitive-IFF — certHash moves on an IN determinant, holds on an
     toolchainHash: 'TC',
     backendHash: 'B',
     renderConfig: { width: 100, height: 50, pixelFormat: 'rgba8-straight', imageSmoothing: true },
+    complete: true,
   };
   const H = (b: VideoCertBase, i = 0, fps = 60) => computeCertHash(b, frameKeyFor(i, fps));
 
@@ -123,8 +129,15 @@ describe('(b) sensitive-IFF — certHash moves on an IN determinant, holds on an
       timelineHash: base.timelineHash,
       sceneHash: base.sceneHash,
       certVersion: base.certVersion,
+      complete: base.complete,
     };
     expect(H(reordered)).toBe(ref);
+  });
+
+  it('complete is NOT a determinant — flipping it HOLDS certHash (cacheability flag, not content-address)', () => {
+    // `complete` is stripped before hashing: the SAME rendered bytes are certified
+    // whether or not every drawn font was captured, so certHash must not move.
+    expect(H({ ...base, complete: false })).toBe(H({ ...base, complete: true }));
   });
 });
 
@@ -179,6 +192,7 @@ describe('(e) video ⊥ audio — the per-stream split', () => {
       sceneHash: 'S', timelineHash: 'T', narrationTimingHash: 'n1', fontDigest: 'F',
       captionBurnMode: 'burn', toolchainHash: 'TC', backendHash: 'B',
       renderConfig: { width: 100, height: 50, pixelFormat: 'rgba8-straight', imageSmoothing: true },
+      complete: true,
     };
     const reNarrated = { ...withN, narrationTimingHash: 'n2' };
     expect(computeCertHash(withN, '0@60')).not.toBe(computeCertHash(reNarrated, '0@60'));
@@ -254,6 +268,138 @@ describe('(d) diff.empty ⟹ byte-identical — construction-shuffle renders ide
     const mBA = JSON.parse(readFileSync(`${outBA}.cert.json`, 'utf8'));
     expect(mAB.base.sceneHash).toBe(mBA.base.sceneHash);
     expect(mAB.frames[0].certHash).toBe(mBA.frames[0].certHash);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// ── 0.63.2 determinism-safety fix: font-completeness gates the render cache ──────
+
+describe('(0.63.2) complete — font-completeness (PROXY scene-walk)', () => {
+  const RC = { width: 100, height: 50, pixelFormat: 'rgba8-straight', imageSmoothing: true } as const;
+  const buildBase = (scene: ReturnType<typeof createScene>, families: string[]): Promise<VideoCertBase> => {
+    const inputs: VideoCertBaseInputs = {
+      scene,
+      doc: timeline({ tracks: [] }),
+      assetDigests: new Map(), // no font: entries → empty fontDigest
+      registeredFamilies: new Set(families), // case-folded, as prepareSkiaRenderEnv emits
+      capsId: 'caps',
+      captionBurnMode: 'burn',
+      narrationTimingPath: null,
+      renderConfig: RC,
+      root: process.cwd(),
+    };
+    return buildVideoCertBase(inputs);
+  };
+
+  it('a text-DRAWING scene with only SYSTEM fonts (empty fontDigest) → complete === false', async () => {
+    const scene = createScene({
+      size: { w: 100, h: 50 },
+      children: [new Text({ id: 't', text: 'hello', fontFamily: 'sans-serif' })],
+    });
+    const cb = await buildBase(scene, []); // nothing registered
+    expect(cb.fontDigest).toBe(''); // no font: assetDigest → empty (the bug's trigger)
+    expect(cb.complete).toBe(false); // an uncaptured drawn font → NOT cacheable
+  });
+
+  it('a scene with NO text (pure geometry) + empty fontDigest → complete === true (NOT over-marked)', async () => {
+    const scene = createScene({
+      size: { w: 100, h: 50 },
+      children: [new Rect({ id: 'r', position: [0, 0], width: 10, height: 10, fill: '#f00' })],
+    });
+    const cb = await buildBase(scene, []);
+    expect(cb.fontDigest).toBe(''); // no fonts at all
+    expect(cb.complete).toBe(true); // legitimately no font determinant — must NOT be false
+  });
+
+  it('a text scene whose fonts are ALL registered/captured → complete === true (case-insensitive)', async () => {
+    const scene = createScene({
+      size: { w: 100, h: 50 },
+      children: [new Text({ id: 't', text: 'hi', fontFamily: 'Brand Sans' })],
+    });
+    const cb = await buildBase(scene, ['brand sans']); // registeredFamilies is case-folded
+    expect(cb.complete).toBe(true);
+  });
+
+  it('a PARTIAL capture (one registered face + one system face) → complete === false', async () => {
+    const scene = createScene({
+      size: { w: 100, h: 60 },
+      children: [
+        new Text({ id: 'a', text: 'A', fontFamily: 'Brand' }),
+        new Text({ id: 'b', text: 'B', fontFamily: 'sans-serif' }), // uncaptured
+      ],
+    });
+    const cb = await buildBase(scene, ['brand']);
+    expect(cb.complete).toBe(false);
+  });
+});
+
+describe('(0.63.2) safety — an incomplete cert never SERVES or SEEDS a cache hit', () => {
+  // An inline scene that DRAWS text with a SYSTEM family (no font asset) → complete:false.
+  const incompleteMod = `
+    import { createScene, Text } from '@glissade/scene';
+    import { timeline } from '@glissade/core';
+    const t = new Text({ id: 't', text: 'hi', fontFamily: 'sans-serif', fontSize: 20, position: [10, 25] });
+    export default {
+      createScene: () => createScene({ size: { w: 120, h: 60 }, children: [t] }),
+      timeline: timeline({ tracks: [] }),
+    };`;
+
+  it('complete:false → cache get is SKIPPED (poison bytes are NOT served) and put is SKIPPED', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-incomplete-'));
+    const mod = join(dir, 'sys-text.ts');
+    writeFileSync(mod, incompleteMod);
+    const cacheDir = join(dir, 'cc');
+    const cold = join(dir, 'cold');
+
+    // cold render, read-write cache. The cert is incomplete → put is skipped.
+    await render({ modulePath: mod, out: cold, frame: 0, format: 'png-seq', certify: true, certCache: { dir: cacheDir, mode: 'read-write' } });
+    const m = readManifest(cold);
+    expect(m.base.complete).toBe(false); // the scene draws an uncaptured system font
+    const cache = new CertCache({ dir: cacheDir, mode: 'read-write' });
+    expect(cache.entryCount()).toBe(0); // put was SKIPPED (an incomplete cert seeds nothing)
+
+    // now POISON the cache under the exact certHash the render computes (from the
+    // manifest). If get ran, this stale entry would be served — it must NOT be.
+    const poison = Buffer.from('POISONED STALE BYTES — MUST NOT BE SERVED');
+    cache.put(m.frames[0]!.certHash, poison);
+    expect(cache.entryCount()).toBe(1);
+
+    // read-only render: for an incomplete cert, get is skipped → it RE-RENDERS.
+    const warm = join(dir, 'warm');
+    await render({ modulePath: mod, out: warm, frame: 0, format: 'png-seq', certCache: { dir: cacheDir, mode: 'read-only' } });
+    const coldPng = readFileSync(join(cold, 'frame-00000.png'));
+    const warmPng = readFileSync(join(warm, 'frame-00000.png'));
+    expect(Buffer.compare(warmPng, poison)).not.toBe(0); // poison was NOT served
+    expect(Buffer.compare(warmPng, coldPng)).toBe(0); // re-rendered → byte-identical to cold
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('(0.63.2) cross-version retirement — a v2 read NEVER serves a v1-era entry', () => {
+  it('a valid v1-layout entry (flat under dir/) is orphaned; a v2 get MISSES it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glissade-cert-v1-'));
+    const h = 'c'.repeat(64);
+
+    // write a VALID v1-era entry the shipped 0.62 cache would have: flat at dir/<h>.gscb
+    // with the GSBT magic header (the exact on-disk format v1's put() wrote).
+    const header = Buffer.alloc(8);
+    header.writeUInt32BE(0x47534254, 0); // 'GSBT'
+    header.writeUInt32BE(1, 4);
+    const staleBytes = Buffer.from('v1-era stale bytes — a latent FALSE-HIT');
+    writeFileSync(join(dir, `${h}.gscb`), Buffer.concat([header, staleBytes]));
+
+    // a v2 CertCache is version-namespaced (reads dir/v2/) → the v1 entry is invisible.
+    const v2 = new CertCache({ dir, mode: 'read-write' });
+    expect(v2.get(h)).toBeUndefined(); // MISS — the latent false-hit entry is retired
+    expect(v2.entryCount()).toBe(0); // the flat v1 file is not in the v2 namespace
+
+    // and a fresh v2 write of the SAME hash serves the NEW bytes, never v1's.
+    const fresh = Buffer.from('fresh v2 bytes');
+    v2.put(h, fresh);
+    const hit = v2.get(h);
+    expect(hit).toBeDefined();
+    expect(Buffer.compare(hit!.bytes, fresh)).toBe(0);
+    expect(Buffer.compare(hit!.bytes, staleBytes)).not.toBe(0);
     rmSync(dir, { recursive: true, force: true });
   });
 });

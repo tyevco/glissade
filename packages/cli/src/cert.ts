@@ -55,8 +55,17 @@ import { join } from 'node:path';
 import type { Scene } from '@glissade/scene';
 import type { Timeline } from '@glissade/core';
 
-/** The cert schema version — additive-only; a reader fail-louds on an UNKNOWN one. */
-export const CERT_VERSION = 1 as const;
+/**
+ * The cert schema version — additive-only; a reader fail-louds on an UNKNOWN one.
+ *
+ * 1→2 (0.63.2 determinism-safety fix): adds `complete` to {@link VideoCertBase}
+ * (a cacheability flag — is EVERY font the scene draws content-addressed?). A v1
+ * cert has no `complete`, so a v1-era render cache can hold latent FALSE-HIT
+ * entries (a system-font scene has an empty fontDigest → a font/system change
+ * doesn't move certHash → stale bytes served). The cache is version-namespaced by
+ * CERT_VERSION so a v2 read can NEVER serve a v1-era entry (see {@link CertCache}).
+ */
+export const CERT_VERSION = 2 as const;
 
 export class CertVersionError extends Error {
   constructor(got: unknown) {
@@ -93,6 +102,16 @@ export interface VideoCertBase {
   toolchainHash: string;
   backendHash: string;
   renderConfig: RenderConfig;
+  /**
+   * CACHEABILITY flag (NOT a determinant — NOT folded into certHash): does this
+   * cert fully capture EVERY font the scene draws? `false` when the scene draws
+   * text with a family that is NOT content-addressed (a SYSTEM family, or a
+   * partial capture mixing a registered face with a system face) — such a render's
+   * fontDigest can't move on a font/system change, so its cert must NEVER read or
+   * write the render cache (an incomplete cert always re-renders). A scene with no
+   * text has no font determinant → `true`. It sits BESIDE certHash in the manifest.
+   */
+  complete: boolean;
 }
 
 /** A per-FRAME certificate: the base + frameKey → certHash (the cache key). */
@@ -171,11 +190,15 @@ export function frameKeyFor(i: number, fps: number): string {
 }
 
 /**
- * certHash = sha256(canonical-sorted { ...base, frameKey }). PURE fn of inputs —
- * NO render. This is the cache key for frame `i`.
+ * certHash = sha256(canonical-sorted { ...determinants, frameKey }). PURE fn of
+ * inputs — NO render. This is the cache key for frame `i`. `complete` is a
+ * CACHEABILITY flag, NOT a render determinant — it is STRIPPED before hashing so
+ * it can never move the content-address (a cert is complete/incomplete for the
+ * SAME rendered bytes; the cert cache honors `complete` at the call site instead).
  */
 export function computeCertHash(base: VideoCertBase, frameKey: string): string {
-  return sha256Hex(canonicalJson({ ...base, frameKey }));
+  const { complete: _complete, ...determinants } = base;
+  return sha256Hex(canonicalJson({ ...determinants, frameKey }));
 }
 
 /** Assemble the full per-frame {@link Certificate} for frame `i`. */
@@ -300,10 +323,19 @@ const CERT_HEADER = 8; // magic(4) + format-version(4)
  * mismatch is a determinism break (the b4e6060006 alarm). Distinct from the §3.5
  * frame RGBA cache (keyed by the post-evaluate DisplayList): this is keyed by the
  * PURE cert (computable without evaluate) and stores the final artifact.
+ *
+ * CROSS-VERSION RETIREMENT (0.63.2): the on-disk store is VERSION-NAMESPACED — every
+ * entry lives under a `v${CERT_VERSION}/` subdir of `dir`. A v2 read/write only ever
+ * touches the `v2/` slot, so the shipped v1 entries (written flat under `dir/`) are
+ * ORPHANED and can NEVER be served by a v2 `get()`. This retires the latent
+ * FALSE-HIT entries a v1 cache holds (a v1 cert has no `complete`, so a v1 read could
+ * otherwise serve stale bytes since certHash is unchanged by the schema bump).
  */
 export class CertCache {
   readonly dir: string;
   readonly mode: CertCacheMode;
+  /** the version-namespaced slot the entries actually live in (`dir/v${CERT_VERSION}`). */
+  private readonly slot: string;
   private hits = 0;
   private misses = 0;
   private stored = 0;
@@ -311,11 +343,12 @@ export class CertCache {
   constructor(opts: { dir: string; mode: CertCacheMode }) {
     this.dir = opts.dir;
     this.mode = opts.mode;
-    if (this.mode !== 'off') mkdirSync(this.dir, { recursive: true });
+    this.slot = join(this.dir, `v${CERT_VERSION}`);
+    if (this.mode !== 'off') mkdirSync(this.slot, { recursive: true });
   }
 
   private pathFor(certHash: string): string {
-    return join(this.dir, `${certHash}.gscb`);
+    return join(this.slot, `${certHash}.gscb`);
   }
 
   /** HIT → { bytes, byteHash }; MISS / off → undefined. Trust-on-read by certHash. */
@@ -371,8 +404,8 @@ export class CertCache {
 
   /** List every certHash present on disk (for `--verify-cache` sampling). */
   entries(): string[] {
-    if (this.mode === 'off' || !existsSync(this.dir)) return [];
-    return readdirSync(this.dir)
+    if (this.mode === 'off' || !existsSync(this.slot)) return [];
+    return readdirSync(this.slot)
       .filter((f) => f.endsWith('.gscb'))
       .map((f) => f.slice(0, -'.gscb'.length));
   }
@@ -384,7 +417,8 @@ export class CertCache {
 
 /** Probe a cache entry's stored bytes WITHOUT trusting it (for verify sampling). */
 export function readCertCacheBytes(dir: string, certHash: string): Buffer | undefined {
-  const file = join(dir, `${certHash}.gscb`);
+  // read from the version-namespaced slot (matches CertCache's on-disk layout).
+  const file = join(dir, `v${CERT_VERSION}`, `${certHash}.gscb`);
   let fd: number | undefined;
   try {
     fd = openSync(file, 'r');
@@ -408,12 +442,64 @@ export interface VideoCertBaseInputs {
   /** the (localized/resolved) render document. */
   doc: Timeline;
   assetDigests: ReadonlyMap<string, string>;
+  /**
+   * The families glissade actually registered from `doc.assets` (case-folded) —
+   * i.e. the families that got a `font:` assetDigest. `prepareSkiaRenderEnv`
+   * returns this. Used to decide `complete` (font-completeness).
+   */
+  registeredFamilies: ReadonlySet<string>;
   capsId: string;
   captionBurnMode: string;
   narrationTimingPath: string | null | undefined;
   renderConfig: RenderConfig;
   /** repo/cwd root for locating toolchain.lock. */
   root: string;
+}
+
+/**
+ * The set of font families the scene's Text nodes DRAW (a non-empty `.text()`).
+ *
+ * PROXY check (video-canary blessed): walk the scene for text-drawing nodes and
+ * collect their resolved font families. We use a STRUCTURAL (duck-typed) walk over
+ * `scene.nodes` — a node with a string `fontFamily` and a callable `text()`
+ * returning a non-empty string is a drawing Text node — deliberately NOT
+ * `collectTextUsages`'s `instanceof Text` check: the scene module is loaded through
+ * jiti, which can resolve `@glissade/scene` to a DIFFERENT class instance than the
+ * cert's, so an `instanceof` walk silently returns EMPTY across that boundary and
+ * would OVER-mark `complete:true` — re-enabling the exact false-HIT this fix closes.
+ * The structural walk is identity-independent, so it is correct across jiti.
+ *
+ * PROXY (not a precise fillText DL-walk) because `buildVideoCertBase` runs BEFORE
+ * the frame loop — the render DisplayLists don't exist yet, so a fillText-font walk
+ * would be an intrusive reorder. The proxy OVER-marks incomplete when a Text node
+ * never actually draws (reveal=0 / opacity=0 / off-canvas) → a needless cache MISS
+ * = a false-MISS = SAFE (the catastrophic direction is a false-HIT, which this
+ * cannot produce).
+ */
+function drawnTextFamilies(scene: Scene): string[] {
+  const out: string[] = [];
+  for (const node of scene.nodes.values()) {
+    const n = node as { fontFamily?: unknown; text?: unknown };
+    if (typeof n.fontFamily !== 'string' || typeof n.text !== 'function') continue;
+    const value = (n.text as () => unknown)();
+    if (typeof value === 'string' && value) out.push(n.fontFamily);
+  }
+  return out;
+}
+
+/**
+ * `complete` — does the cert fully capture EVERY font the scene DRAWS? (0.63.2.)
+ * `false` when a drawn family is NOT content-addressed (a SYSTEM family, or a
+ * partial capture) — its glyph bytes aren't in fontDigest, so a font/system change
+ * can't move certHash → such a cert must never read/write the render cache. A scene
+ * with no drawn text → `true` (legitimately no font determinant). `registeredFamilies`
+ * is case-folded (as `prepareSkiaRenderEnv` emits), so we compare lower-cased.
+ */
+function fontComplete(drawnFamilies: readonly string[], registeredFamilies: ReadonlySet<string>): boolean {
+  for (const family of drawnFamilies) {
+    if (!registeredFamilies.has(family.toLowerCase())) return false;
+  }
+  return true;
 }
 
 /**
@@ -433,6 +519,7 @@ export async function buildVideoCertBase(inputs: VideoCertBaseInputs): Promise<V
     toolchainHash: toolchainHash(inputs.root),
     backendHash: backendHash(inputs.capsId),
     renderConfig: inputs.renderConfig,
+    complete: fontComplete(drawnTextFamilies(inputs.scene), inputs.registeredFamilies),
   };
 }
 
