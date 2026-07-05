@@ -1,5 +1,45 @@
 # @glissade/cli
 
+## 0.63.2
+
+### Patch Changes
+
+- 333ef40: **0.63.2 — the render cache fails loud on an incomplete determinant set.** A determinism-safety fix for `gs render --certify`: the cert now declares when it could NOT fully content-address the fonts a scene draws, and the cache refuses to serve an incomplete cert.
+
+  The gap: `fontDigest` only content-addresses registered font faces. A scene that draws text with a SYSTEM family (`sans-serif`), or that mixes a registered face with a system one, produced an empty/partial `fontDigest` — yet the cert was treated as cacheable. Since a font/system change can't move `certHash` in that case, the local render cache could serve STALE bytes: a silent FALSE-HIT (the catastrophic direction), and the already-shipped caches hold latent ones.
+
+  - **`certVersion` 1 → 2** and a new **`complete: boolean`** on the cert base (beside `certHash`, never folded into it — the content-address is unchanged). `complete` is `false` when a text-drawing scene has any font family not captured in `fontDigest`. Computed by an identity-independent STRUCTURAL walk of the scene's drawing text nodes (deliberately not an `instanceof` check — the scene module loads through jiti, which can resolve a different class instance, silently under-counting and re-opening the hole).
+  - **An incomplete cert never touches the cache** — `gs render` skips both the cache read and write when `complete === false`, so it always re-renders (incomplete → re-render is safe; complete-but-wrong → false-hit is not).
+  - **The v1 caches are retired** — the cache is version-namespaced (entries live under `v2/`), so a v2 read can never serve a pre-fix v1 entry (which has no `complete` flag). This closes both the new and the already-cached false-hit. A v2 `gs` also rejects a v1 cert manifest on `--verify` (fail-loud on version mismatch).
+
+  Pure cache/cert logic — off the render path: all 415 goldens byte-identical, `certHash` unchanged (a test asserts flipping `complete` holds it), base embed unchanged (38.67/39), determinism `b4e6060006` intact.
+
+- fc9c028: **0.63.2 pre.1 — cert completeness now detects TRACK-DRIVEN text (captions).** The
+  completeness check previously walked the scene at CONSTRUCTION time, which misses
+  track-driven text: `captionNode` paired with `captionTrack` (a `Track<string>`)
+  populates the caption's text at EVAL time, so its `text()` is empty at construction —
+  the walk saw no text, marked the cert `complete: true` with an empty `fontDigest`,
+  and a caption-only scene stayed cacheable (the false-hit, still open for captions).
+
+  The completeness check is now an eval-time **DL-sample pre-pass**: it evaluates the
+  full certified frame grid and collects the font families of the `fillText` draws the
+  render actually produces. This is ground truth — it catches static text, track-driven
+  captions, and any dynamic text — and it is identity-independent (plain draw commands),
+  so it also sidesteps the jiti dual-instance `instanceof` trap. The pre-pass is a pure
+  read of `evaluate()` (a pure function of time), so it is render-neutral: a
+  `--certify` render is byte-identical to a plain render (verified), and all 415 goldens
+  stay byte-identical.
+
+  - @glissade/backend-skia@0.63.2
+  - @glissade/core@0.63.2
+  - @glissade/interact@0.63.2
+  - @glissade/lottie@0.63.2
+  - @glissade/narrate@0.63.2
+  - @glissade/player@0.63.2
+  - @glissade/scene@0.63.2
+  - @glissade/sfx@0.63.2
+  - @glissade/svg@0.63.2
+
 ## 0.63.2-pre.1
 
 ### Patch Changes

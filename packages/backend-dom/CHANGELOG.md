@@ -1,5 +1,12 @@
 # @glissade/backend-dom
 
+## 0.63.2
+
+### Patch Changes
+
+- @glissade/core@0.63.2
+- @glissade/scene@0.63.2
+
 ## 0.63.2-pre.1
 
 ### Patch Changes
