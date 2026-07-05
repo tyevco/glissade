@@ -127,6 +127,23 @@ export interface DescribedBuilderMethod {
 }
 
 /**
+ * One whole-scene starter RECIPE in the manifest (0.63) — a PATTERN an agent
+ * discovers the way it discovers node PRIMITIVES, then instantiates via
+ * `recipe(name, props)`. Its typed props carry a `default` (every recipe is
+ * clean-by-construction at defaults). Populated from the LIVE recipe registry (the
+ * `@glissade/scene/recipes` subpath registers on import), so it can't drift; empty
+ * on a manifest captured without that subpath loaded.
+ */
+export interface DescribedRecipe {
+  /** The recipe name — pass to `recipe(name, props)`. */
+  name: string;
+  /** One line: what scaffold it lays down. */
+  summary?: string;
+  /** the recipe's typed props: name → { type, required?, default? }. */
+  props: { [prop: string]: { type: string; required?: boolean; default?: unknown } };
+}
+
+/**
  * One helper/factory in the manifest — the broader builder API beyond the node
  * taxonomy and the timeline builder. These are the free functions an AI consumer
  * reaches for (transport, motion-path, clips, snapshot, text-splitting); several
@@ -207,6 +224,13 @@ export interface ApiManifest {
   /** user-defined components registered via defineComponent() (0.36); present
    *  from describe() (possibly empty), absent on manifests captured before 0.36. */
   components?: DescribedComponent[];
+  /**
+   * 0.63 starter-scaffold RECIPES an agent instantiates via `recipe(name, props)`.
+   * Populated from the live registry the `@glissade/scene/recipes` subpath registers
+   * on import (the examples-corpus pattern) — empty until that subpath is loaded, so
+   * a manifest captured without it omits the recipes. ADDITIVE + off the base embed.
+   */
+  recipes?: DescribedRecipe[];
   createScene: string;
   subpaths: { [entry: string]: string };
   /**
@@ -351,6 +375,14 @@ const SURFACE_TOOLS: { name: string; arity: number }[] = [
   // (scene vs timeline) changed. Pure semantic-hash operations (kind:'tool').
   { name: 'sceneHash', arity: 1 },
   { name: 'timelineHash', arity: 1 },
+  // 0.63 the CAPSTONE — assess(scene, timeline, opts?) is the ONE composed VERDICT
+  // (validateScene + critique + exportFidelity + diff + certKey, unified/deduped/
+  // prioritized + clean-of-fixable). recipe(name, props) instantiates a clean-by-
+  // construction starter scaffold. Both are OPERATIONS returning a RESULT (a verdict
+  // / a Group), not a problem list — kind:'tool', PERCEPTION-MANIFEST. The no-build
+  // agent runs the author→assess→auto-fix-geometry→re-assess loop against these.
+  { name: 'assess', arity: 2 },
+  { name: 'recipe', arity: 2 },
 ];
 
 /**
@@ -1051,6 +1083,22 @@ export function registerExamples(corpus: { readonly [key: string]: readonly stri
   exampleCorpus = corpus;
 }
 
+/**
+ * The registered starter-recipe registry, surfaced by `describe().recipes`.
+ * Populated by `@glissade/scene/recipes` on import via {@link registerRecipes} — a
+ * registration hook (NOT a static import) so describe() (and the base index / IIFE)
+ * never pay for the recipe factories unless the subpath is loaded. Empty until then.
+ */
+let recipeRegistry: readonly DescribedRecipe[] = [];
+
+/**
+ * Register the starter-recipe manifest — called by `@glissade/scene/recipes` on
+ * import. A registration hook (not a static import) so `describe()` stays lean.
+ */
+export function registerRecipes(recipes: readonly DescribedRecipe[]): void {
+  recipeRegistry = recipes;
+}
+
 function mapComponentProps(props: { readonly [prop: string]: { type: string; required?: boolean } }): {
   [prop: string]: { type: string; required?: boolean };
 } {
@@ -1103,6 +1151,9 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     })),
     // 0.36: user-defined components from the live registry (empty by default)
     components: listComponents().map((c) => ({ name: c.name, props: mapComponentProps(c.props) })),
+    // 0.63: starter-scaffold recipes from the live registry (empty until the
+    // @glissade/scene/recipes subpath is imported — the examples-corpus pattern).
+    recipes: recipeRegistry.map((r) => ({ ...r })),
     // The full construct-a-scene surface: the size + children AND the asset
     // manifest (so Image/Video `assetId` resolves to a real media URL). An
     // `assetId` on a node names an entry in this `assets` map.

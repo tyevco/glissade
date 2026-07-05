@@ -74,6 +74,8 @@ export {
   sortDiagnostics,
   type CritiqueOptions,
   type CritiqueResult,
+  type FixHint,
+  type FixClass,
 } from './critique.js';
 
 // 0.61 — the interchange/edit half of the structured-verification suite:
@@ -115,3 +117,24 @@ export {
   sha256 as certSha256,
   sha256Bytes as certSha256Bytes,
 } from './canonicalScene.js';
+
+// 0.63 CAPSTONE — assess(scene, timeline, opts?): the ONE composed VERDICT that ENDS
+// Era A. It COMPOSES the shipped suite (validateScene + critique + exportFidelity +
+// diff + certKey), UNIFIES/dedupes/PRIORITIZES the diagnostics, and returns
+// `clean` (= no error + no geometry-fixable warning, accepted removed + content-only
+// escalated) + the certKey trust handle. A PURE composition of the gated primitives
+// (deterministic). The agent drives the loop; assess is the framework's verdict.
+// fixHintsOf/isGeometryFixable/isContentOnly are the decidable meaning-preservation
+// veto reads; diagnosticsSignature/sameDiagnostics are the loop's convergence
+// detector. All OFF the base scene index; re-exported onto the browser IIFE (kind:
+// 'tool'). See docs/authoring-loop.md.
+export {
+  assess,
+  fixHintsOf,
+  isGeometryFixable,
+  isContentOnly,
+  diagnosticsSignature,
+  sameDiagnostics,
+  type AssessOptions,
+  type AssessResult,
+} from './assess.js';

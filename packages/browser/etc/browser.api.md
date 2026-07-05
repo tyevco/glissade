@@ -4,6 +4,9 @@
 
 ```ts
 
+import { assess } from '@glissade/scene/diagnostics';
+import { AssessOptions } from '@glissade/scene/diagnostics';
+import { AssessResult } from '@glissade/scene/diagnostics';
 import { bandScale } from '@glissade/scene/chart';
 import { Camera } from '@glissade/scene/motion';
 import { camera } from '@glissade/scene/motion';
@@ -15,6 +18,7 @@ import { ChangeOp } from '@glissade/scene/diagnostics';
 import { ChangeSet } from '@glissade/scene/diagnostics';
 import { Chart } from '@glissade/scene/chart';
 import { childId } from '@glissade/scene/component';
+import { ColdOpenProps } from '@glissade/scene/recipes';
 import { colorRamp } from '@glissade/scene/chart';
 import { Column } from '@glissade/scene/layout-ctors';
 import { CompiledExpr } from '@glissade/core/expr';
@@ -52,6 +56,7 @@ import { FitTextOpts } from '@glissade/scene/type';
 import { fitTextSize } from '@glissade/scene/type';
 import { FollowPath } from '@glissade/scene/motion';
 import { followPath } from '@glissade/scene/motion';
+import { Frame } from '@glissade/scene/recipes';
 import { Gauge } from '@glissade/scene/gauge';
 import { GaugeError } from '@glissade/scene/gauge';
 import { GaugeResult } from '@glissade/scene/gauge';
@@ -67,6 +72,7 @@ import { loadYogaLayoutEngine } from '@glissade/scene/layout';
 import { logScale } from '@glissade/scene/chart';
 import { LookAt } from '@glissade/scene/motion';
 import { lookAt } from '@glissade/scene/motion';
+import { LowerThirdProps } from '@glissade/scene/recipes';
 import { MeasurerRequiredError } from '@glissade/scene/type';
 import { Meter } from '@glissade/scene/gauge';
 import { motionPath } from '@glissade/scene/motion';
@@ -78,6 +84,9 @@ import { ParticleError } from '@glissade/scene/motion';
 import { particles } from '@glissade/scene/motion';
 import { pathLength } from '@glissade/scene/motion';
 import { pointAtLength } from '@glissade/scene/motion';
+import { recipe } from '@glissade/scene/recipes';
+import { RecipeName } from '@glissade/scene/recipes';
+import { RecipePropsByName } from '@glissade/scene/recipes';
 import { Region } from '@glissade/scene/diagnostics';
 import { renderToDataURL } from '@glissade/backend-canvas2d/snapshot';
 import { resolveAt } from '@glissade/scene/diagnostics';
@@ -96,12 +105,20 @@ import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { sparks } from '@glissade/scene/motion';
 import { splitText } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
+import { StatRevealProps } from '@glissade/scene/recipes';
 import { timelineHash } from '@glissade/scene/diagnostics';
+import { TitleCardProps } from '@glissade/scene/recipes';
 import { typeOn } from '@glissade/scene/type';
 import { TypeOnOpts } from '@glissade/scene/type';
 import { TypeOnResult } from '@glissade/scene/type';
 import { validateScene } from '@glissade/scene/diagnostics';
 import { ValidateSceneResult } from '@glissade/scene/diagnostics';
+
+export { assess }
+
+export { AssessOptions }
+
+export { AssessResult }
 
 export { bandScale }
 
@@ -124,6 +141,8 @@ export { ChangeSet }
 export { Chart }
 
 export { childId }
+
+export { ColdOpenProps }
 
 export { colorRamp }
 
@@ -199,6 +218,8 @@ export { FollowPath }
 
 export { followPath }
 
+export { Frame }
+
 export { Gauge }
 
 export { GaugeError }
@@ -229,6 +250,8 @@ export { LookAt }
 
 export { lookAt }
 
+export { LowerThirdProps }
+
 export { MeasurerRequiredError }
 
 export { Meter }
@@ -250,6 +273,12 @@ export { particles }
 export { pathLength }
 
 export { pointAtLength }
+
+export { recipe }
+
+export { RecipeName }
+
+export { RecipePropsByName }
 
 export { Region }
 
@@ -287,7 +316,11 @@ export { splitText }
 
 export { Stack }
 
+export { StatRevealProps }
+
 export { timelineHash }
+
+export { TitleCardProps }
 
 export { typeOn }
 

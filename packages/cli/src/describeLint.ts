@@ -107,6 +107,17 @@ const EXEMPT_INTERNALS = new Set<string>([
   // certSha256Bytes — a hash primitive, not authoring surface). The author reaches
   // certKey/sceneHash/timelineHash (surfaced); these are the machinery beneath.
   'canonicalSceneForm', 'canonicalTimelineForm', 'certSha256', 'certSha256Bytes',
+  // 0.63 (capstone): the composed VERDICT `assess` + the starter-scaffold factory
+  // `recipe` ARE first-class surface TOOLS (kind:'tool', on the IIFE). What stays
+  // exempt: the meaning-preservation veto READS (fixHintsOf/isGeometryFixable/
+  // isContentOnly) + the loop CONVERGENCE detector (sameDiagnostics/
+  // diagnosticsSignature) — ESM-only helpers a consumer reads off the diagnostics
+  // subpath, NOT on the IIFE (AssessResult already carries fixable/escalated +
+  // signature). The recipes registry hook (`registerRecipes`, like registerExamples)
+  // + its describe()-registry readers (`listRecipes`/`RECIPE_MANIFEST`) + the
+  // `DEFAULT_FRAME` constant. (UnknownRecipeError is /Error$/-exempt.)
+  'fixHintsOf', 'isGeometryFixable', 'isContentOnly', 'sameDiagnostics', 'diagnosticsSignature',
+  'registerRecipes', 'listRecipes', 'RECIPE_MANIFEST', 'DEFAULT_FRAME',
 ]);
 
 /**
@@ -262,7 +273,8 @@ export async function collectRuntimeSurface(
     '@glissade/core/clips', // popIn/slideIn/pulse/presence/morph (surface EXTRA)
     '@glissade/scene',
     '@glissade/scene/describe',
-    '@glissade/scene/diagnostics', // critique/validateScene/resolveAt/instanceProps (surface DIAGNOSTICS)
+    '@glissade/scene/diagnostics', // critique/validateScene/resolveAt/instanceProps + assess (0.63 surface DIAGNOSTICS/TOOLS)
+    '@glissade/scene/recipes', // recipe (0.63 surface TOOL — starter scaffolds)
     '@glissade/scene/layout-ctors',
     '@glissade/scene/path', // pathFromSvg (surface EXTRA)
   ]);

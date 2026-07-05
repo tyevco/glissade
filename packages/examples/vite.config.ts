@@ -30,6 +30,7 @@ export default defineConfig({
       '@glissade/scene/component': src('scene').replace('index.ts', 'component.ts'),
       '@glissade/scene/type': src('scene').replace('index.ts', 'type.ts'),
       '@glissade/scene/diagnostics': src('scene').replace('index.ts', 'diagnostics.ts'),
+      '@glissade/scene/recipes': src('scene').replace('index.ts', 'recipes.ts'),
       '@glissade/scene/tokens': src('scene').replace('index.ts', 'tokens.ts'),
       '@glissade/scene/motion': src('scene').replace('index.ts', 'motion.ts'),
       '@glissade/scene/gradient': src('scene').replace('index.ts', 'gradient.ts'),

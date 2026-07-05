@@ -70,6 +70,29 @@ export interface CritiqueOptions {
   offstage?: readonly string[];
 }
 
+/**
+ * 0.63 — the MEANING-PRESERVATION veto class of a single fix LEVER. A `'geometry'`
+ * lever changes only layout/pose/size (reflow, resize box, move, widen, restack) —
+ * the loop may AUTO-apply it. A `'content'` lever changes MEANING (truncate/reword
+ * a caption — verified dialog) — the loop must NEVER auto-apply it; it escalates to
+ * a human. Per-LEVER (not per-diagnostic) so one diagnostic can offer BOTH: any
+ * geometry lever ⇒ still auto-fixable, all-content ⇒ escalate.
+ */
+export type FixClass = 'geometry' | 'content';
+
+/** One decidable way to resolve a diagnostic, tagged with its meaning-preservation
+ *  {@link FixClass}. `lever` is a stable machine token (the prop to touch);
+ *  `hint` is the human prose. A diagnostic carries a LIST of these in
+ *  `detail.fixHints` (additive to the pinned schema — no version bump). */
+export interface FixHint {
+  /** The stable lever token — the prop/dimension to adjust (e.g. `'fontSize'`, `'width'`, `'position'`, `'zIndex'`, `'text'`). */
+  lever: string;
+  /** geometry (auto-fixable) vs content (escalate — never auto-applied). */
+  fixClass: FixClass;
+  /** Human-readable description of applying this lever. */
+  hint: string;
+}
+
 export interface CritiqueResult {
   schemaVersion: typeof DIAGNOSTIC_SCHEMA_VERSION;
   /** true iff any diagnostic has severity `error` (always a static error — the
@@ -547,6 +570,11 @@ function offCanvasDiagnostic(scene: Scene, id: string, a: NodeAgg, w: number, h:
       frame: a.lastFrame,
       bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
       size: { w, h },
+      // 0.63 per-lever fix classes — moving the box on-frame is pure GEOMETRY, so
+      // OFF_CANVAS is always auto-fixable (the loop adjusts position/anchor).
+      fixHints: [
+        { lever: 'position', fixClass: 'geometry', hint: 'move the node (position/anchor) so its box sits on-frame' },
+      ] satisfies FixHint[],
     },
   };
 }
@@ -586,6 +614,20 @@ function textOverflowDiagnostic(
       threshold: round(threshold),
       overflowPx: round(over),
       estimated: estimating,
+      // 0.63 per-lever fix classes — TWO geometry levers (so TEXT_OVERFLOW stays
+      // auto-fixable) PLUS one content lever ('shorten', never auto-applied: a
+      // caption is verified dialog). The loop always prefers a geometry lever.
+      fixHints: (dimension === 'width'
+        ? [
+            { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize until the line fits' },
+            { lever: 'width', fixClass: 'geometry', hint: `widen the wrap box to width ≥ ${round(measured)}` },
+            { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
+          ]
+        : [
+            { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize so the wrapped block fits' },
+            { lever: 'box.h', fixClass: 'geometry', hint: `increase the box height to ≥ ${round(measured)}` },
+            { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
+          ]) satisfies FixHint[],
     },
   };
 }
@@ -607,6 +649,12 @@ function occlusionDiagnostic(scene: Scene, id: string, a: NodeAgg): SceneDiagnos
       `node '${id}'${posStr} is fully covered by ${occ} (0 visible px) for its whole on-stage lifetime. ${lever}.`,
     detail: {
       frame: a.lastFrame,
+      // 0.63 per-lever fix classes — restacking / moving out from under the cover
+      // is pure GEOMETRY, so OCCLUSION is always auto-fixable.
+      fixHints: [
+        { lever: 'zIndex', fixClass: 'geometry', hint: 'raise its zIndex / paint order above the covering layer' },
+        { lever: 'position', fixClass: 'geometry', hint: 'move it out from under the covering layer’s bounds' },
+      ] satisfies FixHint[],
       ...(a.occluderId !== undefined ? { occluder: a.occluderId } : {}),
       ...(a.occluderBounds
         ? {

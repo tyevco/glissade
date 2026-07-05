@@ -24,6 +24,7 @@ export default defineConfig({
     'src/gradient.ts',
     'src/identity.ts',
     'src/examples.ts',
+    'src/recipes.ts',
   ],
   format: 'esm',
   dts: true,

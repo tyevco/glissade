@@ -195,6 +195,30 @@ export { emitWithIds, type EmitWithIdsResult, type NodeIdStream } from '@glissad
 // diff by construction (shared canonicalScene). sceneHash/timelineHash ride along so
 // an author can inspect either half.
 export { certKey, sceneHash, timelineHash } from '@glissade/scene/diagnostics';
+// 0.63 CAPSTONE — assess(scene, timeline, opts?) on window.glissade (kind:'tool'):
+// the ONE composed VERDICT (validateScene + critique + exportFidelity + diff +
+// certKey, unified/deduped/prioritized + clean-of-fixable) the no-build agent runs
+// its author→assess→auto-fix-geometry→re-assess loop against — its PRIMARY audience,
+// so it must reach the IIFE (same rationale as critique/diff). AssessResult carries
+// `fixable`/`escalated`/`accepted` partitions + a `signature` (the convergence
+// detector), so the loop is fully drivable from the IIFE via assess() alone; the
+// helper reads (fixHintsOf/isGeometryFixable/sameDiagnostics) stay ESM-only. Off the
+// SACRED base embed.
+export { assess, type AssessOptions, type AssessResult } from '@glissade/scene/diagnostics';
+// 0.63 recipes — recipe(name, props) instantiates a clean-by-construction starter
+// scaffold (kind:'tool'). Importing the subpath ALSO registers describe().recipes
+// (the value-type-registry pattern). The no-build agent discovers recipes via
+// describe().recipes and instantiates them against the IIFE. Off the base embed.
+export { recipe } from '@glissade/scene/recipes';
+export type {
+  RecipeName,
+  Frame,
+  LowerThirdProps,
+  TitleCardProps,
+  StatRevealProps,
+  ColdOpenProps,
+  RecipePropsByName,
+} from '@glissade/scene/recipes';
 // 0.24 onboarding: register the runnable example corpus so `window.glissade
 // .describe({ examples: true })` surfaces a copy-pasteable, doctest-verified
 // snippet per node/builder method/helper — the no-build agent's primary

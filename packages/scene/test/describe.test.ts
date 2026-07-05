@@ -226,9 +226,15 @@ vdescribe('describe() surface taxonomy', () => {
     // 0.62 certKey (+ its sceneHash/timelineHash halves) join diff as kind:'tool'
     // OPERATIONS (return an address/changeset, not a problem list).
     expect(byName.get('certKey')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 1 });
+    // 0.63 assess (the composed VERDICT) + recipe (starter scaffold factory) join as
+    // kind:'tool' OPERATIONS (return a verdict / a Group, not a problem list).
+    expect(byName.get('assess')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 2 });
+    expect(byName.get('recipe')).toMatchObject({ kind: 'tool', iife: true, form: 'function', arity: 2 });
     expect(m.surface!.filter((e) => e.kind === 'tool').map((e) => e.name)).toEqual([
+      'assess',
       'certKey',
       'diff',
+      'recipe',
       'sceneHash',
       'timelineHash',
     ]);
