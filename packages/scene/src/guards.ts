@@ -9,14 +9,57 @@
  */
 
 import { emitDevWarning } from '@glissade/core';
+// TYPE-ONLY (erased at build — zero bytes, never drags the diagnostics diff
+// module onto the base scene graph): the located command-level delta shape.
+import type { CommandDelta } from './displayDiff.js';
+
+/**
+ * The node-level localization a violation carries when a dev locator ran on the
+ * throw branch: the first node whose isolated emit disagrees, plus (when a leaf
+ * localized it) the first command-level delta of that emit.
+ */
+export interface ViolationDetail {
+  readonly node?: string | undefined;
+  readonly detail?: CommandDelta | undefined;
+}
+
+/**
+ * DEV-only callback invoked ONLY when a violation is about to be thrown, to name
+ * the first node that disagrees. It runs AFTER the guarded globals are restored,
+ * so it may freely re-evaluate the scene (its cold re-eval isn't re-trapped).
+ * Returns `undefined` when it can't localize (then the bare throw stands). Wired
+ * by callers that hold a scene factory (the CLI render path) via
+ * `locateViolation(createScene, doc, t)`; never installed on the render hot path.
+ */
+export type ViolationLocator = () => ViolationDetail | undefined;
 
 export class DeterminismViolationError extends Error {
-  constructor(api: string) {
+  /** The banned API whose call tripped the guard (e.g. `'Math.random'`). */
+  readonly api: string;
+  /**
+   * id of the FIRST node whose isolated emit disagrees across a cold re-eval —
+   * the click-to-line culprit (§5.5). Set only when a dev locator ran on the
+   * throw branch (the guarded CLI render path); `undefined` for a bare throw
+   * with no locator wired.
+   */
+  readonly node?: string | undefined;
+  /**
+   * The first command-level delta (op + field changes) of the divergent node's
+   * isolated emit, when a specific leaf localized it. A locator payload — never
+   * produced on the render hot path.
+   */
+  readonly detail?: CommandDelta | undefined;
+  constructor(api: string, located?: ViolationDetail | undefined) {
+    const where = located?.node !== undefined ? ` First divergent node '${located.node}'.` : '';
     super(
-      `'${api}' was called inside evaluate() — scene code must be a pure function of time (§5.5). ` +
+      `'${api}' was called inside evaluate() — scene code must be a pure function of time (§5.5).${where} ` +
         'Read ctx.time/frame, use the seeded random(seed) from @glissade/core, and resolve assets before rendering.',
     );
     this.name = 'DeterminismViolationError';
+    this.api = api;
+    // exactOptionalPropertyTypes: assign only when present (never write `undefined`).
+    if (located?.node !== undefined) this.node = located.node;
+    if (located?.detail !== undefined) this.detail = located.detail;
   }
 }
 
@@ -51,11 +94,22 @@ function bannedSlots(): Slot[] {
  * to the real implementation (browser/dev); `off` is a no-op. Globals are
  * always restored, even if `fn` throws. `fn` MUST be synchronous — patching is
  * only valid for the sync read phase, never across an await.
+ *
+ * `locate` (DEV-only, `throw` mode) is invoked ONLY on the violation branch,
+ * AFTER globals are restored, to enrich the thrown error with the first node
+ * that disagrees (see {@link ViolationLocator}). It NEVER runs on the happy path
+ * — a clean evaluate pays nothing for it. A locator failure is swallowed so it
+ * can never mask the original violation.
  */
-export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T): T {
+export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T, locate?: ViolationLocator): T {
   if (mode === 'off') return fn();
   const slots = bannedSlots();
   const saved = slots.map((s) => s.target[s.key]);
+  const restore = (): void => {
+    slots.forEach((s, i) => {
+      s.target[s.key] = saved[i];
+    });
+  };
   const warned = new Set<string>();
   slots.forEach((s, i) => {
     s.target[s.key] = (...args: unknown[]): unknown => {
@@ -67,11 +121,36 @@ export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T): T {
       return (saved[i] as (...a: unknown[]) => unknown).apply(s.target, args);
     };
   });
+  let out: T;
   try {
-    return fn();
-  } finally {
-    slots.forEach((s, i) => {
-      s.target[s.key] = saved[i];
-    });
+    out = fn();
+  } catch (err) {
+    // Restore BEFORE the locator runs so its cold re-eval isn't re-trapped by
+    // the still-patched globals. Always restores exactly once before any throw
+    // leaves this function (replacing the old try/finally).
+    restore();
+    if (
+      mode === 'throw' &&
+      locate !== undefined &&
+      err instanceof DeterminismViolationError &&
+      err.node === undefined
+    ) {
+      const located = safeLocate(locate);
+      if (located !== undefined && located.node !== undefined) {
+        throw new DeterminismViolationError(err.api, located);
+      }
+    }
+    throw err;
+  }
+  restore();
+  return out;
+}
+
+/** Run the locator, swallowing any failure — it must never mask the violation. */
+function safeLocate(locate: ViolationLocator): ViolationDetail | undefined {
+  try {
+    return locate();
+  } catch {
+    return undefined;
   }
 }

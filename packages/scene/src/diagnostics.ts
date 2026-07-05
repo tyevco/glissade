@@ -30,7 +30,7 @@ export {
   type DlSnapshot,
 } from './displayDiff.js';
 
-export { auditCacheCold, type CacheColdResult } from './cacheColdAudit.js';
+export { auditCacheCold, locateViolation, type CacheColdResult } from './cacheColdAudit.js';
 
 // 0.57 base-budget review: the font-usage collectors + scene-font validator moved
 // here off the base scene index (they are CLI / localize / export-path helpers,

@@ -99,7 +99,7 @@ const EXEMPT_INTERNALS = new Set<string>([
   // exempt.) These surface only in a HEADLESS lint that imports the whole
   // /diagnostics subpath; the browser bundle re-exports only the author subset.
   'diffDisplayLists', 'formatDisplayDiff', 'serializeDisplayList', 'parseDisplaySnapshot', 'DL_SNAPSHOT_VERSION',
-  'auditCacheCold', 'collectTextUsages', 'collectLocalizedTextUsages', 'validateSceneFonts',
+  'auditCacheCold', 'locateViolation', 'collectTextUsages', 'collectLocalizedTextUsages', 'validateSceneFonts',
   'nearestId', 'levenshtein', 'sortDiagnostics',
   // 0.62 certKey internals on /diagnostics: the SHARED canonical serialization
   // (canonicalSceneForm/canonicalTimelineForm — lower-level than the surfaced

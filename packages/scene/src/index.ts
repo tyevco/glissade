@@ -100,7 +100,13 @@ export {
   type EachResult,
 } from './each.js';
 export { drawOn, drawOnEach, type DrawOnOptions, type DrawOnEachOptions } from './drawOn.js';
-export { withDeterminismGuards, DeterminismViolationError, type GuardMode } from './guards.js';
+export {
+  withDeterminismGuards,
+  DeterminismViolationError,
+  type GuardMode,
+  type ViolationDetail,
+  type ViolationLocator,
+} from './guards.js';
 
 // `collapseReplacer` — the byte-preserving §3.5 cacheKey serializer — lives on
 // the render path (displayList.ts) so it stays on the base index. The heavier

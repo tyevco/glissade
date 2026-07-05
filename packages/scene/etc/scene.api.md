@@ -226,9 +226,13 @@ export interface Ctx2DLike<TPath, TDrawable> {
 // @public
 export abstract class Custom extends Node_2 {}
 
-// @public
+// @public (undocumented)
 export class DeterminismViolationError extends Error {
-    constructor(api: string);
+    constructor(api: string, located?: ViolationDetail | undefined);
+    readonly api: string;
+    // Warning: (ae-forgotten-export) The symbol "CommandDelta" needs to be exported by the entry point index.d.ts
+    readonly detail?: CommandDelta | undefined;
+    readonly node?: string | undefined;
 }
 
 // @public (undocumented)
@@ -1532,7 +1536,18 @@ export interface VideoProps extends NodeProps {
 }
 
 // @public
-export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T): T;
+export interface ViolationDetail {
+    // (undocumented)
+    readonly detail?: CommandDelta | undefined;
+    // (undocumented)
+    readonly node?: string | undefined;
+}
+
+// @public
+export type ViolationLocator = () => ViolationDetail | undefined;
+
+// @public
+export function withDeterminismGuards<T>(mode: GuardMode, fn: () => T, locate?: ViolationLocator): T;
 
 // @public
 export interface WordBox {

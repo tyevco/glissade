@@ -14,6 +14,7 @@ import type { Timeline } from '@glissade/core';
 import { createDisplayListBuilder, type DisplayList } from './displayList.js';
 import { collapseReplacer } from './collapseReplacer.js';
 import { diffDisplayLists, type CommandDelta } from './displayDiff.js';
+import type { ViolationDetail } from './guards.js';
 import type { EvalContext } from './node.js';
 import { Group } from './nodes.js';
 import { evaluate, type Scene } from './scene.js';
@@ -81,4 +82,21 @@ export function auditCacheCold(createScene: () => Scene, doc: Timeline, t: numbe
     return { ok: false, node: id, ...(first !== undefined ? { delta: first } : {}) };
   }
   return { ok: false, ...(groupFallback !== undefined ? { node: groupFallback } : {}) };
+}
+
+/**
+ * Adapt {@link auditCacheCold} into a {@link ViolationLocator} payload for
+ * `withDeterminismGuards('throw', fn, locate)`: name the first node whose cold
+ * re-eval disagrees (plus its first command-level delta), or `undefined` when
+ * the twice-eval happens to agree (a rare timing-only impurity the cold probe
+ * can't reproduce — the bare violation throw then stands). DEV-only — this
+ * re-evaluates two FRESH scenes and is only ever called on the throw branch.
+ */
+export function locateViolation(createScene: () => Scene, doc: Timeline, t: number): ViolationDetail | undefined {
+  const r = auditCacheCold(createScene, doc, t);
+  if (r.ok) return undefined;
+  return {
+    ...(r.node !== undefined ? { node: r.node } : {}),
+    ...(r.delta !== undefined ? { detail: r.delta } : {}),
+  };
 }

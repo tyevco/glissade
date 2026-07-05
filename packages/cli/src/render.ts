@@ -14,8 +14,8 @@ import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { createJiti } from 'jiti';
 import { buildFontRegistry, type AudioClip } from '@glissade/core';
-import { evaluate, withDeterminismGuards, type SceneModule } from '@glissade/scene';
-import { validateSceneFonts, collectLocalizedTextUsages } from '@glissade/scene/diagnostics';
+import { evaluate, withDeterminismGuards, type DisplayList, type SceneModule } from '@glissade/scene';
+import { validateSceneFonts, collectLocalizedTextUsages, locateViolation } from '@glissade/scene/diagnostics';
 import { readRenderManifest, writeRenderManifest, frameKeyDigest, canRemux } from './renderManifest.js';
 import { collectAssetReferences, validateAssetReferences } from './assetValidation.js';
 import { SkiaBackend } from '@glissade/backend-skia';
@@ -656,6 +656,16 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   }
   const fps = opts.fps ?? doc.fps ?? 60;
 
+  // DEV diagnostic (§5.5, card knEFdGXC99rw): evaluate under the determinism
+  // guards, and on a violation name the FIRST node whose cold re-eval disagrees
+  // (via the shipped `auditCacheCold` locator) so the throw is click-to-line
+  // instead of a hand-bisect across the episode. The locator is ONLY invoked on
+  // the throw branch — a clean render never re-evaluates, paying nothing. Reads
+  // `doc` at call time so a later document override (captions/localize) is what
+  // the locator re-evaluates too.
+  const guardedEval = (t: number): DisplayList =>
+    withDeterminismGuards('throw', () => evaluate(scene, doc, t), () => locateViolation(mod.createScene, doc, t));
+
   // --captions sidecar/off: hide the caption node via a document override —
   // only when the scene actually has one (an unbound target would throw).
   const captionsMode = opts.captions ?? 'burn';
@@ -862,7 +872,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
         const { frameCacheKey } = await import('./frameCache.js');
         const keys: string[] = [];
         for (let f = firstFrame; f <= lastFrame; f++) {
-          const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+          const dl = guardedEval(f / fps);
           keys.push(frameCacheKey(dl, keyCtx));
         }
         const digest = frameKeyDigest(keys);
@@ -914,7 +924,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       }
       if (pngBytes === undefined) {
         // §5.5: the CLI/CI export path rejects any wall-clock/random/timer call inside evaluate()
-        const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, f / fps));
+        const dl = guardedEval(f / fps);
         if (frameCache && keyCtx) {
           const { frameCacheKey } = await import('./frameCache.js');
           const key = frameCacheKey(dl, keyCtx);
@@ -1246,7 +1256,13 @@ export async function verifyCert(opts: VerifyCertOptions): Promise<VerifyCertRes
   const mismatches: { i: number; expected: string; got: string }[] = [];
   let okCount = 0;
   for (const rec of frames) {
-    const dl = withDeterminismGuards('throw', () => evaluate(scene, doc, rec.i / fps));
+    // §5.5 (card knEFdGXC99rw): name the first divergent node on a violation
+    // (locator only runs on the throw branch — no happy-path cost).
+    const dl = withDeterminismGuards(
+      'throw',
+      () => evaluate(scene, doc, rec.i / fps),
+      () => locateViolation(mod.createScene, doc, rec.i / fps),
+    );
     backend.render(dl);
     const png = backend.encodePng();
     const got = cert.byteHashOf(png);
