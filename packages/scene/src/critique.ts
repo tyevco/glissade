@@ -586,6 +586,41 @@ function offCanvasDiagnostic(scene: Scene, id: string, a: NodeAgg, w: number, h:
  *  Shrinking to fit is meaning-preserving ONLY while it stays legible. */
 const MIN_LEGIBLE_PX = 6;
 
+/** The feasibility-bounded fix levers for a TEXT_OVERFLOW. A geometry lever is
+ *  included only when it can stay in-bounds (see {@link textOverflowDiagnostic});
+ *  the content lever is always offered but never auto-applied. Built as a typed
+ *  `FixHint[]` via `push` (not a spread of bare object literals) so `fixClass`
+ *  stays narrowed to `FixClass` under `tsc --noEmit`. */
+function buildTextOverflowHints(
+  dimension: 'width' | 'height',
+  measured: number,
+  fontFeasible: boolean,
+  resizeFeasible: boolean,
+): FixHint[] {
+  const hints: FixHint[] = [];
+  if (fontFeasible) {
+    hints.push({
+      lever: 'fontSize',
+      fixClass: 'geometry',
+      hint:
+        dimension === 'width' ? 'reduce fontSize until the line fits' : 'reduce fontSize so the wrapped block fits',
+    });
+  }
+  if (resizeFeasible) {
+    hints.push(
+      dimension === 'width'
+        ? { lever: 'width', fixClass: 'geometry', hint: `widen the wrap box to width ≥ ${round(measured)}` }
+        : { lever: 'box.h', fixClass: 'geometry', hint: `increase the box height to ≥ ${round(measured)}` },
+    );
+  }
+  hints.push({
+    lever: 'text',
+    fixClass: 'content',
+    hint: 'shorten the text (changes meaning — escalate, never auto-apply)',
+  });
+  return hints;
+}
+
 function textOverflowDiagnostic(
   id: string,
   dimension: 'width' | 'height',
@@ -649,28 +684,7 @@ function textOverflowDiagnostic(
       // MIN_LEGIBLE_PX, resize on-canvas). When both are infeasible only the
       // content lever remains → assess() escalates (human owns it). Estimated
       // metrics keep both geometry levers (too coarse to drop one on).
-      fixHints: [
-        ...(fontFeasible
-          ? [
-              {
-                lever: 'fontSize',
-                fixClass: 'geometry',
-                hint:
-                  dimension === 'width'
-                    ? 'reduce fontSize until the line fits'
-                    : 'reduce fontSize so the wrapped block fits',
-              },
-            ]
-          : []),
-        ...(resizeFeasible
-          ? [
-              dimension === 'width'
-                ? { lever: 'width', fixClass: 'geometry', hint: `widen the wrap box to width ≥ ${round(measured)}` }
-                : { lever: 'box.h', fixClass: 'geometry', hint: `increase the box height to ≥ ${round(measured)}` },
-            ]
-          : []),
-        { lever: 'text', fixClass: 'content', hint: 'shorten the text (changes meaning — escalate, never auto-apply)' },
-      ] satisfies FixHint[],
+      fixHints: buildTextOverflowHints(dimension, measured, fontFeasible, resizeFeasible),
     },
   };
 }
