@@ -35,6 +35,7 @@ import {
   type Resource,
 } from './displayList.js';
 import { emitWithIds } from './identity.js';
+import { type Region } from './diff.js';
 import { bindScene, type Scene } from './scene.js';
 import { Group, Text } from './nodes.js';
 import { isEstimatingMeasurer, quantize, type TextMeasurer } from './text.js';
@@ -46,6 +47,26 @@ import {
 } from './validate.js';
 
 // ── options + result ─────────────────────────────────────────────────────────
+
+/**
+ * 0.64 — a RESERVED region (e.g. the bottom caption band): a FILL-zone for its
+ * OWNER node and a FORBIDDEN-zone for everything else. A thin wrapper over the
+ * shared {@link Region} (kept pure — never a render input, only a CRITIQUE input),
+ * so every golden stays byte-identical.
+ *
+ * `owner` is the node id ALLOWED to fill the region — it AND its whole subtree are
+ * subtree-matched as exempt (a caption plus its word/line split children never
+ * self-collide). A Text node that OWNS a SafeArea also gets the band's height
+ * (`bounds.maxY - bounds.minY`) as its EFFECTIVE height-box for the existing
+ * TEXT_OVERFLOW-height check (critique-only — no render `box.h` is ever set).
+ */
+export interface SafeArea {
+  /** The reserved band in device px (integer bounds; the shared diff `Region`). */
+  bounds: Region;
+  /** The node id allowed to FILL the region (subtree-matched: the owner + its
+   *  descendants are exempt from CAPTION_COLLISION). */
+  owner?: string;
+}
 
 export interface CritiqueOptions {
   /**
@@ -80,6 +101,17 @@ export interface CritiqueOptions {
    * the fix shrink text further.
    */
   minLegiblePx?: number;
+  /**
+   * 0.64 — RESERVED regions (e.g. the caption band). A non-owner node whose
+   * on-stage composed box intrudes one for its whole on-stage span raises
+   * CAPTION_COLLISION; the band OWNER (and its subtree) FILL it and are exempt. A
+   * caption OWNING a band also gets the band height as its effective height-box for
+   * the TEXT_OVERFLOW-height check, and a resize (box.h/width grow) that would push
+   * a non-owner into a band is infeasible. A PURE critique input — never a render
+   * input (no node gets a `box.h`), so every golden stays byte-identical. Build one
+   * with `captionSafeArea(size)` from @glissade/narrate.
+   */
+  safeAreas?: readonly SafeArea[];
 }
 
 /**
@@ -204,6 +236,13 @@ function fullyOutsideFrame(b: Bounds, w: number, h: number): boolean {
 /** True when `outer` fully contains `inner` (bbox containment). */
 function contains(outer: Bounds, inner: Bounds): boolean {
   return outer.minX <= inner.minX && outer.minY <= inner.minY && outer.maxX >= inner.maxX && outer.maxY >= inner.maxY;
+}
+
+/** True when a device-space box overlaps a reserved {@link Region} (bbox ∩ region
+ *  ≠ ∅) — the SAME open-interval intersection shape as {@link intersectsFrame},
+ *  deterministic run-to-run (identical recomputation; no float rounding). */
+function intersectsRegion(b: Bounds, r: Region): boolean {
+  return b.maxX > r.minX && b.minX < r.maxX && b.maxY > r.minY && b.minY < r.maxY;
 }
 
 // ── per-frame walk ────────────────────────────────────────────────────────────
@@ -366,6 +405,10 @@ interface NodeAgg {
   /** text runs at the last on-stage frame the node carried text. */
   lastTextFrameT: number;
   lastTexts: TextRun[];
+  /** 0.64 — per-SafeArea count of on-stage frames whose box intruded that band
+   *  (indexed by the `opts.safeAreas` position). A CAPTION_COLLISION fires for a
+   *  non-owner whose count === onStage (intrudes its WHOLE on-stage span). */
+  bandCollide: number[];
 }
 
 // ── the primitive ─────────────────────────────────────────────────────────────
@@ -403,6 +446,9 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // to BOTH textOverflowDiagnostic call sites (width + height) so a raised/lowered
   // floor gates the fontSize feasibility on both overflow axes identically.
   const minLegiblePx = opts.minLegiblePx ?? MIN_LEGIBLE_PX;
+  // 0.64 — the reserved SafeArea bands (CAPTION_COLLISION + the owned-band
+  // effective-box + the resize-feasibility bound). Empty ⇒ byte-identical behaviour.
+  const safeAreas = opts.safeAreas ?? [];
   const duration = compileTimeline(timeline).duration;
   const lastFrame = Math.max(0, Math.floor(duration * fps));
 
@@ -421,6 +467,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         occluderBounds: null,
         lastTextFrameT: 0,
         lastTexts: [],
+        bandCollide: safeAreas.map(() => 0),
       };
       agg.set(id, a);
     }
@@ -445,6 +492,11 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         a.lastTexts = fn.texts;
       }
       if (fullyOutsideFrame(fn.bounds, w, h)) a.offCanvas++;
+      // 0.64 CAPTION_COLLISION accumulation: count on-stage frames whose box
+      // intrudes each reserved band (integer-region intersection; deterministic).
+      for (let si = 0; si < safeAreas.length; si++) {
+        if (intersectsRegion(fn.bounds, safeAreas[si]!.bounds)) a.bandCollide[si]!++;
+      }
       // OCCLUSION: on-frame AND fully covered by a single opaque occluder above it.
       if (intersectsFrame(fn.bounds, w, h)) {
         let cover: Occluder | undefined;
@@ -511,7 +563,15 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       }
       const over = widest - width;
       const wFontSize = a.lastTexts[0]!.font.size;
-      if (over > 0.5) rendered.push(textOverflowDiagnostic(id, 'width', widest, width, over, estimating, wFontSize, w, h, minLegiblePx));
+      if (over > 0.5)
+        rendered.push(
+          textOverflowDiagnostic(id, 'width', widest, width, over, estimating, wFontSize, w, h, minLegiblePx, {
+            fixedBand: false,
+            bounds: a.lastBounds,
+            safeAreas,
+            scene,
+          }),
+        );
     }
 
     // HEIGHT: the wrapped-block height vs an explicit `box.h`. The block height is
@@ -520,12 +580,34 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     // count is the line count. Catches a caption/card whose wrapped text is TALLER
     // than its box (fits horizontally, clipped vertically). Auto-height text (no
     // `box.h`) has no vertical box, so it can't overflow one — no fire.
-    const boxH = node.box?.h;
-    if (boxH !== undefined && boxH > 0) {
+    // 0.64 (a): a caption OWNING a SafeArea has NO explicit `box.h`, so today the
+    // height check never fired. Feed the OWNED band height as the EFFECTIVE
+    // height-box — CRITIQUE-ONLY: we DO NOT set a render `box.h` on the node (that
+    // would change rendered bytes), so every golden stays byte-identical. The band
+    // is a FIXED reserved region, so its resize lever is dropped (`fixedBand`):
+    // a too-tall caption shrinks-to-fit if ≥ minLegiblePx, else escalates content.
+    let effH = node.box?.h;
+    let fixedBand = false;
+    if (effH === undefined) {
+      const owned = safeAreas.find((sa) => sa.owner === id);
+      if (owned) {
+        effH = owned.bounds.maxY - owned.bounds.minY;
+        fixedBand = true;
+      }
+    }
+    if (effH !== undefined && effH > 0) {
       const fontSize = a.lastTexts[0]!.font.size;
       const blockH = quantize(fontSize * node.lineHeight) * a.lastTexts.length;
-      const overH = blockH - boxH;
-      if (overH > 0.5) rendered.push(textOverflowDiagnostic(id, 'height', blockH, boxH, overH, estimating, fontSize, w, h, minLegiblePx));
+      const overH = blockH - effH;
+      if (overH > 0.5)
+        rendered.push(
+          textOverflowDiagnostic(id, 'height', blockH, effH, overH, estimating, fontSize, w, h, minLegiblePx, {
+            fixedBand,
+            bounds: a.lastBounds,
+            safeAreas,
+            scene,
+          }),
+        );
     }
   }
 
@@ -537,6 +619,21 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     const node = scene.nodes.get(id);
     if (!node || node instanceof Group) continue; // report leaf content, not containers
     rendered.push(occlusionDiagnostic(scene, id, a));
+  }
+
+  // CAPTION_COLLISION — a NON-OWNER node intruding a reserved SafeArea band for its
+  // WHOLE on-stage span (the persistent-intruder discipline OFF_CANVAS/OCCLUSION
+  // use). The band OWNER — and its subtree (a caption + its word/line split
+  // children) — FILL the band, so they are subtree-matched exempt (no
+  // self-collision). Integer-region intersection ⇒ deterministic (no flicker).
+  for (const [id, a] of agg) {
+    if (a.onStage === 0) continue;
+    for (let si = 0; si < safeAreas.length; si++) {
+      const sa = safeAreas[si]!;
+      if (a.bandCollide[si] !== a.onStage) continue; // intrudes every on-stage frame
+      if (isOwnedBy(scene, id, sa.owner)) continue; // owner + subtree fill the band
+      rendered.push(captionCollisionDiagnostic(scene, id, a, sa));
+    }
   }
 
   const diagnostics = sortDiagnostics([...staticDiags, ...rendered]);
@@ -637,6 +734,20 @@ function buildTextOverflowHints(
   return hints;
 }
 
+/**
+ * 0.64 — the resize-lever feasibility context. The resize (width / box.h GROW) lever
+ * is dropped when growing the box to `measured` would leave the canvas (0.63.1) OR —
+ * NEW — push into a SafeArea the node does NOT own, OR the "box" is a FIXED reserved
+ * band (a caption's owned band, which cannot be grown). `bounds` is the node's device
+ * box the grow extends from.
+ */
+interface ResizeContext {
+  fixedBand: boolean;
+  bounds: Bounds;
+  safeAreas: readonly SafeArea[];
+  scene: Scene;
+}
+
 function textOverflowDiagnostic(
   id: string,
   dimension: 'width' | 'height',
@@ -648,6 +759,7 @@ function textOverflowDiagnostic(
   canvasW: number,
   canvasH: number,
   minLegiblePx: number,
+  resize: ResizeContext,
 ): SceneDiagnostic {
   // 0.63 — FEASIBILITY-BOUND the geometry levers (ai-training's content-seat catch:
   // an unbounded geometry fix converges to a readable-STRING-but-unreadable-CAPTION
@@ -660,7 +772,11 @@ function textOverflowDiagnostic(
   // are too coarse to drop a lever on, so bounding applies only to REAL measurement.
   const fitFontPx = measured > 0 ? fontSize * (threshold / measured) : fontSize;
   const fontFeasible = estimating || fitFontPx >= minLegiblePx;
-  const resizeFeasible = estimating || measured <= (dimension === 'width' ? canvasW : canvasH);
+  // 0.64 — resize feasibility now composes 0.63.1's canvas bound with the SafeArea
+  // bound: a resize is infeasible if the box is a FIXED reserved band (can't grow),
+  // if the grown box leaves the canvas, OR if the grown box would push into a
+  // SafeArea the node does NOT own (the deferred safeArea resize-feasibility).
+  const resizeFeasible = resizeLeverFeasible(id, dimension, measured, canvasW, canvasH, estimating, resize);
   const geometryExhausted = !fontFeasible && !resizeFeasible;
 
   // The fix-hint names the RIGHT lever per axis: a width overflow reaches for
@@ -744,7 +860,83 @@ function occlusionDiagnostic(scene: Scene, id: string, a: NodeAgg): SceneDiagnos
   };
 }
 
+/**
+ * 0.64 — is the resize (width / box.h grow) lever FEASIBLE? Composes 0.63.1's
+ * canvas bound with the SafeArea bound. Estimated metrics keep it (too coarse to
+ * drop a lever on). A FIXED reserved band (a caption's owned effective-box) cannot
+ * be grown → infeasible. Otherwise the grow must both fit the canvas AND not push
+ * into a SafeArea the node does not own.
+ */
+function resizeLeverFeasible(
+  id: string,
+  dimension: 'width' | 'height',
+  measured: number,
+  canvasW: number,
+  canvasH: number,
+  estimating: boolean,
+  resize: ResizeContext,
+): boolean {
+  if (estimating) return true;
+  if (resize.fixedBand) return false;
+  if (measured > (dimension === 'width' ? canvasW : canvasH)) return false;
+  const grown: Bounds =
+    dimension === 'width'
+      ? { ...resize.bounds, maxX: resize.bounds.minX + measured }
+      : { ...resize.bounds, maxY: resize.bounds.minY + measured };
+  for (const sa of resize.safeAreas) {
+    if (isOwnedBy(resize.scene, id, sa.owner)) continue; // growing into one's OWN band is fine
+    if (intersectsRegion(grown, sa.bounds)) return false; // grow would intrude a non-owned band
+  }
+  return true;
+}
+
+/** 0.64 CAPTION_COLLISION builder — a non-owner node persistently intruding a
+ *  reserved band. The fix is pure GEOMETRY (move it above the band / out of the
+ *  region), so it is auto-fixable (MVP: always offer the position lever). */
+function captionCollisionDiagnostic(scene: Scene, id: string, a: NodeAgg, sa: SafeArea): SceneDiagnostic {
+  const b = a.lastBounds;
+  const r = sa.bounds;
+  const band = sa.owner !== undefined ? `the reserved '${sa.owner}' band` : 'a reserved safe area';
+  const pos = vec2At(scene, `${id}/position`, a.lastT);
+  const posStr = pos ? ` (position [${round(pos[0])}, ${round(pos[1])}])` : '';
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'CAPTION_COLLISION',
+    severity: 'warning',
+    source: 'critique',
+    node: id,
+    message:
+      `node '${id}'${posStr} intrudes ${band} (region x:[${r.minX},${r.maxX}] y:[${r.minY},${r.maxY}]): its box ` +
+      `(x:[${round(b.minX)},${round(b.maxX)}] y:[${round(b.minY)},${round(b.maxY)}]) overlaps the reserved zone for its ` +
+      `whole on-stage lifetime. Move it above the band top (y < ${r.minY}) or out of the reserved region.`,
+    detail: {
+      frame: a.lastFrame,
+      bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
+      region: { minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY },
+      ...(sa.owner !== undefined ? { owner: sa.owner } : {}),
+      // 0.64 per-lever fix class — moving the node out of the reserved band is pure
+      // GEOMETRY, so CAPTION_COLLISION is always auto-fixable.
+      fixHints: [
+        {
+          lever: 'position',
+          fixClass: 'geometry',
+          hint: 'move the node above the band top / out of the reserved region',
+        },
+      ] satisfies FixHint[],
+    },
+  };
+}
+
 // ── small utilities ────────────────────────────────────────────────────────────
+
+/** 0.64 — is `id` the OWNER of a band, or in the owner's SUBTREE? (id === owner OR
+ *  any ancestor's id === owner). Reuses the offstage subtree-ancestor helper so the
+ *  owner + its descendants are exempt from CAPTION_COLLISION (no self-collision). */
+function isOwnedBy(scene: Scene, id: string, owner: string | undefined): boolean {
+  if (owner === undefined) return false;
+  if (id === owner) return true;
+  return hasFlaggedAncestor(scene, id, new Set([owner]));
+}
 
 /** Walk `id`'s ided ancestor chain; true if any ancestor is in `flagged`. */
 function hasFlaggedAncestor(scene: Scene, id: string, flagged: ReadonlySet<string>): boolean {

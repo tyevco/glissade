@@ -17,6 +17,7 @@ import {
   type FontSpec,
   type TextMeasurer,
 } from '@glissade/scene';
+import { type SafeArea } from '@glissade/scene/diagnostics';
 
 // ---- the authored script (committed next to the scene module) ----
 
@@ -417,8 +418,17 @@ export function splitCaption(segment: TimedSegment, maxChars?: number): CaptionC
   return chunks.map((text, i) => ({ text, start: segment.start + i * span, end: segment.start + (i + 1) * span }));
 }
 
+/**
+ * The canonical caption node id — the SINGLE source of truth `captionNode`,
+ * `captionTrack`, and `captionSafeArea` all pair on. Keeping it one string means
+ * `captionSafeArea(size).owner === captionNode(size).id` BY CONSTRUCTION, so a
+ * caption never SELF-COLLIDES with its own reserved band (the owner + its subtree
+ * are subtree-matched exempt in CAPTION_COLLISION).
+ */
+export const CAPTION_NODE_ID = 'captions';
+
 export function captionTrack(timing: NarrationTiming, opts: CaptionTrackOptions = {}): Track<string> {
-  const target = opts.target ?? 'captions/text';
+  const target = opts.target ?? `${CAPTION_NODE_ID}/text`;
   const budget = timing.captionSplit?.maxChars;
   const keys = [key(0, '', { interp: 'hold' as const })];
   let cursor = 0;
@@ -482,7 +492,7 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
   const bottomY = Math.round(size.h * (1 - inset));
 
   const node = new Text({
-    id: 'captions',
+    id: CAPTION_NODE_ID,
     text: '',
     align: 'center',
     fontSize: baseFont,
@@ -527,6 +537,46 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
   }
 
   return node;
+}
+
+/**
+ * The TOP (device px) of the reserved caption band — the Y above which foreground
+ * art is safe and below which it collides with captions. Derived from `captionNode`'s
+ * OWN layout: the caption baseline sits at `h·(1−inset)` (inset 0.10 landscape /
+ * 0.18 portrait), and the band reserves a DEFAULT (2-line) caption block above that
+ * baseline down to the frame bottom, using captionNode's own font fraction /
+ * lineHeight / default maxLines. ONE `Math.round` → integer-stable + deterministic;
+ * landscape and portrait yield different tops (the platform-safe-area asymmetry).
+ */
+export function captionTop(size: { w: number; h: number }): number {
+  const portrait = size.h > size.w;
+  const inset = portrait ? 0.18 : 0.1; // captionNode's bottom inset fraction
+  const fontFrac = portrait ? 0.052 : 0.06; // captionNode's base font fraction
+  const lineHeight = 1.3; // captionNode's default lineHeight
+  const defaultLines = 2; // captionNode autoFit's default maxLines
+  return Math.round(size.h * (1 - inset) - Math.min(size.w, size.h) * fontFrac * lineHeight * defaultLines);
+}
+
+/**
+ * Build the reserved caption-band {@link SafeArea} for `critique`/`assess`'s
+ * `safeAreas` from narrate's OWN caption layout — the bottom band from
+ * {@link captionTop} to the frame bottom, OWNED by the caption node. Feed it to
+ * `assess(scene, tl, { safeAreas: [captionSafeArea(size)] })`: the caption + its
+ * children FILL the band (owner subtree-matched, no self-collision) while any other
+ * node intruding it raises CAPTION_COLLISION.
+ *
+ * The default `owner` is {@link CAPTION_NODE_ID} — the SAME id `captionNode(size)`
+ * pairs on — so the default is safe by construction. If you RENAME the caption node
+ * (`captionNode(size, …)` with a custom id via `new Text({ id })`), pass
+ * `captionSafeArea(size, { owner: '<your-id>' })` to keep the owner aligned (else the
+ * renamed caption becomes a non-owner intruding its own band — a false positive).
+ * Integer-pinned bounds (reuses {@link captionTop}; no new float math).
+ */
+export function captionSafeArea(size: { w: number; h: number }, opts: { owner?: string } = {}): SafeArea {
+  return {
+    bounds: { minX: 0, minY: captionTop(size), maxX: size.w, maxY: size.h },
+    owner: opts.owner ?? CAPTION_NODE_ID,
+  };
 }
 
 // ---- ducking: a music-bed gain envelope derived from the narration ----

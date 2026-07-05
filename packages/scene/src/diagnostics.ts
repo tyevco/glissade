@@ -76,6 +76,9 @@ export {
   type CritiqueResult,
   type FixHint,
   type FixClass,
+  // 0.64 — the reserved caption-band primitive (CAPTION_COLLISION + owned-band
+  // effective-box + resize-feasibility). A thin wrapper over diff's shared Region.
+  type SafeArea,
 } from './critique.js';
 
 // 0.61 — the interchange/edit half of the structured-verification suite:

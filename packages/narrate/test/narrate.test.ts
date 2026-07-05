@@ -8,7 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { sampleTrack, type AudioClip, type Track } from '@glissade/core';
 import {
   captionNode,
+  captionSafeArea,
+  captionTop,
   captionTrack,
+  CAPTION_NODE_ID,
   duckEnvelope,
   splitCaption,
   music,
@@ -192,6 +195,36 @@ describe('captionNode()', () => {
     expect(node.position()[1]).toBe(Math.round(360 * 0.8));
     expect(node.filters()).toEqual([]);
     expect(captionNode({ w: 640, h: 360 }).filters().length).toBeGreaterThan(0);
+  });
+});
+
+describe('captionSafeArea()', () => {
+  it('landscape: integer bounds { minX:0, minY:round, maxX:w, maxY:h } owned by the caption id', () => {
+    const size = { w: 1920, h: 1080 };
+    const sa = captionSafeArea(size);
+    expect(sa.bounds).toEqual({ minX: 0, minY: captionTop(size), maxX: 1920, maxY: 1080 });
+    // single Math.round → integer-stable
+    expect(Number.isInteger(sa.bounds.minY)).toBe(true);
+    expect(sa.bounds.minY).toBe(804); // round(1080·0.9 − 1080·0.06·1.3·2)
+    expect(sa.owner).toBe(CAPTION_NODE_ID);
+  });
+
+  it('portrait: a DIFFERENT (higher-inset) band, still integer + caption-owned', () => {
+    const size = { w: 1080, h: 1920 };
+    const sa = captionSafeArea(size);
+    expect(sa.bounds).toEqual({ minX: 0, minY: captionTop(size), maxX: 1080, maxY: 1920 });
+    expect(sa.bounds.minY).toBe(1428); // round(1920·0.82 − 1080·0.052·1.3·2)
+    expect(sa.owner).toBe(CAPTION_NODE_ID);
+  });
+
+  it('owner defaults to the captionNode default id (safe by construction — no self-collision)', () => {
+    const size = { w: 640, h: 360 };
+    // the SAME id captionNode pairs on → owner === the caption node's id
+    expect(captionSafeArea(size).owner).toBe(captionNode(size).id);
+  });
+
+  it('an owner override tracks a RENAMED caption node', () => {
+    expect(captionSafeArea({ w: 640, h: 360 }, { owner: 'foo' }).owner).toBe('foo');
   });
 });
 

@@ -8,6 +8,7 @@ import { AssetRef } from '@glissade/core';
 import { AudioClip } from '@glissade/core';
 import { FilterSpec } from '@glissade/scene';
 import { Key } from '@glissade/core';
+import { SafeArea } from '@glissade/scene/diagnostics';
 import { Text as Text_2 } from '@glissade/scene';
 import { Track } from '@glissade/core';
 
@@ -16,6 +17,9 @@ export type BedMode = /** hold the current (ducked) level across the pause — n
 'hold'
 /** cut the bed to a floor for the window (a dramatic silence) */ | 'silence'
 /** let the bed breathe back up to base while the voice rests */ | 'swell';
+
+// @public
+export const CAPTION_NODE_ID = "captions";
 
 // @public
 export interface CaptionCue {
@@ -32,6 +36,14 @@ export function captionNode(size: {
     w: number;
     h: number;
 }, style?: CaptionStyle): Text_2;
+
+// @public
+export function captionSafeArea(size: {
+    w: number;
+    h: number;
+}, opts?: {
+    owner?: string;
+}): SafeArea;
 
 // @public (undocumented)
 export interface CaptionStyle {
@@ -50,6 +62,12 @@ export interface CaptionStyle {
     minScale?: number;
     widthFrac?: number;
 }
+
+// @public
+export function captionTop(size: {
+    w: number;
+    h: number;
+}): number;
 
 // @public (undocumented)
 export function captionTrack(timing: NarrationTiming, opts?: CaptionTrackOptions): Track<string>;

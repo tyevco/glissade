@@ -230,6 +230,15 @@ export interface ApiManifest {
   version: string;
   nodes: { [typeName: string]: DescribedNode };
   valueTypes: string[];
+  /**
+   * 0.64 — a STRUCTURED-TYPE registry: the field shape of the opaque option/return
+   * types an option schema references by name (e.g. `SafeArea[]` in the `critique`/
+   * `assess` options schema). Each entry maps a type name to its `field → typeString`
+   * shape, so a no-build agent can BUILD a valid value (the 0.63.1 options-schema
+   * lesson, one level down — at the type). ADDITIVE — a manifest captured before 0.64
+   * omits it. Curated, drift-guarded by `describe.test.ts`.
+   */
+  types?: { [typeName: string]: { [field: string]: string } };
   easings: string[];
   builder: { methods: DescribedBuilderMethod[] };
   /**
@@ -428,6 +437,17 @@ const SURFACE_TYPE_ONLY = ['Paint', 'PathValue', 'FontAxes'];
  * map (NOT a `satisfies` over conditional spreads) so each literal keeps its field
  * types narrowed under `tsc --noEmit`.
  */
+/**
+ * 0.64 — the STRUCTURED-TYPE registry surfaced on {@link ApiManifest.types}. Field
+ * shapes for the opaque named types an option schema references (`SafeArea[]`), so a
+ * no-build agent can construct a valid value. Mirrors the real `Region` (diff.ts) +
+ * `SafeArea` (critique.ts) interfaces; drift-guarded by `describe.test.ts`.
+ */
+const STRUCTURED_TYPES: { [typeName: string]: { [field: string]: string } } = {
+  Region: { minX: 'number', minY: 'number', maxX: 'number', maxY: 'number', space: 'px' },
+  SafeArea: { bounds: 'Region', owner: 'string?' },
+};
+
 const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
   assess: [
     {
@@ -453,6 +473,12 @@ const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
       type: 'SceneState',
       summary: 'prior {scene,timeline} — attaches a diff blast-radius',
     },
+    {
+      name: 'safeAreas',
+      type: 'SafeArea[]',
+      summary:
+        'reserved regions (e.g. the caption band); a non-owner node intersecting one raises CAPTION_COLLISION, and a caption owning one gets its band as its effective height-box',
+    },
   ],
   critique: [
     {
@@ -471,6 +497,12 @@ const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
       name: 'offstage',
       type: 'string[]',
       summary: 'node ids whose off-canvas is intentional — suppressed',
+    },
+    {
+      name: 'safeAreas',
+      type: 'SafeArea[]',
+      summary:
+        'reserved regions (e.g. the caption band); a non-owner node intersecting one raises CAPTION_COLLISION, and a caption owning one gets its band as its effective height-box',
     },
   ],
 };
@@ -1223,6 +1255,10 @@ export function describe(opts: DescribeOptions = {}): ApiManifest {
     version: PACKAGE_VERSION,
     nodes,
     valueTypes: listValueTypes(),
+    // 0.64: the structured-type registry — field shapes for the opaque named types
+    // an options schema references (Region / SafeArea), so a no-build agent can
+    // BUILD a valid `safeAreas` value.
+    types: { ...STRUCTURED_TYPES },
     easings: Object.keys(easings),
     builder: { methods: withEx ? BUILDER_METHODS.map((m) => ({ ...m, ...ex(m.name) })) : BUILDER_METHODS },
     // The curated helper/factory surface (transport, motion-path, clips,

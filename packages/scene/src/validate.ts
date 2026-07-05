@@ -74,6 +74,13 @@ export type DiagnosticCode =
   // here too.)
   | 'TEXT_OVERFLOW'
   | 'OCCLUSION'
+  // 0.64 critique() RENDERED code — additive to the wire contract (no schema bump).
+  // CAPTION_COLLISION: a NON-OWNER node's on-stage composed box intrudes a reserved
+  // SafeArea band (e.g. the caption band) for its whole on-stage span. Emitted by
+  // critique() when `opts.safeAreas` is supplied; the band OWNER (and its subtree)
+  // are exempt (they FILL the band). A composed-geometry check like OFF_CANVAS/
+  // OCCLUSION, so validateScene (static LOCAL positions only) does NOT emit it.
+  | 'CAPTION_COLLISION'
   // 0.61 static export-fidelity code — additive to the wire contract (no schema
   // bump). RENDER_ONLY_EXPORT: a node uses a RENDER-ONLY feature (motionBlur /
   // echo / shake / camera-shake / mesh fill / text-cursor / reveal mask) that the

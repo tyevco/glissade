@@ -169,6 +169,8 @@ export {
   type CritiqueOptions,
   type CritiqueResult,
   type DiagnosticSource,
+  // 0.64 — the reserved caption-band SafeArea primitive (CAPTION_COLLISION).
+  type SafeArea,
 } from '@glissade/scene/diagnostics';
 // 0.61 — the interchange/edit half of the verification suite on the IIFE: diff(a,b)
 // (a ChangeSet TOOL — the no-build author→patch→diff→verify loop) + exportFidelity

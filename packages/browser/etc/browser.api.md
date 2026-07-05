@@ -96,6 +96,7 @@ import { RevealOpts } from '@glissade/scene/type';
 import { RevealResult } from '@glissade/scene/type';
 import { revealWords } from '@glissade/scene/type';
 import { Row } from '@glissade/scene/layout-ctors';
+import { SafeArea } from '@glissade/scene/diagnostics';
 import { SceneDiagnostic } from '@glissade/scene/diagnostics';
 import { sceneHash } from '@glissade/scene/diagnostics';
 import { setShaderRunner } from '@glissade/backend-canvas2d';
@@ -297,6 +298,8 @@ export { RevealResult }
 export { revealWords }
 
 export { Row }
+
+export { SafeArea }
 
 export { SceneDiagnostic }
 
