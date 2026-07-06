@@ -1,5 +1,16 @@
 # @glissade/scene
 
+## 0.66.0
+
+### Minor Changes
+
+- fd0bd26: Node-framing: a camera can target a node by id. `camera(layers, { centerOn: 'hero' })` centers the focal point on that node's world position, resolved at eval time via a new `EvalContext.resolveNode` channel (injected from the scene's node map, like `measurer`/`size`) — an explicit scene-graph edge, not a captured closure. World-space "B" mode keeps the single `worldPx÷size` division inside `cameraLayerMatrix` (split into a px-native `cameraLayerMatrixPx` core; the relative-center path is byte-identical to before), so the size-derived focal never touches the trackable `cam/center` signal. An optional declarative `clear: Region | SafeArea` nudges the focal point so the target's bounds clear a reserved region (direction DERIVED from node-vs-region — up for a bottom band, down for a top band, canonical tie-break toward the larger free area; fails loud when the node can't fit). The resolved focal point is exposed INSPECTION-ONLY via `resolveAt('<cam>/resolvedCenter', t)` (== the focal point the render used — one sample, three consumers; setting it fails loud). Also bundles a shared Region-ingest validator (`validateRegion`): a float Region quantizes to integer bounds (Math.round, matching `captionSafeArea`), a negative-extent Region fails loud — enforced at the ONE shared boundary that feeds both `critique`'s `safeAreas` and centerOn's `clear`, so a hand-built and a helper Region are byte-interchangeable; `describe().types.Region` now signals `integer`. Camera without `centerOn` emits a byte-identical DisplayList (opt-in; all existing goldens unchanged, determinism hash held). New `camera-frame` showcase golden.
+
+### Patch Changes
+
+- 1df1f94: Node-framing `clear` + critique CAPTION_COLLISION now agree on a STROKED node's bounds (fixes a residual collision found by the content-seat gate). Previously `clear`/`worldBoxOf` used the content box (stroke-excluded) while critique used a stroke-inflated AABB that also over-inflated ROUNDED strokes by the full miter extent (~5×strokeWidth, since a rounded rect's stroke was emitted join-less and defaulted to miter) — so `centerOn(strokedRoundedNode, { clear })` left a residual overlap. Fix: ONE shared join→extent rule (`strokeExtent`: round/bevel joins + any cap → `strokeWidth/2`; genuine miter corners → `miterLimit × strokeWidth/2`) that BOTH `clear` (now stroke-aware, lifting by the real stroke extent) and critique's inflation call — so they can't disagree by construction; and rounded `Rect` strokes now emit their honest `join:'round'` (a DisplayList-fidelity fix — the render already draws round, so every PNG is byte-identical). Two-sided by design: a node cleared by its stroke extent reads no collision, but a genuine sub-extent overhang still fires (no over-correcting into stroke-blindness). Determinism hash held; all existing goldens byte-identical; base embed unchanged.
+  - @glissade/core@0.66.0
+
 ## 0.66.0-pre.1
 
 ### Patch Changes
