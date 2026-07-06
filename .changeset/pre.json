@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.65.0"
   },
   "changesets": [
+    "centeron-stroke-bounds",
     "node-framing-centeron"
   ]
 }

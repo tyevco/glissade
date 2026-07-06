@@ -1042,6 +1042,7 @@ export class Rect extends Shape {
     };
     // (undocumented)
     protected pathSegs(): PathSeg[];
+    strokeJoin(): 'round' | undefined;
     // (undocumented)
     readonly width: BindableSignal<number>;
 }

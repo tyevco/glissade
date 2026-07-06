@@ -36,6 +36,7 @@ import { fallbackMeasurer, type TextMeasurer } from './text.js';
 import { validateRegion } from './region.js';
 import { type Region } from './diff.js';
 import { shakeMatrix, shakeOffset, type ShakeSpec } from './shake.js';
+import { strokeExtent } from './strokeBounds.js';
 
 /** Thrown for a mis-built or off-safe-area camera (fail loud, never a silent no-op). */
 export class CameraError extends Error {
@@ -152,15 +153,32 @@ function worldBoxOf(node: Node, measurer: TextMeasurer): WorldBox {
     return { center: c, minX: c[0], minY: c[1], maxX: c[0], maxY: c[1] };
   }
   const off = node.drawOffset(measurer);
+  // VISUAL bounds, not content: expand the content box by the node's stroke
+  // overhang via the SHARED join→extent rule (strokeExtent) — the SAME rule
+  // critique's collision box uses, fed the SAME {width, join} the DL carries. So
+  // `clear` lifts the node's VISIBLE extent (content + stroke), not just its content
+  // box: a stroked node clears by strokeWidth/2 MORE than an unstroked one, and a
+  // cleared stroked node leaves no residual stroke overhang in the band.
+  // The node's stroke {width, join} feed the SHARED strokeExtent rule (the SAME rule
+  // critique's collision box uses, fed the SAME join the DL carries via strokeJoin).
+  // Read structurally (Shape's accessors aren't on the base Node type) so the base
+  // embed carries no camera-only seam; the extent math lives here, off-base (/motion).
+  const sh = node as { stroke?(): unknown; strokeWidth?(): number; strokeJoin?(): 'miter' | 'round' | 'bevel' | undefined };
+  const sw = sh.strokeWidth?.() ?? 0;
+  let ext = 0;
+  if (sw > 0 && sh.stroke?.()) {
+    const join = sh.strokeJoin?.();
+    ext = strokeExtent(join !== undefined ? { width: sw, join } : { width: sw });
+  }
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   const corners: Vec2[] = [
-    [off.x, off.y],
-    [off.x + size.w, off.y],
-    [off.x, off.y + size.h],
-    [off.x + size.w, off.y + size.h],
+    [off.x - ext, off.y - ext],
+    [off.x + size.w + ext, off.y - ext],
+    [off.x - ext, off.y + size.h + ext],
+    [off.x + size.w + ext, off.y + size.h + ext],
   ];
   for (const corner of corners) {
     const p = applyToPoint(wm, corner);

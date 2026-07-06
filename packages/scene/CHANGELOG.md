@@ -1,5 +1,12 @@
 # @glissade/scene
 
+## 0.66.0-pre.1
+
+### Patch Changes
+
+- Node-framing `clear` + critique CAPTION_COLLISION now agree on a STROKED node's bounds (fixes a residual collision found by the content-seat gate). Previously `clear`/`worldBoxOf` used the content box (stroke-excluded) while critique used a stroke-inflated AABB that also over-inflated ROUNDED strokes by the full miter extent (~5×strokeWidth, since a rounded rect's stroke was emitted join-less and defaulted to miter) — so `centerOn(strokedRoundedNode, { clear })` left a residual overlap. Fix: ONE shared join→extent rule (`strokeExtent`: round/bevel joins + any cap → `strokeWidth/2`; genuine miter corners → `miterLimit × strokeWidth/2`) that BOTH `clear` (now stroke-aware, lifting by the real stroke extent) and critique's inflation call — so they can't disagree by construction; and rounded `Rect` strokes now emit their honest `join:'round'` (a DisplayList-fidelity fix — the render already draws round, so every PNG is byte-identical). Two-sided by design: a node cleared by its stroke extent reads no collision, but a genuine sub-extent overhang still fires (no over-correcting into stroke-blindness). Determinism hash held; all existing goldens byte-identical; base embed unchanged.
+  - @glissade/core@0.66.0-pre.1
+
 ## 0.66.0-pre.0
 
 ### Minor Changes

@@ -37,6 +37,7 @@ import {
 import { emitWithIds } from './identity.js';
 import { type Region } from './diff.js';
 import { validateRegion } from './region.js';
+import { strokeExtent } from './strokeBounds.js';
 import { bindScene, type Scene } from './scene.js';
 import { Group, Text } from './nodes.js';
 import { isEstimatingMeasurer, quantize, type TextMeasurer } from './text.js';
@@ -334,7 +335,12 @@ function walkFrame(list: DisplayList, ids: readonly (string | undefined)[], meas
       case 'strokePath': {
         const pb = pathResourceBounds(list.resources, cmd.path);
         if (!pb) break;
-        const o = cmd.stroke.width * ((cmd.stroke.join ?? 'miter') === 'miter' ? 5 : 1);
+        // SHARED join→extent rule (the SAME strokeExtent camera's clear/worldBoxOf
+        // uses): a round/bevel join or capped stroke overhangs width/2; a miter
+        // (sharp) join reaches miterLimit×width/2. A rounded stroke now carries
+        // join:'round' (honest DL emit), so it inflates by width/2, not the 5×width
+        // miter spike — the two bounds consumers can't disagree by construction.
+        const o = strokeExtent(cmd.stroke);
         attribute(id, accumulateRect(null, mat, pb.minX - o, pb.minY - o, pb.maxX + o, pb.maxY + o), ci);
         break;
       }

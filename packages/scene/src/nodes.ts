@@ -222,7 +222,7 @@ abstract class Shape extends Node {
     if (props.sketchFill) validateHachure(props.sketchFill);
     if (props.sketchFill && !props.sketch) {
       emitDevWarning(
-        `${this.id !== undefined ? `'${this.id}': ` : ''}sketchFill is ignored without sketch — hachure fill is drawn only by the sketch renderer. Set a sketch style (e.g. { kind: 'pencil' }) to see it.`,
+        `${this.id !== undefined ? `'${this.id}': ` : ''}sketchFill is ignored without sketch — set a sketch style (e.g. { kind: 'pencil' }) to draw the hachure fill.`,
       );
     }
     this.sketch = props.sketch;
@@ -242,12 +242,21 @@ abstract class Shape extends Node {
     const width = this.strokeWidth();
     if (stroke && width > 0) {
       const reveal = this.reveal();
+      // HONEST join: a corner-less shape (a rounded Rect) declares `strokeJoin()` —
+      // the SINGLE source of the join, read here for the emit AND by the camera
+      // bounds path, so the DL join and the bounds join can't drift. join:'round' is
+      // a lineJoin no-op on a round path ⇒ PNG byte-identical, and the shared
+      // stroke-extent rule then reads width/2, not the miter spike. Sharp/generic
+      // shapes have no strokeJoin ⇒ {width} (miter default). Read structurally so the
+      // base Shape carries no extra method body.
+      const join = (this as { strokeJoin?(): 'miter' | 'round' | 'bevel' | undefined }).strokeJoin?.();
+      const style: StrokeStyle = join !== undefined ? { width, join } : { width };
       if (reveal < 1) {
         // draw-on for ANY stroked shape (not just sketched) — reveal>=1 keeps
         // the single strokePath below, so existing goldens are byte-identical
-        emitDrawOnStroke(out, segs, { kind: 'color', color: stroke }, { width }, reveal);
+        emitDrawOnStroke(out, segs, { kind: 'color', color: stroke }, style, reveal);
       } else {
-        out.push({ op: 'strokePath', path, paint: { kind: 'color', color: stroke }, stroke: { width } });
+        out.push({ op: 'strokePath', path, paint: { kind: 'color', color: stroke }, stroke: style });
       }
     }
   }
@@ -366,7 +375,7 @@ export function coercePathData(data: unknown): PathValue {
     if (ok) return data as PathValue;
   }
   throw new TypeError(
-    `Path.data expects PathValue (PathContour[]); for an SVG path 'd' string, parse it with pathFromSvg(d) from "@glissade/scene/path" (or window.glissade.pathFromSvg in the browser bundle)`,
+    `Path.data expects PathValue (PathContour[]) — for an SVG 'd' string, parse it first with pathFromSvg(d) from "@glissade/scene/path"`,
   );
 }
 
@@ -475,6 +484,16 @@ export class Rect extends Shape {
 
   override intrinsicSize(): { w: number; h: number } {
     return { w: this.width(), h: this.height() };
+  }
+
+  /** The stroke JOIN this rect's outline emits — the SINGLE source shared by
+   *  `draw()`'s emit AND the camera bounds path (fed to the off-base `strokeExtent`
+   *  rule), so the DL join and the bounds join can't drift. A rounded rect
+   *  (cornerRadius > 0) has NO sharp corners → `'round'` (lineJoin no-op on a round
+   *  path ⇒ byte-identical DL; the shared rule reads width/2, not the miter spike); a
+   *  square rect → undefined (the miter default). */
+  strokeJoin(): 'round' | undefined {
+    return this.cornerRadius() > 0 ? 'round' : undefined;
   }
 
   // centered at the node origin (Motion Canvas convention)
