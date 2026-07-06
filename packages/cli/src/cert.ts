@@ -64,8 +64,15 @@ import type { Timeline } from '@glissade/core';
  * entries (a system-font scene has an empty fontDigest → a font/system change
  * doesn't move certHash → stale bytes served). The cache is version-namespaced by
  * CERT_VERSION so a v2 read can NEVER serve a v1-era entry (see {@link CertCache}).
+ *
+ * 2→3 (platform-aware backendHash, card ehTFgzH95CdI): {@link backendHash} now folds
+ * the PLATFORM Skia binary content digest ({@link skiaBinaryDigest}), so cross-platform
+ * certs discriminate the 11 per-platform @napi-rs/canvas Skia builds (a version-only v2
+ * cert was platform-blind → a distributed cache would false-HIT across OS/arch). The
+ * backendHash meaning changed, so every v2 cert value is stale for v3 — the version
+ * namespace retires them (a v3 read never serves a v2-era entry).
  */
-export const CERT_VERSION = 2 as const;
+export const CERT_VERSION = 3 as const;
 
 export class CertVersionError extends Error {
   constructor(got: unknown) {
@@ -237,14 +244,47 @@ export function fontDigestFrom(assetDigests: ReadonlyMap<string, string>): strin
   return h.digest('hex');
 }
 
+let _skiaBinaryDigest: string | undefined;
+/**
+ * skiaBinaryDigest — the sha256 of the ACTUALLY-LOADED @napi-rs/canvas platform Skia
+ * `.node` binary, read from the CJS module cache (the loader's OWN resolution). This
+ * is the fix for the platform-blindness of a version-based backendHash: @napi-rs/canvas
+ * ships 11 per-platform prebuilt Skia binaries at the SAME JS version, whose AA/raster
+ * bytes differ — so two machines on different OS/arch would compute the same
+ * version-based cert for BYTE-DIFFERENT frames (a distributed-cache false-HIT). Hashing
+ * the binary the loader ACTUALLY loaded (via `require.cache`, not a re-derived platform
+ * triple that can drift from js-binding's real choice, and not a scan that an npm box
+ * with BOTH gnu+musl installed makes ambiguous) is the ONE-source discipline — the cert
+ * can't disagree with the render's binary by construction. `''` when canvas isn't loaded
+ * (e.g. a non-Skia path never touches this), so the caller falls back to version-only.
+ * Memoized — the binary is ~33 MB, read once.
+ */
+export function skiaBinaryDigest(): string {
+  if (_skiaBinaryDigest !== undefined) return _skiaBinaryDigest;
+  _skiaBinaryDigest = '';
+  try {
+    const require = createRequire(import.meta.url);
+    // the loader (@napi-rs/canvas js-binding) require()s exactly the platform binary it
+    // resolved; the process-global CJS cache keys it by resolved path (`skia.<triple>.node`).
+    const loaded = Object.keys(require.cache ?? {}).find((k) => /skia\.[^/\\]*\.node$/.test(k));
+    if (loaded !== undefined) _skiaBinaryDigest = byteHashOf(readFileSync(loaded));
+  } catch {
+    /* keep '' — the version-only fallback below stays correct (over-invalidates, never false-hits) */
+  }
+  return _skiaBinaryDigest;
+}
+
 let _backendHash: string | undefined;
 /**
- * backendHash — INTERIM (reported gap): the @napi-rs/canvas package version ⊕ the
- * backend caps id. @napi-rs/canvas does NOT expose the underlying Skia BUILD id (a
- * point-release can shift AA bytes without a JS-version bump we can see), so a
- * version+caps hash is the honest interim. The SAFETY asymmetry still holds: a
- * false MISS on a byte-identical Skia bump is cheap; the version bump on any
- * observable @napi-rs/canvas change prevents a false HOLD across a real change.
+ * backendHash — the @napi-rs/canvas package version ⊕ the backend caps id ⊕ the
+ * PLATFORM Skia binary content digest ({@link skiaBinaryDigest}). Folding the binary
+ * digest makes the cert PLATFORM-AWARE (0.62's version-only interim was platform-blind:
+ * 11 same-version per-platform Skia builds with byte-different AA → a distributed cache
+ * would false-HIT cross-platform). SAFETY asymmetry, by construction: a different binary
+ * ⊇ a possibly-different render, so this OVER-invalidates (two platforms that happen to
+ * render identically but ship different .node files → a re-render = false-MISS, safe)
+ * but can NEVER false-HIT (different render ⟹ different binary ⟹ different cert). When
+ * the binary can't be located, the digest is `''` → the version-only interim (still safe).
  */
 export function backendHash(capsId: string): string {
   if (_backendHash === undefined) {
@@ -255,7 +295,7 @@ export function backendHash(capsId: string): string {
     } catch {
       /* keep 'unknown' */
     }
-    _backendHash = sha256Hex(`napi-canvas@${canvasVersion}|${capsId}`);
+    _backendHash = sha256Hex(`napi-canvas@${canvasVersion}|${capsId}|skia:${skiaBinaryDigest()}`);
   }
   return _backendHash;
 }
@@ -305,6 +345,7 @@ export function narrationTimingHash(timingPath: string | null | undefined): stri
 export function __resetCertMemo(): void {
   _toolchainHash = undefined;
   _backendHash = undefined;
+  _skiaBinaryDigest = undefined;
 }
 
 // ── the local content-addressed render cache (keyed by certHash) ──────────────

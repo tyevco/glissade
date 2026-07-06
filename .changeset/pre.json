@@ -1,0 +1,31 @@
+{
+  "mode": "pre",
+  "tag": "pre",
+  "initialVersions": {
+    "@glissade/backend-canvas2d": "0.68.0",
+    "@glissade/backend-dom": "0.68.0",
+    "@glissade/backend-skia": "0.68.0",
+    "@glissade/browser": "0.68.0",
+    "@glissade/cli": "0.68.0",
+    "@glissade/core": "0.68.0",
+    "@glissade/effects-webgpu": "0.68.0",
+    "@glissade/element": "0.68.0",
+    "@glissade/eslint-plugin": "0.68.0",
+    "@glissade/examples": "0.0.0",
+    "@glissade/export-web": "0.68.0",
+    "@glissade/interact": "0.68.0",
+    "@glissade/lottie": "0.68.0",
+    "@glissade/narrate": "0.68.0",
+    "@glissade/player": "0.68.0",
+    "@glissade/react": "0.68.0",
+    "@glissade/scene": "0.68.0",
+    "@glissade/sfx": "0.68.0",
+    "@glissade/studio": "0.0.0",
+    "@glissade/svg": "0.68.0",
+    "glissade": "0.68.0",
+    "@glissade/vite-plugin": "0.68.0"
+  },
+  "changesets": [
+    "platform-aware-backendhash"
+  ]
+}

@@ -26,15 +26,20 @@ import {
   CERT_VERSION,
   CertCache,
   CertVersionError,
+  __resetCertMemo,
   assertCertVersion,
+  backendHash,
   buildVideoCertBase,
   byteHashOf,
   computeCertHash,
   fontComplete,
   frameKeyFor,
+  skiaBinaryDigest,
   type VideoCertBase,
   type VideoCertBaseInputs,
 } from '../src/cert.js';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { createScene, Rect } from '@glissade/scene';
 import { timeline } from '@glissade/core';
 
@@ -42,6 +47,46 @@ const SCENES = fileURLToPath(new URL('../../examples/src/scenes', import.meta.ur
 const MODULE = join(SCENES, 'golden-shapes.ts');
 const outDir = mkdtempSync(join(tmpdir(), 'glissade-cert-'));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+
+// ── platform-aware backendHash (card ehTFgzH95CdI, video-canary's cross-platform finding) ──
+// The 0.62 backendHash was the @napi-rs/canvas VERSION — platform-blind across the 11
+// per-platform Skia builds → a distributed cache would false-HIT cross-platform. It now
+// folds the digest of the Skia .node the LOADER actually loaded (via require.cache). The
+// real cross-platform DISCRIMINATION proof is video-canary's gnu-vs-musl CI-matrix carry;
+// these unit tests prove the framework: the digest resolves, folds, memoizes, and the
+// version namespace retires the v2 era. (backend-skia is loaded at module-eval via render.js.)
+const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+describe('backendHash — platform-aware (card ehTFgzH95CdI)', () => {
+  it('CERT_VERSION bumped to 3 (retires the platform-blind v2 backendHash era)', () => {
+    expect(CERT_VERSION).toBe(3);
+  });
+
+  it('skiaBinaryDigest resolves the LOADED platform Skia binary (fix active, not the empty fallback)', () => {
+    const d = skiaBinaryDigest();
+    expect(d).toMatch(/^[0-9a-f]{64}$/); // the skia.*.node was found in require.cache + hashed
+    expect(skiaBinaryDigest()).toBe(d); // memoized (the 33MB binary is read once)
+  });
+
+  it('backendHash FOLDS the platform binary digest — not the version-only interim', () => {
+    const require = createRequire(import.meta.url);
+    const ver = (require('@napi-rs/canvas/package.json') as { version?: string }).version ?? 'unknown';
+    const digest = skiaBinaryDigest();
+    expect(digest).not.toBe(''); // sanity: the fix is active in this test env
+    const caps = 'caps-platform-test';
+    __resetCertMemo();
+    const bh = backendHash(caps);
+    expect(bh).toBe(sha(`napi-canvas@${ver}|${caps}|skia:${digest}`)); // platform-aware fold
+    expect(bh).not.toBe(sha(`napi-canvas@${ver}|${caps}`)); // ≠ the old platform-BLIND value
+    __resetCertMemo();
+  });
+
+  it('the fold DISCRIMINATES per-platform binaries (a different Skia digest ⟹ a different backendHash)', () => {
+    // two platforms (e.g. gnu vs musl) ship byte-different .node files → different digests →
+    // different cert, so a distributed cache can never false-HIT across them (the card's fix).
+    expect(sha('napi-canvas@1|C|skia:gnu-059a0873')).not.toBe(sha('napi-canvas@1|C|skia:musl-0396e3f0'));
+  });
+});
 
 // A small frame range keeps the Skia render fast while still exercising per-frame certs.
 const RANGE: [number, number] = [0, 3];
