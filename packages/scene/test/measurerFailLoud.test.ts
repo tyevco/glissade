@@ -135,4 +135,49 @@ vdescribe('measurer-fail-loud', () => {
       expect(opt!.default).toBe(false);
     }
   });
+
+  // 7. NAME-THE-FIX must name the fix that WORKS AT THE THROW SITE (edcc finding):
+  // the instance getters take a POSITIONAL measurer + a 2nd opts arg, so the message
+  // must name the 2nd-arg / 1st-arg forms — NOT the options-object form (which, passed
+  // positionally, is treated as the measurer and crashes with a WORSE cryptic error).
+  vdescribe('name-the-fix matches the call surface', () => {
+    const throwMsg = (run: () => unknown): string => {
+      setDefaultMeasurer(null);
+      try {
+        run();
+        return '';
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+
+    it('positional getters name the 2nd-arg estimate + 1st-arg measurer forms', () => {
+      const msg = throwMsg(() => mkText().wordBoxes());
+      expect(msg).toMatch(/\{ estimate: true \} as the 2nd arg/);
+      expect(msg).toMatch(/a real measurer as the 1st arg/);
+      // and NOT the options-object form that would crash if pasted positionally
+      expect(msg).not.toMatch(/a real \{ measurer \}/);
+    });
+
+    it('options-object fns name the object forms', () => {
+      const msg = throwMsg(() => splitText({ id: 't', text: 'a b c', fontSize: 20 }, { by: 'word' }));
+      expect(msg).toMatch(/pass \{ estimate: true \} to accept/);
+      expect(msg).toMatch(/a real \{ measurer \}/);
+      expect(msg).not.toMatch(/as the 2nd arg/);
+    });
+
+    it('measuredSize delegates but still names the POSITIONAL fix (positional=true carried)', () => {
+      const msg = throwMsg(() => mkText().measuredSize());
+      expect(msg).toMatch(/\{ estimate: true \} as the 2nd arg/);
+      expect(msg).toMatch(/a real measurer as the 1st arg/);
+    });
+
+    // The whole point: the NAMED positional fix actually resolves, at the site.
+    it('the named positional fix works: 2nd-arg { estimate: true } does not throw', () => {
+      setDefaultMeasurer(null);
+      expect(() => mkText().wordBoxes(undefined, { estimate: true })).not.toThrow();
+      expect(() => mkText().wordBoxes(estimatingMeasurer, { estimate: true })).not.toThrow();
+      expect(() => mkText().wordBoxes(real)).not.toThrow(); // 1st-arg real measurer
+    });
+  });
 });

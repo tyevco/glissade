@@ -131,7 +131,7 @@ export class Layout extends Group {
   computedSize(measurer?: TextMeasurer, opts?: { estimate?: boolean }): { w: number; h: number } {
     // Public geometry READ → measurer-fail-loud: throw on the bare estimate unless
     // { estimate: true } opts in (the auto-size depends on Text child measurement).
-    const m = resolveMeasurer(measurer, this.measurerSource, 'Layout.computedSize', opts?.estimate);
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Layout.computedSize', opts?.estimate, true);
     return this.#compute(m).size;
   }
 

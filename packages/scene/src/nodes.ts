@@ -1006,7 +1006,7 @@ export class Text extends Node {
     // measurer-fail-loud: resolve + throw on the bare estimate unless { estimate }.
     // The layout/anchor/draw machinery that legitimately pre-measures with the
     // estimate (Layout compute, drawOffset/anchorShift) passes { estimate: true }.
-    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.intrinsicSize', opts?.estimate);
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.intrinsicSize', opts?.estimate, true);
     const text = this.text();
     if (!text) return { w: 0, h: 0 };
     const font: FontSpec = this.fontSpec();
@@ -1064,7 +1064,8 @@ export class Text extends Node {
    */
   measuredSize(measurer?: TextMeasurer, opts?: GeometryOpts): { w: number; h: number } {
     // measurer-fail-loud read: delegate to intrinsicSize, which resolves + throws
-    // on the bare estimate unless { estimate: true } is threaded through.
+    // (naming the POSITIONAL fix, positional=true) on the bare estimate unless
+    // { estimate: true } is threaded through.
     return this.intrinsicSize(measurer, opts);
   }
 
@@ -1079,7 +1080,7 @@ export class Text extends Node {
     // measurer-fail-loud: ANY resolution ending at the bare estimate (implicit
     // fallback OR an explicitly-passed estimatingMeasurer) throws unless
     // { estimate: true } opts in — the silent per-char estimate drifts from render.
-    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.lineBoxes', opts?.estimate);
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.lineBoxes', opts?.estimate, true);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();
@@ -1108,7 +1109,7 @@ export class Text extends Node {
    * karaoke; draw your own rects for sub-line multi-color token work.
    */
   wordBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): WordBox[] {
-    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.wordBoxes', opts?.estimate);
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.wordBoxes', opts?.estimate, true);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();
@@ -1154,7 +1155,7 @@ export class Text extends Node {
    * 'grapheme' })` snapshots.
    */
   graphemeBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): GraphemeBox[] {
-    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.graphemeBoxes', opts?.estimate);
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.graphemeBoxes', opts?.estimate, true);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();

@@ -782,7 +782,7 @@ export const MEASURE_QUANTUM_PX = 0.5;
 
 // @public
 export class MeasurerRequiredError extends Error {
-    constructor(site: string);
+    constructor(site: string, positional?: boolean);
 }
 
 // @public

@@ -27,6 +27,7 @@
   },
   "changesets": [
     "localize-tm-staleness",
-    "measurer-fail-loud"
+    "measurer-fail-loud",
+    "measurer-namefix-positional"
   ]
 }

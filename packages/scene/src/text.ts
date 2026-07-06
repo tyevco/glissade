@@ -107,11 +107,18 @@ export function isEstimatingMeasurer(m: TextMeasurer): boolean {
  * catchable off the `@glissade/scene` + `@glissade/scene/type` barrels.
  */
 export class MeasurerRequiredError extends Error {
-  constructor(site: string) {
+  // `positional` names the CALL SURFACE so the fix we name actually works at the
+  // throw site: the instance getters (Text.wordBoxes/…, Layout.computedSize) take
+  // a POSITIONAL measurer + a 2nd opts arg, so `{ estimate: true }` is the 2nd arg
+  // and a real measurer is the 1st — naming the options-object form there would
+  // send the author to a WORSE cryptic error (the obj treated as the measurer).
+  constructor(site: string, positional = false) {
+    const estArg = positional ? '{ estimate: true } as the 2nd arg' : '{ estimate: true }';
+    const realArg = positional ? 'a real measurer as the 1st arg.' : 'a real { measurer }.';
     super(
-      `${site}: text geometry needs a real measurer — pass { estimate: true } to accept the rough ` +
+      `${site}: text geometry needs a real measurer — pass ${estArg} to accept the rough ` +
         'length×0.52 per-character estimate, or supply a real one: setDefaultMeasurer(...) / ' +
-        'scene.setTextMeasurer(...) before construction, or a real { measurer }.',
+        `scene.setTextMeasurer(...) before construction, or ${realArg}`,
     );
     this.name = 'MeasurerRequiredError';
   }
@@ -135,9 +142,10 @@ export function resolveMeasurer(
   source: (() => TextMeasurer) | null | undefined,
   site: string,
   estimate = false,
+  positional = false,
 ): TextMeasurer {
   const m = explicit ?? source?.() ?? fallbackMeasurer();
-  if (!estimate && isEstimatingMeasurer(m)) throw new MeasurerRequiredError(site);
+  if (!estimate && isEstimatingMeasurer(m)) throw new MeasurerRequiredError(site, positional);
   return m;
 }
 
