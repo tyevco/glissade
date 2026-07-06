@@ -29,6 +29,11 @@ import { measureWrappedText, MeasurerRequiredError, quantize, resolveMeasurer, s
 // splitText/fitText live) so consumers can `catch (e instanceof MeasurerRequiredError)`
 // without pulling it onto the base scene index (budget).
 export { MeasurerRequiredError };
+// caption-split: splitToFit() — the measured, band-aware "this text is too long
+// for the band" splitter (per-locale sentence→clause→word). Rides this /type subpath
+// alongside fitText (same measurer plumbing, off the base scene index); narrate's
+// captionAutoSplit wraps it for timed caption cues.
+export { splitToFit, TextFitError, type SplitToFitOpts } from './captionSplit.js';
 import { textCursor, type TextCursor, type TextCursorProps } from './textCursor.js';
 import { typewriter, type EditMark } from './typewriter.js';
 

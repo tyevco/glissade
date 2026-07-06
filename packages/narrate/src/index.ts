@@ -18,6 +18,7 @@ import {
   type TextMeasurer,
 } from '@glissade/scene';
 import { type SafeArea } from '@glissade/scene/diagnostics';
+import { splitToFit, TextFitError } from '@glissade/scene/type';
 
 // ---- the authored script (committed next to the scene module) ----
 
@@ -119,12 +120,13 @@ export interface NarrationScript {
    */
   align?: string;
   /**
-   * Split long caption segments into timed sub-cues at ~`maxChars` (on word
-   * boundaries, using per-word timings when present). Persisted into the timing
-   * manifest so the burned track and the .srt/.vtt sidecars split identically.
+   * Split long caption segments into timed sub-cues. `{ maxChars }` = the legacy
+   * char-budget word-boundary split; `{ mode: 'band' }` = the measured band-fit split
+   * (per-locale sentence→clause→word, needs the render size/style via captionTrack's
+   * opts). Persisted so the burned track and the .srt/.vtt sidecars split identically.
    * Omit for no split (the default).
    */
-  captionSplit?: { maxChars: number };
+  captionSplit?: CaptionSplitPolicy;
   /**
    * Anchor budgets (s): per-id ceilings on a segment's (or pause's) beat length,
    * checked by `gs narration-lint` (Tier-1, can fail CI). Committed with the
@@ -202,8 +204,8 @@ export interface NarrationTiming {
   segments: TimedSegment[];
   /** explicit pause windows, addressable like segments; omitted when none */
   pauses?: TimedPause[];
-  /** caption split budget, committed so burned + sidecar split identically */
-  captionSplit?: { maxChars: number };
+  /** caption split policy, committed so burned + sidecar split identically */
+  captionSplit?: CaptionSplitPolicy;
   /**
    * Anchor budgets (s) carried from the script — per id, segments + pauses.
    * `gs narration-lint` reads them from the committed manifest (Tier-1). A
@@ -366,6 +368,20 @@ export interface CaptionTrackOptions {
   target?: string;
   /** v1 granularity is per segment; 'word' is reserved (karaoke highlight, later) */
   granularity?: 'segment';
+  /**
+   * Render context for `captionSplit: { mode: 'band' }` — the SAME `size` + `style`
+   * the paired `captionNode(size, style)` uses, so the band-fit split measures what
+   * the render lays out (measure-consistency). REQUIRED when the policy is band mode
+   * (throws without `size`); ignored for the legacy `{ maxChars }` path.
+   */
+  size?: { w: number; h: number };
+  style?: CaptionStyle;
+  /** the measurer the render lays out with (band mode) — defaults to the process fallback. */
+  measurer?: TextMeasurer;
+  /** band-mode measurer-fail-loud opt-out (LOUD: an estimate-split may overflow at render). */
+  estimate?: boolean;
+  /** band-mode boundary locale (falls back to the policy's `locale`). */
+  locale?: string;
 }
 
 /** One caption cue within a segment's window. */
@@ -374,6 +390,19 @@ export interface CaptionCue {
   start: number;
   end: number;
 }
+
+/**
+ * How to split long caption segments into sub-cues:
+ * - `{ maxChars }` — the legacy char-budget, word-boundary split ({@link splitCaption}).
+ * - `{ mode: 'band', locale? }` — the measured band-fit split ({@link captionAutoSplit}):
+ *   breaks at per-locale sentence → clause → word so every cue fits the caption band at
+ *   the min-legible floor. Needs the render context (size + style) supplied via
+ *   {@link CaptionTrackOptions}. `maxLines` / `minLegiblePx` deliberately live in
+ *   {@link CaptionStyle} (NOT here) — they must match the paired `captionNode`'s layout
+ *   for measure-consistency, so there is ONE source of truth for them; only `locale`
+ *   (a split-only, render-irrelevant concern) rides the policy.
+ */
+export type CaptionSplitPolicy = { maxChars: number } | { mode: 'band'; locale?: string };
 
 /**
  * Split a segment's caption into timed sub-cues at ~`maxChars` (word-boundary).
@@ -427,9 +456,39 @@ export function splitCaption(segment: TimedSegment, maxChars?: number): CaptionC
  */
 export const CAPTION_NODE_ID = 'captions';
 
+/**
+ * Dispatch a segment to its cues by the {@link CaptionSplitPolicy}: band mode →
+ * {@link captionAutoSplit} (needs the render `size`/`style` from `ctx`, fails loud
+ * without `size`); `{ maxChars }` or absent → {@link splitCaption} (byte-identical to
+ * pre-0.68). The SAME dispatch drives the burned track AND the .srt/.vtt sidecars, so
+ * they match by construction.
+ */
+function segmentCues(
+  segment: TimedSegment,
+  policy: CaptionSplitPolicy | undefined,
+  ctx: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'>,
+): CaptionCue[] {
+  if (policy && 'mode' in policy && policy.mode === 'band') {
+    if (!ctx.size) {
+      throw new Error(
+        "captionTrack: captionSplit { mode: 'band' } needs the render size — pass { size } (and the same " +
+          '{ style } you pass to captionNode) so the band-fit split matches the caption band.',
+      );
+    }
+    const locale = policy.locale ?? ctx.locale;
+    return captionAutoSplit(segment, {
+      size: ctx.size,
+      ...(ctx.style !== undefined ? { style: ctx.style } : {}),
+      ...(ctx.measurer !== undefined ? { measurer: ctx.measurer } : {}),
+      ...(ctx.estimate !== undefined ? { estimate: ctx.estimate } : {}),
+      ...(locale !== undefined ? { locale } : {}),
+    });
+  }
+  return splitCaption(segment, policy && 'maxChars' in policy ? policy.maxChars : undefined);
+}
+
 export function captionTrack(timing: NarrationTiming, opts: CaptionTrackOptions = {}): Track<string> {
   const target = opts.target ?? `${CAPTION_NODE_ID}/text`;
-  const budget = timing.captionSplit?.maxChars;
   const keys = [key(0, '', { interp: 'hold' as const })];
   let cursor = 0;
   for (const s of timing.segments) {
@@ -438,7 +497,7 @@ export function captionTrack(timing: NarrationTiming, opts: CaptionTrackOptions 
       // previous segment already ended exactly here)
       if (keys[keys.length - 1]!.value !== '') keys.push(key(cursor, '', { interp: 'hold' as const }));
     }
-    for (const cue of splitCaption(s, budget)) {
+    for (const cue of segmentCues(s, timing.captionSplit, opts)) {
       if (cue.start <= 1e-9) {
         keys[0] = key(0, cue.text, { interp: 'hold' as const });
       } else {
@@ -475,6 +534,13 @@ export interface CaptionStyle {
   maxLines?: number;
   /** floor for auto-shrink, as a fraction of the base font size (autoFit only); default 0.7 */
   minScale?: number;
+  /**
+   * Absolute legibility floor in px — the auto-shrink (and the band-split fit)
+   * never go below this, on top of the `minScale` fraction. Off by default
+   * (byte-identical), so the floor stays `round(baseFont·minScale)` unless set.
+   * `captionAutoSplit` splits so every cue fits at this same floor.
+   */
+  minLegiblePx?: number;
 }
 
 /**
@@ -482,13 +548,39 @@ export interface CaptionStyle {
  * (9:16 cutdowns live under reels/shorts UI chrome) sit higher than
  * landscape. Same node id pairs with captionTrack's default target.
  */
-export function captionNode(size: { w: number; h: number }, style: CaptionStyle = {}): Text {
+/**
+ * The caption band's layout params, derived from `size` + `style` ONCE — so
+ * `captionNode` (the render) and `captionAutoSplit` (the band-fit split) read the
+ * SAME font / width / maxLines / min-legible floor. This is the measure-consistency
+ * guarantee by construction: the split decides "this cue fits the band at the floor",
+ * and the render lays it out with these identical params, so a split-judged fit can't
+ * overflow at render (the one-measure-N-consumers discipline). `minFont` folds the
+ * absolute `minLegiblePx` floor into the `minScale` fraction (both default to the
+ * pre-0.68 `round(baseFont·minScale)` when `minLegiblePx` is unset — byte-identical).
+ */
+interface CaptionBandParams {
+  portrait: boolean;
+  fontFamily: string;
+  baseFont: number;
+  width: number;
+  lineHeight: number;
+  maxLines: number;
+  minFont: number;
+}
+function captionBandParams(size: { w: number; h: number }, style: CaptionStyle): CaptionBandParams {
   const portrait = size.h > size.w;
-  const inset = style.bottomInsetFrac ?? (portrait ? 0.18 : 0.1);
   const baseFont = style.fontSize ?? Math.round(Math.min(size.w, size.h) * (portrait ? 0.052 : 0.06));
   const fontFamily = style.fontFamily ?? 'sans-serif';
   const width = Math.round(size.w * (style.widthFrac ?? 0.82));
   const lineHeight = style.lineHeight ?? 1.3;
+  const maxLines = Math.max(1, style.maxLines ?? 2);
+  const minFont = Math.max(1, style.minLegiblePx ?? 0, Math.round(baseFont * (style.minScale ?? 0.7)));
+  return { portrait, fontFamily, baseFont, width, lineHeight, maxLines, minFont };
+}
+
+export function captionNode(size: { w: number; h: number }, style: CaptionStyle = {}): Text {
+  const { portrait, fontFamily, baseFont, width, lineHeight, maxLines, minFont } = captionBandParams(size, style);
+  const inset = style.bottomInsetFrac ?? (portrait ? 0.18 : 0.1);
   const bottomY = Math.round(size.h * (1 - inset));
 
   const node = new Text({
@@ -511,8 +603,7 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
   // OFF by default so the node stays byte-identical for existing scenes (it
   // re-flows multi-line burned captions, so it's an explicit opt-in).
   if (style.autoFit) {
-    const maxLines = Math.max(1, style.maxLines ?? 2);
-    const minFont = Math.max(1, Math.round(baseFont * (style.minScale ?? 0.7)));
+    // maxLines + minFont come from captionBandParams (shared with captionAutoSplit)
     const lineCountAt = (font: number, m: TextMeasurer): number => {
       const t = node.text();
       if (!t) return 0;
@@ -537,6 +628,108 @@ export function captionNode(size: { w: number; h: number }, style: CaptionStyle 
   }
 
   return node;
+}
+
+/**
+ * Thrown by {@link captionAutoSplit} when a single word in a cue is too wide to fit
+ * the caption band even at the min-legible floor — it can't be split further, so the
+ * author must intervene rather than the caption silently degrading legibility or
+ * dropping words (a hard throw, no clamp). Names the word + its segment id + the fixes
+ * in priority order: reword/shorten the word FIRST (it is almost always a URL or a long
+ * token), and only as a last resort — since they trade the legibility the split exists
+ * to protect — widen the band or lower the min font.
+ */
+export class CaptionFitError extends Error {
+  constructor(
+    readonly word: string,
+    readonly segmentId: string,
+    readonly bandWidth: number,
+    readonly minFontPx: number,
+  ) {
+    super(
+      `captionAutoSplit: segment ${JSON.stringify(segmentId)} has a word ${JSON.stringify(word)} too wide to fit the ` +
+        `${bandWidth}px caption band at the ${minFontPx}px min-legible floor and cannot be split further — ` +
+        `reword/shorten the word, or (last resort, trades legibility) widen the caption widthFrac or lower minScale/minLegiblePx.`,
+    );
+    this.name = 'CaptionFitError';
+  }
+}
+
+/**
+ * Band-fit caption auto-split options. The render CONTEXT so the split's fit-measure
+ * matches the render's layout (measure-consistency): `size` + `style` MUST be the same
+ * a paired `captionNode(size, style)` uses — both derive the band via `captionBandParams`.
+ */
+export interface CaptionAutoSplitOpts {
+  /** the scene size the caption renders into (drives band width + base font). */
+  size: { w: number; h: number };
+  /** the SAME style passed to captionNode (widthFrac / fontSize / minScale / minLegiblePx / maxLines). */
+  style?: CaptionStyle;
+  /**
+   * the measurer the RENDER lays out with — MUST be the same for measure-consistency.
+   * Defaults to the process fallback (fails loud without a real one — see `estimate`).
+   */
+  measurer?: TextMeasurer;
+  /**
+   * measurer-fail-loud opt-out, and LOUD for captions: an estimate-split may OVERFLOW
+   * the band when rendered with real metrics (cues fit only if the render also
+   * estimates). Prefer a real measurer for a guaranteed fit. Default false (fail loud).
+   */
+  estimate?: boolean;
+  /** BCP-47 locale for per-locale boundary detection (sentence + word segmentation). */
+  locale?: string;
+}
+
+/**
+ * Split a segment's caption into timed sub-cues that each FIT the caption band at the
+ * min-legible floor — the measured, band-aware alternative to {@link splitCaption}'s
+ * char-count budget. Splits at per-locale **sentence → clause → word** boundaries (via
+ * `splitToFit`), so a long line breaks at meaningful points, never mid-thought. A cue
+ * that already fits stays whole (a short caption is a single cue → the default is a
+ * no-op). Sub-cue timing mirrors splitCaption: with per-word timings each cue starts at
+ * its first word; without them the segment window divides evenly. Throws
+ * {@link CaptionFitError} when a single word can't fit even alone. Pure / build-time
+ * (like splitText) — the fit measurer never enters the render or cert hash.
+ */
+export function captionAutoSplit(segment: TimedSegment, opts: CaptionAutoSplitOpts): CaptionCue[] {
+  const { fontFamily, width, maxLines, minFont } = captionBandParams(opts.size, opts.style ?? {});
+  const font: FontSpec = { family: fontFamily, size: minFont, weight: 400 };
+  const end = segment.start + segment.duration;
+
+  let parts: string[];
+  try {
+    parts = splitToFit(segment.text, {
+      maxWidth: width,
+      font,
+      maxLines,
+      ...(opts.measurer !== undefined ? { measurer: opts.measurer } : {}),
+      ...(opts.estimate !== undefined ? { estimate: opts.estimate } : {}),
+      ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+    });
+  } catch (e) {
+    // re-raise an unsplittable-token error WITH the segment id (name-the-fix context)
+    if (e instanceof TextFitError) throw new CaptionFitError(e.token, segment.id, width, minFont);
+    throw e;
+  }
+
+  if (parts.length <= 1) return [{ text: segment.text, start: segment.start, end }];
+
+  if (segment.words && segment.words.length > 0) {
+    // word-aligned: each cue starts at its first word (advance the word cursor by the
+    // whitespace-word count the piece consumed; space-less scripts fall to 1/piece).
+    const cues: CaptionCue[] = [];
+    let wi = 0;
+    for (let pi = 0; pi < parts.length; pi++) {
+      const startWord = segment.words[Math.min(wi, segment.words.length - 1)]!;
+      wi += Math.max(1, parts[pi]!.split(/\s+/).filter(Boolean).length);
+      const cueEnd = pi + 1 < parts.length && wi < segment.words.length ? segment.words[wi]!.start : end;
+      cues.push({ text: parts[pi]!, start: startWord.start, end: cueEnd });
+    }
+    return cues;
+  }
+  // no per-word timings: divide the segment window evenly (mirrors splitCaption)
+  const span = segment.duration / parts.length;
+  return parts.map((text, i) => ({ text, start: segment.start + i * span, end: segment.start + (i + 1) * span }));
 }
 
 /**
@@ -826,12 +1019,26 @@ function srtTime(t: number, sep: ',' | '.'): string {
   return `${p(h, 2)}:${p(m, 2)}:${p(s, 2)}${sep}${p(f, 3)}`;
 }
 
-export function toSrt(timing: NarrationTiming): string {
-  const cues = timing.segments.flatMap((s) => splitCaption(s, timing.captionSplit?.maxChars));
+/**
+ * Sidecar cues, tolerant of band mode: with a render `ctx` (size/style) band mode
+ * splits exactly like the burned track (burned == sidecar); WITHOUT one — a text
+ * sidecar has no pixel band — a band-mode segment stays a single cue (the split is a
+ * burned-caption concern). The legacy `{ maxChars }` path needs no context.
+ */
+function sidecarCues(timing: NarrationTiming, ctx: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'>): CaptionCue[] {
+  const policy = timing.captionSplit;
+  const bandNoContext = policy !== undefined && 'mode' in policy && !ctx.size;
+  return timing.segments.flatMap((s) =>
+    bandNoContext ? [{ text: s.text, start: s.start, end: s.start + s.duration }] : segmentCues(s, policy, ctx),
+  );
+}
+
+export function toSrt(timing: NarrationTiming, ctx: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'> = {}): string {
+  const cues = sidecarCues(timing, ctx);
   return cues.map((c, i) => `${i + 1}\n${srtTime(c.start, ',')} --> ${srtTime(c.end, ',')}\n${c.text}`).join('\n\n') + '\n';
 }
 
-export function toVtt(timing: NarrationTiming): string {
-  const cues = timing.segments.flatMap((s) => splitCaption(s, timing.captionSplit?.maxChars));
+export function toVtt(timing: NarrationTiming, ctx: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'> = {}): string {
+  const cues = sidecarCues(timing, ctx);
   return 'WEBVTT\n\n' + cues.map((c) => `${srtTime(c.start, '.')} --> ${srtTime(c.end, '.')}\n${c.text}`).join('\n\n') + '\n';
 }

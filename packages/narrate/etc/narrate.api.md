@@ -10,6 +10,7 @@ import { FilterSpec } from '@glissade/scene';
 import { Key } from '@glissade/core';
 import { SafeArea } from '@glissade/scene/diagnostics';
 import { Text as Text_2 } from '@glissade/scene';
+import { TextMeasurer } from '@glissade/scene';
 import { Track } from '@glissade/core';
 
 // @public
@@ -22,6 +23,21 @@ export type BedMode = /** hold the current (ducked) level across the pause — n
 export const CAPTION_NODE_ID = "captions";
 
 // @public
+export function captionAutoSplit(segment: TimedSegment, opts: CaptionAutoSplitOpts): CaptionCue[];
+
+// @public
+export interface CaptionAutoSplitOpts {
+    estimate?: boolean;
+    locale?: string;
+    measurer?: TextMeasurer;
+    size: {
+        w: number;
+        h: number;
+    };
+    style?: CaptionStyle;
+}
+
+// @public
 export interface CaptionCue {
     // (undocumented)
     end: number;
@@ -32,6 +48,19 @@ export interface CaptionCue {
 }
 
 // @public
+export class CaptionFitError extends Error {
+    constructor(word: string, segmentId: string, bandWidth: number, minFontPx: number);
+    // (undocumented)
+    readonly bandWidth: number;
+    // (undocumented)
+    readonly minFontPx: number;
+    // (undocumented)
+    readonly segmentId: string;
+    // (undocumented)
+    readonly word: string;
+}
+
+// @public (undocumented)
 export function captionNode(size: {
     w: number;
     h: number;
@@ -44,6 +73,14 @@ export function captionSafeArea(size: {
 }, opts?: {
     owner?: string;
 }): SafeArea;
+
+// @public
+export type CaptionSplitPolicy = {
+    maxChars: number;
+} | {
+    mode: 'band';
+    locale?: string;
+};
 
 // @public (undocumented)
 export interface CaptionStyle {
@@ -59,6 +96,7 @@ export interface CaptionStyle {
     // (undocumented)
     lineHeight?: number;
     maxLines?: number;
+    minLegiblePx?: number;
     minScale?: number;
     widthFrac?: number;
 }
@@ -74,7 +112,16 @@ export function captionTrack(timing: NarrationTiming, opts?: CaptionTrackOptions
 
 // @public (undocumented)
 export interface CaptionTrackOptions {
+    estimate?: boolean;
     granularity?: 'segment';
+    locale?: string;
+    measurer?: TextMeasurer;
+    size?: {
+        w: number;
+        h: number;
+    };
+    // (undocumented)
+    style?: CaptionStyle;
     target?: string;
 }
 
@@ -195,9 +242,7 @@ export interface NarrationScript {
     budgets?: Record<string, number>;
     captionMaxLines?: number;
     captionMode?: 'burn' | 'sidecar';
-    captionSplit?: {
-        maxChars: number;
-    };
+    captionSplit?: CaptionSplitPolicy;
     gap?: number;
     leadIn?: number;
     // (undocumented)
@@ -229,9 +274,7 @@ export interface NarrationTiming {
     budgets?: Record<string, number>;
     captionMaxLines?: number;
     captionMode?: 'burn' | 'sidecar';
-    captionSplit?: {
-        maxChars: number;
-    };
+    captionSplit?: CaptionSplitPolicy;
     pauses?: TimedPause[];
     // (undocumented)
     provider: string;
@@ -286,10 +329,10 @@ export interface TimedWord {
 }
 
 // @public (undocumented)
-export function toSrt(timing: NarrationTiming): string;
+export function toSrt(timing: NarrationTiming, ctx?: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'>): string;
 
 // @public (undocumented)
-export function toVtt(timing: NarrationTiming): string;
+export function toVtt(timing: NarrationTiming, ctx?: Pick<CaptionTrackOptions, 'size' | 'style' | 'measurer' | 'estimate' | 'locale'>): string;
 
 // @public (undocumented)
 export function validateMusicTiming(timing: MusicTiming): void;

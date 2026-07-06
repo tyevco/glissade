@@ -468,8 +468,24 @@ const ESTIMATE_OPTION: SurfaceOption = {
     'accept the rough length×0.52 per-character estimate instead of throwing MeasurerRequiredError when no real measurer is available (measurer-fail-loud opt-out); prefer passing a real { measurer } / setDefaultMeasurer() for exact geometry',
 };
 
+/**
+ * caption-split: `splitToFit`'s `{ estimate }` opt-out carries a STRONGER warning
+ * than the plain {@link ESTIMATE_OPTION} — a split fit-decision is a CROSS-CONSUMER
+ * promise (the render must honor "this piece fits the band"), so an estimate-split
+ * can OVERFLOW when rendered with real metrics. The manifest self-describes that risk
+ * so a no-build agent sees this is NOT the benign self-contained opt-in splitText gets.
+ */
+const CAPTION_ESTIMATE_OPTION: SurfaceOption = {
+  name: 'estimate',
+  type: 'boolean',
+  default: false,
+  summary:
+    'accept the rough length×0.52 estimate instead of throwing MeasurerRequiredError — but for splitToFit this is a CROSS-CONSUMER risk: an estimate-split may OVERFLOW the band when rendered with real metrics (pieces fit only if the render also estimates). Pass a real { measurer } for a guaranteed fit.',
+};
+
 const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
   splitText: [ESTIMATE_OPTION],
+  splitToFit: [CAPTION_ESTIMATE_OPTION],
   fitText: [ESTIMATE_OPTION],
   fitTextSize: [ESTIMATE_OPTION],
   fitTextGroup: [ESTIMATE_OPTION],
@@ -706,6 +722,7 @@ const PROP_UNITS: { [prop: string]: string } = {
 const MEASURER_HELPERS = new Set<string>([
   'measureWrappedText',
   'splitText',
+  'splitToFit',
   'fitText',
   'fitTextSize',
   'fitTextGroup',
@@ -1056,6 +1073,14 @@ const HELPERS: DescribedHelper[] = [
       'Fit several Texts to ONE shared fontSize (the largest at which every one fits its box) so a row/list of labels renders uniformly — kills the ragged \'same list, three sizes\' bug. Returns the shared size. On the @glissade/scene/type subpath.',
     import: '@glissade/scene/type',
     usage: 'fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer?, estimate? }): number',
+  },
+  {
+    name: 'splitToFit',
+    summary:
+      "caption-split: break a string into sequential pieces each of which wraps to <= maxLines within maxWidth at `font`, splitting only at meaningful per-locale boundaries (sentence -> clause -> word, highest present). The measured answer to 'too long for the band' — NOT a char-count guess. Throws TextFitError (naming the token) when a single word can't fit even alone. MEASURE-CONSISTENCY: pass the SAME real measurer + font/width/maxLines the render lays out with (pass the min-legible font) — with NO real measurer it THROWS MeasurerRequiredError unless { estimate: true }, but an estimate-split may OVERFLOW at render. narrate's captionAutoSplit wraps this for timed caption cues. On the @glissade/scene/type subpath.",
+    import: '@glissade/scene/type',
+    usage:
+      'splitToFit(text: string, opts: { maxWidth: number, font: FontSpec, maxLines?: number, measurer?: TextMeasurer, estimate?: boolean, locale?: string }): string[]',
   },
   {
     name: 'typeOn',

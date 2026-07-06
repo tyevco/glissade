@@ -93,7 +93,7 @@ interface Cue {
 function cuesOf(timing: NarrationTiming): Cue[] {
   const out: Cue[] = [];
   for (const s of timing.segments) {
-    const split = splitCaption(s, timing.captionSplit?.maxChars);
+    const split = splitCaption(s, (timing.captionSplit && 'maxChars' in timing.captionSplit ? timing.captionSplit.maxChars : undefined));
     split.forEach((c, i) => {
       out.push({ segId: s.id, index: i, text: c.text, start: c.start, end: c.end });
     });
@@ -251,7 +251,7 @@ export function lintNarration(timing: NarrationTiming, opts: LintOptions = {}): 
   // it begins on; a large drift means the even-divide split misaligned (warn)
   for (const s of timing.segments) {
     if (!s.words || s.words.length === 0) continue;
-    const split = splitCaption(s, timing.captionSplit?.maxChars);
+    const split = splitCaption(s, (timing.captionSplit && 'maxChars' in timing.captionSplit ? timing.captionSplit.maxChars : undefined));
     if (split.length < 2) continue;
     for (let i = 1; i < split.length; i++) {
       const cueStart = split[i]!.start;

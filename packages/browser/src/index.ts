@@ -44,6 +44,10 @@ export { splitText } from '@glissade/scene/type';
 // 0.35 fitText (shrink-to-fit + wrap-to-max-lines) — same /type subpath, same
 // measurer plumbing as splitText; a no-build author reaches for window.glissade.fitText.
 export { fitText, fitTextSize, fitTextGroup, type FitTextOpts } from '@glissade/scene/type';
+// caption-split: splitToFit — the measured band-aware splitter (per-locale
+// sentence→clause→word). TextFitError instanceof-catchable off the IIFE; a no-build
+// author reaches window.glissade.splitToFit / window.glissade.TextFitError.
+export { splitToFit, TextFitError, type SplitToFitOpts } from '@glissade/scene/type';
 // MeasurerRequiredError — the measurer-fail-loud error EVERY text-geometry getter
 // (splitText/fitText/measuredSize/wordBoxes/…) THROWS BY DEFAULT when no real
 // measurer is available, unless `{ estimate: true }` opts into the rough estimate.

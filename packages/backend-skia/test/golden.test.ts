@@ -23,6 +23,7 @@ import goldenCaptions from '../../examples/src/scenes/golden-captions.js';
 import goldenCaptionsPortrait from '../../examples/src/scenes/golden-captions-portrait.js';
 import goldenCaptionsLong from '../../examples/src/scenes/golden-captions-long.js';
 import goldenCaptionsSplit from '../../examples/src/scenes/golden-captions-split.js';
+import goldenCaptionSplitBand from '../../examples/src/scenes/golden-caption-split-band.js';
 import goldenCaption from '../../examples/src/scenes/golden-caption.js';
 import goldenMarker from '../../examples/src/scenes/golden-marker.js';
 import goldenTypewriter from '../../examples/src/scenes/golden-typewriter.js';
@@ -156,6 +157,7 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   { name: 'captions-long', mod: goldenCaptionsLong },
   // caption split-cues: a long segment splits into timed sub-cues
   { name: 'captions-split', mod: goldenCaptionsSplit },
+  { name: 'caption-split-band', mod: goldenCaptionSplitBand },
   // CAPTION corpus coverage (lVqWHip5CpfO): glissade's OWN caption layer —
   // the DEFAULT landscape captionNode + a captionTrack with ONE long multi-line
   // segment wrapping to ~2 lines, bottom-anchored in the safe-area band. The

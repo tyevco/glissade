@@ -19,6 +19,7 @@ import interactive from './scenes/showcase/interactive.js';
 import filters from './scenes/golden-filters.js';
 import paths from './scenes/golden-paths.js';
 import captions from './scenes/golden-captions.js';
+import captionSplitBand from './scenes/golden-caption-split-band.js';
 import marker from './scenes/golden-marker.js';
 import orient from './scenes/golden-orient.js';
 import echoTrail from './scenes/golden-echo.js';
@@ -75,6 +76,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   boxtext: { mod: boxtext, blurb: 'Text box-valign: the top row is baseline-anchored (labels ride high/low in their pills — the fontSize*0.35 bug), the bottom row uses box:{valign:\'center\'} so each label\'s real ink centers in its pill — single-line, descenders, and multi-line alike. Byte-compared on Skia.' },
   component: { mod: component, blurb: 'defineComponent: a reusable typed LowerThird (accent bar + clipped name/title) defined ONCE and instanced three times — each instance namespaces its children under its own id, so the three stagger in independently from one definition. describe().components lists its prop surface. Byte-compared on Skia.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },
+  'caption-split-band': { mod: captionSplitBand, blurb: 'Caption-split BAND mode: a long two-sentence caption splits into MEASURED band-fit sub-cues at the sentence boundary — each cue sized so it fits the caption band at the min-legible floor (not a char-count guess), and captionNode autoFit renders each short cue as large as it fits. Byte-compared on Skia.' },
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;

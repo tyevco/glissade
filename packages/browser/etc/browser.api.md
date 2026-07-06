@@ -105,8 +105,11 @@ import { shakeOffset } from '@glissade/scene/motion';
 import { snapshotCanvas } from '@glissade/backend-canvas2d/snapshot';
 import { sparks } from '@glissade/scene/motion';
 import { splitText } from '@glissade/scene/type';
+import { splitToFit } from '@glissade/scene/type';
+import { SplitToFitOpts } from '@glissade/scene/type';
 import { Stack } from '@glissade/scene/layout-ctors';
 import { StatRevealProps } from '@glissade/scene/recipes';
+import { TextFitError } from '@glissade/scene/type';
 import { timelineHash } from '@glissade/scene/diagnostics';
 import { TitleCardProps } from '@glissade/scene/recipes';
 import { typeOn } from '@glissade/scene/type';
@@ -317,9 +320,15 @@ export { sparks }
 
 export { splitText }
 
+export { splitToFit }
+
+export { SplitToFitOpts }
+
 export { Stack }
 
 export { StatRevealProps }
+
+export { TextFitError }
 
 export { timelineHash }
 
