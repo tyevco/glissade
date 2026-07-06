@@ -204,7 +204,9 @@ function isFlowableLayoutChild(node: Node): boolean {
   if (!parent) return false;
   const ctor = parent.constructor as unknown as { isLayoutNode?: boolean } | undefined;
   if (ctor?.isLayoutNode !== true) return false;
-  return node.intrinsicSize(estimatingMeasurer) !== null;
+  // flowability probe (structure, not a geometry read): opt into the estimate so
+  // measurer-fail-loud never throws here — we only need null-vs-box, not metrics.
+  return node.intrinsicSize(estimatingMeasurer, { estimate: true }) !== null;
 }
 
 // ── validateScene ────────────────────────────────────────────────────────────

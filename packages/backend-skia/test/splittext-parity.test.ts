@@ -11,10 +11,9 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { GlobalFonts } from '@napi-rs/canvas';
-import { createScene, evaluate, Text, estimatingMeasurer, __resetEstimateWarnings } from '@glissade/scene';
-import { setDevWarning } from '@glissade/core';
+import { createScene, evaluate, Text, estimatingMeasurer } from '@glissade/scene';
 import { splitText } from '@glissade/scene/type';
 import { SkiaBackend } from '../src/index.js';
 
@@ -70,7 +69,8 @@ describe('splitText() real-measurer parity vs the un-split source', () => {
     const skiaMeasurer = new SkiaBackend(8, 8);
     const source = await pixels(new Text(props));
     const real = await pixels(splitText(props, { by: 'word', measurer: skiaMeasurer }).node);
-    const estimate = await pixels(splitText(props, { by: 'word', measurer: estimatingMeasurer }).node);
+    // measurer-fail-loud: the estimate is deliberate here, so opt in with { estimate: true }.
+    const estimate = await pixels(splitText(props, { by: 'word', measurer: estimatingMeasurer, estimate: true }).node);
     const realDiff = meanAbsDiff(source, real);
     const estimateDiff = meanAbsDiff(source, estimate);
     // the estimate accumulates left-to-right → materially worse than the real one
@@ -79,20 +79,23 @@ describe('splitText() real-measurer parity vs the un-split source', () => {
   });
 });
 
-describe('splitText() warns on the estimate fallback (Skia present but not threaded in)', () => {
-  let warnings: string[];
-  beforeEach(() => {
-    warnings = [];
-    __resetEstimateWarnings();
-    setDevWarning((m) => void warnings.push(m));
+describe('splitText() fails loud on the estimate fallback (Skia present but not threaded in)', () => {
+  it('THROWS when the measurer resolves to the estimate (explicit estimatingMeasurer, no opt-out)', () => {
+    // measurer-fail-loud: explicitly passing the estimating singleton (the
+    // no-measurer resolution result) is fail-loud by default — the B contract.
+    expect(() =>
+      splitText({ id: 'drift', text: 'split the text now', fontFamily: FAMILY, fontSize: 40 }, {
+        measurer: estimatingMeasurer,
+      }),
+    ).toThrow(/splitText: text geometry needs a real measurer/);
   });
-  afterEach(() => setDevWarning((m) => (globalThis.console?.warn(m), undefined)));
 
-  it('emits the measurer-availability warning when measurer resolves to the estimate', () => {
-    // explicitly pass the estimating singleton (the no-measurer resolution result)
-    splitText({ id: 'drift', text: 'split the text now', fontFamily: FAMILY, fontSize: 40 }, {
-      measurer: estimatingMeasurer,
-    });
-    expect(warnings.some((m) => /splitText: no text measurer available/.test(m))).toBe(true);
+  it('{ estimate: true } opts into the estimate — degrades, no throw', () => {
+    expect(() =>
+      splitText({ id: 'drift2', text: 'split the text now', fontFamily: FAMILY, fontSize: 40 }, {
+        measurer: estimatingMeasurer,
+        estimate: true,
+      }),
+    ).not.toThrow();
   });
 });

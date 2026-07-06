@@ -1,7 +1,18 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
 import { createScene, evaluate, Circle, Rect, Text, LayoutEngineMissingError } from '../src/index.js';
 import { Layout, loadYogaLayoutEngine, setLayoutEngine, getLayoutEngine } from '../src/layout.js';
+import { setDefaultMeasurer } from '../src/text.js';
+
+// measurer-fail-loud: the no-arg computedSize()/intrinsicSize() reads below resolve
+// the process fallback, which would THROW on the bare estimate. Register an
+// estimate-EQUIVALENT default (identical length×0.52 metrics, but NOT the estimating
+// SINGLETON) so the reads pass the fail-loud gate with byte-identical numbers.
+const ESTIMATE_EQUIVALENT = {
+  measureText: (t: string, f: { size: number }) => ({ width: t.length * f.size * 0.52, ascent: f.size * 0.8, descent: f.size * 0.2 }),
+};
+beforeAll(() => setDefaultMeasurer(ESTIMATE_EQUIVALENT));
+afterAll(() => setDefaultMeasurer(null));
 
 describe('Layout node (§3.2, Yoga behind the LayoutEngine seam)', () => {
   beforeAll(async () => {

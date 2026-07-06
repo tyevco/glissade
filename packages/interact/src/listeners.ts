@@ -98,7 +98,9 @@ export function containsPoint(node: Node, p: Vec2, measurer: TextMeasurer): bool
     // text draws from a baseline origin at its align edge (§3.6). drawOffset,
     // not flowOffset: the inverse worldMatrix already lands the point in DRAW
     // space, where any anchor shift has been applied.
-    const size = node.intrinsicSize(measurer);
+    // hit-testing is render machinery: tolerate the estimate measurer (measurer-
+    // fail-loud gates author geometry reads, not the interaction path).
+    const size = node.intrinsicSize(measurer, { estimate: true });
     const off = node.drawOffset(measurer);
     return p[0] >= off.x && p[0] <= off.x + size.w && p[1] >= off.y && p[1] <= off.y + size.h;
   }

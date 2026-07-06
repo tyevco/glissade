@@ -111,8 +111,11 @@ export class TokenHighlight extends Node {
     this.rematch = props.rematch ?? false;
 
     // validate every range at construction — copy drift fails the build, not
-    // the render farm three hours in
-    const boxes = this.target.wordBoxes();
+    // the render farm three hours in. This is an internal snapshot (range/text
+    // resolution + a measurer-independent copy-drift bound), re-measured at draw
+    // with the real ctx.measurer — so opt into the estimate (measurer-fail-loud
+    // is for AUTHOR geometry reads, not this validation machinery).
+    const boxes = this.target.wordBoxes(undefined, { estimate: true });
     this.ranges = props.ranges.map((spec, index) => {
       const run = this.resolveRun(boxes, spec);
       const id = spec.id ?? `r${index}`;
@@ -152,7 +155,10 @@ export class TokenHighlight extends Node {
   }
 
   protected draw(out: DisplayListBuilder, ctx: EvalContext): void {
-    const boxes = this.target.wordBoxes(ctx.measurer);
+    // render path: box the ranges with whatever measurer ctx provides (the real
+    // backend at export/mount; the estimate in IR-level tests) — never fail loud
+    // here, that gate is for author reads.
+    const boxes = this.target.wordBoxes(ctx.measurer, { estimate: true });
     if (boxes.length === 0) return;
     const tm = this.target.localMatrix();
     const [px, py] = this.padding;

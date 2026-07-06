@@ -29,15 +29,20 @@ const H = 360;
 // the scene measurer via setTextMeasurer — so the parts must measure with the
 // REAL Skia backend or they fall back to the rough per-character estimate
 // (o_aLYFFPjFDf: the drift two consumers saw). The harness threads its backend
-// in here via setSplitMeasurer(); when unset (e.g. an IR-level test) the chain
-// falls through to the estimate (which now warns).
+// in here via setSplitMeasurer(); when unset (this module's `timeline` is built
+// at import, before the harness sets it, and an IR-level test never sets it) the
+// chain falls to the estimate — which under measurer-fail-loud THROWS unless we
+// opt in. This is the estimate-DEMO scene, so { estimate: true } is deliberate:
+// the golden PNG still renders through createScene() with the REAL measurer the
+// harness injects, so its bytes are unchanged; the estimate only feeds the
+// measurer-independent timeline ids.
 let splitMeasurer: TextMeasurer | undefined;
 export function setSplitMeasurer(m: TextMeasurer | undefined): void {
   splitMeasurer = m;
 }
 
-const measurerOpt = (): { measurer: TextMeasurer } | undefined =>
-  splitMeasurer !== undefined ? { measurer: splitMeasurer } : undefined;
+const measurerOpt = (): { measurer: TextMeasurer } | { estimate: true } =>
+  splitMeasurer !== undefined ? { measurer: splitMeasurer } : { estimate: true };
 
 // Build-time pure expansion; call fresh per createScene() AND for the timeline
 // (the each()/splitText convention — both reconstruct the identical id set).

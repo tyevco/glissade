@@ -62,7 +62,7 @@ describe('TokenHighlight slash-bearing range props bind through bindScene (no Un
 });
 
 describe('matchTokenRun', () => {
-  const boxes = (text: string) => new Text({ text, fontSize: 10 }).wordBoxes(estimatingMeasurer);
+  const boxes = (text: string) => new Text({ text, fontSize: 10 }).wordBoxes(estimatingMeasurer, { estimate: true });
 
   it('matches single boxes and multi-box runs, whitespace-insensitively', () => {
     const b = boxes('Budget approved: $48,200 per year');

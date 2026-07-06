@@ -369,7 +369,9 @@ function anchorPoint(ctx: Ctx, node: Node): [number, number] {
   if (!node.hasAnchor) return [0, 0];
   const m = ctx.measurer ?? node.measurerSource?.();
   if (!m) return [0, 0];
-  const size = node.intrinsicSize(m);
+  // export machinery: tolerate the estimate measurer (measurer-fail-loud gates
+  // author geometry reads, not the export path).
+  const size = node.intrinsicSize(m, { estimate: true });
   if (!size) return [0, 0]; // groups / boxless nodes stay at the origin
   const d = node.drawOffset(m);
   const [ax, ay] = node.anchor;

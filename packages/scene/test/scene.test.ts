@@ -658,7 +658,7 @@ describe('measureWrappedText / scene.measureWrappedText (wrap-aware string measu
     // the standalone fn must agree with the node path (both run breakLines + the same grid)
     const wrapped = measureWrappedText(long, font, 600, 1.4, estimatingMeasurer);
     const node = new Text({ text: long, fontFamily: font.family, fontSize: font.size, width: 600, lineHeight: 1.4 });
-    const box = node.measuredSize(estimatingMeasurer);
+    const box = node.measuredSize(estimatingMeasurer, { estimate: true });
     expect(wrapped.width).toBe(box.w);
     expect(wrapped.height).toBe(box.h);
   });

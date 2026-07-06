@@ -7,7 +7,16 @@
 import { describe, expect, it } from 'vitest';
 import { key, timeline, track } from '@glissade/core';
 import type { NarrationScript, NarrationTiming } from '@glissade/narrate';
-import { forkNarrationScript, scriptFromTiming, stubMessageTable, runLocalizePreflight } from '../src/localize.js';
+import {
+  forkNarrationScript,
+  scriptFromTiming,
+  stubMessageTable,
+  runLocalizePreflight,
+  srcHashOf,
+  classifyTmStaleness,
+  parseTmSidecar,
+  serializeTmSidecar,
+} from '../src/localize.js';
 
 const baseScript: NarrationScript = {
   narrationVersion: 1,
@@ -92,6 +101,99 @@ describe('stubMessageTable', () => {
   });
   it('dedups repeated ids', () => {
     expect(Object.keys(stubMessageTable(['a', 'a', 'b']))).toEqual(['a', 'b']);
+  });
+});
+
+describe('classifyTmStaleness — (id, source-hash) translation-memory staleness', () => {
+  const src = (m: Record<string, string>) => new Map(Object.entries(m));
+  const hashes = (m: Record<string, string>) => {
+    const out: Record<string, { srcHash: string }> = {};
+    for (const [k, v] of Object.entries(m)) out[k] = { srcHash: srcHashOf(v) };
+    return out;
+  };
+
+  it('reuse when the source is UNCHANGED since translated (the carried translation still holds)', () => {
+    const r = classifyTmStaleness({
+      source: src({ a: 'Hello', b: 'World' }),
+      translated: new Set(['a', 'b']),
+      prior: hashes({ a: 'Hello', b: 'World' }),
+    });
+    expect(r.reuse).toEqual(['a', 'b']);
+    expect(r.stale).toEqual([]);
+  });
+
+  it('stale when the source CHANGED since translated (re-translate ONLY this one)', () => {
+    const r = classifyTmStaleness({
+      source: src({ a: 'Hello there', b: 'World' }), // a reworded
+      translated: new Set(['a', 'b']),
+      prior: hashes({ a: 'Hello', b: 'World' }), // a translated against the old EN
+    });
+    expect(r.stale).toEqual(['a']); // ONLY the reworded source
+    expect(r.reuse).toEqual(['b']);
+  });
+
+  it('an UNTRANSLATED source id is neither reuse nor stale (nothing to preserve)', () => {
+    const r = classifyTmStaleness({
+      source: src({ a: 'Hello', b: 'World' }),
+      translated: new Set(['a']), // b never translated
+      prior: hashes({ a: 'Hello', b: 'World' }),
+    });
+    expect(r.reuse).toEqual(['a']);
+    expect(r.stale).toEqual([]);
+  });
+
+  it('a NEW translated id with NO prior record is stale, never falsely reuse (can\'t prove fresh)', () => {
+    const r = classifyTmStaleness({
+      source: src({ a: 'Hello', fresh: 'New beat' }),
+      translated: new Set(['a', 'fresh']),
+      prior: hashes({ a: 'Hello' }), // no entry for 'fresh'
+    });
+    expect(r.reuse).toEqual(['a']);
+    expect(r.stale).toEqual(['fresh']);
+  });
+
+  it('next snapshots the CURRENT source hash for every source id (translated or not), sorted', () => {
+    const r = classifyTmStaleness({
+      source: src({ b: 'World', a: 'Hello' }),
+      translated: new Set(['a']),
+      prior: {},
+    });
+    expect(Object.keys(r.next)).toEqual(['a', 'b']); // sorted, ALL ids (b untranslated still snapshotted)
+    expect(r.next.a!.srcHash).toBe(srcHashOf('Hello'));
+    expect(r.next.b!.srcHash).toBe(srcHashOf('World'));
+  });
+
+  it('works identically on a message table (same (id, srcHash) staleness on t() ids)', () => {
+    const r = classifyTmStaleness({
+      source: src({ 'hero.title': 'Champion', cta: 'Buy now' }), // hero.title reworded from 'Hero'
+      translated: new Set(['hero.title', 'cta']),
+      prior: hashes({ 'hero.title': 'Hero', cta: 'Buy now' }),
+    });
+    expect(r.stale).toEqual(['hero.title']);
+    expect(r.reuse).toEqual(['cta']);
+  });
+});
+
+describe('TM sidecar (parse/serialize) — a diff-stable, id-namespaced artifact', () => {
+  it('serialize sorts keys per section + emits a trailing newline (deterministic)', () => {
+    const out = serializeTmSidecar({ b: { srcHash: '2' }, a: { srcHash: '1' } }, { z: { srcHash: '9' } });
+    expect(out.endsWith('\n')).toBe(true);
+    const doc = JSON.parse(out) as { tmVersion: number; segments: Record<string, unknown>; messages: Record<string, unknown> };
+    expect(doc.tmVersion).toBe(1);
+    expect(Object.keys(doc.segments)).toEqual(['a', 'b']); // sorted
+    expect(Object.keys(doc.messages)).toEqual(['z']);
+  });
+
+  it('parse tolerates absence + a partial shape (missing sections → empty)', () => {
+    expect(parseTmSidecar(undefined)).toEqual({ tmVersion: 1, segments: {}, messages: {} });
+    expect(parseTmSidecar({ segments: { a: { srcHash: 'x' } } })).toEqual({
+      tmVersion: 1,
+      segments: { a: { srcHash: 'x' } },
+      messages: {},
+    });
+    // round-trip: serialize → parse is stable
+    const s = serializeTmSidecar({ a: { srcHash: 'x' } }, { m: { srcHash: 'y' } });
+    expect(parseTmSidecar(JSON.parse(s))).toEqual({ tmVersion: 1, segments: { a: { srcHash: 'x' } }, messages: { m: { srcHash: 'y' } } });
   });
 });
 

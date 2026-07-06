@@ -107,12 +107,12 @@ describe('anchor: flow + warnings', () => {
 describe('Text.measuredSize / lineBoxes', () => {
   it('measuredSize matches the flow numbers, no hand math', () => {
     const t = new Text({ text: 'hello', fontSize: 10 });
-    expect(t.measuredSize(estimatingMeasurer)).toEqual({ w: 26, h: 12.5 });
+    expect(t.measuredSize(estimatingMeasurer, { estimate: true })).toEqual({ w: 26, h: 12.5 });
   });
 
   it('lineBoxes: one ink box per line, baseline-relative, align-aware', () => {
     const t = new Text({ text: 'ab\ncd', fontSize: 10, align: 'center' });
-    const boxes = t.lineBoxes(estimatingMeasurer);
+    const boxes = t.lineBoxes(estimatingMeasurer, { estimate: true });
     expect(boxes).toHaveLength(2);
     // estimating: w = 2·10·0.52 = 10.4 → quantized 10.5; ascent 8, descent 2
     expect(boxes[0]).toEqual({ text: 'ab', x: -5.25, y: -8, w: 10.5, h: 10 });
@@ -121,7 +121,7 @@ describe('Text.measuredSize / lineBoxes', () => {
 
   it('blank lines produce no box', () => {
     const t = new Text({ text: 'ab\n\ncd', fontSize: 10 });
-    const boxes = t.lineBoxes(estimatingMeasurer);
+    const boxes = t.lineBoxes(estimatingMeasurer, { estimate: true });
     expect(boxes.map((b) => b.text)).toEqual(['ab', 'cd']);
     expect(boxes[1]!.y).toBe(25 - 8); // line index 2, not 1
   });
@@ -192,7 +192,7 @@ describe('Highlight: the marker sweep', () => {
 
 describe('lineBoxes ↔ highlight integration shape', () => {
   it('a LineBox is the documented shape', () => {
-    const box: LineBox = new Text({ text: 'x', fontSize: 10 }).lineBoxes(estimatingMeasurer)[0]!;
+    const box: LineBox = new Text({ text: 'x', fontSize: 10 }).lineBoxes(estimatingMeasurer, { estimate: true })[0]!;
     expect(Object.keys(box).sort()).toEqual(['h', 'text', 'w', 'x', 'y']);
   });
 });
@@ -200,7 +200,7 @@ describe('lineBoxes ↔ highlight integration shape', () => {
 describe('Text.wordBoxes', () => {
   it('one box per word, positioned by prefix advance; whitespace advances boxlessly', () => {
     const t = new Text({ text: 'ab cd', fontSize: 10 });
-    const boxes = t.wordBoxes(estimatingMeasurer);
+    const boxes = t.wordBoxes(estimatingMeasurer, { estimate: true });
     // estimating: 5.2/char. 'ab' [0, 10.4); space advances 5.2; 'cd' at 15.6
     expect(boxes.map((b) => b.text)).toEqual(['ab', 'cd']);
     expect(boxes[0]).toEqual({ text: 'ab', line: 0, x: 0, y: -8, w: 10.4, h: 10 });
@@ -210,8 +210,8 @@ describe('Text.wordBoxes', () => {
 
   it('word advances span exactly the line box (the acceptance sum)', () => {
     const t = new Text({ text: 'one two three', fontSize: 10 });
-    const line = t.lineBoxes(estimatingMeasurer)[0]!;
-    const words = t.wordBoxes(estimatingMeasurer);
+    const line = t.lineBoxes(estimatingMeasurer, { estimate: true })[0]!;
+    const words = t.wordBoxes(estimatingMeasurer, { estimate: true });
     const last = words[words.length - 1]!;
     expect(words[0]!.x).toBe(line.x);
     expect(last.x + last.w).toBeCloseTo(line.x + line.w, 0.5); // within quantization
@@ -219,12 +219,12 @@ describe('Text.wordBoxes', () => {
 
   it('punctuation glues to its word — the draw segmentation, not naive splitting', () => {
     const t = new Text({ text: 'no replay, ever.', fontSize: 10 });
-    expect(t.wordBoxes(estimatingMeasurer).map((b) => b.text)).toEqual(['no', 'replay,', 'ever.']);
+    expect(t.wordBoxes(estimatingMeasurer, { estimate: true }).map((b) => b.text)).toEqual(['no', 'replay,', 'ever.']);
   });
 
   it('wrapped lines carry their line index; align offsets the whole line', () => {
     const t = new Text({ text: 'aaaa bbbb', fontSize: 10, width: 25, align: 'center' });
-    const boxes = t.wordBoxes(estimatingMeasurer);
+    const boxes = t.wordBoxes(estimatingMeasurer, { estimate: true });
     // 'aaaa bbbb' at 5.2/char exceeds 25 → one word per line
     expect(boxes.map((b) => [b.text, b.line])).toEqual([
       ['aaaa', 0],
@@ -237,14 +237,14 @@ describe('Text.wordBoxes', () => {
 
   it('blank lines keep their slot in the numbering', () => {
     const t = new Text({ text: 'ab\n\ncd', fontSize: 10 });
-    expect(t.wordBoxes(estimatingMeasurer).map((b) => b.line)).toEqual([0, 2]);
+    expect(t.wordBoxes(estimatingMeasurer, { estimate: true }).map((b) => b.line)).toEqual([0, 2]);
   });
 });
 
 describe('wordBoxes: whitespace glue trim (downstream report #3)', () => {
   it("'$48,200' boxes start at the '$', not the preceding space", () => {
     const t = new Text({ text: 'Budget approved: $48,200 per year', fontSize: 10 });
-    const boxes = t.wordBoxes(estimatingMeasurer);
+    const boxes = t.wordBoxes(estimatingMeasurer, { estimate: true });
     const dollar = boxes.find((b) => b.text.startsWith('$'))!;
     expect(dollar.text).toBe('$'); // no leading space in the text either
     // 'Budget approved: ' = 17 chars → 88.4 at 5.2/char
@@ -262,7 +262,10 @@ describe('setDefaultMeasurer: factory-time measurement', () => {
     const t = new Text({ text: 'hello', fontSize: 10 });
     expect(t.measuredSize().w).toBe(50);
     setDefaultMeasurer(null);
-    expect(t.measuredSize().w).toBe(26); // estimating fallback
+    // measurer-fail-loud: the bare estimate fallback now THROWS unless { estimate }
+    // opts in — the same 26 with the opt-out (the estimator as last resort).
+    expect(t.measuredSize(undefined, { estimate: true }).w).toBe(26);
+    expect(() => t.measuredSize()).toThrow(/text geometry needs a real measurer/);
   });
 
   it('un-injected scenes resolve through the default; injected backends still win', () => {
@@ -273,6 +276,8 @@ describe('setDefaultMeasurer: factory-time measurement', () => {
     expect(scene.textMeasurer.measureText('hello', { family: 'x', size: 10 }).width).toBe(50);
     expect(t.measuredSize().w).toBe(50); // measurerSource chain sees it too
     scene.setTextMeasurer(estimatingMeasurer);
-    expect(t.measuredSize().w).toBe(26); // the injected measurer wins
+    // the injected measurer wins; it IS the estimating singleton, so the read is
+    // fail-loud unless { estimate } opts into the same 26.
+    expect(t.measuredSize(undefined, { estimate: true }).w).toBe(26);
   });
 });

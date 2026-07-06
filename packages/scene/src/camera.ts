@@ -147,7 +147,9 @@ interface WorldBox {
 
 function worldBoxOf(node: Node, measurer: TextMeasurer): WorldBox {
   const wm = node.worldMatrix();
-  const size = node.intrinsicSize(measurer);
+  // camera framing is render machinery (centerOn a node): tolerate the estimate
+  // measurer (measurer-fail-loud gates author reads, not the render path).
+  const size = node.intrinsicSize(measurer, { estimate: true });
   if (size === null) {
     const c = applyToPoint(wm, [0, 0]);
     return { center: c, minX: c[0], minY: c[1], maxX: c[0], maxY: c[1] };

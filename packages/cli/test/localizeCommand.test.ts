@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { NarrationScript } from '@glissade/narrate';
 import type { MessageTable } from '@glissade/core/i18n';
 
@@ -106,6 +106,136 @@ describe.runIf(existsSync(CLI))('gs localize (built CLI)', () => {
     const r = gs('--to', 'Not A Locale!');
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/not a locale/i);
+  });
+});
+
+describe.runIf(existsSync(CLI))('gs localize --tm (translation-memory staleness, narration-fork path)', () => {
+  const baseNarration = join(FIX, 'scene.narration.json');
+  const tmSidecar = join(FIX, 'scene.tm.zh.json');
+  let baseBackup = '';
+
+  beforeEach(() => {
+    baseBackup = readFileSync(baseNarration, 'utf8');
+  });
+  afterEach(() => {
+    writeFileSync(baseNarration, baseBackup); // restore the EN base fixture
+    rmSync(zhNarration, { force: true });
+    rmSync(zhMessages, { force: true });
+    rmSync(tmSidecar, { force: true });
+  });
+
+  // translator does their pass: prefix every spoken segment so it's a real translation
+  const translateAll = () => {
+    const forked = JSON.parse(readFileSync(zhNarration, 'utf8')) as NarrationScript;
+    for (const seg of forked.segments) {
+      if (!('pause' in seg)) (seg as { text: string }).text = 'ZH:' + (seg as { text: string }).text;
+    }
+    writeFileSync(zhNarration, JSON.stringify(forked, null, 2) + '\n');
+  };
+  const rewordEnSegment = (idx: number, text: string) => {
+    const base = JSON.parse(baseBackup) as NarrationScript;
+    (base.segments[idx] as { text: string }).text = text;
+    writeFileSync(baseNarration, JSON.stringify(base, null, 2) + '\n');
+  };
+
+  it('PRIMARY: reword ONE EN base segment → ONLY that segment is stale, all others reuse', () => {
+    // 1) fork with --tm seeds the .tm.zh.json sidecar with the EN source hashes
+    expect(gs('--to', 'zh', '--write', '--tm').status).toBe(0);
+    expect(existsSync(tmSidecar)).toBe(true);
+    // 2) translator translates every spoken segment
+    translateAll();
+    // 3) English gets reworded on exactly ONE segment ('intro')
+    rewordEnSegment(0, 'Hello there, friend');
+    // 4) re-localize with --tm classifies carried translations against the sidecar
+    const r = gs('--to', 'zh', '--tm', '--json');
+    expect(r.status).toBe(0);
+    const report = JSON.parse(r.stdout) as {
+      tm: { enabled: boolean; stale: number; reuse: number; staleIds: string[]; narration: { reuse: string[]; stale: string[] } };
+    };
+    expect(report.tm.enabled).toBe(true);
+    expect(report.tm.staleIds).toEqual(['intro']); // ONLY the reworded EN segment
+    expect(report.tm.narration.stale).toEqual(['intro']);
+    expect(report.tm.narration.reuse).toEqual(['outro']); // unchanged EN → carried translation still valid
+    expect(report.tm.stale).toBe(1);
+  });
+
+  it('UNCHANGED English → every carried translation is reuse, 0 stale', () => {
+    gs('--to', 'zh', '--write', '--tm'); // seed sidecar
+    translateAll();
+    const report = JSON.parse(gs('--to', 'zh', '--tm', '--json').stdout) as {
+      tm: { stale: number; narration: { reuse: string[]; stale: string[] } };
+    };
+    expect(report.tm.stale).toBe(0);
+    expect(report.tm.narration.reuse).toEqual(['intro', 'outro']);
+    expect(report.tm.narration.stale).toEqual([]);
+  });
+
+  it('ROUND-TRIP: --write rewrites the sidecar → the stale flag clears on the next run', () => {
+    gs('--to', 'zh', '--write', '--tm'); // seed
+    translateAll();
+    rewordEnSegment(0, 'Hi');
+    // --write both flags intro stale AND snapshots the new EN hash into the sidecar
+    const r1 = JSON.parse(gs('--to', 'zh', '--write', '--tm', '--json').stdout) as {
+      tm: { staleIds: string[]; wroteSidecar: boolean };
+    };
+    expect(r1.tm.staleIds).toEqual(['intro']);
+    expect(r1.tm.wroteSidecar).toBe(true);
+    // the translator re-translated intro is NOT required — re-running immediately sees a current sidecar
+    const r2 = JSON.parse(gs('--to', 'zh', '--tm', '--json').stdout) as { tm: { stale: number; narration: { reuse: string[] } } };
+    expect(r2.tm.stale).toBe(0); // sidecar now matches current EN → no stale
+    expect(r2.tm.narration.reuse).toEqual(['intro', 'outro']);
+  });
+
+  it('without --tm the sidecar is neither read nor written (fully non-breaking)', () => {
+    const report = JSON.parse(gs('--to', 'zh', '--write', '--json').stdout) as { tm: { enabled: boolean }; wrote: string[] };
+    expect(report.tm.enabled).toBe(false);
+    expect(existsSync(tmSidecar)).toBe(false); // no --tm → no sidecar
+    expect(report.wrote.some((p) => p.endsWith('.tm.zh.json'))).toBe(false);
+  });
+
+  it('formatLocalizeReport (default text output) surfaces the stale ids to re-translate', () => {
+    gs('--to', 'zh', '--write', '--tm');
+    translateAll();
+    rewordEnSegment(0, 'Hello there, friend');
+    const r = gs('--to', 'zh', '--tm'); // no --json → human report
+    expect(r.stdout).toMatch(/tm:/);
+    expect(r.stdout).toMatch(/1 STALE/);
+    expect(r.stdout).toMatch(/re-translate only: intro/);
+  });
+});
+
+describe.runIf(existsSync(CLI))('gs localize --tm — messages-table (t()) staleness', () => {
+  const enMessages = join(FIX, 'messages.en.json');
+  const tmSidecar = join(FIX, 'scene.tm.zh.json');
+  const gsFrom = (...args: string[]) =>
+    spawnSync(process.execPath, [CLI, 'localize', scene, '--to', 'zh', '--from', 'en', ...args], { encoding: 'utf8' });
+
+  afterEach(() => {
+    rmSync(enMessages, { force: true });
+    rmSync(zhMessages, { force: true });
+    rmSync(zhNarration, { force: true });
+    rmSync(tmSidecar, { force: true });
+  });
+
+  it('reword a base-locale message → that message id is stale on re-localize', () => {
+    // base-locale (en) message table the scene's t() ids translate FROM
+    writeFileSync(enMessages, JSON.stringify({ 'hero.title': 'Hero', captions: 'Caption' }, null, 2));
+    // 1) fork --from en --tm seeds the sidecar's messages section with the EN hashes
+    gsFrom('--write', '--tm');
+    expect(existsSync(tmSidecar)).toBe(true);
+    // 2) translate one message in the target table
+    const msgs = JSON.parse(readFileSync(zhMessages, 'utf8')) as MessageTable;
+    msgs['hero.title'] = '英雄';
+    writeFileSync(zhMessages, JSON.stringify(msgs, null, 2));
+    // 3) reword the EN base message
+    writeFileSync(enMessages, JSON.stringify({ 'hero.title': 'Champion', captions: 'Caption' }, null, 2));
+    // 4) re-localize → hero.title is stale (its EN source changed); captions untouched
+    const report = JSON.parse(gsFrom('--tm', '--json').stdout) as {
+      tm: { staleIds: string[]; messages: { reuse: string[]; stale: string[] } };
+    };
+    expect(report.tm.messages.stale).toEqual(['hero.title']);
+    expect(report.tm.staleIds).toContain('hero.title');
+    expect(report.tm.messages.reuse).not.toContain('hero.title');
   });
 });
 

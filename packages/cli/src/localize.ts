@@ -14,6 +14,7 @@
  * Nothing here synthesizes audio, touches the render path, or calls `evaluate()`.
  */
 
+import { createHash } from 'node:crypto';
 import { requireParity, localize, ParityError, LocalizationError, type MessageTable, type LocaleManifest } from '@glissade/core/i18n';
 import type { Timeline } from '@glissade/core';
 import { isPause, type NarrationScript, type NarrationTiming, type NarrationElement } from '@glissade/narrate';
@@ -23,6 +24,112 @@ export class LocalizeError extends Error {
     super(message);
     this.name = 'LocalizeError';
   }
+}
+
+// ── translation-memory staleness (0.6x, --tm) ────────────────────────────────
+//
+// Carry-by-id (forkNarrationScript / stubMessageTable) NEVER wipes a translator's
+// work — but it is BLIND to whether the English SOURCE changed. A reworded EN
+// segment silently keeps its now-stale old translation. The TM sidecar closes that
+// gap: it records, per translated id, a hash of the EN source text AT THE TIME it
+// was translated. On re-localize we re-hash the CURRENT source and compare —
+// `reuse` when the source is unchanged (the carried translation is still valid),
+// `stale` when it changed (re-translate ONLY these). This is OFF the render path:
+// the srcHash never enters any cert / determinism / golden hash.
+
+/**
+ * A stable content hash of a source string — the TM staleness key. `sha256` hex via
+ * `node:crypto`, matching the CLI's other content hashes (cert / loudness). Pure.
+ */
+export function srcHashOf(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/** One TM entry: the hash of the SOURCE text when this id was last translated. */
+export interface TmEntry {
+  readonly srcHash: string;
+}
+
+/**
+ * The `.tm.<locale>.json` sidecar — a SEPARATE committed artifact (never pollutes
+ * the clean `gs narrate` narration input nor the flat `{id:text}` message table).
+ * Two id-namespaced sections so a segment id and a `t()` message id can't collide:
+ * `segments` keyed on narration beat ids, `messages` on message-table ids. Sorted
+ * keys / trailing newline on write → diff-stable, like `stubMessageTable`.
+ */
+export interface TmSidecar {
+  readonly tmVersion: 1;
+  readonly segments: Readonly<Record<string, TmEntry>>;
+  readonly messages: Readonly<Record<string, TmEntry>>;
+}
+
+/** Per-section staleness classification: which carried translations still hold, which went stale. */
+export interface TmStaleness {
+  /** carried translations whose EN source is UNCHANGED since translated — keep as-is */
+  readonly reuse: readonly string[];
+  /** carried translations whose EN source CHANGED since translated — re-translate ONLY these */
+  readonly stale: readonly string[];
+}
+
+/**
+ * Classify carried translations against a prior TM section. PURE over its inputs
+ * (hash + compare): for every id that currently holds a real translation, compare
+ * the stored `srcHash` (source at translate time) against a fresh hash of the
+ * CURRENT source text → `reuse` when equal, `stale` when different OR when there is
+ * no prior record (a translated id we can't prove is fresh needs review). An id with
+ * NO current translation (a fresh/untranslated segment) is neither reuse nor stale.
+ *
+ * `next` is the sidecar section to persist on `--write`: a full snapshot of the
+ * current source hash for EVERY source id (translated or not), so the next
+ * re-localize measures drift from this pass.
+ */
+export function classifyTmStaleness(args: {
+  /** current source text by id (EN narration segment text, or base-locale message text) */
+  readonly source: ReadonlyMap<string, string>;
+  /** ids that currently hold a real (non-placeholder) translation */
+  readonly translated: ReadonlySet<string>;
+  /** the prior sidecar section for this namespace (id → recorded source hash) */
+  readonly prior: Readonly<Record<string, TmEntry>>;
+}): { readonly reuse: string[]; readonly stale: string[]; readonly next: Record<string, TmEntry> } {
+  const reuse: string[] = [];
+  const stale: string[] = [];
+  const next: Record<string, TmEntry> = {};
+  for (const id of [...args.source.keys()].sort()) {
+    const cur = srcHashOf(args.source.get(id)!);
+    next[id] = { srcHash: cur };
+    if (!args.translated.has(id)) continue; // no translation → not reuse, not stale
+    const prev = args.prior[id]?.srcHash;
+    if (prev !== undefined && prev === cur) reuse.push(id);
+    else stale.push(id);
+  }
+  return { reuse, stale, next };
+}
+
+/** Read + normalize a `.tm.<locale>.json` sidecar, tolerating absence / a partial shape. */
+export function parseTmSidecar(raw: unknown): TmSidecar {
+  const o = (raw ?? {}) as Partial<TmSidecar>;
+  const section = (s: unknown): Record<string, TmEntry> => {
+    const out: Record<string, TmEntry> = {};
+    if (s && typeof s === 'object') {
+      for (const [k, v] of Object.entries(s as Record<string, unknown>)) {
+        const h = (v as { srcHash?: unknown })?.srcHash;
+        if (typeof h === 'string') out[k] = { srcHash: h };
+      }
+    }
+    return out;
+  };
+  return { tmVersion: 1, segments: section(o.segments), messages: section(o.messages) };
+}
+
+/** Serialize a TM sidecar deterministically (sorted keys per section, trailing newline). */
+export function serializeTmSidecar(segments: Record<string, TmEntry>, messages: Record<string, TmEntry>): string {
+  const sortSection = (rec: Record<string, TmEntry>): Record<string, TmEntry> => {
+    const out: Record<string, TmEntry> = {};
+    for (const k of Object.keys(rec).sort()) out[k] = { srcHash: rec[k]!.srcHash };
+    return out;
+  };
+  const doc: TmSidecar = { tmVersion: 1, segments: sortSection(segments), messages: sortSection(messages) };
+  return JSON.stringify(doc, null, 2) + '\n';
 }
 
 /**
@@ -222,6 +329,29 @@ export interface LocalizeReport {
   readonly messagesPath: string;
   /** whether a base authored narration script was found (vs derived from timing / absent) */
   readonly narrationSource: 'script' | 'timing' | 'none';
+  /** translation-memory staleness (only meaningful under --tm; `enabled:false` otherwise) */
+  readonly tm: LocalizeTmReport;
+}
+
+/**
+ * The `--tm` staleness surface: per-namespace reuse/stale classification of carried
+ * translations plus the sidecar path. When `--tm` is off, `enabled:false` and every
+ * bucket is empty (the feature reads/writes nothing — fully non-breaking).
+ */
+export interface LocalizeTmReport {
+  readonly enabled: boolean;
+  /** the `.tm.<locale>.json` sidecar path a --write would produce */
+  readonly sidecarPath: string;
+  /** whether a --write (re)wrote the sidecar this run */
+  readonly wroteSidecar: boolean;
+  readonly narration: TmStaleness;
+  readonly messages: TmStaleness;
+  /** total carried translations still valid (source unchanged) across both namespaces */
+  readonly reuse: number;
+  /** total carried translations gone stale (source changed) across both namespaces */
+  readonly stale: number;
+  /** the stale ids to re-translate (narration ⧺ messages) — the whole point of --tm */
+  readonly staleIds: readonly string[];
 }
 
 /**
@@ -232,7 +362,7 @@ export interface LocalizeReport {
  */
 export async function localizeCommand(
   modulePath: string,
-  opts: { to: string; from?: string; write?: boolean; keepVoice?: boolean; strict?: boolean },
+  opts: { to: string; from?: string; write?: boolean; keepVoice?: boolean; strict?: boolean; tm?: boolean },
 ): Promise<LocalizeReport> {
   const { readFileSync, writeFileSync, existsSync } = await import('node:fs');
   const { scriptPathFor } = await import('@glissade/narrate/providers');
@@ -300,6 +430,60 @@ export async function localizeCommand(
     consumedIds: tIds,
   });
 
+  // 5b) translation-memory staleness (--tm): classify every carried translation
+  //     against the .tm.<locale>.json sidecar's recorded SOURCE hashes. Carry-by-id
+  //     never wipes a translation but is blind to a reworded EN source — this flags
+  //     the ones whose source moved (re-translate ONLY these). Off the render path:
+  //     the srcHash never enters a cert / determinism / golden hash.
+  const tmSidecarPath = moduleStemOf(modulePath) + `.tm.${to}.json`;
+  let tm: LocalizeTmReport = {
+    enabled: false, sidecarPath: tmSidecarPath, wroteSidecar: false,
+    narration: { reuse: [], stale: [] }, messages: { reuse: [], stale: [] },
+    reuse: 0, stale: 0, staleIds: [],
+  };
+  let tmSidecarContent: string | undefined;
+  if (opts.tm) {
+    const prior = existsSync(tmSidecarPath)
+      ? parseTmSidecar(JSON.parse(readFileSync(tmSidecarPath, 'utf8')))
+      : parseTmSidecar(undefined);
+
+    // narration namespace: source = EN base segment text; a translation is "carried"
+    // when forkNarrationScript kept target text that differs from the base source.
+    const narrSource = new Map<string, string>();
+    if (baseScript) for (const el of baseScript.segments) if (!isPause(el)) narrSource.set(el.id, (el as { text: string }).text);
+    const narrTranslated = new Set<string>();
+    if (baseScript && forked) {
+      forked.segments.forEach((el, i) => {
+        const b = baseScript.segments[i];
+        if (!isPause(el) && b && !isPause(b) && (el as { text: string }).text !== (b as { text: string }).text) narrTranslated.add(el.id);
+      });
+    }
+    const narrCls = classifyTmStaleness({ source: narrSource, translated: narrTranslated, prior: prior.segments });
+
+    // messages namespace: source = base-locale message text (--from); a translation
+    // is "carried" when the target value is non-empty AND differs from that source.
+    const msgSource = new Map<string, string>();
+    if (base) for (const id of messageIds) { const v = base[id]; if (v !== undefined) msgSource.set(id, v); }
+    const msgTranslated = new Set<string>();
+    for (const id of messageIds) {
+      const cur = stubTable[id];
+      const src = base?.[id];
+      if (cur !== undefined && cur !== '' && src !== undefined && cur !== src) msgTranslated.add(id);
+    }
+    const msgCls = classifyTmStaleness({ source: msgSource, translated: msgTranslated, prior: prior.messages });
+
+    if (narrSource.size > 0 || msgSource.size > 0) tmSidecarContent = serializeTmSidecar(narrCls.next, msgCls.next);
+    const staleIds = [...narrCls.stale, ...msgCls.stale];
+    tm = {
+      enabled: true, sidecarPath: tmSidecarPath, wroteSidecar: false,
+      narration: { reuse: narrCls.reuse, stale: narrCls.stale },
+      messages: { reuse: msgCls.reuse, stale: msgCls.stale },
+      reuse: narrCls.reuse.length + msgCls.reuse.length,
+      stale: staleIds.length,
+      staleIds,
+    };
+  }
+
   // 6) write (opt-in). --strict refuses to emit on a preflight failure (CI gate,
   //    mirroring the dry-run exit-1). A no-message repo (no t() + no single-cue
   //    string tracks) skips messages.<locale>.json entirely — nothing to localize.
@@ -314,9 +498,14 @@ export async function localizeCommand(
       writeFileSync(messagesPath, JSON.stringify(stubTable, null, 2) + '\n');
       wrote.push(messagesPath);
     }
+    if (opts.tm && tmSidecarContent !== undefined) {
+      writeFileSync(tmSidecarPath, tmSidecarContent);
+      wrote.push(tmSidecarPath);
+      tm = { ...tm, wroteSidecar: true };
+    }
   }
 
-  return { locale: to, messageIds: messageIds.sort(), beatIds, carriedSegments, preflight, wrote, refusedWrite, narrationPath, messagesPath, narrationSource };
+  return { locale: to, messageIds: messageIds.sort(), beatIds, carriedSegments, preflight, wrote, refusedWrite, narrationPath, messagesPath, narrationSource, tm };
 }
 
 /** Human-readable report (migrate.ts style). */
@@ -337,6 +526,13 @@ export function formatLocalizeReport(r: LocalizeReport): string {
   } else {
     lines.push(`  preflight: ✗ ${r.preflight.issues.length} issue(s) — fix before narrating:`);
     for (const i of r.preflight.issues) lines.push(`    [${i.kind}] ${i.message.replace(/\n/g, '\n      ')}`);
+  }
+  if (r.tm.enabled) {
+    lines.push(
+      r.tm.stale === 0
+        ? `  tm:        ${r.tm.reuse} translation(s) current, 0 stale (no re-translation needed)`
+        : `  tm:        ${r.tm.reuse} current, ${r.tm.stale} STALE — EN source changed, re-translate only: ${r.tm.staleIds.join(', ')}`,
+    );
   }
   if (r.refusedWrite) lines.push('  --strict: refused to write (preflight failed); fix the drift above, then re-run');
   else if (r.wrote.length) lines.push(`  wrote: ${r.wrote.join(', ')}`);

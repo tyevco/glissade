@@ -25,9 +25,6 @@ import { ValueTypeId } from '@glissade/core';
 import { Vec2 } from '@glissade/core';
 import { Vec2Signal } from '@glissade/core';
 
-// @internal
-export function __resetEstimateWarnings(): void;
-
 // @public
 export const ALL_FILTER_KINDS: ReadonlySet<FilterKind>;
 
@@ -532,6 +529,12 @@ export function fontString(font: FontSpec): string;
 // @public
 export function fromTRS(position: Vec2, rotationDeg: number, scale: Vec2): Mat2x3;
 
+// @public
+export interface GeometryOpts {
+    // (undocumented)
+    estimate?: boolean;
+}
+
 // @public (undocumented)
 export function getLayoutEngine(): LayoutEngine | null;
 
@@ -778,6 +781,11 @@ export function matEquals(a: Mat2x3, b: Mat2x3): boolean;
 export const MEASURE_QUANTUM_PX = 0.5;
 
 // @public
+export class MeasurerRequiredError extends Error {
+    constructor(site: string);
+}
+
+// @public
 export function measureWrappedText(text: string, font: FontSpec, width: number, lineHeight: number, measurer: TextMeasurer): WrappedTextMetrics;
 
 // @public
@@ -858,7 +866,9 @@ abstract class Node_2 {
     readonly id: string | undefined;
     interactive: boolean;
     interactiveChildren: boolean;
-    intrinsicSize(measurer: TextMeasurer): {
+    intrinsicSize(measurer?: TextMeasurer, opts?: {
+        estimate?: boolean;
+    }): {
         w: number;
         h: number;
     } | null;
@@ -1321,18 +1331,18 @@ class Text_2 extends Node_2 {
     readonly fontVariationSettings: string | undefined;
     // (undocumented)
     readonly fontWeight: number;
-    graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[];
+    graphemeBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): GraphemeBox[];
     graphemes(measurer?: TextMeasurer): string[];
     // (undocumented)
-    intrinsicSize(measurer: TextMeasurer): {
+    intrinsicSize(measurer?: TextMeasurer, opts?: GeometryOpts): {
         w: number;
         h: number;
     };
     readonly letterSpacing: number | undefined;
-    lineBoxes(measurer?: TextMeasurer): LineBox[];
+    lineBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): LineBox[];
     // (undocumented)
     readonly lineHeight: number;
-    measuredSize(measurer?: TextMeasurer): {
+    measuredSize(measurer?: TextMeasurer, opts?: GeometryOpts): {
         w: number;
         h: number;
     };
@@ -1350,7 +1360,7 @@ class Text_2 extends Node_2 {
     readonly text: BindableSignal<string>;
     // (undocumented)
     readonly width: BindableSignal<number>;
-    wordBoxes(measurer?: TextMeasurer): WordBox[];
+    wordBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): WordBox[];
 }
 export { Text_2 as Text }
 

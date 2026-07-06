@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { compileTimeline } from '@glissade/core';
-import { evaluate, type SceneModule } from '@glissade/scene';
+import { evaluate, setDefaultMeasurer, type SceneModule } from '@glissade/scene';
 import { SkiaBackend } from '../src/index.js';
 import spinners from '../../examples/src/scenes/showcase/spinners.js';
 import loaders from '../../examples/src/scenes/showcase/loaders.js';
@@ -18,6 +18,15 @@ import interactive from '../../examples/src/scenes/showcase/interactive.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine();
+
+// measurer-fail-loud: flexboard sizes a panel background from panel.computedSize()
+// in a binding; this smoke suite renders font-independently (no real measurer set),
+// so register an estimate-EQUIVALENT default (identical length×0.52 metrics, but NOT
+// the estimating SINGLETON) — the read passes the fail-loud gate with a byte-identical
+// render (the non-empty/purity checks are unchanged).
+setDefaultMeasurer({
+  measureText: (t: string, f: { size: number }) => ({ width: t.length * f.size * 0.52, ascent: f.size * 0.8, descent: f.size * 0.2 }),
+});
 
 const GALLERY: Record<string, SceneModule> = { spinners, loaders, dashboard, transitions, micro, flexboard, interactive };
 

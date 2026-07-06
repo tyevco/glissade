@@ -63,6 +63,7 @@ export {
   type TextProps,
   type ImageProps,
   type VideoProps,
+  type GeometryOpts,
 } from './nodes.js';
 
 // §3.1: the closed, enumerated node taxonomy (the lock + its name type).
@@ -174,7 +175,9 @@ export {
   estimatingMeasurer,
   isEstimatingMeasurer,
   setDefaultMeasurer,
-  __resetEstimateWarnings,
+  // measurer-fail-loud: the error EVERY text-geometry getter throws by default;
+  // on the base scene barrel so it is instanceof-catchable without the /type subpath.
+  MeasurerRequiredError,
   type TextMeasurer,
   type TextMetricsLite,
   type WrappedTextMetrics,

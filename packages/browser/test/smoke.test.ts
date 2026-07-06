@@ -231,18 +231,23 @@ describe('@glissade/browser entry surface', () => {
     expect(bykind('exportFidelity')).toBe('diagnostic');
   });
 
-  it('exposes MeasurerRequiredError so splitText/fitText requireMeasurer throws are instanceof-catchable (0.59)', () => {
+  it('exposes MeasurerRequiredError so the measurer-fail-loud DEFAULT throw is instanceof-catchable off the IIFE', () => {
     // Every other fail-loud error class is on window.glissade; MeasurerRequiredError
     // lived only on the /type subpath, so it wasn't instanceof-catchable off the IIFE.
     expect(typeof glissade.MeasurerRequiredError).toBe('function');
     glissade.setDefaultMeasurer(null); // force the estimating fallback
     let caught: unknown;
     try {
-      glissade.splitText(new glissade.Text({ id: 't', text: 'a b c' }), { by: 'word', requireMeasurer: true });
+      // measurer-fail-loud: splitText THROWS BY DEFAULT with no real measurer.
+      glissade.splitText(new glissade.Text({ id: 't', text: 'a b c' }), { by: 'word' });
     } catch (e) {
       caught = e;
     }
     expect(caught).toBeInstanceOf(glissade.MeasurerRequiredError);
+    // { estimate: true } is the SOLE opt-out — no throw.
+    expect(() =>
+      glissade.splitText(new glissade.Text({ id: 't2', text: 'a b c' }), { by: 'word', estimate: true }),
+    ).not.toThrow();
   });
 
   it('the curated describe().helpers names ALL resolve to real window.glissade.<name> functions (0.20 drift guard)', () => {

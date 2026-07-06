@@ -1,7 +1,17 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { timeline } from '@glissade/core';
 import { createScene, evaluate, Rect } from '../src/index.js';
 import { Column, Layout, Row, Stack, loadYogaLayoutEngine } from '../src/layout.js';
+import { setDefaultMeasurer } from '../src/text.js';
+
+// measurer-fail-loud: register an estimate-EQUIVALENT default (identical metrics,
+// not the estimating SINGLETON) so the no-arg computedSize() reads below pass the
+// fail-loud gate without changing the asserted numbers.
+const ESTIMATE_EQUIVALENT = {
+  measureText: (t: string, f: { size: number }) => ({ width: t.length * f.size * 0.52, ascent: f.size * 0.8, descent: f.size * 0.2 }),
+};
+beforeAll(() => setDefaultMeasurer(ESTIMATE_EQUIVALENT));
+afterAll(() => setDefaultMeasurer(null));
 
 /**
  * Stack is a THIN factory alias over the already-shipped Yoga Layout node:

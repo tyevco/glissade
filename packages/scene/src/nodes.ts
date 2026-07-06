@@ -21,11 +21,22 @@ import {
   breakLines,
   fallbackMeasurer,
   quantize,
+  resolveMeasurer,
   segmentGraphemes,
   segmentWords,
-  warnIfEstimating,
   type TextMeasurer,
 } from './text.js';
+
+/**
+ * Opt-OUT of measurer-fail-loud on a text-geometry getter (measurer-fail-loud):
+ * `{ estimate: true }` accepts the rough per-character estimate instead of
+ * throwing {@link MeasurerRequiredError} when no real measurer is available. The
+ * SOLE opt-in to the estimate; absent/false, a getter with no real measurer fails
+ * loud. Threaded through every geometry getter's opts.
+ */
+export interface GeometryOpts {
+  estimate?: boolean;
+}
 
 /**
  * The NAMED extension point of the closed §3.1 taxonomy: the documented base
@@ -991,20 +1002,26 @@ export class Text extends Node {
     return Math.round(clamped * total);
   }
 
-  override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
+  override intrinsicSize(measurer?: TextMeasurer, opts?: GeometryOpts): { w: number; h: number } {
+    // measurer-fail-loud: resolve + throw on the bare estimate unless { estimate }.
+    // The layout/anchor/draw machinery that legitimately pre-measures with the
+    // estimate (Layout compute, drawOffset/anchorShift) passes { estimate: true }.
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.intrinsicSize', opts?.estimate);
     const text = this.text();
     if (!text) return { w: 0, h: 0 };
     const font: FontSpec = this.fontSpec();
     const maxWidth = this.width();
-    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, measurer);
-    const widest = Math.max(...lines.map((l) => quantize(measurer.measureText(l, font).width)), 0);
+    const lines = breakLines(text, font, maxWidth > 0 ? maxWidth : undefined, m);
+    const widest = Math.max(...lines.map((l) => quantize(m.measureText(l, font).width)), 0);
     return { w: maxWidth > 0 ? maxWidth : widest, h: quantize(font.size * this.lineHeight) * lines.length };
   }
 
   /** Text draws from a baseline origin at its align edge, not a center (§3.6). */
   override drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    const size = this.intrinsicSize(m);
+    // drawOffset feeds layout/anchor placement, NOT a user geometry read — it must
+    // never throw on the pre-scene estimate, so opt into the estimate here.
+    const size = this.intrinsicSize(m, { estimate: true });
     const font: FontSpec = this.fontSpec();
     const firstLine = breakLines(this.text(), font, this.width() > 0 ? this.width() : undefined, m)[0] ?? '';
     const ascent = m.measureText(firstLine, font).ascent;
@@ -1045,8 +1062,10 @@ export class Text extends Node {
    * same numbers Layout flows with, public so bindings never hand-calculate
    * text dimensions (e.g. underline width = () => title.measuredSize().w).
    */
-  measuredSize(measurer?: TextMeasurer): { w: number; h: number } {
-    return this.intrinsicSize(measurer ?? this.measurerSource?.() ?? fallbackMeasurer());
+  measuredSize(measurer?: TextMeasurer, opts?: GeometryOpts): { w: number; h: number } {
+    // measurer-fail-loud read: delegate to intrinsicSize, which resolves + throws
+    // on the bare estimate unless { estimate: true } is threaded through.
+    return this.intrinsicSize(measurer, opts);
   }
 
   /**
@@ -1056,11 +1075,11 @@ export class Text extends Node {
    * produce no box. The substrate for highlights, underlines, per-line
    * reveals, selections.
    */
-  lineBoxes(measurer?: TextMeasurer): LineBox[] {
-    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    // only the IMPLICIT fallback is a footgun: an explicit measurer was a
-    // choice (splitText passes one through and warns at its own seam).
-    if (measurer === undefined) warnIfEstimating(m, 'Text.lineBoxes');
+  lineBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): LineBox[] {
+    // measurer-fail-loud: ANY resolution ending at the bare estimate (implicit
+    // fallback OR an explicitly-passed estimatingMeasurer) throws unless
+    // { estimate: true } opts in — the silent per-char estimate drifts from render.
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.lineBoxes', opts?.estimate);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();
@@ -1088,9 +1107,8 @@ export class Text extends Node {
    * box. Pair index-wise with a narration manifest's word timestamps for
    * karaoke; draw your own rects for sub-line multi-color token work.
    */
-  wordBoxes(measurer?: TextMeasurer): WordBox[] {
-    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    if (measurer === undefined) warnIfEstimating(m, 'Text.wordBoxes');
+  wordBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): WordBox[] {
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.wordBoxes', opts?.estimate);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();
@@ -1135,9 +1153,8 @@ export class Text extends Node {
    * as `wordBoxes()` trims whitespace advance. The substrate `splitText({ by:
    * 'grapheme' })` snapshots.
    */
-  graphemeBoxes(measurer?: TextMeasurer): GraphemeBox[] {
-    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    if (measurer === undefined) warnIfEstimating(m, 'Text.graphemeBoxes');
+  graphemeBoxes(measurer?: TextMeasurer, opts?: GeometryOpts): GraphemeBox[] {
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Text.graphemeBoxes', opts?.estimate);
     const text = this.text();
     if (!text) return [];
     const font: FontSpec = this.fontSpec();

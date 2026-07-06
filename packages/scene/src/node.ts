@@ -360,8 +360,9 @@ export abstract class Node {
    * Natural size for flex flow (§3.2); null = not flowable (a Layout parent
    * emits such children absolutely, untouched).
    */
-  intrinsicSize(measurer: TextMeasurer): { w: number; h: number } | null {
+  intrinsicSize(measurer?: TextMeasurer, opts?: { estimate?: boolean }): { w: number; h: number } | null {
     void measurer;
+    void opts;
     return null;
   }
 
@@ -374,7 +375,9 @@ export abstract class Node {
    */
   drawOffset(measurer?: TextMeasurer): { x: number; y: number } {
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    const size = this.intrinsicSize(m) ?? { w: 0, h: 0 };
+    // layout/anchor machinery, not a user geometry read: opt into the estimate so
+    // pre-scene placement never throws under measurer-fail-loud.
+    const size = this.intrinsicSize(m, { estimate: true }) ?? { w: 0, h: 0 };
     return { x: -size.w / 2, y: -size.h / 2 };
   }
 
@@ -403,7 +406,9 @@ export abstract class Node {
     if (!this.hasAnchor) return [0, 0];
     const [ax, ay] = this.anchor;
     const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
-    const size = this.intrinsicSize(m);
+    // anchor placement is machinery (composed into localMatrix at eval): opt into
+    // the estimate so an anchored node pre-scene never throws (measurer-fail-loud).
+    const size = this.intrinsicSize(m, { estimate: true });
     if (!size) {
       if (!this.#warnedAnchor) {
         this.#warnedAnchor = true;

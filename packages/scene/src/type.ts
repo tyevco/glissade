@@ -23,7 +23,7 @@
 import { timeline, track, key, type Track, type Vec2, type EaseSpec } from '@glissade/core';
 import { Group, Text, type GraphemeBox, type LineBox, type TextProps, type WordBox } from './nodes.js';
 import type { FontSpec } from './displayList.js';
-import { fallbackMeasurer, measureWrappedText, MeasurerRequiredError, quantize, segmentGraphemes, warnIfEstimating, type TextMeasurer } from './text.js';
+import { measureWrappedText, MeasurerRequiredError, quantize, resolveMeasurer, segmentGraphemes, type TextMeasurer } from './text.js';
 
 // 0.59 measurer fail-loud: re-exported on the @glissade/scene/type subpath (where
 // splitText/fitText live) so consumers can `catch (e instanceof MeasurerRequiredError)`
@@ -50,13 +50,12 @@ export interface SplitTextOpts {
    */
   measurer?: TextMeasurer;
   /**
-   * 0.59 measurer fail-loud OPT-IN. By default a split with no real measurer
-   * warns once and degrades to the rough per-character estimate. Set
-   * `requireMeasurer: true` to instead THROW `MeasurerRequiredError` — for a
-   * pipeline that must not silently ship estimated geometry. Default false
-   * (warn) — behavior-neutral.
+   * measurer-fail-loud OPT-OUT. By DEFAULT a split with no real measurer THROWS
+   * `MeasurerRequiredError` (the silent per-character estimate drifts from render).
+   * Set `estimate: true` to accept the rough estimate instead (a deterministic,
+   * deliberately-rough snapshot) — the SOLE opt-in. Default false (fail loud).
    */
-  requireMeasurer?: boolean;
+  estimate?: boolean;
 }
 
 /** One part of a split, in the source Text's draw space (group-local coords). */
@@ -142,11 +141,10 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
       `splitText() got an unknown { by: ${JSON.stringify(by)} } — valid values are 'word', 'line', 'grapheme'.`,
     );
   }
-  const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
-  // Silent footgun: with no real backend (split before setTextMeasurer, no
-  // { measurer } passed) the part geometry is a rough per-character estimate
-  // whose error accumulates left-to-right. Tell the author exactly why.
-  warnIfEstimating(m, 'splitText', opts.requireMeasurer === true);
+  // measurer-fail-loud: resolve + THROW when this would fall to the bare estimate
+  // (no backend, no { measurer }) unless { estimate: true } opts in. The estimate's
+  // per-character error accumulates left-to-right, so it must be deliberate.
+  const m = resolveMeasurer(opts.measurer, text.measurerSource, 'splitText', opts.estimate);
 
   const font: SplitFont = {
     fontFamily: text.fontFamily,
@@ -162,12 +160,14 @@ export function splitText(source: Text | TextProps, opts: SplitTextOpts = {}): S
   // here lands its baseline EXACTLY where the source line's baseline sits.
   const step = quantize(font.fontSize * font.lineHeight);
 
+  // `m` is already gated above; pass { estimate: true } so the box getter reuses it
+  // verbatim (a real measurer stays real; an opted-in estimate is not re-thrown).
   const boxes: { text: string; line: number; x: number; y: number; w: number; h: number }[] =
     by === 'line'
-      ? text.lineBoxes(m).map((b: LineBox, i: number) => ({ text: b.text, line: i, x: b.x, y: b.y, w: b.w, h: b.h }))
+      ? text.lineBoxes(m, { estimate: true }).map((b: LineBox, i: number) => ({ text: b.text, line: i, x: b.x, y: b.y, w: b.w, h: b.h }))
       : by === 'word'
-        ? text.wordBoxes(m).map((b: WordBox) => ({ text: b.text, line: b.line, x: b.x, y: b.y, w: b.w, h: b.h }))
-        : text.graphemeBoxes(m).map((b: GraphemeBox) => ({ text: b.text, line: b.line, x: b.x, y: b.y, w: b.w, h: b.h }));
+        ? text.wordBoxes(m, { estimate: true }).map((b: WordBox) => ({ text: b.text, line: b.line, x: b.x, y: b.y, w: b.w, h: b.h }))
+        : text.graphemeBoxes(m, { estimate: true }).map((b: GraphemeBox) => ({ text: b.text, line: b.line, x: b.x, y: b.y, w: b.w, h: b.h }));
 
   const children: Text[] = [];
   const parts: SplitPart[] = [];
@@ -221,14 +221,15 @@ export interface FitTextOpts {
   minPx?: number;
   /** if the text can't fit even at minPx: 'throw' (default) or 'clamp' to minPx. */
   onOverflow?: 'throw' | 'clamp';
-  /** measurer for exact fit — pass one (or call setTextMeasurer first), else the
-   *  estimating fallback is used with a one-time dev warning (the splitText footgun). */
+  /** measurer for exact fit — pass one (or call setTextMeasurer first). With NO real
+   *  measurer, fitText THROWS `MeasurerRequiredError` (measurer-fail-loud) unless
+   *  `{ estimate: true }` opts into the rough estimate. */
   measurer?: TextMeasurer;
   /**
-   * 0.59 measurer fail-loud OPT-IN (as splitText): `true` THROWs
-   * `MeasurerRequiredError` when no real measurer is available instead of
-   * warn-once + estimate. Default false. */
-  requireMeasurer?: boolean;
+   * measurer-fail-loud OPT-OUT (as splitText): accept the rough per-character
+   * estimate instead of throwing when no real measurer is available. The SOLE
+   * opt-in; default false (fail loud). */
+  estimate?: boolean;
 }
 
 /** Build a measurement FontSpec for `text` at a candidate size (public fields only). */
@@ -264,8 +265,7 @@ function fits(text: Text, size: number, opts: FitTextOpts, m: TextMeasurer): boo
  * shrink loops re-implemented per component.
  */
 export function fitTextSize(text: Text, opts: FitTextOpts): number {
-  const m = opts.measurer ?? text.measurerSource?.() ?? fallbackMeasurer();
-  warnIfEstimating(m, 'fitText', opts.requireMeasurer === true);
+  const m = resolveMeasurer(opts.measurer, text.measurerSource, 'fitText', opts.estimate);
   const minPx = opts.minPx ?? 6;
   const hi = Math.max(minPx, Math.floor(text.fontSize()));
   if (fits(text, hi, opts, m)) return hi; // already fits at its authored size
@@ -480,6 +480,9 @@ export interface RevealOpts {
   id?: string;
   /** Measurer for exact part geometry (like splitText). */
   measurer?: TextMeasurer;
+  /** measurer-fail-loud opt-out (like splitText): accept the rough estimate instead
+   *  of throwing when no real measurer is available. Default false (fail loud). */
+  estimate?: boolean;
 }
 
 export interface RevealResult {
@@ -495,6 +498,7 @@ function revealBy(source: Text | TextProps, by: SplitBy, opts: RevealOpts): Reve
     by,
     ...(opts.id !== undefined ? { id: opts.id } : {}),
     ...(opts.measurer !== undefined ? { measurer: opts.measurer } : {}),
+    ...(opts.estimate !== undefined ? { estimate: opts.estimate } : {}),
   });
   const each = opts.each ?? 0.08;
   const duration = opts.duration ?? 0.4;
@@ -557,6 +561,9 @@ export interface EmphasizeOpts {
   id?: string;
   /** Measurer for exact part geometry. */
   measurer?: TextMeasurer;
+  /** measurer-fail-loud opt-out (like splitText): accept the rough estimate instead
+   *  of throwing when no real measurer is available. Default false (fail loud). */
+  estimate?: boolean;
 }
 
 /**
@@ -574,6 +581,7 @@ export function emphasizeWords(
     by,
     ...(opts.id !== undefined ? { id: opts.id } : {}),
     ...(opts.measurer !== undefined ? { measurer: opts.measurer } : {}),
+    ...(opts.estimate !== undefined ? { estimate: opts.estimate } : {}),
   });
   const n = split.parts.length;
   for (const idx of indices) {

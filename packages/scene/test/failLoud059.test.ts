@@ -234,17 +234,15 @@ describe('mode gate — throw (default, loud) vs warn (prod)', () => {
   });
 });
 
-describe('measurer fail-loud opt-in (E)', () => {
-  it('splitText DEFAULT degrades (warn-once) with no real measurer — no throw', () => {
+describe('measurer fail-loud DEFAULT (measurer-fail-loud)', () => {
+  it('splitText DEFAULT THROWS MeasurerRequiredError with no real measurer (fail-loud-by-default)', () => {
     setDefaultMeasurer(null); // force the estimating fallback
-    expect(() => splitText(new Text({ id: 't', text: 'a b c' }), { by: 'word' })).not.toThrow();
+    expect(() => splitText(new Text({ id: 't', text: 'a b c' }), { by: 'word' })).toThrow(MeasurerRequiredError);
   });
 
-  it('splitText { requireMeasurer:true } THROWS MeasurerRequiredError with no real measurer', () => {
+  it('splitText { estimate: true } degrades to the estimate — no throw (the SOLE opt-out)', () => {
     setDefaultMeasurer(null);
-    expect(() => splitText(new Text({ id: 't', text: 'a b c' }), { by: 'word', requireMeasurer: true })).toThrow(
-      MeasurerRequiredError,
-    );
+    expect(() => splitText(new Text({ id: 't', text: 'a b c' }), { by: 'word', estimate: true })).not.toThrow();
   });
 });
 

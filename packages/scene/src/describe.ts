@@ -165,10 +165,11 @@ export interface DescribedHelper {
   examples?: readonly string[];
   /**
    * 0.59 F/E "manifest conventions": `true` when this helper needs a real text
-   * MEASURER for correct geometry (splitText/fitText/…). Without one it degrades
-   * to a rough per-character estimate (or, with `{ requireMeasurer: true }`,
-   * throws) — so a consumer knows to pass `{ measurer }` / call setTextMeasurer()
-   * first. Absent (⇒ not measurer-dependent) for every other helper.
+   * MEASURER for correct geometry (splitText/fitText/…). measurer-fail-loud: with
+   * NO real measurer it THROWS `MeasurerRequiredError` BY DEFAULT — pass a real
+   * `{ measurer }` / call setDefaultMeasurer() first, or `{ estimate: true }` to
+   * accept the rough per-character estimate (surfaced as the `estimate` option).
+   * Absent (⇒ not measurer-dependent) for every other helper.
    */
   requiresMeasurer?: boolean;
 }
@@ -452,7 +453,29 @@ const STRUCTURED_TYPES: { [typeName: string]: { [field: string]: string } } = {
   SafeArea: { bounds: 'Region', owner: 'string?' },
 };
 
+/**
+ * measurer-fail-loud: the `{ estimate: true }` opt-OUT, surfaced as a discoverable
+ * option on every text-geometry helper (splitText / fitText / reveal presets / …).
+ * Without a
+ * real measurer these THROW `MeasurerRequiredError` BY DEFAULT; this is the SOLE
+ * opt-in to the rough estimate — so a no-build agent has a manifest path to it.
+ */
+const ESTIMATE_OPTION: SurfaceOption = {
+  name: 'estimate',
+  type: 'boolean',
+  default: false,
+  summary:
+    'accept the rough length×0.52 per-character estimate instead of throwing MeasurerRequiredError when no real measurer is available (measurer-fail-loud opt-out); prefer passing a real { measurer } / setDefaultMeasurer() for exact geometry',
+};
+
 const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
+  splitText: [ESTIMATE_OPTION],
+  fitText: [ESTIMATE_OPTION],
+  fitTextSize: [ESTIMATE_OPTION],
+  fitTextGroup: [ESTIMATE_OPTION],
+  revealWords: [ESTIMATE_OPTION],
+  revealLines: [ESTIMATE_OPTION],
+  emphasizeWords: [ESTIMATE_OPTION],
   assess: [
     {
       name: 'minLegiblePx',
@@ -1008,31 +1031,31 @@ const HELPERS: DescribedHelper[] = [
   {
     name: 'splitText',
     summary:
-      'Split a Text node into per-word / per-line / per-grapheme parts you can animate individually (kinetic typography). Pass { measurer } (or call setTextMeasurer first) so part geometry uses the real backend, not the estimating fallback. Tree-shaken off the base scene index.',
+      'Split a Text node into per-word / per-line / per-grapheme parts you can animate individually (kinetic typography). measurer-fail-loud: pass { measurer } (or call setTextMeasurer/setDefaultMeasurer first) so part geometry uses the real backend — with NO real measurer it THROWS MeasurerRequiredError unless { estimate: true } opts into the rough estimate. Tree-shaken off the base scene index.',
     import: '@glissade/scene/type',
     usage:
-      "splitText(text: Text | TextProps, opts?: { by?: 'word'|'line'|'grapheme', id?: string, measurer?: TextMeasurer }): { node: Group, children: Text[], parts: SplitPart[], targets(prop): string[] }",
+      "splitText(text: Text | TextProps, opts?: { by?: 'word'|'line'|'grapheme', id?: string, measurer?: TextMeasurer, estimate?: boolean }): { node: Group, children: Text[], parts: SplitPart[], targets(prop): string[] }",
   },
   {
     name: 'fitText',
     summary:
-      'Shrink-to-fit: set a Text\'s fontSize to the largest that wraps within maxW to <= maxLines / <= maxH (a build-time binary search over the measurer, like Grid/splitText). Fails loud if it can\'t fit even at minPx (or pass onOverflow:\'clamp\'). Pass { measurer } for exact fit. Tree-shaken off the base scene index.',
+      'Shrink-to-fit: set a Text\'s fontSize to the largest that wraps within maxW to <= maxLines / <= maxH (a build-time binary search over the measurer, like Grid/splitText). Fails loud if it can\'t fit even at minPx (or pass onOverflow:\'clamp\'). measurer-fail-loud: pass { measurer } for exact fit — with NO real measurer it THROWS MeasurerRequiredError unless { estimate: true }. Tree-shaken off the base scene index.',
     import: '@glissade/scene/type',
-    usage: "fitText(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?: 'throw'|'clamp', measurer? }): Text",
+    usage: "fitText(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?: 'throw'|'clamp', measurer?, estimate? }): Text",
   },
   {
     name: 'fitTextSize',
     summary:
       'Like fitText but returns just the fitted fontSize (number) — apply it yourself instead of mutating the Text. The primitive fitText/fitTextGroup build on. On the @glissade/scene/type subpath.',
     import: '@glissade/scene/type',
-    usage: 'fitTextSize(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?, measurer? }): number',
+    usage: 'fitTextSize(text: Text, opts: { maxW: number, maxH?, maxLines?, minPx?, onOverflow?, measurer?, estimate? }): number',
   },
   {
     name: 'fitTextGroup',
     summary:
       'Fit several Texts to ONE shared fontSize (the largest at which every one fits its box) so a row/list of labels renders uniformly — kills the ragged \'same list, three sizes\' bug. Returns the shared size. On the @glissade/scene/type subpath.',
     import: '@glissade/scene/type',
-    usage: 'fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer? }): number',
+    usage: 'fitTextGroup(texts: Text[], opts: { maxW: number, minPx?, measurer?, estimate? }): number',
   },
   {
     name: 'typeOn',
@@ -1048,7 +1071,7 @@ const HELPERS: DescribedHelper[] = [
       'Kinetic type: splitText(by:\'word\') → cascade each word in (opacity, optionally rising from \'below\'/dropping from \'above\', or \'fade\'). Returns the split Group as `node` (draw THIS, not the source) plus REAL tracks that round-trip to Lottie. Factory (no `new`). Pass { measurer } for exact geometry. On @glissade/scene/type.',
     import: '@glissade/scene/type',
     usage:
-      "revealWords(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }",
+      "revealWords(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer?, estimate? }): { node: Group, tracks: Track[] }",
   },
   {
     name: 'revealLines',
@@ -1056,7 +1079,7 @@ const HELPERS: DescribedHelper[] = [
       'Kinetic type: like revealWords but splitText(by:\'line\') — cascade each LINE in. Returns the split Group as `node` + REAL tracks (round-trip to Lottie). Factory (no `new`). On @glissade/scene/type.',
     import: '@glissade/scene/type',
     usage:
-      "revealLines(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer? }): { node: Group, tracks: Track[] }",
+      "revealLines(source: Text | TextProps, opts?: { each?, from?: 'below'|'above'|'fade', distance?, duration?, ease?, at?, id?, measurer?, estimate? }): { node: Group, tracks: Track[] }",
   },
   {
     name: 'emphasizeWords',
@@ -1064,7 +1087,7 @@ const HELPERS: DescribedHelper[] = [
       'Kinetic type: pulse (scale up-and-back) the words at `indices` in reading order, cascaded. FAIL-LOUD: an out-of-range or non-integer index THROWS. Real scale tracks (round-trip to Lottie). Returns the split Group as `node`. Factory (no `new`). On @glissade/scene/type.',
     import: '@glissade/scene/type',
     usage:
-      "emphasizeWords(source: Text | TextProps, indices: number[], opts?: { scale?, duration?, each?, ease?, at?, by?: 'word'|'grapheme', id?, measurer? }): { node: Group, tracks: Track[] }",
+      "emphasizeWords(source: Text | TextProps, indices: number[], opts?: { scale?, duration?, each?, ease?, at?, by?: 'word'|'grapheme', id?, measurer?, estimate? }): { node: Group, tracks: Track[] }",
   },
   {
     name: 'Grid',

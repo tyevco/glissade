@@ -51,7 +51,9 @@ export class Highlight extends Node {
     if (progress <= 0) return;
     const [px, py] = this.padding;
     const boxes = this.target
-      .lineBoxes(ctx.measurer)
+      // render path: box with ctx's measurer (real at export/mount, estimate in
+      // IR tests); never fail loud here (measurer-fail-loud gates author reads).
+      .lineBoxes(ctx.measurer, { estimate: true })
       .map((b) => ({ x: b.x - px, y: b.y - py, w: b.w + 2 * px, h: b.h + 2 * py }));
     const total = boxes.reduce((sum, b) => sum + b.w, 0);
     if (total <= 0) return;

@@ -124,8 +124,8 @@ export const EXAMPLES: readonly ApiExample[] = [
   // ---- scene helpers ----
   {
     key: 'splitText',
-    code: "import { splitText } from '@glissade/scene/type';\n// the source needs an `id` — parts bind tracks against `<id>/<i>`. sp.targets('opacity') gives the reveal-recipe targets\nconst sp = splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme' });",
-    run: () => void splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme' }),
+    code: "import { splitText } from '@glissade/scene/type';\n// the source needs an `id` — parts bind tracks against `<id>/<i>`. sp.targets('opacity') gives the reveal-recipe targets.\n// measurer-fail-loud: pass a real { measurer } (or call setDefaultMeasurer first) for exact part geometry; { estimate: true } accepts the rough per-character estimate instead of throwing.\nconst sp = splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme', estimate: true });",
+    run: () => void splitText({ id: 'title', text: 'Hello', fontSize: 40 }, { by: 'grapheme', estimate: true }),
   },
   {
     key: 'typeOn',
@@ -134,18 +134,18 @@ export const EXAMPLES: readonly ApiExample[] = [
   },
   {
     key: 'revealWords',
-    code: "import { revealWords } from '@glissade/scene/type';\n// split into words + cascade each in. Draw r.node (the split Group), inject r.tracks via tl.tracks(r).\nconst r = revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12 });",
-    run: () => void revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12 }),
+    code: "import { revealWords } from '@glissade/scene/type';\n// split into words + cascade each in. Draw r.node (the split Group), inject r.tracks via tl.tracks(r).\n// measurer-fail-loud: pass a real { measurer } for exact geometry; { estimate: true } accepts the rough estimate instead of throwing.\nconst r = revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12, estimate: true });",
+    run: () => void revealWords({ id: 'title', text: 'kinetic type', fontSize: 40 }, { from: 'below', each: 0.12, estimate: true }),
   },
   {
     key: 'revealLines',
-    code: "import { revealLines } from '@glissade/scene/type';\n// like revealWords but per LINE. Draw r.node; tl.tracks(r).\nconst r = revealLines({ id: 'body', text: 'line one\\nline two', fontSize: 28 }, { each: 0.2 });",
-    run: () => void revealLines({ id: 'body', text: 'line one\nline two', fontSize: 28 }, { each: 0.2 }),
+    code: "import { revealLines } from '@glissade/scene/type';\n// like revealWords but per LINE. Draw r.node; tl.tracks(r).\n// measurer-fail-loud: pass a real { measurer } for exact geometry; { estimate: true } accepts the rough estimate instead of throwing.\nconst r = revealLines({ id: 'body', text: 'line one\\nline two', fontSize: 28 }, { each: 0.2, estimate: true });",
+    run: () => void revealLines({ id: 'body', text: 'line one\nline two', fontSize: 28 }, { each: 0.2, estimate: true }),
   },
   {
     key: 'emphasizeWords',
-    code: "import { emphasizeWords } from '@glissade/scene/type';\n// pulse the words at the given indices (fails loud on an out-of-range index). Draw r.node; tl.tracks(r).\nconst r = emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3 });",
-    run: () => void emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3 }),
+    code: "import { emphasizeWords } from '@glissade/scene/type';\n// pulse the words at the given indices (fails loud on an out-of-range index). Draw r.node; tl.tracks(r).\n// measurer-fail-loud: pass a real { measurer } for exact geometry; { estimate: true } accepts the rough estimate instead of throwing.\nconst r = emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3, estimate: true });",
+    run: () => void emphasizeWords({ id: 'title', text: 'make it pop', fontSize: 40 }, [2], { scale: 1.3, estimate: true }),
   },
   {
     key: 'measureWrappedText',

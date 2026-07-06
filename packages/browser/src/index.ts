@@ -44,12 +44,13 @@ export { splitText } from '@glissade/scene/type';
 // 0.35 fitText (shrink-to-fit + wrap-to-max-lines) — same /type subpath, same
 // measurer plumbing as splitText; a no-build author reaches for window.glissade.fitText.
 export { fitText, fitTextSize, fitTextGroup, type FitTextOpts } from '@glissade/scene/type';
-// 0.59 MeasurerRequiredError — the fail-loud error splitText/fitText THROW under
-// `{ requireMeasurer: true }` when no real measurer is available. Every other
-// fail-loud error class (UnboundTargetError/ParticleError/KineticTypeError) is on
-// window.glissade so a no-build author can `catch (e) { if (e instanceof …) }`;
-// this one lived only on the /type subpath, so it wasn't instanceof-catchable off
-// the IIFE. Re-export it here (type-error class, ~0 bytes) to close that gap.
+// MeasurerRequiredError — the measurer-fail-loud error EVERY text-geometry getter
+// (splitText/fitText/measuredSize/wordBoxes/…) THROWS BY DEFAULT when no real
+// measurer is available, unless `{ estimate: true }` opts into the rough estimate.
+// Every other fail-loud error class (UnboundTargetError/ParticleError/
+// KineticTypeError) is on window.glissade so a no-build author can `catch (e) { if
+// (e instanceof …) }`; this one lived only on the /type subpath, so it wasn't
+// instanceof-catchable off the IIFE. Re-export it here (type-error class, ~0 bytes).
 export { MeasurerRequiredError } from '@glissade/scene/type';
 // 0.56 kinetic type presets — one-call sugar over typewriter/splitText/tl.stagger,
 // same /type subpath. The no-build kinetic-typography author reaches for

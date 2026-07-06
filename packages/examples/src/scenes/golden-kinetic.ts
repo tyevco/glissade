@@ -28,12 +28,18 @@ const H = 360;
 // at BUILD time — BEFORE the harness injects the scene measurer — so the harness
 // threads its real Skia backend in here. typeOn needs no measurer (grapheme count
 // is segmentation, not metrics).
+// When unset (the `timeline` below is built at import, before setKineticMeasurer)
+// the split falls to the estimate — which under measurer-fail-loud THROWS unless
+// opted in. { estimate: true } is deliberate here (the estimate-DEMO path): the
+// golden PNG renders through createScene() with the REAL measurer the harness
+// injects, so its bytes are unchanged; the estimate only feeds the measurer-
+// independent 'fade' timeline (opacity ids/values, no baked positions).
 let kineticMeasurer: TextMeasurer | undefined;
 export function setKineticMeasurer(m: TextMeasurer | undefined): void {
   kineticMeasurer = m;
 }
-const mOpt = (): { measurer: TextMeasurer } | undefined =>
-  kineticMeasurer !== undefined ? { measurer: kineticMeasurer } : undefined;
+const mOpt = (): { measurer: TextMeasurer } | { estimate: true } =>
+  kineticMeasurer !== undefined ? { measurer: kineticMeasurer } : { estimate: true };
 
 // Build EVERY preset fresh — once for createScene() (the nodes), once for the
 // timeline (the tracks) — the splitText/each convention (both reconstruct the

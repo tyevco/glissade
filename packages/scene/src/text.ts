@@ -6,7 +6,6 @@
  * advance drift between Skia/HarfBuzz versions cannot move whole layouts.
  */
 
-import { emitDevWarning } from '@glissade/core';
 import { type FontSpec } from './displayList.js';
 
 export interface TextMetricsLite {
@@ -96,53 +95,50 @@ export function isEstimatingMeasurer(m: TextMeasurer): boolean {
   return m === estimatingMeasurer;
 }
 
-const warnedEstimate = new Set<string>();
-
 /**
- * Thrown by a measurer-requiring helper (`splitText`/`fitText`) when it resolved
- * to the estimating fallback AND the caller opted into fail-loud
- * (`requireMeasurer: true`, 0.59 measurer fail-loud). The default stays
- * warn-once (below) — this is the opt-in that turns the silent geometry
- * DEGRADATION into a hard error for pipelines that need exact layout.
+ * Thrown by EVERY text-geometry getter (`splitText`/`fitText`/`Text.measuredSize`/
+ * `intrinsicSize`/`wordBoxes`/`lineBoxes`/…) when — after resolving its measurer —
+ * it would fall to the rough per-character ESTIMATE (no backend injected, no
+ * `setDefaultMeasurer`, no real `{ measurer }`) and the caller did NOT pass the
+ * `{ estimate: true }` opt-out. This is FAIL-LOUD BY DEFAULT (measurer-fail-loud):
+ * the silent estimate drifts from real render metrics (the lived splitText-layout
+ * bug), so it is a hard error unless you explicitly accept the estimate. The
+ * message NAMES the fix; `{ estimate: true }` is the sole opt-in. instanceof-
+ * catchable off the `@glissade/scene` + `@glissade/scene/type` barrels.
  */
 export class MeasurerRequiredError extends Error {
   constructor(site: string) {
     super(
-      `${site}: no real text measurer available and { requireMeasurer: true } was set — part geometry ` +
-        'would use a rough per-character estimate. Pass { measurer } or call setTextMeasurer()/setDefaultMeasurer() first.',
+      `${site}: text geometry needs a real measurer — pass { estimate: true } to accept the rough ` +
+        'length×0.52 per-character estimate, or supply a real one: setDefaultMeasurer(...) / ' +
+        'scene.setTextMeasurer(...) before construction, or a real { measurer }.',
     );
     this.name = 'MeasurerRequiredError';
   }
 }
 
 /**
- * One-shot dev-warning when a build-time geometry getter resolved its measurer
- * to the rough per-character estimate (no backend, no `setDefaultMeasurer`).
- * `site` keys the de-dupe so each distinct caller warns at most once. Silent
- * when a real measurer is in play — the estimate is the only footgun here.
- *
- * 0.59: pass `strict` to make the same fallback FAIL LOUD ({@link
- * MeasurerRequiredError}) instead of warn-once — the `requireMeasurer` opt-in on
- * splitText/fitText. Default (`strict` falsy) preserves the exact prior
- * warn-once behavior (byte/behavior-neutral).
+ * The measurer-fail-loud CHOKEPOINT (measurer-fail-loud): resolve the measurer for
+ * a text-geometry getter — explicit `{ measurer }` wins, else the node's injected
+ * `measurerSource`, else the process fallback ({@link fallbackMeasurer}) — and
+ * enforce THE INVARIANT: if the resolution ends at the ESTIMATING singleton (no
+ * real measurer anywhere) and the caller did NOT pass `{ estimate: true }`, THROW
+ * {@link MeasurerRequiredError}. So ANY path that bottoms out at the estimate —
+ * the implicit fallback OR an explicitly-passed `estimatingMeasurer` — fails loud
+ * UNLESS `estimate` opts in. `estimate: true` is the SOLE opt-out; it returns the
+ * estimating measurer silently (a deterministic, deliberately-rough render). A real
+ * measurer is returned unchanged regardless of `estimate`, so a getter given the
+ * real backend is byte-identical to before.
  */
-export function warnIfEstimating(m: TextMeasurer, site: string, strict = false): void {
-  if (!isEstimatingMeasurer(m)) return;
-  if (strict) throw new MeasurerRequiredError(site);
-  if (warnedEstimate.has(site)) return;
-  warnedEstimate.add(site);
-  emitDevWarning(
-    `${site}: no text measurer available — using a rough per-character estimate; ` +
-      'pass { measurer } or call after setTextMeasurer()/setDefaultMeasurer() for exact layout.',
-  );
-}
-
-/**
- * Test-only: clear the one-shot de-dupe so the estimate warning can re-assert.
- * @internal
- */
-export function __resetEstimateWarnings(): void {
-  warnedEstimate.clear();
+export function resolveMeasurer(
+  explicit: TextMeasurer | undefined,
+  source: (() => TextMeasurer) | null | undefined,
+  site: string,
+  estimate = false,
+): TextMeasurer {
+  const m = explicit ?? source?.() ?? fallbackMeasurer();
+  if (!estimate && isEstimatingMeasurer(m)) throw new MeasurerRequiredError(site);
+  return m;
 }
 
 // Segmentation via Intl.Segmenter when available (correct CJK/emoji word

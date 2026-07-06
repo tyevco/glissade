@@ -22,7 +22,7 @@ import { computed, signal, type BindableSignal, type ReadonlySignal } from '@gli
 import { type DisplayListBuilder } from './displayList.js';
 import { Node, type EvalContext, type NodeProps, type PropInit } from './node.js';
 import { Group } from './nodes.js';
-import { fallbackMeasurer, type TextMeasurer } from './text.js';
+import { fallbackMeasurer, resolveMeasurer, type TextMeasurer } from './text.js';
 import {
   requireLayoutEngine,
   type LayoutChildSpec,
@@ -113,10 +113,13 @@ export class Layout extends Group {
     if (new.target === Layout) this.checkProps(props);
   }
 
-  override intrinsicSize(measurer: TextMeasurer): { w: number; h: number } {
+  override intrinsicSize(measurer?: TextMeasurer, opts?: { estimate?: boolean }): { w: number; h: number } {
+    void opts; // Layout is the flow PRIMITIVE (called by parents / anchor machinery);
+    // it never fails loud itself — its Text children carry the measurer-fail-loud
+    // gate, and #computeUncached opts them into the estimate (machinery).
     // fixed axes never need the engine (back-compat); auto axes resolve from content
     if (!this.autoWidth && !this.autoHeight) return { w: this.width(), h: this.height() };
-    return this.#compute(measurer).size;
+    return this.#compute(measurer ?? this.measurerSource?.() ?? fallbackMeasurer()).size;
   }
 
   /**
@@ -125,8 +128,10 @@ export class Layout extends Group {
    * (e.g. panelBg height = () => panel.computedSize().h) tracks every input.
    * The measurer defaults to the scene-injected one (estimating pre-scene).
    */
-  computedSize(measurer?: TextMeasurer): { w: number; h: number } {
-    const m = measurer ?? this.measurerSource?.() ?? fallbackMeasurer();
+  computedSize(measurer?: TextMeasurer, opts?: { estimate?: boolean }): { w: number; h: number } {
+    // Public geometry READ → measurer-fail-loud: throw on the bare estimate unless
+    // { estimate: true } opts in (the auto-size depends on Text child measurement).
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Layout.computedSize', opts?.estimate);
     return this.#compute(m).size;
   }
 
@@ -169,7 +174,9 @@ export class Layout extends Group {
     const flowable: { node: Node; spec: LayoutChildSpec; index: number }[] = [];
     const absolute: Node[] = [];
     this.children.forEach((child, index) => {
-      const size = child.intrinsicSize(measurer);
+      // machinery (draw/memo/parent-flow), never a user read: opt Text children
+      // into the estimate so pre-scene layout never throws (measurer-fail-loud).
+      const size = child.intrinsicSize(measurer, { estimate: true });
       if (size) flowable.push({ node: child, spec: { width: size.w, height: size.h }, index });
       else absolute.push(child);
     });
