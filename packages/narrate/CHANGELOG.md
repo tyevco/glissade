@@ -1,5 +1,17 @@
 # @glissade/narrate
 
+## 0.68.0
+
+### Minor Changes
+
+- 7f719a2: Caption auto-split (band mode) — `captionAutoSplit()` + `captionSplit: { mode: 'band' }`. A long caption segment splits into timed sub-cues that each FIT the caption band at the min-legible floor (via `@glissade/scene/type`'s `splitToFit`), breaking at per-locale sentence → clause → word instead of the legacy `{ maxChars }` char budget. **Measure-consistency by construction:** `captionNode` (render) and `captionAutoSplit` (split) now derive their band params from ONE shared `captionBandParams`, so a cue the split judges "fits" can't overflow when the render lays it out (the split's fit-measurer is the render's, via the 0.67 `resolveMeasurer` chokepoint — fail-loud without a real one). Adds `CaptionFitError` (hard-throw, no clamp — naming the unsplittable word + its segment id + reword-first fixes; instanceof off the barrel), `minLegiblePx` on `CaptionStyle` (an absolute legibility floor, shared by the shrink + the split), and the `CaptionSplitPolicy` union (`{ maxChars }` | `{ mode: 'band', locale? }` — `maxLines`/`minLegiblePx` live in `CaptionStyle` so there's one source of truth for measure-consistency). `captionTrack(timing, { size, style, measurer })` and `toSrt`/`toVtt(timing, ctx)` route band mode through `captionAutoSplit`, so the burned track and the .srt/.vtt sidecars match; a text sidecar without a render context keeps a band segment whole. Non-breaking: `{ maxChars }` and absent split stay byte-identical (the `captionNode` refactor is byte-neutral — every existing caption golden unchanged). New `caption-split-band` showcase golden.
+
+### Patch Changes
+
+- Updated dependencies [7f719a2]
+  - @glissade/scene@0.68.0
+  - @glissade/core@0.68.0
+
 ## 0.68.0-pre.0
 
 ### Minor Changes
