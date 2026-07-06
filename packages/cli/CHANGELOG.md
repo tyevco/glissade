@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.69.0
+
+### Minor Changes
+
+- db1cf94: `gs render --certify` `backendHash` is now PLATFORM-AWARE — the last blocker for a distributed render cache. The 0.62 interim hashed the `@napi-rs/canvas` package VERSION, but @napi-rs/canvas ships 11 per-platform prebuilt Skia binaries at the SAME version (linux-x64-gnu, linux-x64-musl, darwin-arm64, win32-x64-msvc, …) whose AA/rasterization bytes differ — so two machines on different OS/arch computed the SAME cert for BYTE-DIFFERENT frames, and a distributed cache would false-HIT and serve wrong bytes. `backendHash` now folds `skiaBinaryDigest()` — the sha256 of the Skia `.node` binary the loader ACTUALLY loaded (read from the CJS `require.cache`, so it's the binary the render used, NOT a re-derived platform triple that could drift from the loader's real choice, and NOT a scan that an npm box with both gnu+musl installed makes ambiguous — the one-source discipline). Safety is by construction: a different binary ⊇ a possibly-different render, so this OVER-invalidates (two platforms that render identically but ship different `.node` files → a re-render, a safe false-MISS) but can NEVER false-HIT (different render ⟹ different binary ⟹ different cert). Falls back to the version-only hash when the binary can't be located (a non-Skia path — still safe). `CERT_VERSION` bumps 2→3 (the `backendHash` meaning changed, so the version namespace retires every v2-era cert; a v3 read never serves a v2 entry). Determinism-neutral for the render itself — this changes only the CACHE cert key, not the pixels (every golden byte-identical; b4e6060006 holds). Cross-platform discrimination (gnu vs musl) is proven by a CI-matrix byte-carry.
+
+### Patch Changes
+
+- @glissade/backend-skia@0.69.0
+- @glissade/core@0.69.0
+- @glissade/interact@0.69.0
+- @glissade/lottie@0.69.0
+- @glissade/narrate@0.69.0
+- @glissade/player@0.69.0
+- @glissade/scene@0.69.0
+- @glissade/sfx@0.69.0
+- @glissade/svg@0.69.0
+
 ## 0.69.0-pre.0
 
 ### Minor Changes

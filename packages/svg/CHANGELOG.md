@@ -1,5 +1,12 @@
 # @glissade/svg
 
+## 0.69.0
+
+### Patch Changes
+
+- @glissade/core@0.69.0
+- @glissade/scene@0.69.0
+
 ## 0.69.0-pre.0
 
 ### Patch Changes
