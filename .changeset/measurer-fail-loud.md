@@ -1,5 +1,0 @@
----
-"@glissade/scene": minor
----
-
-Text-geometry getters now FAIL LOUD by default instead of silently falling back to a rough `length×fontSize×0.52` per-character estimate. `splitText`/`fitText`/`measuredSize`/`intrinsicSize`/`wordBoxes`/`lineBoxes`/`revealWords`/… throw `MeasurerRequiredError` (naming the site + the fix) when no real measurer is available, unless you pass `{ estimate: true }` — the sole, describe()-legible opt-in to accept the estimate. This turns the silent construction-time estimate-drift footgun (the 0.19 splitText layout bug) into a loud, named error. The invariant is simply: the estimating measurer resolved + no `{ estimate: true }` → throw. Determinism-safe (a throw, not a render change): the render/layout/hit-test/export path resolves a real measurer, so every existing golden is byte-identical; the base embed is unchanged (the removed warn-once bookkeeping offsets the flag threading). `MeasurerRequiredError` is now instanceof-catchable off the base `@glissade/scene` barrel + the browser IIFE. `{ estimate: true }` is surfaced as a describe() option on the text-geometry entries.

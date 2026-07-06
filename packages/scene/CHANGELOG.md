@@ -1,5 +1,16 @@
 # @glissade/scene
 
+## 0.67.0
+
+### Minor Changes
+
+- 4c74697: Text-geometry getters now FAIL LOUD by default instead of silently falling back to a rough `length×fontSize×0.52` per-character estimate. `splitText`/`fitText`/`measuredSize`/`intrinsicSize`/`wordBoxes`/`lineBoxes`/`revealWords`/… throw `MeasurerRequiredError` (naming the site + the fix) when no real measurer is available, unless you pass `{ estimate: true }` — the sole, describe()-legible opt-in to accept the estimate. This turns the silent construction-time estimate-drift footgun (the 0.19 splitText layout bug) into a loud, named error. The invariant is simply: the estimating measurer resolved + no `{ estimate: true }` → throw. Determinism-safe (a throw, not a render change): the render/layout/hit-test/export path resolves a real measurer, so every existing golden is byte-identical; the base embed is unchanged (the removed warn-once bookkeeping offsets the flag threading). `MeasurerRequiredError` is now instanceof-catchable off the base `@glissade/scene` barrel + the browser IIFE. `{ estimate: true }` is surfaced as a describe() option on the text-geometry entries.
+
+### Patch Changes
+
+- d5fecf9: `MeasurerRequiredError` now names a fix that WORKS at the throw site. The fail-loud message was copy-pasted across both call surfaces, but the instance getters (`Text.wordBoxes`/`lineBoxes`/`graphemeBoxes`/`intrinsicSize`/`measuredSize`, `Layout.computedSize`) take a POSITIONAL measurer + a 2nd `opts` arg, so the message's `pass { estimate: true }` / `a real { measurer }` clauses — correct for the options-object top-level fns (`splitText`/`fitText`/…) — misdirected there: pasting `{ estimate: true }` positionally is treated as the measurer and crashes with a cryptic `measureText is not a function` (WORSE than the silent estimate the fail-loud replaced — a self-contradiction in the feature whose whole point is naming the fix). `resolveMeasurer`/`MeasurerRequiredError` now carry a `positional` flag so the getters name the surface-correct fix: `{ estimate: true } as the 2nd arg` and `a real measurer as the 1st arg`. Non-breaking (getter signatures unchanged; the process-level `setDefaultMeasurer(...)` clause was already correct at both surfaces). Determinism-safe (message-only — every golden byte-identical, b4e6060006 holds). Caught by the surface/content seats reproducing it on real content (`footnote-card lineBoxes()`).
+  - @glissade/core@0.67.0
+
 ## 0.67.0-pre.1
 
 ### Patch Changes

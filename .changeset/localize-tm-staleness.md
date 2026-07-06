@@ -1,5 +1,0 @@
----
-"@glissade/cli": minor
----
-
-`gs localize --tm` — translation-memory staleness: carry unchanged translations, re-translate only the stale. `gs localize` already carries a locale's translations forward by id (0.42.1); `--tm` adds a `(id, source-text-hash)` staleness check so a reworded English source no longer silently keeps its now-stale carried translation. A committed `<base>.tm.<locale>.json` sidecar (`{ segments: {<segId>:{srcHash}}, messages: {<msgId>:{srcHash}} }`, sha256) records the source hash each translation was made against; on re-localize the report classifies each carried translation `reuse` (source unchanged) or `stale` (source changed) and surfaces only the stale ids — killing the all-or-nothing re-translate after every English tweak. Keyed on narration segment ids (the fork path) and message-table ids. Non-breaking: the narration JSON and flat `messages.<locale>.json` stay untouched clean inputs; `--tm` off = no sidecar read/write. Pure + off the render path (the srcHash never enters any render/cert hash).
