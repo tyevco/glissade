@@ -1,0 +1,29 @@
+{
+  "timingVersion": 1,
+  "provider": "fake",
+  "providerVersion": "f",
+  "totalDuration": 6,
+  "segments": [
+    {
+      "id": "seg-title",
+      "text": "Scaffold Fixture",
+      "start": 0.2,
+      "duration": 1.4,
+      "file": "a.wav"
+    },
+    {
+      "id": "seg-body",
+      "text": "A bespoke beat with no recipe.",
+      "start": 1.6,
+      "duration": 2.4,
+      "file": "b.wav"
+    },
+    {
+      "id": "seg-footnote",
+      "text": "A footnote.",
+      "start": 4,
+      "duration": 1.6,
+      "file": "c.wav"
+    }
+  ]
+}

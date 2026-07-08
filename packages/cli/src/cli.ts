@@ -39,6 +39,7 @@ const USAGE = `usage:
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
+  gs scaffold <narration.timing.json> [--out <dir>] [--force]   # → a first-draft beat-skeleton scene module to refine
   gs export --lottie <scene-module> --out <file.json> [--width <n>] [--height <n>] [--fps <n>]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
   gs narration-lint <scene-module|script.narration.timing.json> [--json] [--fix] [--max-cps <n>]
@@ -175,7 +176,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'critique' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types') {
+  if (command !== 'render' && command !== 'diff' && command !== 'critique' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types' && command !== 'scaffold') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -633,7 +634,7 @@ async function main(): Promise<void> {
 
   const { positional, flags } = parseArgs(rest);
   const modulePath = positional[0];
-  if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json|asset.svg>' : '<scene-module>'}\n${USAGE}`);
+  if (!modulePath) fail(`missing ${command === 'import' ? '<lottie.json|asset.svg>' : command === 'scaffold' ? '<narration.timing.json>' : '<scene-module>'}\n${USAGE}`);
 
   if (command === 'mcp') {
     // the AI-native write layer: a stdio MCP server for this scene (author→render→verify)
@@ -860,6 +861,26 @@ async function main(): Promise<void> {
       });
       for (const w of result.warnings) process.stderr.write(`gs import: warning: ${w}\n`);
       process.stderr.write(`gs import: wrote ${result.out}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (command === 'scaffold') {
+    // Era B: a committed narration timing manifest → a first-draft beat-skeleton
+    // scene module the author refines (require-guard + caption/narration wiring +
+    // one anchored beat entry per segment; honest // TODO for the frame + bespoke beats).
+    const { scaffoldCommand } = await import('./scaffold.js');
+    try {
+      const result = scaffoldCommand({
+        input: modulePath,
+        ...(flags.has('out') ? { out: flags.get('out')! } : {}),
+        force: flags.has('force'),
+      });
+      process.stderr.write(
+        `gs scaffold: wrote ${result.out} — ${result.recipes.length} recipe beat(s), ${result.stubs.length} labeled stub(s) to refine\n`,
+      );
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
