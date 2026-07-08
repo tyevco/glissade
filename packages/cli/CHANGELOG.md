@@ -1,5 +1,27 @@
 # @glissade/cli
 
+## 0.70.0
+
+### Minor Changes
+
+- 7006d7c: `gs scaffold <narration.timing.json>` (Era B) — read a committed narration and emit a first-draft beat-skeleton scene module the author REFINES, turning "hand-build every beat" into "scaffold-and-refine." It writes the zero-judgment tedium — the `narration(timing).require([...ids])` drift-guard (fail loud at build if the committed narration drops a segment this skeleton anchors), the caption/narration wiring (`captionNode` + `captionTrack` + the anchors + `labels`), and one narration-anchored beat entry per segment — and HONESTLY LABELS the two things it can't infer: the author's episode FRAME and the bespoke body BEATS, as `// TODO` markers.
+
+  **Anti-workslop by construction:** a segment only becomes an actual `recipe(...)` call when its id CONFIDENTLY matches a structural convention (title-card / cold-open / lower-third, a fixed deterministic priority table); every other segment is an honest labeled `// TODO beat:` stub, never a confident-wrong pick. A labeled gap the author fills beats silent-wrong filler the author must notice and delete — the same fail-loud-that-names-the-fix / safety-asymmetry discipline as `MeasurerRequiredError` and `CaptionFitError`, one layer up in codegen.
+
+  Deterministic: the emitted `.ts` is a PURE FUNCTION of the frozen timing manifest (stub order = narration order, comment text verbatim from the manifest, no timestamps), so re-scaffolding the same narration is byte-identical — a committed, refine-safe artifact (freeze-then-commit, like `gs narrate`'s timing.json). Off the render/cert path — the generated module is an ordinary scene you commit and CI renders (b4e6060006 unaffected). Refuses to clobber an existing scaffold without `--force`. Follow-ups (v2): `--frame ./template` to emit a project-provided frame, and an authored per-segment override.
+
+### Patch Changes
+
+- @glissade/backend-skia@0.70.0
+- @glissade/core@0.70.0
+- @glissade/interact@0.70.0
+- @glissade/lottie@0.70.0
+- @glissade/narrate@0.70.0
+- @glissade/player@0.70.0
+- @glissade/scene@0.70.0
+- @glissade/sfx@0.70.0
+- @glissade/svg@0.70.0
+
 ## 0.70.0-pre.0
 
 ### Minor Changes
