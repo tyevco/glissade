@@ -44,6 +44,8 @@ export interface ScaffoldCommandResult {
   recipes: { seg: string; recipe: string }[];
   /** segment ids left as an honest `// TODO beat:` stub. */
   stubs: string[];
+  /** `-b/-c` pause-split continuations coalesced into their base beat (not double-emitted). */
+  continuations: string[];
 }
 
 /** The manifest shape the scaffold reads (a subset of narrate's NarrationTiming). */
@@ -71,8 +73,23 @@ type RecipeName = 'lower-third' | 'title-card' | 'cold-open';
 const RECIPE_RULES: ReadonlyArray<{ recipe: RecipeName; test: RegExp }> = [
   { recipe: 'title-card', test: /(^|[-_ ])title([-_ ]|$)/ },
   { recipe: 'cold-open', test: /(^|[-_ ])(cold|cold-open|teaser|open)([-_ ]|$)/ },
-  { recipe: 'lower-third', test: /(^|[-_ ])(lower-?third|footnote|credit|speaker|name)([-_ ]|$)/ },
+  // lower-third = a NAME super (speaker/name), NOT footnote/credit — those are
+  // frame-owned bookends (the episode frame emits them), so they're honest stubs with
+  // a "likely frame-owned" hint (see FRAME_OWNED), never a confident-wrong lower-third.
+  { recipe: 'lower-third', test: /(^|[-_ ])(lower-?third|speaker|name)([-_ ]|$)/ },
 ];
+
+/**
+ * Frame-owned bookend conventions (Era B v2, ai-training's gate): a segment whose id
+ * matches these is almost always emitted by the AUTHOR's episode frame (makeEpisode's
+ * habit stamp / next-episode card / footnote), NOT a body beat. The scaffold still
+ * STUBS them (it can't KNOW the frame owns them — honest-gap), but tags the stub
+ * "likely frame-owned → route to your `// TODO frame:`" to save the author the delete.
+ */
+const FRAME_OWNED = /(^|[-_ ])(habit|outro|footnote|credits?|next(-ep)?|end-?card)([-_ ]|$)/;
+function isFrameOwned(id: string): boolean {
+  return FRAME_OWNED.test(id.toLowerCase());
+}
 
 /** Deterministic: same id → same verdict, run-to-run. null = honest stub. */
 export function selectRecipe(id: string): RecipeName | null {
@@ -81,9 +98,49 @@ export function selectRecipe(id: string): RecipeName | null {
   return null;
 }
 
+/**
+ * Split-suffix continuation coalescing (Era B v2, ai-training's gate): a `-b/-b2/-c…`
+ * id suffix marks ONE beat split across a pause (the convention keeps the first half's
+ * id — `<base>` or `<base>-a` — so the `.start()` anchor survives). Returns the BASE
+ * beat id this segment continues (so it shares the base's component + anchor, no
+ * double-emit), or null if it's a standalone/base beat. Deterministic: a pure function
+ * of the id set. Only coalesces when the base sibling actually exists (else standalone).
+ */
+export function continuationBaseOf(id: string, ids: ReadonlySet<string>): string | null {
+  const m = /^(.*)-([b-z])(\d*)$/.exec(id); // continuation letters b-z (a = the base half)
+  if (!m) return null;
+  const stem = m[1]!;
+  if (ids.has(`${stem}-a`)) return `${stem}-a`;
+  if (ids.has(stem)) return stem;
+  return null; // no base sibling → treat as a standalone beat, not a continuation
+}
+
 /** A segment's text, flattened to one line + trimmed, for a `//` line comment. */
 function commentText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The per-segment classification the emitter AND the CLI summary share (so the "N
+ * recipes / M stubs" report can't disagree with what's emitted): a `continuation`
+ * (a `-b/-c` pause-split, coalesced into its base beat), a `recipe` (confident
+ * id-convention), or an honest `stub` (optionally frame-owned). Deterministic — a pure
+ * function of the segment list (ids + order).
+ */
+export type SegmentPick =
+  | { seg: string; text: string; kind: 'continuation'; base: string }
+  | { seg: string; text: string; kind: 'recipe'; recipe: RecipeName }
+  | { seg: string; text: string; kind: 'stub'; frameOwned: boolean };
+
+export function classifySegments(segments: ReadonlyArray<{ id: string; text: string }>): SegmentPick[] {
+  const idSet = new Set(segments.map((s) => s.id));
+  return segments.map((s): SegmentPick => {
+    const base = continuationBaseOf(s.id, idSet);
+    if (base !== null) return { seg: s.id, text: s.text, kind: 'continuation', base };
+    const recipe = selectRecipe(s.id);
+    if (recipe !== null) return { seg: s.id, text: s.text, kind: 'recipe', recipe };
+    return { seg: s.id, text: s.text, kind: 'stub', frameOwned: isFrameOwned(s.id) };
+  });
 }
 
 /**
@@ -93,8 +150,8 @@ function commentText(text: string): string {
  */
 export function generateScaffoldModule(timing: ScaffoldTiming, base: string): string {
   const segments = timing.segments;
-  const picks = segments.map((s) => ({ seg: s.id, text: s.text, recipe: selectRecipe(s.id) }));
-  const anyRecipe = picks.some((p) => p.recipe !== null);
+  const picks = classifySegments(segments);
+  const anyRecipe = picks.some((p) => p.kind === 'recipe');
   const ids = segments.map((s) => JSON.stringify(s.id)).join(', ');
 
   const lines: string[] = [];
@@ -126,11 +183,14 @@ export function generateScaffoldModule(timing: ScaffoldTiming, base: string): st
   lines.push(`      size: SIZE,`);
   lines.push(`      children: [`);
   for (const p of picks) {
-    if (p.recipe !== null) {
+    if (p.kind === 'continuation') {
+      lines.push(`        // '${p.seg}' continues '${p.base}' (a pause-split of one beat) — no separate component; the '${p.base}' beat covers it. "${commentText(p.text)}"`);
+    } else if (p.kind === 'recipe') {
       lines.push(`        // beat '${p.seg}' — "${commentText(p.text)}"`);
       lines.push(`        recipe(${JSON.stringify(p.recipe)}, { id: ${JSON.stringify(p.seg)}, frame: SIZE }), // TODO: refine props from the line above`);
     } else {
-      lines.push(`        // TODO beat: drop a component for '${p.seg}' — "${commentText(p.text)}" (anchor: beats.start(${JSON.stringify(p.seg)}))`);
+      const hint = p.frameOwned ? ' [likely FRAME-owned → route to your // TODO frame]' : '';
+      lines.push(`        // TODO beat: drop a component for '${p.seg}'${hint} — "${commentText(p.text)}" (anchor: beats.start(${JSON.stringify(p.seg)}))`);
     }
   }
   lines.push(`        captionNode(SIZE),`);
@@ -143,14 +203,18 @@ export function generateScaffoldModule(timing: ScaffoldTiming, base: string): st
   lines.push(`    tracks: [`);
   lines.push(`      captionTrack(timing),`);
   for (const p of picks) {
-    if (p.recipe !== null) {
+    if (p.kind === 'continuation') {
+      // no separate track — the base beat's track spans the split; nothing to emit here.
+      continue;
+    } else if (p.kind === 'recipe') {
       lines.push(`      // '${p.seg}' pops in at its narration start (refine the ease/offset)`);
       lines.push(`      track(${JSON.stringify(p.seg + '/opacity')}, 'number', [`);
       lines.push(`        key(beats.start(${JSON.stringify(p.seg)}), 0),`);
       lines.push(`        key(beats.start(${JSON.stringify(p.seg)}) + 0.3, 1, 'easeOutCubic'),`);
       lines.push(`      ]),`);
     } else {
-      lines.push(`      // TODO beat: anchor '${p.seg}' props to beats.start(${JSON.stringify(p.seg)}) — "${commentText(p.text)}"`);
+      const hint = p.frameOwned ? ' [likely FRAME-owned]' : '';
+      lines.push(`      // TODO beat: anchor '${p.seg}' props to beats.start(${JSON.stringify(p.seg)})${hint} — "${commentText(p.text)}"`);
     }
   }
   lines.push(`    ],`);
@@ -199,11 +263,12 @@ export function scaffoldCommand(opts: ScaffoldOptions): ScaffoldCommandResult {
   const code = generateScaffoldModule(timing, base);
   writeFileSync(outFile, code);
 
-  const picks = timing.segments.map((s) => ({ seg: s.id, recipe: selectRecipe(s.id) }));
+  const picks = classifySegments(timing.segments);
   return {
     out: outFile,
-    recipes: picks.filter((p): p is { seg: string; recipe: RecipeName } => p.recipe !== null),
-    stubs: picks.filter((p) => p.recipe === null).map((p) => p.seg),
+    recipes: picks.filter((p) => p.kind === 'recipe').map((p) => ({ seg: p.seg, recipe: (p as { recipe: string }).recipe })),
+    stubs: picks.filter((p) => p.kind === 'stub').map((p) => p.seg),
+    continuations: picks.filter((p) => p.kind === 'continuation').map((p) => p.seg),
   };
 }
 

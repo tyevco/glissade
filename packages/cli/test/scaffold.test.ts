@@ -11,7 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { generateScaffoldModule, scaffoldCommand, selectRecipe } from '../src/scaffold.js';
+import { classifySegments, continuationBaseOf, generateScaffoldModule, scaffoldCommand, selectRecipe } from '../src/scaffold.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'glissade-scaffold-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -35,10 +35,13 @@ describe('selectRecipe — conservative, deterministic id-convention table', () 
   it('maps only high-confidence structural conventions; everything else → null (honest stub)', () => {
     expect(selectRecipe('seg-title')).toBe('title-card');
     expect(selectRecipe('cold-open')).toBe('cold-open');
-    expect(selectRecipe('seg-footnote')).toBe('lower-third');
+    expect(selectRecipe('seg-speaker-name')).toBe('lower-third'); // a real NAME super
     // bespoke body beats → null → stub (anti-workslop: don't force a recipe)
     expect(selectRecipe('seg-desk-intro')).toBeNull();
     expect(selectRecipe('seg-vending')).toBeNull();
+    // v2: footnote/credit are FRAME-owned, NOT lower-third → stub (never confident-wrong)
+    expect(selectRecipe('seg-footnote')).toBeNull();
+    expect(selectRecipe('seg-credits')).toBeNull();
     // stat-reveal is NEVER auto-picked (a digit is not a stat card)
     expect(selectRecipe('seg-42-stats')).toBeNull();
   });
@@ -61,11 +64,15 @@ describe('generateScaffoldModule — deterministic, honest-stub emitter', () => 
 
   it('emits a recipe() ONLY for confident matches, an honest // TODO beat: stub otherwise', () => {
     expect(code).toContain(`recipe("title-card", { id: "seg-title"`); // confident
-    expect(code).toContain(`recipe("lower-third", { id: "seg-footnote"`); // confident
     // bespoke beats are labeled stubs, NOT forced recipes
     expect(code).toMatch(/TODO beat: drop a component for 'seg-desk-intro'/);
     expect(code).toMatch(/TODO beat: drop a component for 'seg-vending'/);
     expect(code).not.toContain('seg-desk-intro", { id'); // never a recipe on a bespoke beat
+  });
+
+  it('v2: a frame-owned convention (footnote) is a STUB tagged "likely FRAME-owned", not a lower-third recipe', () => {
+    expect(code).not.toContain('recipe("lower-third", { id: "seg-footnote"'); // NOT a confident-wrong pick
+    expect(code).toMatch(/TODO beat: drop a component for 'seg-footnote' \[likely FRAME-owned/);
   });
 
   it('carries the verbatim segment text (from the frozen manifest) + the frame TODO', () => {
@@ -88,8 +95,9 @@ describe('scaffoldCommand — writes the module, refuses to clobber', () => {
     const r = scaffoldCommand({ input });
     expect(r.out).toBe(join(dir, 'e01.scaffold.ts'));
     expect(readFileSync(r.out, 'utf8')).toBe(generateScaffoldModule(timing, 'e01'));
-    expect(r.recipes.map((x) => x.seg).sort()).toEqual(['seg-footnote', 'seg-title']);
-    expect(r.stubs.sort()).toEqual(['seg-desk-intro', 'seg-vending']);
+    expect(r.recipes.map((x) => x.seg).sort()).toEqual(['seg-title']);
+    expect(r.stubs.sort()).toEqual(['seg-desk-intro', 'seg-footnote', 'seg-vending']); // footnote now a frame-owned stub
+    expect(r.continuations).toEqual([]);
   });
 
   it('refuses to overwrite an existing scaffold without --force (protect refinements)', () => {
@@ -102,5 +110,39 @@ describe('scaffoldCommand — writes the module, refuses to clobber', () => {
     const empty = join(dir, 'empty.narration.timing.json');
     writeFileSync(empty, JSON.stringify({ timingVersion: 1, segments: [] }));
     expect(() => scaffoldCommand({ input: empty })).toThrow(/no narration segments/);
+  });
+});
+
+describe('v2: split-suffix continuation coalescing (a -b/-c pause-split = one beat)', () => {
+  const seg = (id: string, text = 'x'): { id: string; text: string; start: number; duration: number; file: string } => ({ id, text, start: 0, duration: 1, file: 'a.wav' });
+
+  it('continuationBaseOf resolves -b/-b2/-c to the base (-a or bare), null when no base sibling', () => {
+    const ids = new Set(['seg-cold-open-a', 'seg-cold-open-b', 'seg-desk', 'seg-desk-b', 'seg-lonely-c']);
+    expect(continuationBaseOf('seg-cold-open-b', ids)).toBe('seg-cold-open-a'); // -a base wins
+    expect(continuationBaseOf('seg-desk-b', ids)).toBe('seg-desk'); // bare base
+    expect(continuationBaseOf('seg-cold-open-a', ids)).toBeNull(); // -a is the base, not a continuation
+    expect(continuationBaseOf('seg-desk', ids)).toBeNull(); // standalone
+    expect(continuationBaseOf('seg-lonely-c', ids)).toBeNull(); // no base sibling → standalone, not coalesced
+  });
+
+  it('a split cold-open emits ONE recipe (on the base) + a continuation note, NOT two cards', () => {
+    const segs = [seg('seg-cold-open-a', 'Meet the assistant.'), seg('seg-cold-open-b', 'The one nobody manages.'), seg('seg-desk-intro', 'A desk beat.')];
+    const picks = classifySegments(segs);
+    expect(picks.map((p) => p.kind)).toEqual(['recipe', 'continuation', 'stub']);
+    const code = generateScaffoldModule({ timingVersion: 1, segments: segs }, 'e02');
+    // exactly ONE cold-open recipe (on -a), NOT two
+    expect(code.match(/recipe\("cold-open"/g)?.length).toBe(1);
+    expect(code).toContain(`recipe("cold-open", { id: "seg-cold-open-a"`);
+    expect(code).not.toContain(`recipe("cold-open", { id: "seg-cold-open-b"`);
+    // -b is labeled a continuation of -a (shares the beat), still in the require-guard
+    expect(code).toMatch(/'seg-cold-open-b' continues 'seg-cold-open-a'/);
+    expect(code).toContain('"seg-cold-open-b"'); // in require([...])
+  });
+
+  it('the coalescing is deterministic (same split narration → byte-identical .ts)', () => {
+    const segs = [seg('seg-cold-open'), seg('seg-cold-open-b'), seg('seg-body')];
+    expect(generateScaffoldModule({ timingVersion: 1, segments: segs }, 'e')).toBe(
+      generateScaffoldModule({ timingVersion: 1, segments: segs }, 'e'),
+    );
   });
 });

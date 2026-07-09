@@ -879,7 +879,9 @@ async function main(): Promise<void> {
         force: flags.has('force'),
       });
       process.stderr.write(
-        `gs scaffold: wrote ${result.out} — ${result.recipes.length} recipe beat(s), ${result.stubs.length} labeled stub(s) to refine\n`,
+        `gs scaffold: wrote ${result.out} — ${result.recipes.length} recipe beat(s), ${result.stubs.length} labeled stub(s) to refine` +
+          (result.continuations.length > 0 ? `, ${result.continuations.length} pause-split continuation(s) coalesced` : '') +
+          `\n`,
       );
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));

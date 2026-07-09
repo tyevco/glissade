@@ -28,8 +28,7 @@ const mod: SceneModule = {
         // beat 'seg-title' — "Scaffold Fixture"
         recipe("title-card", { id: "seg-title", frame: SIZE }), // TODO: refine props from the line above
         // TODO beat: drop a component for 'seg-body' — "A bespoke beat with no recipe." (anchor: beats.start("seg-body"))
-        // beat 'seg-footnote' — "A footnote."
-        recipe("lower-third", { id: "seg-footnote", frame: SIZE }), // TODO: refine props from the line above
+        // TODO beat: drop a component for 'seg-footnote' [likely FRAME-owned → route to your // TODO frame] — "A footnote." (anchor: beats.start("seg-footnote"))
         captionNode(SIZE),
       ],
     }),
@@ -45,11 +44,7 @@ const mod: SceneModule = {
         key(beats.start("seg-title") + 0.3, 1, 'easeOutCubic'),
       ]),
       // TODO beat: anchor 'seg-body' props to beats.start("seg-body") — "A bespoke beat with no recipe."
-      // 'seg-footnote' pops in at its narration start (refine the ease/offset)
-      track("seg-footnote/opacity", 'number', [
-        key(beats.start("seg-footnote"), 0),
-        key(beats.start("seg-footnote") + 0.3, 1, 'easeOutCubic'),
-      ]),
+      // TODO beat: anchor 'seg-footnote' props to beats.start("seg-footnote") [likely FRAME-owned] — "A footnote."
     ],
     audio: beats.clips('./scaffold-fixture.narration-cache'),
   }),
