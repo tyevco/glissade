@@ -36,6 +36,7 @@ const USAGE = `usage:
   gs render <scene-module> [options]
   gs diff <scene-module> --at <t> --against <baseline.dl.json|.png>
   gs critique <scene-module> [--json]   machine-readable RENDERED diagnostics (OFF_CANVAS/TEXT_OVERFLOW/OCCLUSION) from the DisplayList — the rendered-geometric half of validateScene; samples an integer-frame grid, prints the flat canonically-sorted diagnostics (--json for the raw result)
+  gs critique --by-beat <scene-module> --timing <narration.timing.json> [--json]   the SAME diagnostics, GROUPED by the narration beat that owns each flagged node (node-entrance keyframe → committed timing window); keyframeless/full-span nodes → an explicit '[likely FRAME-owned]' group (never a silent seg-0); non-mutating
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
@@ -801,8 +802,19 @@ async function main(): Promise<void> {
   // Self-contained block (mirrors diff; hand-merges cleanly).
   if (command === 'critique') {
     const { critiqueCommand } = await import('./critique.js');
+    const byBeat = flags.has('by-beat');
+    const timingPath = flags.get('timing');
+    // fail-loud EARLY: --by-beat is a report OVER a narration manifest.
+    if (byBeat && !timingPath) {
+      fail('gs critique --by-beat requires --timing <narration.timing.json>');
+    }
     try {
-      const out = await critiqueCommand({ modulePath, json: flags.has('json') });
+      const out = await critiqueCommand({
+        modulePath,
+        json: flags.has('json'),
+        byBeat,
+        ...(timingPath ? { timingPath } : {}),
+      });
       process.stdout.write(`${out.report}\n`);
       if (out.hasErrors) process.exit(1);
     } catch (err) {

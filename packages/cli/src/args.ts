@@ -15,6 +15,7 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'certify', // gs render --certify (0.62): emit the determinism cert + populate the cache
   'cert-cache', // gs render --cert-cache[=<dir>] (0.62): the content-addressed render cache
   'json',
+  'by-beat', // gs critique --by-beat: group diagnostics by their owning narration beat
   'fix',
   'no-warnings',
   'lossless-intermediate',

@@ -1,0 +1,11 @@
+{
+  "timingVersion": 1,
+  "provider": "fixture",
+  "providerVersion": "1",
+  "totalDuration": 5,
+  "segments": [
+    { "id": "seg-a", "text": "Cold open.", "start": 0, "duration": 1.5, "file": "a.wav" },
+    { "id": "seg-b", "text": "The title appears.", "start": 1.5, "duration": 1.5, "file": "b.wav" },
+    { "id": "seg-c", "text": "The body plays out.", "start": 3.0, "duration": 2.0, "file": "c.wav" }
+  ]
+}
