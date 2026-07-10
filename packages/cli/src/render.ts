@@ -108,6 +108,18 @@ export interface RenderOptions {
    */
   tier?: 'preview' | 'final';
   /**
+   * --preview-res <f> (0.75 two-tier render scale): render a watchable DRAFT at f×
+   * the OUTPUT RASTER resolution (the whole composition rasterized into a
+   * `round(w*f)×round(h*f)` canvas — fewer pixels to rasterize = the render-time win
+   * for raster-bound scenes). PREVIEW-ONLY: it REQUIRES `tier:'preview'` and is
+   * REJECTED with `--final`/the default (`resolvePreviewRes` throws) — a scaled
+   * render is structurally non-final, so the certified/production master is always
+   * full-res and goldens can never be scaled. `0 < f ≤ 1`; `f === 1` (or omitted) is
+   * the EXACT current unscaled path (byte-identical to pre-0.75). Applied at the
+   * BACKEND OUTPUT raster layer, ORTHOGONAL to a node's `.scale` scene transform.
+   */
+  previewRes?: number;
+  /**
    * --cache (§3.5, 0.12): persistent whole-frame raster cache. `dir` is the
    * `.gscache` directory (shared across runs AND shards); `mode` defaults to 'off'
    * (the exact current equality baseline). `maxSize` caps the LRU (default 2 GB).
@@ -185,6 +197,70 @@ export function videoQualityArgs(encName: string, tier: 'preview' | 'final'): st
 /** The manifest `videoQuality` string for an encoder + tier (isolates tiers in canRemux). */
 export function videoQualityKey(encName: string, tier: 'preview' | 'final'): string {
   return videoQualityArgs(encName, tier).join(' ');
+}
+
+// ── 0.75 two-tier render SCALE (`gs render --preview-res <f>`) ───────────────
+// A watchable DRAFT rendered at f× the OUTPUT raster resolution. Distinct from the
+// 0.71 --preview/--final ENCODE tier (crf) and from a node's `.scale` SCENE
+// transform — this is the OUTPUT-raster layer, applied on top of the composited
+// DisplayList. Pure, self-contained helpers so the fail-loud validation + the
+// canonical dim math are unit-testable without spinning a render.
+
+/** A `--preview-res` misuse: not a preview tier, or a factor outside `(0, 1]`. */
+export class PreviewResError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'PreviewResError';
+  }
+}
+
+/**
+ * Validate `--preview-res` and normalize it to the EFFECTIVE factor to apply, or
+ * `undefined` for "no scaling — take the exact current full-res code path".
+ *
+ * THE HARD SHAPE (0.75 design converge): `--preview-res` REQUIRES `--preview`
+ * (`tier === 'preview'`). Passed without it — or with `--final` — it THROWS: a
+ * scaled render is a draft, so the certified/production master is structurally
+ * full-res and goldens can never be scaled. `0 < f ≤ 1` else throw. `f === 1`
+ * returns `undefined` so the render takes the byte-identical unscaled path (an
+ * `f===1` scaled branch is NOT byte-guaranteed — an identity transform can shift a
+ * byte — so the default must never route through the scale path).
+ */
+export function resolvePreviewRes(
+  previewRes: number | undefined,
+  tier: 'preview' | 'final',
+): number | undefined {
+  if (previewRes === undefined) return undefined;
+  if (tier !== 'preview') {
+    throw new PreviewResError(
+      '--preview-res requires --preview; a scaled render is a draft — the certified/production master is always full-res',
+    );
+  }
+  if (!Number.isFinite(previewRes) || !(previewRes > 0 && previewRes <= 1)) {
+    throw new PreviewResError(
+      `--preview-res must be a factor in (0, 1] (e.g. 0.5 = half-res draft), got ${previewRes}`,
+    );
+  }
+  if (previewRes === 1) return undefined; // exact current unscaled path (byte-identical)
+  return previewRes;
+}
+
+/**
+ * The scaled OUTPUT raster dims + the EFFECTIVE scale for a `--preview-res` draft.
+ * CANONICAL rounding: `round(orig * f)` (half-up, plain integer arithmetic — no
+ * float platform-variance). The EFFECTIVE scale is `scaledDim/origDim`, NOT the
+ * requested `f`: e.g. `round(641*0.333)=213`, effective `213/641`, so the
+ * composition exactly FILLS the scaled canvas (no edge gap/overflow the raw `f`
+ * would leave). At least 1px per axis (a degenerate sub-pixel factor still renders).
+ */
+export function scaledRenderDims(
+  origW: number,
+  origH: number,
+  f: number,
+): { width: number; height: number; scaleX: number; scaleY: number } {
+  const width = Math.max(1, Math.round(origW * f));
+  const height = Math.max(1, Math.round(origH * f));
+  return { width, height, scaleX: width / origW, scaleY: height / origH };
 }
 
 /**
@@ -710,6 +786,13 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   }
   const fps = opts.fps ?? doc.fps ?? 60;
 
+  // ── 0.75 two-tier render SCALE (`--preview-res <f>`): validate FAIL-LOUD up front,
+  // BEFORE the sharded/incremental branches, so a bad flag (no --preview / with
+  // --final / f ∉ (0,1]) errors cleanly in the parent rather than deep in a child.
+  // `scaleFactor === undefined` = the exact current full-res path (byte-identical);
+  // a real f<1 is threaded into the shard/incremental children too.
+  const scaleFactor = resolvePreviewRes(opts.previewRes, opts.tier ?? 'final');
+
   // DEV diagnostic (§5.5, card knEFdGXC99rw): evaluate under the determinism
   // guards, and on a violation name the FIRST node whose cold re-eval disagrees
   // (via the shipped `auditCacheCold` locator) so the throw is click-to-line
@@ -802,7 +885,21 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       : resolve(opts.out);
   mkdirSync(framesDir, { recursive: true });
 
-  const backend = new SkiaBackend(scene.size.w, scene.size.h);
+  // ── 0.75 two-tier render SCALE: resolve the OUTPUT raster dims from the
+  // already-validated `scaleFactor`. A real f<1 renders the composited DisplayList
+  // into the scaled canvas at the EFFECTIVE scale (fills exactly); undefined =
+  // the exact current full-res path (byte-identical).
+  const origW = scene.size.w;
+  const origH = scene.size.h;
+  const scaledDims =
+    scaleFactor !== undefined ? scaledRenderDims(origW, origH, scaleFactor) : undefined;
+  const renderW = scaledDims?.width ?? origW;
+  const renderH = scaledDims?.height ?? origH;
+
+  const backend =
+    scaledDims !== undefined
+      ? new SkiaBackend(renderW, renderH, { outputScale: { srcWidth: origW, srcHeight: origH } })
+      : new SkiaBackend(origW, origH); // EXACT current default path — untouched
   // Prepare the faithful Skia render environment (measurer, Yoga, font faces incl.
   // variable-font axes, font validation, image/video decode). SHARED with gs parity
   // via prepareSkiaRenderEnv so a parity render can't drift from a real render.
@@ -835,6 +932,10 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       // fold the BYTES of every referenced image/video/font so an in-place asset
       // edit (same id/url) invalidates the key instead of serving stale pixels.
       assetsDigest: combineAssetDigests(assetDigests),
+      // 0.75 --preview-res: isolate a scaled RGBA from the full-res frame (the
+      // DisplayList is in scene coords, so scale isn't in its bytes). Omitted for a
+      // full-res render → byte-identical key to pre-0.75.
+      ...(scaledDims !== undefined ? { outputDims: `${renderW}x${renderH}` } : {}),
     };
   }
   if (cacheOn) {
@@ -855,7 +956,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       new LayerCache({
         dir: join(opts.cache!.dir, 'layers'),
         mode: opts.cache!.mode,
-        salt: `${version}|${caps}|${scene.size.w}x${scene.size.h}`,
+        salt: `${version}|${caps}|${renderW}x${renderH}`,
       }),
     );
   }
@@ -888,8 +989,11 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
       captionBurnMode: captionsMode,
       narrationTimingPath: timingPathFor(opts.modulePath, opts.locale),
       renderConfig: {
-        width: scene.size.w,
-        height: scene.size.h,
+        // 0.75 --preview-res: the SCALED output dims → the frame certHash auto-
+        // distinguishes a scaled frame from full-res (and per factor) → free
+        // cross-tier cache isolation. Full-res = origW/origH (byte-identical).
+        width: renderW,
+        height: renderH,
         pixelFormat: 'rgba8-straight',
         imageSmoothing: true,
       },
@@ -993,8 +1097,9 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
           } else {
             backend.render(dl);
             pngBytes = backend.encodePng();
-            // store the raw RGBA (the canvas getImageData round-trips byte-exactly)
-            frameCache.put(key, scene.size.w, scene.size.h, await backend.readPixels());
+            // store the raw RGBA (the canvas getImageData round-trips byte-exactly);
+            // dims are the SCALED output dims under --preview-res (== the backend canvas).
+            frameCache.put(key, renderW, renderH, await backend.readPixels());
           }
         } else {
           backend.render(dl);

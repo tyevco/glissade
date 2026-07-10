@@ -191,6 +191,11 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
         ...(opts.force ? ['--force'] : []),
         ...(opts.strictFonts ? ['--strict'] : []),
         ...(opts.allowSystemFonts ? ['--allow-system-fonts'] : []),
+        // 0.75 --preview-res: each child re-renders ITS sub-range at the scaled
+        // output resolution, so the shard PNGs (→ concat/encode) are already scaled.
+        // --preview-res requires --preview, so pass both (png-seq children ignore the
+        // encode tier anyway; --preview only satisfies the scaled-render precondition).
+        ...(opts.previewRes !== undefined ? ['--preview', '--preview-res', String(opts.previewRes)] : []),
       ];
       const child = spawnSync(process.execPath, childArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
       if (child.status !== 0) {
@@ -419,6 +424,9 @@ export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ fra
           ...(opts.force ? ['--force'] : []),
           ...(opts.strictFonts ? ['--strict'] : []),
           ...(opts.allowSystemFonts ? ['--allow-system-fonts'] : []),
+          // 0.75 --preview-res: re-render the changed run at the scaled output res
+          // (requires --preview; png-seq children ignore the encode tier).
+          ...(opts.previewRes !== undefined ? ['--preview', '--preview-res', String(opts.previewRes)] : []),
         ];
         const child = spawnSync(process.execPath, childArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
         if (child.status !== 0) throw new ShardError(`incremental render [${first}..${last}] failed (exit ${child.status}):\n${child.stderr?.toString().slice(-2000)}`);

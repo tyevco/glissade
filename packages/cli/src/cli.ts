@@ -79,6 +79,10 @@ render options:
                    encode; --preview is a watchable DRAFT — the SAME rasterized frames (crf isn't in the frame-key digest,
                    so it REUSES the frame cache, no re-raster) at a higher crf → a faster/lighter h264. The tier is isolated
                    at the manifest/encode-artifact layer, so a preview never remux-serves a --final request or vice versa
+  --preview-res <f>  preview output raster resolution factor (0<f≤1, e.g. 0.5 = half-res draft); REQUIRES --preview
+                   (a scaled render is a draft — the certified/production master is always full-res). Rasterizes the
+                   whole composition into a round(w*f)×round(h*f) canvas (fewer pixels = the render-time win). DISTINCT
+                   from the node .scale transform prop — this is the OUTPUT raster layer, applied on top of the scene
   --incremental    dirty-beat: re-render ONLY the frames whose per-frame key changed since the last render, splicing
                    the rest verbatim from a retained FFV1 intermediate (video out only). WINS the re-narrate / move-one-
                    beat edit that MISSES the whole-frame cache: a timing shift changes every downstream frame's key, so
@@ -1118,6 +1122,21 @@ async function main(): Promise<void> {
   }
   const tier: 'preview' | 'final' = flags.has('preview') ? 'preview' : 'final';
 
+  // --preview-res <f> (0.75 two-tier render SCALE): render a DRAFT at f× the output
+  // raster resolution. PREVIEW-ONLY (render()/resolvePreviewRes throws without
+  // --preview or with --final, or f ∉ (0,1]). Distinct from the node `.scale`
+  // transform prop — this is the OUTPUT raster layer. Parse the numeric value here;
+  // render() enforces the (0,1]-and-requires-preview semantics fail-loud.
+  let previewRes: number | undefined;
+  if (flags.has('preview-res')) {
+    const raw = flags.get('preview-res');
+    const n = Number(raw);
+    if (raw === '' || raw === undefined || !Number.isFinite(n)) {
+      fail(`--preview-res needs a numeric factor in (0, 1] (e.g. 0.5 = half-res draft), got '${raw ?? ''}'`);
+    }
+    previewRes = n;
+  }
+
   const fpsFlag = flags.get('fps');
   const started = performance.now();
   try {
@@ -1141,6 +1160,7 @@ async function main(): Promise<void> {
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
       ...(flags.has('incremental') ? { incremental: true } : {}),
       ...(tier === 'preview' ? { tier } : {}),
+      ...(previewRes !== undefined ? { previewRes } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
       ...(flags.has('certify') ? { certify: true } : {}),

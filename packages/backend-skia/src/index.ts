@@ -55,12 +55,42 @@ export function createMeasurer(opts: { fonts?: Record<string, string> } = {}): T
 export class SkiaBackend implements RenderBackend {
   private readonly canvas: Canvas;
   private readonly raster: Raster2D<Canvas, Path2D, Drawable>;
+  /**
+   * OUTPUT raster scale for the `gs render --preview-res` two-tier draft (0.75).
+   * `undefined` = the DEFAULT full-res path: `render()` takes the EXACT current
+   * code path (no identity multiply, byte-for-byte the pre-0.75 goldens). When
+   * set, `render()` rasterizes the already-composited DisplayList into the SMALLER
+   * `width×height` canvas under an EFFECTIVE scale `sx=width/srcWidth`,
+   * `sy=height/srcHeight` — so the scaled canvas is exactly FILLED (no edge gap
+   * from the canonical `round()` dim). This is the OUTPUT-raster layer, ORTHOGONAL
+   * to and applied ON TOP OF any scene `.scale` transform already baked into the
+   * DisplayList (scene transform first, then output raster scale).
+   */
+  private readonly outputScale: { sx: number; sy: number } | undefined;
 
   /** Headless CPU Skia: all document filters, no GPU shader pass (§3.4/§3.7). */
   readonly caps: BackendCaps = { filters: ALL_FILTER_KINDS, shaders: false, maxTextureSize: MAX_TEXTURE };
 
-  constructor(width: number, height: number, opts: { layerStore?: LayerStore } = {}) {
+  constructor(
+    width: number,
+    height: number,
+    opts: {
+      layerStore?: LayerStore;
+      /**
+       * §0.75 `gs render --preview-res`: render the composited DisplayList into
+       * this (already-scaled) `width×height` canvas at the EFFECTIVE output scale
+       * `width/srcWidth × height/srcHeight` — the canonical `srcWidth/srcHeight`
+       * are the scene's UNSCALED dims. Opt-in: omit it for the byte-identical
+       * full-res path. Only pass it for a real f<1 preview draft.
+       */
+      outputScale?: { srcWidth: number; srcHeight: number };
+    } = {},
+  ) {
     this.canvas = createCanvas(width, height);
+    this.outputScale =
+      opts.outputScale !== undefined
+        ? { sx: width / opts.outputScale.srcWidth, sy: height / opts.outputScale.srcHeight }
+        : undefined;
     this.raster = new Raster2D<Canvas, Path2D, Drawable>(
       {
         // one structural cast at the seam: SKRSContext2D satisfies Ctx2DLike
@@ -110,7 +140,26 @@ export class SkiaBackend implements RenderBackend {
   }
 
   render(list: DisplayList): void {
-    this.raster.render(this.canvas, list);
+    if (this.outputScale === undefined) {
+      // DEFAULT full-res path — the EXACT current code path (NO identity multiply,
+      // no extra transform command): byte-for-byte identical to pre-0.75.
+      this.raster.render(this.canvas, list);
+      return;
+    }
+    // §0.75 --preview-res scaled draft: rasterize the ALREADY-COMPOSITED DisplayList
+    // into the scaled canvas under an OUTPUT raster scale. We prepend ONE `transform`
+    // command (== ctx.scale(sx,sy)) and stamp the DisplayList `size` to the scaled
+    // canvas dims (raster2d sizes the target + all group layers from `list.size`, so
+    // the whole composite runs at the SMALLER device resolution = the raster-time
+    // win). The scene's own `.scale` transforms live INSIDE `list.commands`, so they
+    // compose UNDER this output scale — orthogonal layers, never double-applied.
+    const { sx, sy } = this.outputScale;
+    const scaled: DisplayList = {
+      ...list,
+      size: { w: this.canvas.width, h: this.canvas.height },
+      commands: [{ op: 'transform', m: [sx, 0, 0, sy, 0, 0] }, ...list.commands],
+    };
+    this.raster.render(this.canvas, scaled);
   }
 
   /** Raw RGBA — the FFmpeg pipe path (§5.1d). Resolves synchronously (no GPU readback) but typed Promise to match the RenderBackend contract. */

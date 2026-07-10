@@ -50,6 +50,7 @@ export function buildMixWav(opts: Pick<RenderOptions, 'modulePath' | 'narration'
 export interface CacheKeyContext {
     assetsDigest: string;
     capsId: string;
+    outputDims?: string;
     version: string;
 }
 
@@ -651,6 +652,7 @@ export interface RenderOptions {
     onProgress?: (frame: number, total: number) => void;
     // (undocumented)
     out: string;
+    previewRes?: number;
     range?: [number, number];
     sfx?: 'auto' | 'off';
     state?: string;
@@ -809,7 +811,7 @@ export class VideoProbeError extends Error {
 
 // Warnings were encountered during analysis:
 //
-// dist/index.d.ts:305:5 - (ae-forgotten-export) The symbol "CertCacheMode" needs to be exported by the entry point index.d.ts
+// dist/index.d.ts:327:5 - (ae-forgotten-export) The symbol "CertCacheMode" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

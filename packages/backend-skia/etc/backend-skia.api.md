@@ -27,6 +27,10 @@ export function heatmapRgba(map: SsimMap, width: number, height: number): Uint8C
 export class SkiaBackend implements RenderBackend {
     constructor(width: number, height: number, opts?: {
         layerStore?: LayerStore;
+        outputScale?: {
+            srcWidth: number;
+            srcHeight: number;
+        };
     });
     readonly caps: BackendCaps;
     // (undocumented)
