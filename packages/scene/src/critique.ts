@@ -86,6 +86,24 @@ export interface ContainBound {
   within: Region;
 }
 
+/**
+ * 0.77 — thrown when a critique() input cannot be resolved, the fail-loud twin of
+ * validateRegion's {@link RegionError} on a malformed box. `containBounds` fails loud
+ * when its `node` id does NOT resolve to a node with its own rendered box — a typo'd
+ * id (matches nothing) or a container Group (no own box) — rather than silently
+ * guarding nothing. A declared keep-within box that silently no-ops is the
+ * confident-wrong-by-omission the critique suite exists to prevent: an author who ADDED
+ * a guard would be worse off than one who knew they had none. (The box half already
+ * fails loud via validateRegion; the node half now matches.) instanceof-catchable so a
+ * no-build author can `catch (e) { if (e instanceof glissade.CritiqueError) … }`.
+ */
+export class CritiqueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CritiqueError';
+  }
+}
+
 export interface CritiqueOptions {
   /**
    * frames-per-second for the sampling grid. Default: the timeline's own fps,
@@ -502,6 +520,16 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // in the sample loop. Empty ⇒ byte-identical behaviour (no node participates).
   const containBoxes = new Map<string, Region>();
   for (const entry of opts.containBounds ?? []) {
+    // Fail loud on an unknown/typo'd id BEFORE the sample loop (fast, symmetric with the
+    // box fail-loud below): an id that resolves to nothing would silently guard nothing —
+    // the confident-wrong-by-omission a keep-within guard must never become. (A container
+    // Group IS indexed here — it just renders no own box — so it slips past this check and
+    // is caught fail-loud after the loop, where onStage===0 proves it produced no box.)
+    if (!scene.nodes.has(entry.node)) {
+      throw new CritiqueError(
+        `critique containBounds: unknown node id '${entry.node}' — it must match a node id in the scene (check for a typo). A keep-within box on an id that resolves to nothing silently guards nothing.`,
+      );
+    }
     containBoxes.set(entry.node, validateRegion(entry.within, 'critique containBounds'));
   }
   const duration = compileTimeline(timeline).duration;
@@ -704,7 +732,17 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // TEXT_OVERFLOW) drops sub-pixel noise from the last-frame geometry.
   for (const [id, within] of containBoxes) {
     const a = agg.get(id);
-    if (!a || a.onStage === 0) continue;
+    if (!a || a.onStage === 0) {
+      // A KNOWN node (ingest verified it exists) that produced NO own rendered box across
+      // the whole timeline → a container Group (which emits no draw command, so it has no
+      // own box) or a node gated off its entire span. Fail loud rather than silently guard
+      // nothing — matching the ingest unknown-id throw + validateRegion's box fail-loud.
+      // (Cut 3 will let a Group resolve to its composed-children box; until then, declare
+      // the leaf ids that carry the box.)
+      throw new CritiqueError(
+        `critique containBounds: node '${id}' produced no rendered box across the timeline — it is likely a container Group (which has no own box) or a node hidden its whole span. Declare its leaf node ids (e.g. the background/label that carry the box) instead. A keep-within box on a boxless node silently guards nothing.`,
+      );
+    }
     if (a.outOfBounds !== a.onStage) continue; // drifted out its WHOLE on-stage life
     if (maxOvershoot(a.lastBounds, within) <= 0.5) continue; // sub-pixel noise guard
     rendered.push(outOfBoundsDiagnostic(scene, id, a, within));

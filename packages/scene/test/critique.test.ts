@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { type Timeline, timeline } from '@glissade/core';
 import { createScene, Rect, Text, Group } from '../src/index.js';
-import { critique, sortDiagnostics } from '../src/diagnostics.js';
+import { critique, sortDiagnostics, CritiqueError } from '../src/diagnostics.js';
 import { describe as apiDescribe } from '../src/describe.js';
 import { type TextMeasurer } from '../src/text.js';
 
@@ -385,6 +385,38 @@ describe('critique — OUT_OF_BOUNDS (keep-WITHIN box, whole-span, the inverse o
     scene.setTextMeasurer(stub);
     const bad = { minX: 0, minY: NaN, maxX: 200, maxY: 100 };
     expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within: bad }] })).toThrow(/finite number/);
+  });
+
+  it('FAILS LOUD on an unknown / typo’d node id (never a silent no-op — a declared guard must resolve)', () => {
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [100, 50], width: 40, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    // an id that matches no node in the scene would silently guard nothing → fail loud.
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'crad', within }] })).toThrow(CritiqueError);
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'crad', within }] })).toThrow(/unknown node id/);
+  });
+
+  it('FAILS LOUD on a container GROUP id (no own box → would silently guard nothing; declare its leaf ids)', () => {
+    // 'card' is a Group: indexed in the scene, but it emits no draw command, so it has no
+    // own device box. A keep-within box on it must fail loud, not silently no-op.
+    const scene = createScene({
+      size,
+      children: [
+        new Group({
+          id: 'card',
+          children: [new Rect({ id: 'card-bg', position: [150, 50], width: 60, height: 30, fill: '#3366ff' })],
+        }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).toThrow(CritiqueError);
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).toThrow(/no rendered box|container Group/);
+    // the LEAF that carries the box works (declare 'card-bg' instead) — no throw.
+    expect(() =>
+      critique(scene, empty, { containBounds: [{ node: 'card-bg', within }] }),
+    ).not.toThrow();
   });
 
   it('describe() exposes the ContainBound type + lists containBounds on the critique options schema', () => {

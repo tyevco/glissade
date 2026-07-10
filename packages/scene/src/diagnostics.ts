@@ -79,6 +79,11 @@ export {
   // 0.64 — the reserved caption-band primitive (CAPTION_COLLISION + owned-band
   // effective-box + resize-feasibility). A thin wrapper over diff's shared Region.
   type SafeArea,
+  // 0.77 — the keep-WITHIN box (OUT_OF_BOUNDS, the inverse of SafeArea) + the fail-loud
+  // thrown when its `node` doesn't resolve to a node with its own box (typo / container
+  // Group), instanceof-catchable on window.glissade like RegionError.
+  type ContainBound,
+  CritiqueError,
 } from './critique.js';
 
 // 0.61 — the interchange/edit half of the structured-verification suite:
