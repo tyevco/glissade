@@ -36,7 +36,7 @@ const USAGE = `usage:
   gs render <scene-module> [options]
   gs diff <scene-module> --at <t> --against <baseline.dl.json|.png>
   gs critique <scene-module> [--json]   machine-readable RENDERED diagnostics (OFF_CANVAS/TEXT_OVERFLOW/OCCLUSION) from the DisplayList — the rendered-geometric half of validateScene; samples an integer-frame grid, prints the flat canonically-sorted diagnostics (--json for the raw result)
-  gs critique --by-beat <scene-module> --timing <narration.timing.json> [--json]   the SAME diagnostics, GROUPED by the narration beat that owns each flagged node (node-entrance keyframe → committed timing window); keyframeless/full-span nodes → an explicit '[likely FRAME-owned]' group (never a silent seg-0); non-mutating
+  gs critique --by-beat <scene-module> --timing <narration.timing.json> [--json]   the SAME diagnostics, GROUPED by the narration beat that owns each flagged node (node-entrance keyframe → committed timing window); full-duration-span nodes → '[likely FRAME-owned]', keyframeless nodes → 'unattributed [no entrance keyframe]' (locate by node-id, not frame-owned), node-less → 'static' (no bucket is ever a silent seg-0); non-mutating
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
