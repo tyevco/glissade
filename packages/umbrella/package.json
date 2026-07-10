@@ -1,6 +1,6 @@
 {
   "name": "glissade",
-  "version": "0.77.0-pre.2",
+  "version": "0.77.0",
   "description": "glissade — one-import realtime embed surface: re-exports @glissade/core, @glissade/scene, and @glissade/player.",
   "license": "Apache-2.0",
   "engines": {
