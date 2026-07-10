@@ -322,7 +322,7 @@ function generateFramedModule(timing: ScaffoldTiming, base: string, frame: strin
   lines.push(`    title: { title: "TODO: episode title" },`);
   lines.push(`    habitText: "TODO: the habit-card line",`);
   lines.push(`    next: { title: "TODO: next-episode title" },`);
-  lines.push(`    footnote: { text: "TODO: source note", verified: false },`);
+  lines.push(`    footnote: { text: "TODO: source note", verified: "TODO: e.g. verified June 2026" },`);
   lines.push(`    titleOutSeg: ${segFieldOrTodo(titleOut, 'the segment where the title card animates out')}`);
   lines.push(`    outroSeg: ${segFieldOrTodo(outro, 'the outro segment id')}`);
   lines.push(`  },`);

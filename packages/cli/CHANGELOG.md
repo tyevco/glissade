@@ -1,5 +1,20 @@
 # @glissade/cli
 
+## 0.72.0-pre.1
+
+### Patch Changes
+
+- `gs scaffold --frame` — emit `footnote.verified` as a string TODO placeholder (`"TODO: e.g. verified June 2026"`), not a boolean. The verified field is the footnote card's dated caption line (a string), not an is-verified flag; the boolean tripped a type error against a real episode frame's `footnote.verified: string`. Verified against the real makeEpisode handle at the v3 cut-1 gate.
+  - @glissade/backend-skia@0.72.0-pre.1
+  - @glissade/core@0.72.0-pre.1
+  - @glissade/interact@0.72.0-pre.1
+  - @glissade/lottie@0.72.0-pre.1
+  - @glissade/narrate@0.72.0-pre.1
+  - @glissade/player@0.72.0-pre.1
+  - @glissade/scene@0.72.0-pre.1
+  - @glissade/sfx@0.72.0-pre.1
+  - @glissade/svg@0.72.0-pre.1
+
 ## 0.72.0-pre.0
 
 ### Minor Changes

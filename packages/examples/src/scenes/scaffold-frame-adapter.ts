@@ -19,7 +19,7 @@ export interface ScaffoldFrameOpts {
   title?: { title: string };
   habitText?: string;
   next?: { title: string };
-  footnote?: { text: string; verified: boolean };
+  footnote?: { text: string; verified: string };
   titleOutSeg?: string;
   outroSeg?: string;
   audio?: readonly unknown[];

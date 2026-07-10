@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.71.1"
   },
   "changesets": [
+    "scaffold-frame-footnote-verified",
     "scaffold-v3-frame"
   ]
 }

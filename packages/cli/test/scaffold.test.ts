@@ -189,6 +189,10 @@ describe('v3 cut 1: --frame emits the author episode frame via scaffoldFrame(opt
   it('splits editorial (TODO placeholders) from id-inferable (titleOutSeg/outroSeg filled)', () => {
     expect(framed).toMatch(/accent: "#888888", \/\/ TODO/);
     expect(framed).toMatch(/title: \{ title: "TODO: episode title" \}/);
+    // footnote.verified is a STRING (the dated caption line), not a boolean — ai-training's
+    // real EpisodeFrame contract (verified against their handle, cut 1 gate).
+    expect(framed).toMatch(/footnote: \{ text: "TODO: source note", verified: "TODO: [^"]*" \}/);
+    expect(framed).not.toContain('verified: false');
     // titleOutSeg = first body beat (title-card is a recipe pick, so the first non-recipe body beat)
     expect(framed).toMatch(/titleOutSeg: "seg-desk-intro", \/\/ inferred/);
     // outroSeg inferred from the /outro/ convention (footnote here isn't outro → TODO)

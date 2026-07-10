@@ -23,7 +23,7 @@ export default scaffoldFrame(
     title: { title: "TODO: episode title" },
     habitText: "TODO: the habit-card line",
     next: { title: "TODO: next-episode title" },
-    footnote: { text: "TODO: source note", verified: false },
+    footnote: { text: "TODO: source note", verified: "TODO: e.g. verified June 2026" },
     titleOutSeg: "seg-desk", // inferred from the narration ids
     outroSeg: "seg-outro", // inferred from the narration ids
   },
