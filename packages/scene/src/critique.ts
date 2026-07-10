@@ -70,6 +70,22 @@ export interface SafeArea {
   owner?: string;
 }
 
+/**
+ * 0.77 — a keep-WITHIN box: node `node`'s rendered composed box must stay INSIDE
+ * `within`. The INVERSE of a {@link SafeArea} (keep-OUT band) and a first-class named
+ * type paralleling it. `node` is a node id (resolved the same way `SafeArea.owner` is);
+ * `within` is the shared integer {@link Region} (ingested through validateRegion —
+ * quantize-or-fail-loud — so a hand-built box and a describe().types Region reach the
+ * OUT_OF_BOUNDS check byte-identically). A PURE critique input — never a render input,
+ * so every golden stays byte-identical.
+ */
+export interface ContainBound {
+  /** The node id whose composed box must stay inside {@link within}. */
+  node: string;
+  /** The keep-within box in device px (integer bounds; the shared diff {@link Region}). */
+  within: Region;
+}
+
 export interface CritiqueOptions {
   /**
    * frames-per-second for the sampling grid. Default: the timeline's own fps,
@@ -114,6 +130,18 @@ export interface CritiqueOptions {
    * with `captionSafeArea(size)` from @glissade/narrate.
    */
   safeAreas?: readonly SafeArea[];
+  /**
+   * 0.77 — keep-WITHIN boxes: the INVERSE of {@link safeAreas} (keep-OUT bands). Each
+   * entry declares that node `node`'s rendered composed box must stay INSIDE `within`.
+   * A node whose device box is NOT fully inside its declared box for its WHOLE on-stage
+   * span raises OUT_OF_BOUNDS (the persistent-drift discipline OFF_CANVAS/CAPTION_COLLISION
+   * use — a transient overshoot during animation does not fire). Only nodes with a
+   * declared box participate (no cost for others). Each `within` is ingested through the
+   * SHARED validateRegion (integer-quantize + fail-loud on a bad region), so a hand-built
+   * box and a describe().types Region reach the check byte-identically. A PURE critique
+   * input — never a render input, so every golden stays byte-identical.
+   */
+  containBounds?: readonly ContainBound[];
 }
 
 /**
@@ -416,6 +444,11 @@ interface NodeAgg {
    *  (indexed by the `opts.safeAreas` position). A CAPTION_COLLISION fires for a
    *  non-owner whose count === onStage (intrudes its WHOLE on-stage span). */
   bandCollide: number[];
+  /** 0.77 — on-stage frames the node's box was NOT fully inside its declared
+   *  keep-WITHIN box (`opts.containBounds`). Only counted for a node that HAS a
+   *  declared box. An OUT_OF_BOUNDS fires when this === onStage (drifted out its
+   *  WHOLE on-stage span, not a transient). */
+  outOfBounds: number;
 }
 
 // ── the primitive ─────────────────────────────────────────────────────────────
@@ -463,6 +496,14 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     ...sa,
     bounds: validateRegion(sa.bounds, 'critique safeAreas'),
   }));
+  // 0.77 — the keep-WITHIN boxes (OUT_OF_BOUNDS). Each `within` is INGESTED through the
+  // SAME shared validateRegion the safeAreas use (float bounds quantize to integers, a
+  // negative-extent / non-finite box fails loud), then keyed by node id for O(1) lookup
+  // in the sample loop. Empty ⇒ byte-identical behaviour (no node participates).
+  const containBoxes = new Map<string, Region>();
+  for (const entry of opts.containBounds ?? []) {
+    containBoxes.set(entry.node, validateRegion(entry.within, 'critique containBounds'));
+  }
   const duration = compileTimeline(timeline).duration;
   const lastFrame = Math.max(0, Math.floor(duration * fps));
 
@@ -482,6 +523,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         lastTextFrameT: 0,
         lastTexts: [],
         bandCollide: safeAreas.map(() => 0),
+        outOfBounds: 0,
       };
       agg.set(id, a);
     }
@@ -511,6 +553,11 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       for (let si = 0; si < safeAreas.length; si++) {
         if (intersectsRegion(fn.bounds, safeAreas[si]!.bounds)) a.bandCollide[si]!++;
       }
+      // 0.77 OUT_OF_BOUNDS accumulation: for a node with a declared keep-WITHIN box,
+      // count on-stage frames whose device box is NOT fully inside that box (integer-
+      // region containment; deterministic). Nodes without a declared box don't participate.
+      const within = containBoxes.get(id);
+      if (within !== undefined && !contains(within, fn.bounds)) a.outOfBounds++;
       // OCCLUSION: on-frame AND fully covered by a single opaque occluder above it.
       if (intersectsFrame(fn.bounds, w, h)) {
         let cover: Occluder | undefined;
@@ -648,6 +695,19 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       if (isOwnedBy(scene, id, sa.owner)) continue; // owner + subtree fill the band
       rendered.push(captionCollisionDiagnostic(scene, id, a, sa));
     }
+  }
+
+  // OUT_OF_BOUNDS — the INVERSE of CAPTION_COLLISION: a node with a declared keep-WITHIN
+  // box whose composed box is NOT fully inside that box for its WHOLE on-stage span (the
+  // persistent-drift discipline OFF_CANVAS/CAPTION_COLLISION use — a transient overshoot
+  // during animation does not fire). An overshoot threshold (>0.5px, mirroring
+  // TEXT_OVERFLOW) drops sub-pixel noise from the last-frame geometry.
+  for (const [id, within] of containBoxes) {
+    const a = agg.get(id);
+    if (!a || a.onStage === 0) continue;
+    if (a.outOfBounds !== a.onStage) continue; // drifted out its WHOLE on-stage life
+    if (maxOvershoot(a.lastBounds, within) <= 0.5) continue; // sub-pixel noise guard
+    rendered.push(outOfBoundsDiagnostic(scene, id, a, within));
   }
 
   const diagnostics = sortDiagnostics([...staticDiags, ...rendered]);
@@ -936,6 +996,65 @@ function captionCollisionDiagnostic(scene: Scene, id: string, a: NodeAgg, sa: Sa
           fixClass: 'geometry',
           hint: 'move the node above the band top / out of the reserved region',
         },
+      ] satisfies FixHint[],
+    },
+  };
+}
+
+/** 0.77 — the deepest edge-exit (device px) of `b` OUT of keep-within box `r`: the
+ *  max over the four edges of how far the box pokes past that edge (0 when fully
+ *  inside). Deterministic (identical recompute; the OUT_OF_BOUNDS overshoot threshold
+ *  reads it against >0.5 to drop sub-pixel noise). */
+function maxOvershoot(b: Bounds, r: Region): number {
+  return Math.max(r.minX - b.minX, b.maxX - r.maxX, r.minY - b.minY, b.maxY - r.maxY, 0);
+}
+
+/** 0.77 OUT_OF_BOUNDS builder — a node that drifted OUT of its declared keep-within box
+ *  its whole on-stage span (the inverse of CAPTION_COLLISION). The fix is pure GEOMETRY —
+ *  move it back in (`position`) or shrink it to fit (`scale`/`fontSize`) — so it is always
+ *  auto-fixable. Names the edge(s) it exits + by how many device px. */
+function outOfBoundsDiagnostic(scene: Scene, id: string, a: NodeAgg, r: Region): SceneDiagnostic {
+  const b = a.lastBounds;
+  // Dominant exit edge + magnitude (device px past that edge) — the OFF_CANVAS style.
+  const edges: readonly [string, number][] = [
+    ['LEFT', r.minX - b.minX],
+    ['RIGHT', b.maxX - r.maxX],
+    ['TOP', r.minY - b.minY],
+    ['BOTTOM', b.maxY - r.maxY],
+  ];
+  let dir = 'its box';
+  let overshoot = 0;
+  for (const [edge, over] of edges) {
+    if (over > overshoot) {
+      overshoot = over;
+      dir = `${edge} by ${round(over)}px`;
+    }
+  }
+  overshoot = round(overshoot);
+  const pos = vec2At(scene, `${id}/position`, a.lastT);
+  const posStr = pos ? ` (position [${round(pos[0])}, ${round(pos[1])}])` : '';
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'OUT_OF_BOUNDS',
+    severity: 'warning',
+    source: 'critique',
+    node: id,
+    message:
+      `node '${id}'${posStr} drifts OUTSIDE its keep-within box (region x:[${r.minX},${r.maxX}] ` +
+      `y:[${r.minY},${r.maxY}]): its box (x:[${round(b.minX)},${round(b.maxX)}] y:[${round(b.minY)},${round(b.maxY)}]) ` +
+      `exits ${dir} for its whole on-stage lifetime. Move it back inside the box or shrink it to fit.`,
+    detail: {
+      frame: a.lastFrame,
+      bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
+      region: { minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY },
+      overshoot,
+      // 0.77 per-lever fix classes — both bringing the node back in (position) and
+      // shrinking it to fit (scale / fontSize) are pure GEOMETRY, so OUT_OF_BOUNDS is
+      // always auto-fixable.
+      fixHints: [
+        { lever: 'position', fixClass: 'geometry', hint: 'move the node back inside the keep-within box' },
+        { lever: 'scale', fixClass: 'geometry', hint: 'shrink the node (scale) to fit the box' },
+        { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize (Text) to fit the box' },
       ] satisfies FixHint[],
     },
   };

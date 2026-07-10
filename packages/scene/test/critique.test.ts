@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { type Timeline, timeline } from '@glissade/core';
 import { createScene, Rect, Text, Group } from '../src/index.js';
 import { critique, sortDiagnostics } from '../src/diagnostics.js';
+import { describe as apiDescribe } from '../src/describe.js';
 import { type TextMeasurer } from '../src/text.js';
 
 const size = { w: 200, h: 100 };
@@ -305,6 +306,94 @@ describe('critique — OCCLUSION (bbox-level, opaque-only, whole-span)', () => {
     const doc = timeline((tl) => tl.to('card/position.x', 100, { from: -200, duration: 1 }));
     const res = critique(scene, doc, { fps: 10 });
     expect(res.diagnostics.some((x) => x.code === 'OCCLUSION')).toBe(false);
+  });
+});
+
+describe('critique — OUT_OF_BOUNDS (keep-WITHIN box, whole-span, the inverse of CAPTION_COLLISION)', () => {
+  // a generous keep-within box the size of the frame interior
+  const within = { minX: 0, minY: 0, maxX: 200, maxY: 100 };
+
+  it('does NOT fire for a node whose box stays fully INSIDE its declared box (clean)', () => {
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [100, 50], width: 40, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { containBounds: [{ node: 'card', within }] });
+    expect(res.diagnostics.some((x) => x.code === 'OUT_OF_BOUNDS')).toBe(false);
+  });
+
+  it('FIRES for a node whose box is OUTSIDE its declared box its whole span (geometry position fixHint + detail.region)', () => {
+    // box confined to the left half; the card sits centered at x=150 → pokes RIGHT out of it.
+    const leftHalf = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [150, 50], width: 60, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { containBounds: [{ node: 'card', within: leftHalf }] });
+    const d = res.diagnostics.find((x) => x.code === 'OUT_OF_BOUNDS');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('card');
+    expect(d!.severity).toBe('warning');
+    expect(d!.source).toBe('critique');
+    expect(d!.message).toContain('RIGHT');
+    expect(d!.message).toContain('keep-within box');
+    const detail = d!.detail as { region: typeof leftHalf; overshoot: number; fixHints: { lever: string; fixClass: string }[] };
+    expect(detail.region).toEqual(leftHalf);
+    expect(detail.overshoot).toBeGreaterThan(0.5);
+    expect(detail.fixHints.some((h) => h.lever === 'position' && h.fixClass === 'geometry')).toBe(true);
+  });
+
+  it('WHOLE-SPAN discipline: a node outside its box only TRANSIENTLY during an animation does NOT fire', () => {
+    // card slides from far RIGHT (out of leftHalf) INTO the box — outside only early.
+    const leftHalf = { minX: 0, minY: 0, maxX: 120, maxY: 100 };
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [300, 50], width: 40, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    const doc = timeline((tl) => tl.to('card/position.x', 40, { from: 300, duration: 1 }));
+    const res = critique(scene, doc, { fps: 10, containBounds: [{ node: 'card', within: leftHalf }] });
+    expect(res.diagnostics.some((x) => x.code === 'OUT_OF_BOUNDS')).toBe(false);
+  });
+
+  it('emits NOTHING without containBounds (opt-in; byte-identical to prior behaviour)', () => {
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [150, 50], width: 60, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    expect(critique(scene, empty).diagnostics.some((x) => x.code === 'OUT_OF_BOUNDS')).toBe(false);
+  });
+
+  it('a bad `within` region (negative extent) FAILS LOUD via validateRegion', () => {
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [100, 50], width: 40, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    const bad = { minX: 100, minY: 0, maxX: 10, maxY: 100 }; // maxX < minX
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within: bad }] })).toThrow(/negative extent/);
+  });
+
+  it('a non-finite `within` bound FAILS LOUD via validateRegion', () => {
+    const scene = createScene({
+      size,
+      children: [new Rect({ id: 'card', position: [100, 50], width: 40, height: 30, fill: '#3366ff' })],
+    });
+    scene.setTextMeasurer(stub);
+    const bad = { minX: 0, minY: NaN, maxX: 200, maxY: 100 };
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within: bad }] })).toThrow(/finite number/);
+  });
+
+  it('describe() exposes the ContainBound type + lists containBounds on the critique options schema', () => {
+    const m = apiDescribe();
+    expect(m.types?.ContainBound).toEqual({ node: 'string', within: 'Region' });
+    const entry = (m.surface ?? []).find((e) => e.name === 'critique');
+    const opt = entry?.options?.find((o) => o.name === 'containBounds');
+    expect(opt, 'critique options should list containBounds').toBeDefined();
+    expect(opt!.type).toBe('ContainBound[]');
   });
 });
 

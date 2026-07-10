@@ -451,6 +451,9 @@ const STRUCTURED_TYPES: { [typeName: string]: { [field: string]: string } } = {
   // AND the Camera `clear`.
   Region: { minX: 'integer', minY: 'integer', maxX: 'integer', maxY: 'integer', space: 'px' },
   SafeArea: { bounds: 'Region', owner: 'string?' },
+  // 0.77 — the keep-WITHIN box for critique's containBounds (the inverse of SafeArea).
+  // `node` is a node id; `within` is the shared integer Region (validateRegion-ingested).
+  ContainBound: { node: 'string', within: 'Region' },
 };
 
 /**
@@ -546,6 +549,12 @@ const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
       type: 'SafeArea[]',
       summary:
         'reserved regions (e.g. the caption band); a non-owner node intersecting one raises CAPTION_COLLISION, and a caption owning one gets its band as its effective height-box',
+    },
+    {
+      name: 'containBounds',
+      type: 'ContainBound[]',
+      summary:
+        'keep-WITHIN boxes (the inverse of safeAreas): a node whose rendered box drifts fully outside its declared `within` box for its whole on-stage span raises OUT_OF_BOUNDS',
     },
   ],
 };

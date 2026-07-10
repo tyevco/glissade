@@ -81,6 +81,14 @@ export type DiagnosticCode =
   // are exempt (they FILL the band). A composed-geometry check like OFF_CANVAS/
   // OCCLUSION, so validateScene (static LOCAL positions only) does NOT emit it.
   | 'CAPTION_COLLISION'
+  // 0.77 critique() RENDERED code — additive to the wire contract (no schema bump).
+  // OUT_OF_BOUNDS: the INVERSE of CAPTION_COLLISION. An author declares a keep-WITHIN
+  // box for a node (`opts.containBounds`); OUT_OF_BOUNDS fires when the node's rendered
+  // composed box is NOT fully inside that box for its WHOLE on-stage span (drifted out,
+  // not a transient). A composed-geometry check like OFF_CANVAS/CAPTION_COLLISION, so
+  // validateScene (static LOCAL positions only) does NOT emit it. Only nodes with a
+  // declared box participate. source:'critique' (heuristic).
+  | 'OUT_OF_BOUNDS'
   // 0.61 static export-fidelity code — additive to the wire contract (no schema
   // bump). RENDER_ONLY_EXPORT: a node uses a RENDER-ONLY feature (motionBlur /
   // echo / shake / camera-shake / mesh fill / text-cursor / reveal mask) that the
