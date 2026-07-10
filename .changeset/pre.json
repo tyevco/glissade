@@ -27,6 +27,7 @@
   },
   "changesets": [
     "containbounds-failloud",
-    "critique-out-of-bounds"
+    "critique-out-of-bounds",
+    "critiqueerror-browser-export"
   ]
 }

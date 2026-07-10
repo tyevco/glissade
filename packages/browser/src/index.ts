@@ -181,6 +181,12 @@ export {
   type DiagnosticSource,
   // 0.64 — the reserved caption-band SafeArea primitive (CAPTION_COLLISION).
   type SafeArea,
+  // 0.77 — the keep-WITHIN box (OUT_OF_BOUNDS, inverse of SafeArea) + its fail-loud
+  // error. CritiqueError is a runtime class (not a type) so a no-build author can
+  // `catch (e) { if (e instanceof glissade.CritiqueError) … }` against the IIFE —
+  // matching every other error class on the surface (KenBurnsError/MeasurerRequiredError/…).
+  type ContainBound,
+  CritiqueError,
 } from '@glissade/scene/diagnostics';
 // 0.61 — the interchange/edit half of the verification suite on the IIFE: diff(a,b)
 // (a ChangeSet TOOL — the no-build author→patch→diff→verify loop) + exportFidelity
