@@ -39,10 +39,18 @@ export interface CritiqueCommandResult {
   hasErrors: boolean;
 }
 
-/** The explicit marker for a node that owns no body beat — keyframeless or a
- *  full-duration span (a backdrop / persistent caption). It routes the author to
- *  the FRAME config, NEVER to a body beat. Visually distinct from a real seg id. */
+/** The explicit marker for a FULL-DURATION SPAN node (a backdrop / persistent
+ *  caption whose track span covers the whole timeline). A genuine frame-ownership
+ *  signal — it routes the author to the FRAME config, NEVER to a body beat.
+ *  Shared with `gs scaffold`; a determinism seat pins this literal. */
 export const SPANS_LABEL = '[likely FRAME-owned]';
+
+/** The explicit marker for a KEYFRAMELESS node (a flagged node with NO tracks →
+ *  no entrance keyframe to time-attribute). NOT a frame-ownership claim — a
+ *  keyframeless node is more likely a statically-pushed BODY node than frame art,
+ *  so we DON'T over-claim `[likely FRAME-owned]`; we say honestly "couldn't
+ *  time-attribute, locate by node id." critique-only; the literal is pinned. */
+export const UNATTRIBUTED_LABEL = '[no entrance keyframe]';
 
 export async function critiqueCommand(opts: CritiqueCommandOptions): Promise<CritiqueCommandResult> {
   // Layout scenes need the (async, wasm) Yoga engine registered before evaluate()
@@ -133,8 +141,10 @@ function formatCritique(r: CritiqueResult): string {
 export interface ByBeatReport {
   /** groups in timing.json segment order (only segments with diagnostics). */
   byBeat: Array<{ segId: string; start: number; end: number; diagnostics: SceneDiagnostic[] }>;
-  /** the explicit `[likely FRAME-owned]` group — keyframeless / full-span nodes. */
+  /** the `[likely FRAME-owned]` group — full-duration-span nodes ONLY. */
   spans: SceneDiagnostic[];
+  /** the `[no entrance keyframe]` group — keyframeless nodes (no track to time). */
+  unattributed: SceneDiagnostic[];
   /** diagnostics with no node at all (pure static). */
   static: SceneDiagnostic[];
 }
@@ -177,27 +187,35 @@ export function nodeEntranceTimes(tracks: Timeline['tracks'], nodeIds: ReadonlyS
   return acc;
 }
 
-/** The owning-beat verdict for one flagged node: a concrete segment id OR the
- *  explicit spans marker. Total — never undefined, never order-dependent. */
-export type BeatOwner = { kind: 'seg'; segId: string } | { kind: 'spans' };
+/** The owning-beat verdict for one flagged node — a 4-way honest split: a concrete
+ *  segment id, the `spans` (frame-owned full span) marker, the `unattributed`
+ *  (keyframeless — no entrance) marker, or (upstream) static. Total — never
+ *  undefined, never order-dependent. */
+export type BeatOwner = { kind: 'seg'; segId: string } | { kind: 'spans' } | { kind: 'unattributed' };
 
 /**
- * Map a node to its owning beat. STRICT honest fallback: a keyframeless node OR a
- * node whose track span covers the whole timeline (min ≤ firstStart AND max ≥
- * lastEnd) → the explicit `[likely FRAME-owned]` spans marker (NEVER a silent
- * seg-0). Otherwise the half-open window `[start, start+duration)` containing the
- * entrance owns it; entrance == a window's end belongs to the NEXT segment.
+ * Map a node to its owning beat. Two DISTINCT honest fallbacks (never a silent
+ * seg-0):
+ *   • KEYFRAMELESS (no tracks → entrance undefined) → `unattributed`
+ *     (`[no entrance keyframe]`). NOT a frame-ownership claim — a keyframeless
+ *     node is more likely a statically-pushed body node than frame art, so
+ *     tagging it FRAME-owned would be a confident mis-route (anti-workslop).
+ *   • FULL-DURATION SPAN (entrance defined AND min ≤ firstStart AND max ≥ lastEnd)
+ *     → `spans` (`[likely FRAME-owned]`) — the genuine backdrop / persistent-caption
+ *     signal.
+ * Otherwise the half-open window `[start, start+duration)` containing the entrance
+ * owns it; entrance == a window's end belongs to the NEXT segment.
  */
 export function attributeNode(entrance: NodeEntrance | undefined, timing: NarrationTiming): BeatOwner {
   const segs = timing.segments;
   const firstStart = Math.min(...segs.map((s) => s.start));
   const lastEnd = Math.max(...segs.map((s) => s.start + s.duration));
 
-  // keyframeless — no owning body beat; route to the FRAME config.
+  // keyframeless — NO entrance keyframe to time-attribute; locate by node id.
   if (!entrance || entrance.min === undefined || entrance.max === undefined) {
-    return { kind: 'spans' };
+    return { kind: 'unattributed' };
   }
-  // full-duration span (backdrop / persistent caption) — FRAME-owned.
+  // full-duration span (backdrop / persistent caption) — genuinely FRAME-owned.
   if (entrance.min <= firstStart && entrance.max >= lastEnd) {
     return { kind: 'spans' };
   }
@@ -234,6 +252,7 @@ export function buildByBeatReport(
 
   const perSeg = new Map<string, SceneDiagnostic[]>();
   const spans: SceneDiagnostic[] = [];
+  const unattributed: SceneDiagnostic[] = [];
   const staticGroup: SceneDiagnostic[] = [];
 
   for (const d of result.diagnostics) {
@@ -244,6 +263,8 @@ export function buildByBeatReport(
     const owner = attributeNode(entrances.get(d.node), timing);
     if (owner.kind === 'spans') {
       spans.push(d);
+    } else if (owner.kind === 'unattributed') {
+      unattributed.push(d);
     } else {
       let g = perSeg.get(owner.segId);
       if (!g) {
@@ -254,8 +275,9 @@ export function buildByBeatReport(
     }
   }
 
-  // canonical order: groups in timing.json segment order, then spans, then static;
-  // within a group, sort by node id then diagnostic code (then message/track).
+  // canonical order: groups in timing.json segment order, then spans, then
+  // unattributed, then static; within a group, sort by node id then diagnostic
+  // code (then message/track).
   const byBeat: ByBeatReport['byBeat'] = [];
   for (const s of timing.segments) {
     const g = perSeg.get(s.id);
@@ -263,7 +285,7 @@ export function buildByBeatReport(
       byBeat.push({ segId: s.id, start: s.start, end: s.start + s.duration, diagnostics: sortDiags(g) });
     }
   }
-  return { byBeat, spans: sortDiags(spans), static: sortDiags(staticGroup) };
+  return { byBeat, spans: sortDiags(spans), unattributed: sortDiags(unattributed), static: sortDiags(staticGroup) };
 }
 
 function sortDiags(ds: SceneDiagnostic[]): SceneDiagnostic[] {
@@ -319,10 +341,16 @@ export function formatByBeatReport(result: CritiqueResult, report: ByBeatReport)
     lines.push(`beat '${g.segId}' [${fmtSec(g.start)}–${fmtSec(g.end)}s]:`);
     for (const d of g.diagnostics) lines.push(...diagLines(d));
   }
+  // canonical section order: beats (segment order) → spans → unattributed → static.
   if (report.spans.length) {
     lines.push('');
     lines.push(`spans ${SPANS_LABEL}:`);
     for (const d of report.spans) lines.push(...diagLines(d));
+  }
+  if (report.unattributed.length) {
+    lines.push('');
+    lines.push(`unattributed ${UNATTRIBUTED_LABEL}:`);
+    for (const d of report.unattributed) lines.push(...diagLines(d));
   }
   if (report.static.length) {
     lines.push('');

@@ -1,11 +1,14 @@
-// Fixture scene for `gs critique --by-beat` (scaffold-v3). Two Text nodes that
-// BOTH overflow their wrap box (an unbreakable long word wider than width:40 →
-// TEXT_OVERFLOW with geometry `width`/`fontSize` levers AND a content `text`
-// lever), so the escalate-boundary presentation is exercised:
-//   • `title`   ENTERS at t=2.0 (its earliest keyframe) → owned by beat 'seg-b'
-//               (window [1.5, 3.0)).
-//   • `caption` SPANS the whole timeline (keys at t=0 and t=5) → the explicit
-//               `[likely FRAME-owned]` group, NEVER a silent seg-0 bucket.
+// Fixture scene for `gs critique --by-beat`. Three Text nodes that ALL overflow
+// their wrap box (an unbreakable long word wider than width:80 → TEXT_OVERFLOW
+// with geometry `width`/`fontSize` levers AND a content `text` lever), so the
+// escalate-boundary presentation is exercised, and each lands in a DISTINCT
+// attribution bucket (the 4-bucket split):
+//   • `title`    ENTERS at t=2.0 (its earliest keyframe) → owned by beat 'seg-b'
+//                (window [1.5, 3.0)).
+//   • `caption`  SPANS the whole timeline (keys at t=0 and t=5) → the genuine
+//                `[likely FRAME-owned]` spans group, NEVER a silent seg-0.
+//   • `subtitle` has NO timeline track (keyframeless) → the honest
+//                `[no entrance keyframe]` unattributed group (NOT frame-owned).
 // fontFamily is pinned to 'DejaVu Sans' so measurement is deterministic (the
 // golden-text-font gotcha) and the report is byte-identical run-to-run.
 import { key, timeline, track } from '@glissade/core';
@@ -23,6 +26,8 @@ const mod: SceneModule = {
       children: [
         new Text({ id: 'title', text: LONG, fontFamily: FAMILY, fontSize: 20, width: 80, align: 'center', fill: '#eaf1ff', position: [400, 120] }),
         new Text({ id: 'caption', text: LONG, fontFamily: FAMILY, fontSize: 20, width: 80, align: 'center', fill: '#8fa3c4', position: [400, 280] }),
+        // subtitle has NO track → keyframeless → [no entrance keyframe] (unattributed).
+        new Text({ id: 'subtitle', text: LONG, fontFamily: FAMILY, fontSize: 20, width: 80, align: 'center', fill: '#c4b58f', position: [400, 200] }),
       ],
     }),
   timeline: timeline({

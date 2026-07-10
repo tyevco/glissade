@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.72.0"
   },
   "changesets": [
+    "critique-by-beat-4bucket",
     "scaffold-v3-critique-by-beat"
   ]
 }
