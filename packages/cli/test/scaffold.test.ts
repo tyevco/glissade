@@ -154,3 +154,53 @@ describe('v2: split-suffix continuation coalescing (a -b/-c pause-split = one be
     );
   });
 });
+
+describe('v3 cut 1: --frame emits the author episode frame via scaffoldFrame(opts, buildBody)', () => {
+  const framed = generateScaffoldModule(timing, 'e01', './episode.js');
+
+  it('is byte-identical run-to-run (pure fn of the manifest + the --frame path)', () => {
+    expect(generateScaffoldModule(timing, 'e01', './episode.js')).toBe(framed);
+  });
+
+  it('emits scaffoldFrame(opts, buildBody) importing from the --frame path, not inline createScene/timeline', () => {
+    expect(framed).toContain(`import { scaffoldFrame } from "./episode.js";`);
+    expect(framed).toContain('export default scaffoldFrame(');
+    expect(framed).toContain('(ep) => {');
+    expect(framed).not.toContain('createScene('); // the frame owns the scene
+    expect(framed).not.toContain('timeline('); // the frame owns the timeline
+  });
+
+  it('DROPS the frame-owned caption wiring (captionNode/captionTrack/labels) — finish() owns it', () => {
+    expect(framed).not.toContain('captionNode');
+    expect(framed).not.toContain('captionTrack');
+    expect(framed).not.toMatch(/labels:/);
+    // the require guard rides opts.require, not a separate beats.require() line
+    expect(framed).toContain('require: ["seg-title", "seg-desk-intro", "seg-vending", "seg-footnote"]');
+    expect(framed).not.toContain('beats.require(');
+  });
+
+  it('authors the body IMPERATIVELY against ep — recipe → ep.push + ep.add(ep.fadeIn), stub → ep-based TODO', () => {
+    expect(framed).toContain(`ep.push(recipe("title-card", { id: "seg-title", frame: ep.size }))`);
+    expect(framed).toContain(`ep.add(ep.fadeIn("seg-title", ep.anchor.start("seg-title")))`);
+    // bespoke beats are honest ep-based stubs, never a forced recipe
+    expect(framed).toMatch(/TODO beat: ep\.push\(<component for 'seg-desk-intro'>\).*ep\.anchor\.start\("seg-desk-intro"\)/);
+  });
+
+  it('splits editorial (TODO placeholders) from id-inferable (titleOutSeg/outroSeg filled)', () => {
+    expect(framed).toMatch(/accent: "#888888", \/\/ TODO/);
+    expect(framed).toMatch(/title: \{ title: "TODO: episode title" \}/);
+    // titleOutSeg = first body beat (title-card is a recipe pick, so the first non-recipe body beat)
+    expect(framed).toMatch(/titleOutSeg: "seg-desk-intro", \/\/ inferred/);
+    // outroSeg inferred from the /outro/ convention (footnote here isn't outro → TODO)
+    expect(framed).toMatch(/outroSeg: "TODO", \/\/ TODO/); // no seg-outro in this fixture
+    expect(framed).toContain(`import { type NarrationTiming } from '@glissade/narrate';`);
+  });
+
+  it('the frameLESS path (no --frame) is UNCHANGED — byte-identical to the v2 output', () => {
+    const frameless = generateScaffoldModule(timing, 'e01');
+    expect(frameless).not.toBe(framed);
+    expect(frameless).toContain('createScene('); // frameless keeps the inline scene
+    expect(frameless).toContain('captionNode(SIZE)'); // frameless keeps caption wiring
+    expect(frameless).toMatch(/TODO frame:/); // frameless keeps the frame stub
+  });
+});

@@ -39,7 +39,7 @@ const USAGE = `usage:
   gs verify-determinism <scene-module> [--shards <n>] [--against <frames.manifest>] [--range a..b] [--bisect] [--emit <p>]
   gs dev <scene-module> [--record] [--port <n>]
   gs import <lottie.json|asset.svg> [--out <dir>] [--allow-degraded]
-  gs scaffold <narration.timing.json> [--out <dir>] [--force]   # → a first-draft beat-skeleton scene module to refine
+  gs scaffold <narration.timing.json> [--out <dir>] [--force] [--frame <module>]   # → a first-draft beat-skeleton scene module to refine (--frame wraps it in your episode frame's scaffoldFrame adapter)
   gs export --lottie <scene-module> --out <file.json> [--width <n>] [--height <n>] [--fps <n>]
   gs narrate <scene-module|script.narration.json> [--provider <id>] [--align <id>] [--force]
   gs narration-lint <scene-module|script.narration.timing.json> [--json] [--fix] [--max-cps <n>]
@@ -877,6 +877,7 @@ async function main(): Promise<void> {
         input: modulePath,
         ...(flags.has('out') ? { out: flags.get('out')! } : {}),
         force: flags.has('force'),
+        ...(flags.has('frame') ? { frame: flags.get('frame')! } : {}),
       });
       process.stderr.write(
         `gs scaffold: wrote ${result.out} — ${result.recipes.length} recipe beat(s), ${result.stubs.length} labeled stub(s) to refine` +

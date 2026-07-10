@@ -36,6 +36,16 @@ export interface ScaffoldOptions {
   out?: string;
   /** Overwrite an existing output file (default false — refuse to clobber refinements). */
   force?: boolean;
+  /**
+   * Era B v3: emit the author's episode FRAME instead of a `// TODO frame:` marker + the
+   * inline caption wiring. The value is the import path of a module exporting the
+   * `scaffoldFrame(opts, buildBody)` callback-adapter (the author's ~6-line wrapper over
+   * their episode frame — `makeEpisode(opts)` → `buildBody(ep)` → `ep.finish(...)`). The
+   * body is authored imperatively against the `ep` handle (ep.push/ep.add/ep.anchor/…),
+   * and the frame OWNS the captions/labels/backdrop/duration (finish()), so the framed
+   * output drops those. Absent = the frameless v2 output (byte-identical).
+   */
+  frame?: string;
 }
 
 export interface ScaffoldCommandResult {
@@ -154,11 +164,43 @@ export function classifySegments(segments: ReadonlyArray<{ id: string; text: str
 }
 
 /**
- * Generate the beat-skeleton module SOURCE from a timing manifest. Pure — same
- * `(timing, base)` → byte-identical string. Exported for the scaffold-output golden
- * + determinism tests.
+ * Era B v3 editorial inference: the FIRST body beat (where a title card would animate
+ * OUT as the body begins) — the first pick that is neither a cold-open, a frame-owned
+ * bookend, nor a continuation. Id-inferable, so the scaffold fills `titleOutSeg`; null
+ * (→ a TODO) when there's no clear body beat.
  */
-export function generateScaffoldModule(timing: ScaffoldTiming, base: string): string {
+function inferTitleOutSeg(picks: SegmentPick[]): string | null {
+  for (const p of picks) {
+    if (p.kind === 'continuation') continue;
+    // cold-open + title-card are structural BOOKENDS — the title animates out into the
+    // first BODY beat AFTER them, so skip both (and frame-owned bookend stubs).
+    if (p.kind === 'recipe' && (p.recipe === 'cold-open' || p.recipe === 'title-card')) continue;
+    if (p.kind === 'stub' && p.frameOwned) continue;
+    return p.seg;
+  }
+  return null;
+}
+
+/** Era B v3: the outro segment (a frame-owned `outro` convention), id-inferable. */
+function inferOutroSeg(segments: ReadonlyArray<{ id: string }>): string | null {
+  const m = segments.find((s) => /(^|[-_ ])outro([-_ ]|$)/.test(s.id.toLowerCase()));
+  return m ? m.id : null;
+}
+
+/** `titleOutSeg: '<seg>'` when inferred, else a TODO placeholder — deterministic. */
+function segFieldOrTodo(seg: string | null, todo: string): string {
+  return seg !== null ? `${JSON.stringify(seg)}, // inferred from the narration ids` : `"TODO", // TODO: ${todo}`;
+}
+
+/**
+ * Generate the beat-skeleton module SOURCE from a timing manifest. Pure — same
+ * `(timing, base, frame?)` → byte-identical string. Exported for the scaffold-output
+ * golden + determinism tests. With `frame`, emits the author's episode frame via the
+ * `scaffoldFrame(opts, buildBody)` callback-adapter instead of the inline caption
+ * wiring + `// TODO frame:` marker (Era B v3 cut 1).
+ */
+export function generateScaffoldModule(timing: ScaffoldTiming, base: string, frame?: string): string {
+  if (frame !== undefined) return generateFramedModule(timing, base, frame);
   const segments = timing.segments;
   const picks = classifySegments(segments);
   const anyRecipe = picks.some((p) => p.kind === 'recipe');
@@ -237,6 +279,72 @@ export function generateScaffoldModule(timing: ScaffoldTiming, base: string): st
   return lines.join('\n');
 }
 
+/**
+ * Era B v3 cut 1: emit the beat skeleton WRAPPED in the author's episode frame via the
+ * `scaffoldFrame(opts, buildBody)` callback-adapter. The frame OWNS the captions / labels
+ * / backdrop / duration (finish()), so this DROPS the inline caption wiring the frameless
+ * output emits; the body is authored imperatively against the `ep` handle
+ * (ep.push/ep.add/ep.anchor/ep.fadeIn/ep.habit). Pure — `(timing, base, frame)` →
+ * byte-identical string. Editorial opts the scaffold can't infer are honest TODO
+ * placeholders; `titleOutSeg`/`outroSeg` are id-inferable.
+ */
+function generateFramedModule(timing: ScaffoldTiming, base: string, frame: string): string {
+  const segments = timing.segments;
+  const picks = classifySegments(segments);
+  const anyRecipe = picks.some((p) => p.kind === 'recipe');
+  const ids = segments.map((s) => JSON.stringify(s.id)).join(', ');
+  const titleOut = inferTitleOutSeg(picks);
+  const outro = inferOutroSeg(segments);
+
+  const lines: string[] = [];
+  lines.push(`// Generated from ${base}.narration.timing.json by gs scaffold --frame — a first-draft`);
+  lines.push(`// beat skeleton wrapped in YOUR episode frame (scaffoldFrame). Refine the // TODO`);
+  lines.push(`// markers, then re-run (a PURE FUNCTION of the committed manifest + the --frame path).`);
+  if (anyRecipe) lines.push(`import { recipe } from '@glissade/scene/recipes';`);
+  lines.push(`import { scaffoldFrame } from ${JSON.stringify(frame)};`);
+  lines.push(`import { type NarrationTiming } from '@glissade/narrate';`);
+  lines.push(`import timingJson from './${base}.narration.timing.json';`);
+  lines.push(``);
+  lines.push(`const timing = timingJson as NarrationTiming;`);
+  lines.push(`const SIZE = { w: 1920, h: 1080 };`);
+  lines.push(``);
+  lines.push(`// scaffoldFrame(opts, buildBody) is YOUR ~6-line adapter over your episode frame:`);
+  lines.push(`//   makeEpisode(opts) -> buildBody(ep) -> ep.finish({ audio: opts.audio ?? [] }).`);
+  lines.push(`// The frame OWNS captions / labels / backdrop / duration; the body is authored`);
+  lines.push(`// imperatively against the ep handle (ep.push / ep.add / ep.anchor / ep.fadeIn / ep.habit).`);
+  lines.push(`export default scaffoldFrame(`);
+  lines.push(`  {`);
+  lines.push(`    size: SIZE,`);
+  lines.push(`    timing,`);
+  lines.push(`    require: [${ids}], // drift-guard: every anchored segment id (frame calls narration(timing).require)`);
+  lines.push(`    // EDITORIAL — the scaffold can't infer these; fill once per episode:`);
+  lines.push(`    accent: "#888888", // TODO: your module accent color`);
+  lines.push(`    title: { title: "TODO: episode title" },`);
+  lines.push(`    habitText: "TODO: the habit-card line",`);
+  lines.push(`    next: { title: "TODO: next-episode title" },`);
+  lines.push(`    footnote: { text: "TODO: source note", verified: false },`);
+  lines.push(`    titleOutSeg: ${segFieldOrTodo(titleOut, 'the segment where the title card animates out')}`);
+  lines.push(`    outroSeg: ${segFieldOrTodo(outro, 'the outro segment id')}`);
+  lines.push(`  },`);
+  lines.push(`  (ep) => {`);
+  for (const p of picks) {
+    if (p.kind === 'continuation') {
+      lines.push(`    // '${p.seg}' continues '${p.base}' (a pause-split of one beat) — no separate component. "${commentText(p.text)}"`);
+    } else if (p.kind === 'recipe') {
+      lines.push(`    // beat '${p.seg}' — "${commentText(p.text)}"`);
+      lines.push(`    ep.push(recipe(${JSON.stringify(p.recipe)}, { id: ${JSON.stringify(p.seg)}, frame: ep.size })); // TODO: refine props`);
+      lines.push(`    ep.add(ep.fadeIn(${JSON.stringify(p.seg)}, ep.anchor.start(${JSON.stringify(p.seg)}))); // TODO: refine the entrance`);
+    } else {
+      const hint = p.frameOwned ? ' [likely FRAME-owned → route to opts above]' : '';
+      lines.push(`    // TODO beat: ep.push(<component for '${p.seg}'>) + ep.add(...) at ep.anchor.start(${JSON.stringify(p.seg)})${hint} — "${commentText(p.text)}"`);
+    }
+  }
+  lines.push(`  },`);
+  lines.push(`);`);
+  lines.push(``);
+  return lines.join('\n');
+}
+
 /** Resolve the `<base>` (strip `.narration.timing.json` / `.narration.json` / `.json`). */
 function baseOf(file: string): string {
   return basename(file)
@@ -270,7 +378,7 @@ export function scaffoldCommand(opts: ScaffoldOptions): ScaffoldCommandResult {
     );
   }
 
-  const code = generateScaffoldModule(timing, base);
+  const code = generateScaffoldModule(timing, base, opts.frame);
   writeFileSync(outFile, code);
 
   const picks = classifySegments(timing.segments);

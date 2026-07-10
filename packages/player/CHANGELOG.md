@@ -1,5 +1,13 @@
 # @glissade/player
 
+## 0.72.0-pre.0
+
+### Patch Changes
+
+- @glissade/backend-canvas2d@0.72.0-pre.0
+- @glissade/core@0.72.0-pre.0
+- @glissade/scene@0.72.0-pre.0
+
 ## 0.71.1
 
 ### Patch Changes

@@ -1,5 +1,23 @@
 # @glissade/cli
 
+## 0.72.0-pre.0
+
+### Minor Changes
+
+- `gs scaffold --frame <module>` (Era B v3, cut 1) — emit the author's episode FRAME instead of a `// TODO frame:` marker. Point `--frame` at a module exporting a `scaffoldFrame(opts, buildBody)` callback-adapter (the author's ~6-line wrapper over their frame: `makeEpisode(opts)` → `buildBody(ep)` → `ep.finish({ audio })`), and the scaffold emits `export default scaffoldFrame({ size, timing, require, …editorial }, (ep) => { … })` with the body authored IMPERATIVELY against the `ep` handle (`ep.push`/`ep.add`/`ep.anchor`/`ep.fadeIn`) — the shape that fits how a real episode frame assembles (an `ep.push` body, not a declarative children array, so the live `ep` — anchors, fades, `ep.habit` — is reachable). The frame owns the captions/labels/backdrop/duration (in `finish()`), so the framed output DROPS the inline caption wiring the frameless output emits; the drift-guard rides `opts.require`. Editorial opts the scaffold can't infer (accent/title/habit/next/footnote) are honest `// TODO` placeholders; `titleOutSeg` (the first body beat) and `outroSeg` are id-inferable and filled. Recipe picks become `ep.push(recipe(…))` + `ep.add(ep.fadeIn(…))`; bespoke beats stay honest `// TODO beat: ep.push(…)` stubs (anti-workslop). Deterministic (a pure function of the frozen manifest + the `--frame` path), CLI-only, off the render path. `--frame` absent = the frameless output, byte-identical.
+
+### Patch Changes
+
+- @glissade/backend-skia@0.72.0-pre.0
+- @glissade/core@0.72.0-pre.0
+- @glissade/interact@0.72.0-pre.0
+- @glissade/lottie@0.72.0-pre.0
+- @glissade/narrate@0.72.0-pre.0
+- @glissade/player@0.72.0-pre.0
+- @glissade/scene@0.72.0-pre.0
+- @glissade/sfx@0.72.0-pre.0
+- @glissade/svg@0.72.0-pre.0
+
 ## 0.71.1
 
 ### Patch Changes

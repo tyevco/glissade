@@ -1,0 +1,11 @@
+{
+  "timingVersion": 1,
+  "provider": "fake",
+  "providerVersion": "f",
+  "totalDuration": 8,
+  "segments": [
+    { "id": "seg-cold-open-a", "text": "Meet the assistant nobody manages.", "start": 0.2, "duration": 1.6, "file": "a.wav" },
+    { "id": "seg-desk", "text": "Picture it as a contractor at a desk.", "start": 1.8, "duration": 2.4, "file": "b.wav" },
+    { "id": "seg-outro", "text": "Next time, the review.", "start": 6.0, "duration": 1.6, "file": "c.wav" }
+  ]
+}
