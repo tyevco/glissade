@@ -1,5 +1,20 @@
 # @glissade/cli
 
+## 0.71.1
+
+### Patch Changes
+
+- 475ff7d: `gs scaffold` (Era B v2.1) — the split-suffix continuation coalescing now also folds a `-a2`/`-a<digit>` WITHIN-GROUP continuation. v2 coalesced new-letter continuations (`-b`/`-c`) into the base beat, but a `<base>-a2` (a second segment of the same `-a` split group — e.g. a send-line reveal in two parts) stayed a separate stub. Now `<base>-a<digit>` coalesces into `<base>-a` (the base half, `-a` with no digit, stays the base), so the whole split group is one beat with continuations, not several stubs the author merges. Deterministic (pure function of the id set), CLI-only, off the render path (b4e6060006 unaffected). Filed from ai-training's 0.71.0 real-e02 edge note; safe-direction (a continuation label, never a guess).
+  - @glissade/backend-skia@0.71.1
+  - @glissade/core@0.71.1
+  - @glissade/interact@0.71.1
+  - @glissade/lottie@0.71.1
+  - @glissade/narrate@0.71.1
+  - @glissade/player@0.71.1
+  - @glissade/scene@0.71.1
+  - @glissade/sfx@0.71.1
+  - @glissade/svg@0.71.1
+
 ## 0.71.1-pre.0
 
 ### Patch Changes

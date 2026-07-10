@@ -27,6 +27,11 @@ jobs:
       # build the @glissade/browser IIFE BEFORE publish so dist/glissade.browser.js
       # ships in the npm tarball (dist is gitignored) AND can attach to the Release.
       - run: pnpm build:browser
+      # Build-integrity guard (0.71.0 incident): fail the publish if the freshly-built
+      # artifact has an unbound measurer-resolve reference (a splitToFit/text-geometry
+      # ReferenceError from an intermittent bundler collision-rename). The stable-promote
+      # REBUILDS, so this must run on the SHIPPING bytes — not the gated pre.
+      - run: node scripts/check-bundle-integrity.mjs
       - run: pnpm typecheck
       - run: pnpm test
       - run: node scripts/check-deps.mjs
