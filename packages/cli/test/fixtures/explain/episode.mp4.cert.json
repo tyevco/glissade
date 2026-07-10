@@ -1,0 +1,42 @@
+{
+  "certVersion": 3,
+  "kind": "video",
+  "fps": 30,
+  "base": {
+    "certVersion": 3,
+    "sceneHash": "scene-aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666",
+    "timelineHash": "timeline-0011223344556677889900aabbccddeeff00112233445566",
+    "narrationTimingHash": "",
+    "fontDigest": "font-9988776655443322110099887766554433221100aabbccdd",
+    "captionBurnMode": "burn",
+    "toolchainHash": "toolchain-abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc",
+    "backendHash": "backend-def0def0def0def0def0def0def0def0def0def0def0def0",
+    "renderConfig": {
+      "width": 1920,
+      "height": 1080,
+      "pixelFormat": "rgba8-straight",
+      "imageSmoothing": true
+    },
+    "complete": true
+  },
+  "frames": [
+    {
+      "i": 0,
+      "frameKey": "0@30",
+      "certHash": "cert0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa",
+      "byteHash": "byte0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa"
+    },
+    {
+      "i": 1,
+      "frameKey": "1@30",
+      "certHash": "cert1111bbbb1111bbbb1111bbbb1111bbbb1111bbbb1111bbbb",
+      "byteHash": "byte1111bbbb1111bbbb1111bbbb1111bbbb1111bbbb1111bbbb"
+    },
+    {
+      "i": 2,
+      "frameKey": "2@30",
+      "certHash": "cert2222cccc2222cccc2222cccc2222cccc2222cccc2222cccc",
+      "byteHash": "byte2222cccc2222cccc2222cccc2222cccc2222cccc2222cccc"
+    }
+  ]
+}

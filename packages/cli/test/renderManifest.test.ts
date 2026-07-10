@@ -15,7 +15,7 @@ beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'gs-manifest-')); });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const base = (over: Partial<RenderManifest> = {}): RenderManifest => ({
-  v: 1, frameKeyDigest: frameKeyDigest(['a', 'b', 'c']), container: 'mp4', videoCodec: 'libx264', fps: 60, firstFrame: 0, frames: 3, ...over,
+  v: 1, frameKeyDigest: frameKeyDigest(['a', 'b', 'c']), container: 'mp4', videoCodec: 'libx264', videoQuality: '-crf 18', fps: 60, firstFrame: 0, frames: 3, ...over,
 });
 
 describe('frameKeyDigest', () => {
@@ -43,7 +43,7 @@ describe('manifest read/write round-trip', () => {
 });
 
 describe('canRemux — the fast-path gate (video-canary invariants)', () => {
-  const now = { frameKeyDigest: frameKeyDigest(['a', 'b', 'c']), container: 'mp4', videoCodec: 'libx264', fps: 60, firstFrame: 0, frames: 3 };
+  const now = { frameKeyDigest: frameKeyDigest(['a', 'b', 'c']), container: 'mp4', videoCodec: 'libx264', videoQuality: '-crf 18', fps: 60, firstFrame: 0, frames: 3 };
 
   it('remux when digest + params match AND the prior output exists (audio-only change)', () => {
     expect(canRemux(base(), now, true)).toBe(true);

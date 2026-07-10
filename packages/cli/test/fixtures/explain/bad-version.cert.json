@@ -1,0 +1,25 @@
+{
+  "certVersion": 999,
+  "kind": "video",
+  "fps": 30,
+  "base": {
+    "certVersion": 999,
+    "sceneHash": "scene-future",
+    "timelineHash": "timeline-future",
+    "narrationTimingHash": "",
+    "fontDigest": "",
+    "captionBurnMode": "burn",
+    "toolchainHash": "toolchain-future",
+    "backendHash": "backend-future",
+    "renderConfig": {
+      "width": 640,
+      "height": 480,
+      "pixelFormat": "rgba8-straight",
+      "imageSmoothing": false
+    },
+    "complete": true
+  },
+  "frames": [
+    { "i": 0, "frameKey": "0@30", "certHash": "future", "byteHash": "future" }
+  ]
+}

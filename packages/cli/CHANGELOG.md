@@ -1,5 +1,35 @@
 # @glissade/cli
 
+## 0.74.0-pre.0
+
+### Minor Changes
+
+- `gs explain <path> [--json] [--cert <manifest>]` — a NON-mutating provenance reader over the determinism certificate `gs render --certify` already writes. Point it at an artifact (`out/episode.mp4`, `out/still.png`) and it resolves the sibling `<path>.cert.json`; point it at a `.cert.json` directly and it reads that. It prints, human-readably, EXACTLY what bytes the render is a function of — `certVersion`, `sceneHash`/`timelineHash`, `fontDigest`, the platform-aware `backendHash`, `toolchainHash`, `narrationTimingHash`, the render config, `complete`, fps/duration, whether an `.audio-cert.json` sidecar sits beside it, and a short per-frame `byteHash` summary (first/last + count, not all N lines). `--json` emits the structured object.
+
+  **Provenance stays cross-checkable.** Every hash is surfaced VERBATIM from the manifest — the reader never re-derives `sceneHash`/`certHash` a second way. The manifest's `sceneHash` was written with the SAME canonical hash the IIFE-reachable `sceneHash(scene)` exposes, so printing the stored value keeps provenance verifiable from either side (a browser agent can compute `sceneHash()` on a reconstructed scene and compare to what `gs explain` prints).
+
+  **Cert-reader discipline:** it runs `assertCertVersion` first (via `loadVideoCertManifest`) — fail-loud on an unknown/future `certVersion` rather than mis-read — and fails loud on a missing manifest with a message that names the fix (`render with gs render --certify or pass a .cert.json`). A pure read of committed inputs, so the output carries no wall-clock/timestamp and is byte-identical run-to-run. With `--cert <manifest>` and a raw frame PNG it hashes the PNG the SAME way the cert does (`byteHashOf`) and reports which frame (if any) it is in the manifest. CLI-only, off the render/determinism path (b4e6060006 unaffected).
+
+- `gs render --preview <scene>` — a two-tier render: a WATCHABLE DRAFT that shares the frame cache with the production render but encodes lighter/faster. `--final` (also the DEFAULT when neither flag is passed) is UNCHANGED and byte-exact; `--preview` and `--final` are mutually exclusive (fail-loud if both).
+
+  **Same frames, lighter encode.** crf is an ENCODE parameter only — it changes the compressed h264 bytes, never the rasterized frames. It is deliberately NOT in the frame-key digest (nor the determinism cert), so a `--preview` render REUSES the exact rasterized frames a prior `--final` produced — no re-raster on a raster-bound workload, the whole point. `--preview` just raises the crf (libx264 `-crf 30` instead of `18`; libvpx-vp9 `-crf 40` instead of `32`) for a faster/lighter draft; encoders without a draft point (libvpx / openh264 / mpeg4) keep their final quality. The tier→crf map is one pure function (`videoQualityArgs`) shared by the linear, sharded (`--workers`), and incremental (`--incremental`) encode paths.
+
+  **Tier isolation at the encode-artifact layer (the load-bearing fix).** The audio-only REMUX fast path (`canRemux` → `ffmpeg -c:v copy` the existing video stream) keyed only on the frame-key digest + container/codec/fps/frames — NOT the encode quality. Since a preview and a final of the same scene have the SAME frame digest, a `--final` request could have remux-copied a leftover `--preview` (higher-crf) stream AS the final = a preview served as final. This adds a `videoQuality` field (the resolved crf/encode-quality params string) to `RenderManifest` and folds it into the `canRemux` equality check, so a preview manifest NEVER remux-serves a final request or vice versa. A pre-0.71 manifest (absent `videoQuality`) reads as `undefined` → never matches a resolved quality string → falls back to a full encode rather than risk a cross-tier false-hit (no manifest `v` bump needed).
+
+  `--final`/default output bytes are byte-identical to pre-0.71 (the default crf path is untouched); goldens hold 433/433. CLI-only, off the frame/determinism path (b4e6060006 unaffected).
+
+### Patch Changes
+
+- @glissade/backend-skia@0.74.0-pre.0
+- @glissade/core@0.74.0-pre.0
+- @glissade/interact@0.74.0-pre.0
+- @glissade/lottie@0.74.0-pre.0
+- @glissade/narrate@0.74.0-pre.0
+- @glissade/player@0.74.0-pre.0
+- @glissade/scene@0.74.0-pre.0
+- @glissade/sfx@0.74.0-pre.0
+- @glissade/svg@0.74.0-pre.0
+
 ## 0.73.0
 
 ### Minor Changes

@@ -29,21 +29,12 @@ import { fileURLToPath } from 'node:url';
 import { ShaderEffect, evaluate, withDeterminismGuards, type Scene } from '@glissade/scene';
 import type { CompiledTimeline } from '@glissade/core';
 import { pickEncoder } from './encoders.js';
-import { planFinalAudio, type RenderOptions } from './render.js';
+import { planFinalAudio, videoQualityArgs, videoQualityKey, type RenderOptions } from './render.js';
 import { planIncremental, type SpliceSegment } from './incremental.js';
 import { readRenderManifest, writeRenderManifest, frameKeyDigest, type RenderManifest } from './renderManifest.js';
 
 /** Encoders that can't place a keyframe exactly on a forced boundary → not concat-copy-safe. */
 const IMPRECISE_KEYFRAME_ENCODERS = new Set(['mpeg4', 'libopenh264']);
-
-/** Per-encoder quality flags — must match render.ts's linear path byte-for-byte. */
-const VIDEO_QUALITY: Record<string, string[]> = {
-  'libx264': ['-crf', '18'],
-  'libvpx-vp9': ['-b:v', '0', '-crf', '32'],
-  'libvpx': ['-b:v', '2M'],
-  'libopenh264': ['-b:v', '4M'],
-  'mpeg4': ['-q:v', '3'],
-};
 
 export class ShardError extends Error {
   constructor(message: string) {
@@ -129,6 +120,7 @@ export interface RenderShardedArgs {
  */
 export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: number; out: string }> {
   const { opts, scene, compiled, fps, duration, firstFrame, lastFrame, container } = a;
+  const tier: 'preview' | 'final' = opts.tier ?? 'final';
 
   // §3.7 guard: sharded GPU output isn't reproducible across processes.
   if (sceneHasGpuNodes(scene) && !opts.allowGpuShards) {
@@ -217,7 +209,7 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
         ? ['-c:v', 'ffv1', '-level', '3']
         : [
             '-c:v', finalEnc.name,
-            ...(VIDEO_QUALITY[finalEnc.name] ?? []),
+            ...videoQualityArgs(finalEnc.name, tier),
             // a keyframe on frame 0 of each shard → clean concat-copy boundaries
             '-force_key_frames', '0',
             ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p']),
@@ -258,7 +250,7 @@ export async function renderSharded(a: RenderShardedArgs): Promise<{ frames: num
         ...audioInputs,
         ...audioArgs,
         '-c:v', videoEnc.name,
-        ...(VIDEO_QUALITY[videoEnc.name] ?? []),
+        ...videoQualityArgs(videoEnc.name, tier),
         ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
         outAbs,
       ];
@@ -356,6 +348,7 @@ export interface RenderIncrementalArgs {
  */
 export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ frames: number; out: string }> {
   const { opts, scene, doc, compiled, keyCtx, fps, duration, firstFrame, lastFrame, container } = a;
+  const tier: 'preview' | 'final' = opts.tier ?? 'final';
   const outAbs = resolve(opts.out);
   const total = lastFrame - firstFrame + 1;
   const finalEnc = pickEncoder('video', container);
@@ -464,7 +457,7 @@ export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ fra
       ...audioInputs,
       ...audioArgs,
       '-c:v', finalEnc.name,
-      ...(VIDEO_QUALITY[finalEnc.name] ?? []),
+      ...videoQualityArgs(finalEnc.name, tier),
       ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
       '-t', String(duration),
       outAbs,
@@ -476,7 +469,7 @@ export async function renderIncremental(a: RenderIncrementalArgs): Promise<{ fra
     rmSync(intermediate, { force: true });
     renameSync(newIntermediate, intermediate);
     const manifest: RenderManifest = {
-      v: 1, frameKeyDigest: newDigest, frameKeys, container, videoCodec: finalEnc.name, fps, firstFrame, frames: total,
+      v: 1, frameKeyDigest: newDigest, frameKeys, container, videoCodec: finalEnc.name, videoQuality: videoQualityKey(finalEnc.name, tier), fps, firstFrame, frames: total,
     };
     writeRenderManifest(outAbs, manifest);
   } finally {

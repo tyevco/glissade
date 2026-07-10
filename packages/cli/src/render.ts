@@ -98,6 +98,16 @@ export interface RenderOptions {
    */
   allowGpuShards?: boolean;
   /**
+   * --preview / --final (0.71 two-tier): the ENCODE tier. 'final' (the default when
+   * neither flag is passed) is the byte-exact production encode — bytes are identical
+   * to pre-0.71. 'preview' produces a watchable DRAFT: the SAME rasterized frames
+   * (crf is not in the frame-key digest, so a preview reuses the final's frame cache
+   * — no re-raster), encoded at a higher crf for a faster/lighter h264. The tier is
+   * isolated at the encode-artifact layer (renderManifest.videoQuality) so a preview
+   * never remux-serves a --final request or vice versa.
+   */
+  tier?: 'preview' | 'final';
+  /**
    * --cache (§3.5, 0.12): persistent whole-frame raster cache. `dir` is the
    * `.gscache` directory (shared across runs AND shards); `mode` defaults to 'off'
    * (the exact current equality baseline). `maxSize` caps the LRU (default 2 GB).
@@ -131,6 +141,50 @@ export interface RenderOptions {
    */
   locale?: string;
   onProgress?: (frame: number, total: number) => void;
+}
+
+/**
+ * Per-encoder ENCODE-quality flags for the byte-exact --final (default) tier: crf
+ * (x264/vpx), bitrate (openh264), q:v (mpeg4). These are the historical values —
+ * the default path is byte-identical to pre-0.71.
+ */
+const FINAL_VIDEO_QUALITY: Record<string, string[]> = {
+  'libx264': ['-crf', '18'],
+  'libvpx-vp9': ['-b:v', '0', '-crf', '32'],
+  'libvpx': ['-b:v', '2M'],
+  'libopenh264': ['-b:v', '4M'],
+  'mpeg4': ['-q:v', '3'],
+};
+
+/**
+ * 0.71 --preview draft overrides: a higher crf → a lighter/faster encode of the
+ * SAME frames. Only the crf-family encoders get a draft point; encoders not listed
+ * fall back to the final quality (their preview == final, which is fine — identical
+ * params legitimately produce identical bytes, so the tiers may share a remux).
+ */
+const PREVIEW_VIDEO_QUALITY: Record<string, string[]> = {
+  'libx264': ['-crf', '30'],
+  'libvpx-vp9': ['-b:v', '0', '-crf', '40'],
+};
+
+/**
+ * Resolve the ffmpeg encode-quality args for an encoder + tier. Pure. crf is an
+ * ENCODE param only — it changes the compressed bytes, never the rasterized frames
+ * (which is why it is NOT folded into the frame-key digest and a preview can reuse
+ * a final's frame cache). The joined string of these args is the manifest
+ * `videoQuality` that isolates the tiers in canRemux.
+ */
+export function videoQualityArgs(encName: string, tier: 'preview' | 'final'): string[] {
+  if (tier === 'preview') {
+    const draft = PREVIEW_VIDEO_QUALITY[encName];
+    if (draft) return draft;
+  }
+  return FINAL_VIDEO_QUALITY[encName] ?? [];
+}
+
+/** The manifest `videoQuality` string for an encoder + tier (isolates tiers in canRemux). */
+export function videoQualityKey(encName: string, tier: 'preview' | 'final'): string {
+  return videoQualityArgs(encName, tier).join(' ');
 }
 
 /**
@@ -851,7 +905,8 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // beside the output. A key-only pre-pass (evaluate + hash, NO raster) recomputes
   // it; if it matches and the encode params + output are unchanged, the video is
   // byte-identical — skip the frame loop and `-c:v copy` remux the new audio below.
-  let videoOut: { outAbs: string; container: 'mp4' | 'webm'; encName: string; encNote?: string } | undefined;
+  const tier: 'preview' | 'final' = opts.tier ?? 'final';
+  let videoOut: { outAbs: string; container: 'mp4' | 'webm'; encName: string; encNote?: string; videoQuality: string } | undefined;
   let remuxDigest: string | undefined;
   let remuxKeys: string[] | undefined; // the pre-pass key vector (persisted so 0.41 incremental survives a remux)
   if (isVideo) {
@@ -859,7 +914,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     const container: 'mp4' | 'webm' = /\.webm$/i.test(outAbs) ? 'webm' : 'mp4';
     const { pickEncoder } = await import('./encoders.js');
     const enc = pickEncoder('video', container);
-    videoOut = { outAbs, container, encName: enc.name, ...(enc.note ? { encNote: enc.note } : {}) };
+    videoOut = { outAbs, container, encName: enc.name, videoQuality: videoQualityKey(enc.name, tier), ...(enc.note ? { encNote: enc.note } : {}) };
     // PREFLIGHT the stale-loudness guard (0.33): every input it reads exists at
     // t=0, but it used to first run inside planFinalAudio — AFTER the whole frame
     // loop — so a stale mixHash surfaced only after ~30 min of doomed rendering
@@ -876,7 +931,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
           keys.push(frameCacheKey(dl, keyCtx));
         }
         const digest = frameKeyDigest(keys);
-        if (canRemux(prev, { frameKeyDigest: digest, container, videoCodec: enc.name, fps, firstFrame, frames: total }, true)) {
+        if (canRemux(prev, { frameKeyDigest: digest, container, videoCodec: enc.name, videoQuality: videoOut.videoQuality, fps, firstFrame, frames: total }, true)) {
           remuxDigest = digest;
           remuxKeys = keys;
         }
@@ -1078,24 +1133,19 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
     rmSync(encodeDir, { recursive: true, force: true });
     // manifest digest is unchanged (video is identical) — rewrite so mtime tracks
     writeRenderManifest(outAbs, {
-      v: 1, frameKeyDigest: remuxDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total,
+      v: 1, frameKeyDigest: remuxDigest, container, videoCodec: videoOut!.encName, videoQuality: videoOut!.videoQuality, fps, firstFrame, frames: total,
       ...(remuxKeys && remuxKeys.length === total ? { frameKeys: remuxKeys } : {}),
     });
     process.stderr.write(`cache: ${total}/${total} frames unchanged (audio-only) — video copy + remux → ${outAbs}\n`);
     return { frames: total, out: outAbs };
   }
 
-  // FULL ENCODE: quality flags are per-encoder: crf (x264/vpx), bitrate (openh264), q:v (mpeg4)
-  const VIDEO_QUALITY: Record<string, string[]> = {
-    'libx264': ['-crf', '18'],
-    'libvpx-vp9': ['-b:v', '0', '-crf', '32'],
-    'libvpx': ['-b:v', '2M'],
-    'libopenh264': ['-b:v', '4M'],
-    'mpeg4': ['-q:v', '3'],
-  };
+  // FULL ENCODE: quality flags are per-encoder + per-tier (crf x264/vpx, bitrate
+  // openh264, q:v mpeg4). --final (default) keeps the historical values byte-for-byte;
+  // --preview raises the crf for a lighter draft of the SAME frames.
   const codec = [
     '-c:v', videoOut!.encName,
-    ...(VIDEO_QUALITY[videoOut!.encName] ?? []),
+    ...videoQualityArgs(videoOut!.encName, tier),
     ...(container === 'webm' ? [] : ['-pix_fmt', 'yuv420p', '-movflags', '+faststart']),
   ];
   const args = [
@@ -1118,7 +1168,7 @@ export async function render(opts: RenderOptions): Promise<{ frames: number; out
   // or 0.41 dirty-beat incremental (frameKeys = the per-frame vector to diff against).
   if (newDigest) {
     writeRenderManifest(outAbs, {
-      v: 1, frameKeyDigest: newDigest, container, videoCodec: videoOut!.encName, fps, firstFrame, frames: total,
+      v: 1, frameKeyDigest: newDigest, container, videoCodec: videoOut!.encName, videoQuality: videoOut!.videoQuality, fps, firstFrame, frames: total,
       frameKeys,
     });
   }

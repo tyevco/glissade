@@ -20,6 +20,8 @@ export const KNOWN_BOOLEAN_FLAGS = new Set<string>([
   'no-warnings',
   'lossless-intermediate',
   'incremental',
+  'preview', // gs render --preview: two-tier draft (higher-crf encode, frames shared with --final)
+  'final', // gs render --final (also the default): the byte-exact production encode
   'allow-gpu-shards',
   'allow-system-fonts',
   'verbose',

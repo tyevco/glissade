@@ -34,6 +34,17 @@ export interface RenderManifest {
   container: string;
   /** the video encoder name (e.g. 'libx264') — a codec change forces a re-encode */
   videoCodec: string;
+  /**
+   * 0.71 two-tier: the resolved encode-QUALITY params string (e.g. '-crf 18' for a
+   * --final libx264, '-crf 30' for a --preview draft). crf is an ENCODE-only param —
+   * it is deliberately NOT in the frame-key digest (so a preview SHARES the raster
+   * frame cache with final, no re-raster). That means the digest alone can't tell a
+   * preview stream from a final one; this field is the encode-artifact-layer tier
+   * isolation that stops a preview's higher-crf video from remux-serving a --final
+   * request (and vice versa). ABSENT on pre-0.71 manifests → treated as unknown, so
+   * canRemux refuses the fast path rather than risk a cross-tier false-hit.
+   */
+  videoQuality?: string;
   fps: number;
   firstFrame: number;
   frames: number;
@@ -111,7 +122,7 @@ export function writeRenderManifest(videoPath: string, m: RenderManifest): void 
  */
 export function canRemux(
   prev: RenderManifest | undefined,
-  now: { frameKeyDigest: string; container: string; videoCodec: string; fps: number; firstFrame: number; frames: number },
+  now: { frameKeyDigest: string; container: string; videoCodec: string; videoQuality: string; fps: number; firstFrame: number; frames: number },
   outputExists: boolean,
 ): boolean {
   return (
@@ -120,6 +131,9 @@ export function canRemux(
     prev.frameKeyDigest === now.frameKeyDigest &&
     prev.container === now.container &&
     prev.videoCodec === now.videoCodec &&
+    // 0.71 two-tier isolation: an ABSENT videoQuality (pre-0.71 manifest) is `undefined`,
+    // which never `===` a resolved param string → no cross-tier / unknown-quality false-hit.
+    prev.videoQuality === now.videoQuality &&
     prev.fps === now.fps &&
     prev.firstFrame === now.firstFrame &&
     prev.frames === now.frames

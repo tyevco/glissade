@@ -655,6 +655,7 @@ export interface RenderOptions {
     sfx?: 'auto' | 'off';
     state?: string;
     strictFonts?: boolean;
+    tier?: 'preview' | 'final';
     trace?: string;
     workers?: number;
 }
@@ -808,7 +809,7 @@ export class VideoProbeError extends Error {
 
 // Warnings were encountered during analysis:
 //
-// dist/index.d.ts:295:5 - (ae-forgotten-export) The symbol "CertCacheMode" needs to be exported by the entry point index.d.ts
+// dist/index.d.ts:305:5 - (ae-forgotten-export) The symbol "CertCacheMode" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

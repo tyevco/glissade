@@ -1,0 +1,9 @@
+{
+  "certVersion": 3,
+  "kind": "audio",
+  "narrationAudioHash": "narr-1111222233334444555566667777888899990000aaaabbbb",
+  "musicHash": "music-aaaabbbbccccddddeeeeffff00001111222233334444555566",
+  "sfxHash": "",
+  "loudness": "-14.0 LUFS / -1.0 dBTP",
+  "certHash": "audiocert-cccc0000cccc0000cccc0000cccc0000cccc0000cccc00"
+}

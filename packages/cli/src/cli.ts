@@ -55,6 +55,7 @@ const USAGE = `usage:
   gs describe [--out <api.json>] [--examples] [--lint]   snapshot THIS engine's describe() API manifest (stdout, or --out to a file) — the input to gs migrate. --lint reconciles the manifest against the window.glissade runtime surface (every helper/node/surface member resolves, no type surfaced as a value, no arity drift) and exits non-zero on drift
   gs types [--out <file.ts>] [--from <api.json>] [--check] [--global]   codegen a type-checked track() SDK from the describe() manifest: only registered animatable paths + their value types compile, so a typo'd path or wrong value-type id is a COMPILE error (import track from the generated file). --check fails if --out is stale. Zero-runtime (types + a re-typed re-export of the real track). --global (alias --iife) instead emits a SELF-CONTAINED ambient window.glissade .d.ts for the no-build <script src> author (typed IIFE surface — a typo'd window.glissade member is a compile error)
   gs migrate <baseline-api.json> [--json] [--check]   diff a saved API manifest against the current engine: moved imports / removed / added / changed, with a suggested fix per breaking item (advisory; --check exits non-zero on any breaking change for CI gating)
+  gs explain <path> [--json] [--cert <manifest>]   NON-mutating provenance reader over the determinism cert 'gs render --certify' writes: reads <path>.cert.json (or a .cert.json directly) and prints EXACTLY what bytes the render is a function of — certVersion / sceneHash / fontDigest / platform-aware backendHash / render config / frame count + a per-frame byteHash summary (hashes surfaced verbatim from the manifest, never re-derived). --json emits the structured object; --cert matches a raw frame PNG to its frame in a manifest
   gs repin <scene-module> --golden <dir> [--name <p>] [--frames a,b,..] [--fps <n>] [--since <ref>] [--write] [--only a,b] [--heatmap <dir>] [--floor <ssim>] [--force]   narration-aware golden reviewer: render current vs committed goldens, report perceptual delta + the re-narration cause, re-pin only frames you allow (default dry-run; --floor refuses a bigger-than-expected drop)
   gs parity <scene-module> [--backends skia,lottie] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--heatmap <dir>] [--min <ssim>] [--baseline <file>] [--update-baseline] [--tolerance <eps>]   cross-backend perceptual review: render ONE scene across backends and report per-frame SSIM vs the Skia reference + the worst 8×8 tile (skia = reference, lottie = export↔import round-trip). --heatmap writes a thermal PNG per frame; --min is the SSIM floor (default 0.98) — a below-floor frame exits non-zero. --baseline turns it into a KNOWN-DROP regression gate: compare each mean vs a committed per-scene baseline of EXPECTED drops and fail ONLY on a deviation (a new/worse drop), so documented scope-outs that legitimately fail the floor PASS while a real regression FAILs; --update-baseline (re)writes that baseline from the live run; --tolerance is the expected-SSIM band (default 1e-4). --baseline takes precedence over --min. (dom = Phase B, not yet shipped)
   gs parity <scene-module> --semantic [--all] [--frames a,b,..] [--fps <n>] [--width <n>] [--height <n>] [--min <ssim>] [--baseline <file>] [--update-baseline] [--json]   the STRUCTURED Skia↔Lottie round-trip drop-diff: fuse the exporter's own warn-list (which element dropped + why) with the SSIM residual localized to each node's rendered bbox → source:'parity' diagnostics (LOTTIE_DROP/APPROXIMATE = warn-explained expected drops masked from the default view; ANCHOR_RECENTER = report-only; UNEXPLAINED_RESIDUAL = a residual with NO matching warn, the only thing in the default error-only view). --all shows every finding; --baseline pins the expected-drop keys (a NEW expected drop still flags); --update-baseline re-pins
@@ -74,6 +75,10 @@ render options:
   --lossless-intermediate  render shards as FFV1 + one final encode — the guaranteed byte-correct join
                    (auto-enabled when the encoder can't honor precise boundary keyframes, e.g. mpeg4/openh264)
   --allow-gpu-shards  permit sharding a scene with GPU/shader nodes (output is not reproducible across shards; §3.7)
+  --preview / --final  the encode TIER (mutually exclusive; --final is the default). --final is the byte-exact production
+                   encode; --preview is a watchable DRAFT — the SAME rasterized frames (crf isn't in the frame-key digest,
+                   so it REUSES the frame cache, no re-raster) at a higher crf → a faster/lighter h264. The tier is isolated
+                   at the manifest/encode-artifact layer, so a preview never remux-serves a --final request or vice versa
   --incremental    dirty-beat: re-render ONLY the frames whose per-frame key changed since the last render, splicing
                    the rest verbatim from a retained FFV1 intermediate (video out only). WINS the re-narrate / move-one-
                    beat edit that MISSES the whole-frame cache: a timing shift changes every downstream frame's key, so
@@ -177,7 +182,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${describe().version}\n`);
     return;
   }
-  if (command !== 'render' && command !== 'diff' && command !== 'critique' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types' && command !== 'scaffold') {
+  if (command !== 'render' && command !== 'diff' && command !== 'critique' && command !== 'verify-determinism' && command !== 'dev' && command !== 'import' && command !== 'export' && command !== 'narrate' && command !== 'narration-lint' && command !== 'sfx' && command !== 'prepare' && command !== 'measure-loudness' && command !== 'fonts' && command !== 'cache' && command !== 'mcp' && command !== 'build' && command !== 'describe' && command !== 'migrate' && command !== 'repin' && command !== 'parity' && command !== 'master' && command !== 'localize' && command !== 'types' && command !== 'scaffold' && command !== 'explain') {
     console.error(USAGE);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);
   }
@@ -421,6 +426,29 @@ async function main(): Promise<void> {
     // --check: a CI gate — exit non-zero when the bump has breaking changes, so
     // a pipeline can fail the build on an un-migrated engine (advisory by default)
     if (mf.has('check') && report.summary.breaking > 0) process.exit(1);
+    return;
+  }
+
+  // gs explain <path> [--json] [--cert <manifest>] — the NON-mutating provenance
+  // reader over the determinism cert. Self-contained: its positional is an artifact /
+  // .cert.json / raw-frame PNG, not a scene module, so it parses before the generic
+  // <scene-module> requirement. A pure read (no render); fail-loud on a missing /
+  // invalid / unknown-version manifest.
+  if (command === 'explain') {
+    const { positional: xp, flags: xf } = parseArgs(rest);
+    const path = xp[0];
+    if (!path) fail(`gs explain needs <path> (an artifact, a .cert.json, or a raw frame PNG with --cert)\n${USAGE}`);
+    const { explainCommand } = await import('./explain.js');
+    try {
+      const result = explainCommand({
+        path,
+        ...(xf.has('json') ? { json: true } : {}),
+        ...(xf.get('cert') ? { cert: xf.get('cert')! } : {}),
+      });
+      process.stdout.write(`${result.report}\n`);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
     return;
   }
 
@@ -1081,6 +1109,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // --preview / --final (0.71 two-tier): the encode tier. Mutually exclusive; 'final'
+  // (the byte-exact production encode) is the default when neither is passed. --preview
+  // reuses the SAME rasterized frames (crf isn't in the frame-key digest) at a higher
+  // crf → a faster/lighter watchable draft. isolated from --final at the manifest layer.
+  if (flags.has('preview') && flags.has('final')) {
+    fail('--preview and --final are mutually exclusive — pass one (--final, the default, is the byte-exact production encode; --preview is a higher-crf draft that shares the frame cache)');
+  }
+  const tier: 'preview' | 'final' = flags.has('preview') ? 'preview' : 'final';
+
   const fpsFlag = flags.get('fps');
   const started = performance.now();
   try {
@@ -1103,6 +1140,7 @@ async function main(): Promise<void> {
       ...(workers !== undefined ? { workers } : {}),
       ...(flags.has('lossless-intermediate') ? { losslessIntermediate: true } : {}),
       ...(flags.has('incremental') ? { incremental: true } : {}),
+      ...(tier === 'preview' ? { tier } : {}),
       ...(flags.has('allow-gpu-shards') ? { allowGpuShards: true } : {}),
       ...(cache !== undefined ? { cache } : {}),
       ...(flags.has('certify') ? { certify: true } : {}),
