@@ -27,7 +27,9 @@ import { ComponentDef } from '@glissade/scene/component';
 import { ComponentError } from '@glissade/scene/component';
 import { ComponentInstance } from '@glissade/scene/component';
 import { ComponentPropSpec } from '@glissade/scene/component';
+import { ContainBound } from '@glissade/scene/diagnostics';
 import { critique } from '@glissade/scene/diagnostics';
+import { CritiqueError } from '@glissade/scene/diagnostics';
 import { CritiqueOptions } from '@glissade/scene/diagnostics';
 import { CritiqueResult } from '@glissade/scene/diagnostics';
 import { defineComponent } from '@glissade/scene/component';
@@ -166,7 +168,11 @@ export { ComponentInstance }
 
 export { ComponentPropSpec }
 
+export { ContainBound }
+
 export { critique }
+
+export { CritiqueError }
 
 export { CritiqueOptions }
 
