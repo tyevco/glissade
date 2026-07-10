@@ -992,6 +992,14 @@ const HELPERS: DescribedHelper[] = [
       "dispense(origin: [fx,fy], opts: { box: {w,h}, duration, fps, angle?, spread?, glyph?, glyphSize?, glyphFamily?, count?, at?, color?, seed?, id?, ...rest (appearance/step/velocity/forces) }): { node: Group, tracks: Track[], end }",
   },
   {
+    name: 'kenBurns',
+    summary:
+      "The per-node one-liner for a photo pan/zoom (the classic Ken Burns move): a PURE track-emitter that bakes `<id>/scale` + optional `<id>/position` keyframes on ONE EXISTING node and returns { tracks, end } (creates NO node — inject with tl.tracks(...)). The defaulted `from` reads the node's STATIC constructed scale/position, so the tracks are order-independent (emit before/after other tracks alike); pass an explicit `from` if you've also authored a scale/position track. For a whole-scene cinematic rig with layered parallax, use `camera()` instead. Factory. Tree-shakeable (@glissade/scene/motion).",
+    import: '@glissade/scene/motion',
+    usage:
+      "kenBurns(target: Node, opts?: { zoom?: number | [from,to] (default [1,1.1]; a bare N = [staticScale,N]), pan?: [dx,dy] | { from:[x,y], to:[x,y] } (default none), duration? (default 5), ease? (default 'easeInOutSine'), at? (default 0) }): { tracks: Track[], end }  —  target MUST have an id",
+  },
+  {
     name: 'valueNoise',
     summary:
       'Closed-form smooth value noise: a PURE function of (seed, t) — lerp(rand(⌊t⌋), rand(⌊t⌋+1), smoothstep(fract t)) with core’s seeded hash. No state, no bake; deterministic by construction (byte-identical run-to-run), fps-independent, O(1), seekable — the closed-form sibling of a spring. Range [0,1); center a signed wobble with *2-1. The primitive behind shake + camera shake.',

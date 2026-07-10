@@ -62,6 +62,7 @@ import goldenEach from '../../examples/src/scenes/golden-each.js';
 import goldenSplitText, { setSplitMeasurer } from '../../examples/src/scenes/golden-splittext.js';
 import goldenKinetic, { setKineticMeasurer } from '../../examples/src/scenes/golden-kinetic.js';
 import goldenParticles from '../../examples/src/scenes/golden-particles.js';
+import goldenKenBurns from '../../examples/src/scenes/golden-kenburns.js';
 import { loadYogaLayoutEngine } from '../../scene/src/layout.js';
 
 await loadYogaLayoutEngine(); // flexbox scenes need the engine before evaluation
@@ -285,6 +286,12 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // opacity-gated, faithful-by-construction (no render-only path); the fixed seed
   // makes the frames a pure function of time — byte-stable on Skia by construction.
   { name: 'particles', mod: goldenParticles },
+  // 0.71 kenBurns(): the per-node photo pan/zoom preset — a gradient-filled Rect
+  // pushed IN (scale 1→1.1) while it pans, from tracks kenBurns bakes onto the
+  // node's own `<id>/scale` + `<id>/position`. The defaulted pan `from` reads the
+  // Rect's STATIC constructed position, so the tracks are a pure function of time —
+  // byte-stable on Skia by construction (no image decode; the gradient IS the look).
+  { name: 'kenburns', mod: goldenKenBurns },
 ];
 
 for (const { name, mod } of CORPUS) {

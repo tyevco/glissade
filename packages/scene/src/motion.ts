@@ -56,3 +56,14 @@ export {
   type SparksOptions,
   type DispenseOptions,
 } from './particles.js';
+
+// 0.71 Ken Burns — the per-node photo pan/zoom preset: a PURE track-emitter that
+// bakes `<id>/scale` + `<id>/position` keyframes on an EXISTING node (returns
+// { tracks, end }, creates no node). The per-node one-liner sibling of camera()'s
+// whole-scene rig. Off the base embed (same /motion subpath).
+export {
+  kenBurns,
+  KenBurnsError,
+  type KenBurnsOptions,
+  type KenBurnsResult,
+} from './kenBurns.js';

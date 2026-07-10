@@ -65,6 +65,8 @@ import { GaugeZone } from '@glissade/scene/gauge';
 import { Grid } from '@glissade/scene/grid';
 import { instanceProps } from '@glissade/scene/diagnostics';
 import { InstancePropState } from '@glissade/scene/diagnostics';
+import { kenBurns } from '@glissade/scene/motion';
+import { KenBurnsError } from '@glissade/scene/motion';
 import { KineticTypeError } from '@glissade/scene/type';
 import { Layout } from '@glissade/scene/layout-ctors';
 import { linearScale } from '@glissade/scene/chart';
@@ -239,6 +241,10 @@ export { Grid }
 export { instanceProps }
 
 export { InstancePropState }
+
+export { kenBurns }
+
+export { KenBurnsError }
 
 export { KineticTypeError }
 

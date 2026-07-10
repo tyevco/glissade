@@ -1,6 +1,6 @@
 {
   "name": "@glissade/interact",
-  "version": "0.75.0",
+  "version": "0.76.0-pre.0",
   "description": "glissade interactivity: state machines over timelines, velocity-matched handoffs, typed inputs. Opt-in layer; never imported by the linear pipeline.",
   "license": "Apache-2.0",
   "engines": {

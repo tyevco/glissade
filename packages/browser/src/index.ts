@@ -122,6 +122,11 @@ export { Camera, camera, CameraError, shake, shakeOffset } from '@glissade/scene
 // window.glissade.particles / .drift / .sparks / .dispense, so the convenience
 // bundle re-exports the emitter + presets here (same rationale as camera/shake).
 export { particles, drift, sparks, dispense, ParticleError } from '@glissade/scene/motion';
+
+// 0.71 kenBurns (per-node photo pan/zoom preset) is on @glissade/scene/motion; the
+// no-build author reaches for window.glissade.kenBurns, so re-export it here too
+// (same rationale as camera/particles).
+export { kenBurns, KenBurnsError } from '@glissade/scene/motion';
 // `tokenHighlight` (the PRODUCTION token-highlight render component — visible
 // sub-line token tell-tags) lives on the tree-shakeable `@glissade/scene/tokens`
 // subpath (off the base scene index for the scene budget; the ai-training finding

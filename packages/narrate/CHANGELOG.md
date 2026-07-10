@@ -1,5 +1,13 @@
 # @glissade/narrate
 
+## 0.76.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @glissade/scene@0.76.0-pre.0
+  - @glissade/core@0.76.0-pre.0
+
 ## 0.75.0
 
 ### Patch Changes
