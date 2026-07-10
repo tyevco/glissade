@@ -99,15 +99,25 @@ export function selectRecipe(id: string): RecipeName | null {
 }
 
 /**
- * Split-suffix continuation coalescing (Era B v2, ai-training's gate): a `-b/-b2/-c…`
- * id suffix marks ONE beat split across a pause (the convention keeps the first half's
- * id — `<base>` or `<base>-a` — so the `.start()` anchor survives). Returns the BASE
- * beat id this segment continues (so it shares the base's component + anchor, no
- * double-emit), or null if it's a standalone/base beat. Deterministic: a pure function
- * of the id set. Only coalesces when the base sibling actually exists (else standalone).
+ * Split-suffix continuation coalescing (Era B v2 + v2.1, ai-training's gate): a
+ * `-b/-b2/-c…` id suffix marks ONE beat split across a pause (the convention keeps the
+ * first half's id — `<base>` or `<base>-a` — so the `.start()` anchor survives). v2.1
+ * ALSO folds a `-a<digit>` WITHIN-GROUP continuation (`<base>-a2` continues `<base>-a`,
+ * a second segment of the same split — the send-line reveal case) while `-a` (no digit)
+ * stays the base half. Returns the BASE beat id this segment continues (so it shares the
+ * base's component + anchor, no double-emit), or null if it's a standalone/base beat.
+ * Deterministic: a pure function of the id set. Only coalesces when the base sibling
+ * actually exists (else standalone).
  */
 export function continuationBaseOf(id: string, ids: ReadonlySet<string>): string | null {
-  const m = /^(.*)-([b-z])(\d*)$/.exec(id); // continuation letters b-z (a = the base half)
+  // v2.1: `<stem>-a<digits>` (an `-a` WITH a trailing digit, e.g. -a2) → continues
+  // `<stem>-a` (the first half of the same split group). `-a` with no digit is the base.
+  const aDigit = /^(.*)-a\d+$/.exec(id);
+  if (aDigit) {
+    const base = `${aDigit[1]!}-a`;
+    return ids.has(base) ? base : null;
+  }
+  const m = /^(.*)-([b-z])(\d*)$/.exec(id); // new-letter continuations (a = the base half)
   if (!m) return null;
   const stem = m[1]!;
   if (ids.has(`${stem}-a`)) return `${stem}-a`;

@@ -125,6 +125,14 @@ describe('v2: split-suffix continuation coalescing (a -b/-c pause-split = one be
     expect(continuationBaseOf('seg-lonely-c', ids)).toBeNull(); // no base sibling → standalone, not coalesced
   });
 
+  it('v2.1: -a2/-N within-group continuation coalesces into -a (the send-line reveal case)', () => {
+    const ids = new Set(['seg-sendline-a', 'seg-sendline-a2', 'seg-sendline-b', 'seg-orphan-a2']);
+    expect(continuationBaseOf('seg-sendline-a2', ids)).toBe('seg-sendline-a'); // within-group second segment
+    expect(continuationBaseOf('seg-sendline-a', ids)).toBeNull(); // -a (no digit) is the base
+    expect(continuationBaseOf('seg-sendline-b', ids)).toBe('seg-sendline-a'); // new-letter still coalesces to -a
+    expect(continuationBaseOf('seg-orphan-a2', ids)).toBeNull(); // no -a base sibling → standalone, not coalesced
+  });
+
   it('a split cold-open emits ONE recipe (on the base) + a continuation note, NOT two cards', () => {
     const segs = [seg('seg-cold-open-a', 'Meet the assistant.'), seg('seg-cold-open-b', 'The one nobody manages.'), seg('seg-desk-intro', 'A desk beat.')];
     const picks = classifySegments(segs);
