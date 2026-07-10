@@ -1,9 +1,0 @@
----
-"@glissade/cli": minor
----
-
-`gs explain <path> [--json] [--cert <manifest>]` — a NON-mutating provenance reader over the determinism certificate `gs render --certify` already writes. Point it at an artifact (`out/episode.mp4`, `out/still.png`) and it resolves the sibling `<path>.cert.json`; point it at a `.cert.json` directly and it reads that. It prints, human-readably, EXACTLY what bytes the render is a function of — `certVersion`, `sceneHash`/`timelineHash`, `fontDigest`, the platform-aware `backendHash`, `toolchainHash`, `narrationTimingHash`, the render config, `complete`, fps/duration, whether an `.audio-cert.json` sidecar sits beside it, and a short per-frame `byteHash` summary (first/last + count, not all N lines). `--json` emits the structured object.
-
-**Provenance stays cross-checkable.** Every hash is surfaced VERBATIM from the manifest — the reader never re-derives `sceneHash`/`certHash` a second way. The manifest's `sceneHash` was written with the SAME canonical hash the IIFE-reachable `sceneHash(scene)` exposes, so printing the stored value keeps provenance verifiable from either side (a browser agent can compute `sceneHash()` on a reconstructed scene and compare to what `gs explain` prints).
-
-**Cert-reader discipline:** it runs `assertCertVersion` first (via `loadVideoCertManifest`) — fail-loud on an unknown/future `certVersion` rather than mis-read — and fails loud on a missing manifest with a message that names the fix (`render with gs render --certify or pass a .cert.json`). A pure read of committed inputs, so the output carries no wall-clock/timestamp and is byte-identical run-to-run. With `--cert <manifest>` and a raw frame PNG it hashes the PNG the SAME way the cert does (`byteHashOf`) and reports which frame (if any) it is in the manifest. CLI-only, off the render/determinism path (b4e6060006 unaffected).
