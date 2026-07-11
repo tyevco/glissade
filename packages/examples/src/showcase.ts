@@ -32,6 +32,7 @@ import gauge from './scenes/golden-gauge.js';
 import expr from './scenes/golden-expr.js';
 import compositing from './scenes/golden-compositing.js';
 import layoutCritique from './scenes/golden-layout-critique.js';
+import layoutOverflow from './scenes/golden-layout-overflow.js';
 import boxtext from './scenes/golden-boxtext.js';
 import component from './scenes/golden-component.js';
 import { createMachine, type MachineSpec } from '@glissade/interact';
@@ -75,6 +76,7 @@ const gallery: Record<string, { mod: SceneModule; blurb: string }> = {
   gauge: { mod: gauge, blurb: 'The radial data-viz stack: Gauge() fans a spec → N stroked-arc zones + boundary ticks + a needle + separate labels (a build-time fan-out, like Chart). The needle is scripted — it overshoots into the left zone, whips right, then settles dead center — while the extreme zones dim independently of their labels (zone opacity and label opacity are separate channels). value→angle Meter mode is one prop away. Byte-compared on Skia in CI.' },
   compositing: { mod: compositing, blurb: 'The compositing pair: a Group clipped to a rounded card (tiles slide through, pixels bitten at the edge), an alpha-matte IRIS revealing art through an animated circle, and a LUMA wipe — brightness becomes alpha via one deterministic CPU kernel, byte-exact on Skia.' },
   layoutCritique: { mod: layoutCritique, blurb: 'The layout-critique showcase: a row of four cards where card 3 breaks the shared baseline (MISALIGNED) and the gap before card 4 is too wide (UNEVEN_SPACING) — the exact defects critique()’s explicit alignGroups report, shown as pixels.' },
+  layoutOverflow: { mod: layoutOverflow, blurb: 'The LAYOUT_OVERFLOW showcase: a real Row of three cells where the middle cell’s fat stroke ink bleeds out of the flex slot Yoga sized from its stroke-free intrinsic box — the content-bigger-than-its-cell defect critique() reports automatically over Layout nodes, shown as pixels.' },
   boxtext: { mod: boxtext, blurb: 'Text box-valign: the top row is baseline-anchored (labels ride high/low in their pills — the fontSize*0.35 bug), the bottom row uses box:{valign:\'center\'} so each label\'s real ink centers in its pill — single-line, descenders, and multi-line alike. Byte-compared on Skia.' },
   component: { mod: component, blurb: 'defineComponent: a reusable typed LowerThird (accent bar + clipped name/title) defined ONCE and instanced three times — each instance namespaces its children under its own id, so the three stagger in independently from one definition. describe().components lists its prop surface. Byte-compared on Skia.' },
   captions: { mod: captions, blurb: 'Narration-anchored captions: each beat fires at its narration segment\'s start, captions are a plain string track, and the .srt/.vtt sidecars match by construction. The voice mixes in at gs render; this embed shows the sync.' },

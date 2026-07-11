@@ -136,6 +136,47 @@ export class Layout extends Group {
   }
 
   /**
+   * Cut 3 — the per-flowable-child boxes the flow placed (top-left `{x,y}` relative
+   * to the container's top-left, plus `{w,h}`), in child (flow) order. ONE-SOURCE:
+   * routes through the SAME memoized `#compute` the DisplayList origins came from
+   * (never a re-compute), so `computedBoxes()` is byte-exactly what `draw()` rendered —
+   * a pure read (goldens unchanged). Same measurer-fail-loud gate as {@link computedSize}.
+   */
+  computedBoxes(measurer?: TextMeasurer, opts?: { estimate?: boolean }): readonly { x: number; y: number; w: number; h: number }[] {
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Layout.computedBoxes', opts?.estimate, true);
+    return this.#compute(m).result.boxes.map((b) => ({ x: b.x, y: b.y, w: b.width, h: b.height }));
+  }
+
+  /**
+   * Cut 3 — the resolved padding inset (px). The `padding` signal IS the one source
+   * the memoized `#compute` reads, so this is that same value (no re-compute). Padding
+   * is measurer-independent; the optional args mirror the sibling accessors' shape.
+   */
+  computedPadding(_measurer?: TextMeasurer, _opts?: { estimate?: boolean }): number {
+    return this.padding();
+  }
+
+  /**
+   * Cut 3 — the ACTUAL inter-child gaps along the main axis (px), derived from the
+   * SAME memoized `#compute` (`result.boxes`): children sorted on the main axis, each
+   * gap = `box[i+1].start − box[i].end`. Empty when < 2 flowable children. ONE-SOURCE
+   * with the rendered boxes; same measurer-fail-loud gate as {@link computedSize}.
+   */
+  computedGaps(measurer?: TextMeasurer, opts?: { estimate?: boolean }): readonly number[] {
+    const m = resolveMeasurer(measurer, this.measurerSource, 'Layout.computedGaps', opts?.estimate, true);
+    const boxes = this.#compute(m).result.boxes;
+    const row = this.direction === 'row';
+    const sorted = [...boxes].sort((a, b) => (row ? a.x - b.x : a.y - b.y));
+    const gaps: number[] = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const q = sorted[i - 1]!;
+      const r = sorted[i]!;
+      gaps.push(row ? r.x - (q.x + q.width) : r.y - (q.y + q.height));
+    }
+    return gaps;
+  }
+
+  /**
    * Route through the #memo (the dependency-tracked computed) when `measurer`
    * is the default the memo itself pulls; otherwise compute fresh & UNCACHED —
    * a caller-supplied non-default measurer must never read (or poison) a cache

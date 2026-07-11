@@ -25,7 +25,7 @@
 // This module lives on the tree-shakeable @glissade/scene/diagnostics subpath
 // (never the base scene index), so the SACRED base embed pays zero bytes for it.
 
-import { compileTimeline, parseColor, type Timeline } from '@glissade/core';
+import { compileTimeline, evaluateAt, parseColor, type Timeline } from '@glissade/core';
 import { IDENTITY, multiply, type Mat2x3 } from './matrix.js';
 import {
   type DisplayList,
@@ -40,6 +40,12 @@ import { validateRegion } from './region.js';
 import { strokeExtent } from './strokeBounds.js';
 import { bindScene, type Scene } from './scene.js';
 import { Group, Text } from './nodes.js';
+import { type Node } from './node.js';
+// TYPE-ONLY import — erases at runtime, so the Layout value (and its ./layout Yoga
+// loader) never lands on the diagnostics bundle. Cut-3 LAYOUT_OVERFLOW detects a
+// Layout node by its pinned `describeType === 'Layout'` marker (minification-safe),
+// then reads it through this structural type.
+import { type Layout } from './layoutCtors.js';
 import { isEstimatingMeasurer, quantize, type TextMeasurer } from './text.js';
 import {
   validateScene,
@@ -506,11 +512,6 @@ interface NodeAgg {
    *  (indexed by the `opts.safeAreas` position). A CAPTION_COLLISION fires for a
    *  non-owner whose count === onStage (intrudes its WHOLE on-stage span). */
   bandCollide: number[];
-  /** 0.77 — on-stage frames the node's box was NOT fully inside its declared
-   *  keep-WITHIN box (`opts.containBounds`). Only counted for a node that HAS a
-   *  declared box. An OUT_OF_BOUNDS fires when this === onStage (drifted out its
-   *  WHOLE on-stage span, not a transient). */
-  outOfBounds: number;
 }
 
 /** Cut 2 — an INTEGER-quantized device bbox (the geometry the alignment checks read;
@@ -529,6 +530,41 @@ interface MemberTrack {
   presence: Set<number>;
   bbox: Map<number, IntBox>;
 }
+
+// ── Cut 3: composed (group→children) box + Layout-slot geometry ────────────────
+
+/** The bbox tracked for a `containBounds` member across the grid, read from its
+ *  COMPOSED box (own box ∪ every drawn descendant's box). A leaf's composed box is
+ *  just its own box (byte-identical to the pre-Cut-3 leaf path); a container Group
+ *  resolves to the union of its rendered descendants. */
+interface ContainAgg {
+  onStage: number;
+  /** on-stage frames the composed box was NOT fully inside the keep-within box. */
+  outOfBounds: number;
+  lastFrame: number;
+  lastT: number;
+  lastBounds: Bounds;
+}
+
+/** Cut 3 — the id set that RESOLVES a member: the id itself plus every IDED
+ *  descendant (a pure scene-tree walk over `.children`). A leaf resolves to `{id}`;
+ *  a container Group resolves to itself + all its drawn descendants, so its effective
+ *  box is the union of their rendered boxes. */
+function collectResolveSet(scene: Scene, id: string): Set<string> {
+  const out = new Set<string>([id]);
+  const walk = (n: Node): void => {
+    const kids = (n as unknown as { children?: Node[] }).children;
+    if (!Array.isArray(kids)) return;
+    for (const c of kids) {
+      if (c.id !== undefined) out.add(c.id);
+      walk(c);
+    }
+  };
+  const node = scene.nodes.get(id);
+  if (node) walk(node);
+  return out;
+}
+
 
 // ── the primitive ─────────────────────────────────────────────────────────────
 
@@ -638,12 +674,30 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         lastTextFrameT: 0,
         lastTexts: [],
         bandCollide: safeAreas.map(() => 0),
-        outOfBounds: 0,
       };
       agg.set(id, a);
     }
     return a;
   };
+
+  // Cut 3 — the COMPOSED-box resolution (group→children). Each containBounds node and
+  // alignGroups member resolves to its id + every ided descendant, so a container Group
+  // participates as the UNION of its rendered descendants' boxes (a leaf resolves to just
+  // itself → byte-identical to the pre-Cut-3 leaf path). Precomputed once (a pure scene
+  // walk); the sample loop unions the present boxes per frame.
+  const resolveSets = new Map<string, Set<string>>();
+  for (const id of new Set<string>([...containBoxes.keys(), ...memberTracks.keys()]))
+    resolveSets.set(id, collectResolveSet(scene, id));
+  const containAgg = new Map<string, ContainAgg>();
+
+  // Cut 3 — LAYOUT_OVERFLOW runs AUTOMATICALLY over every ided Layout node (no opt-in).
+  // Detect a Layout by its pinned `describeType` marker (minification-safe; avoids a
+  // runtime import of the ./layout Yoga entry). Its worldMatrix() maps a computed flex
+  // slot into the child's device-ink space at the settled frame.
+  const layoutIds = new Set<string>();
+  for (const [id, node] of scene.nodes) if (node.describeType === 'Layout') layoutIds.add(id);
+  let lastWalk: FrameWalk | undefined;
+  let lastWalkT = 0;
 
   let sampledFrames = 0;
   for (let i = 0; i <= lastFrame; i++) {
@@ -668,24 +722,6 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       for (let si = 0; si < safeAreas.length; si++) {
         if (intersectsRegion(fn.bounds, safeAreas[si]!.bounds)) a.bandCollide[si]!++;
       }
-      // 0.77 OUT_OF_BOUNDS accumulation: for a node with a declared keep-WITHIN box,
-      // count on-stage frames whose device box is NOT fully inside that box (integer-
-      // region containment; deterministic). Nodes without a declared box don't participate.
-      const within = containBoxes.get(id);
-      if (within !== undefined && !contains(within, fn.bounds)) a.outOfBounds++;
-      // Cut 2 — record this member's presence + INTEGER-quantized device bbox at this
-      // frame (SAME "produces a rendered box" onStage semantics). The integer box is
-      // the geometry the settled-frame compare + the diagnostics read (no float ever).
-      const mt = memberTracks.get(id);
-      if (mt) {
-        mt.presence.add(i);
-        mt.bbox.set(i, {
-          minX: Math.round(fn.bounds.minX),
-          minY: Math.round(fn.bounds.minY),
-          maxX: Math.round(fn.bounds.maxX),
-          maxY: Math.round(fn.bounds.maxY),
-        });
-      }
       // OCCLUSION: on-frame AND fully covered by a single opaque occluder above it.
       if (intersectsFrame(fn.bounds, w, h)) {
         let cover: Occluder | undefined;
@@ -702,6 +738,48 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         }
       }
     }
+
+    // Cut 3 — COMPOSED-box accumulation for containBounds + alignGroups members. A
+    // member's effective box this frame = the union of its own + drawn-descendant boxes
+    // (null ⇒ not present). Routing BOTH leaf and Group members through this one path
+    // keeps a leaf byte-identical (its resolve set is just itself) while a container
+    // Group now resolves to its rendered children — retiring Cut-2's leaf-only workaround.
+    for (const [id, set] of resolveSets) {
+      let box: Bounds | null = null;
+      for (const x of set) {
+        const fn = frame.nodes.get(x);
+        if (fn) box = accumulateRect(box, IDENTITY, fn.bounds.minX, fn.bounds.minY, fn.bounds.maxX, fn.bounds.maxY);
+      }
+      if (box === null) continue; // no own box and no drawn descendant this frame
+      const within = containBoxes.get(id);
+      if (within !== undefined) {
+        let ca = containAgg.get(id);
+        if (!ca) {
+          ca = { onStage: 0, outOfBounds: 0, lastFrame: -1, lastT: 0, lastBounds: box };
+          containAgg.set(id, ca);
+        }
+        ca.onStage++;
+        ca.lastFrame = i;
+        ca.lastT = t;
+        ca.lastBounds = box;
+        if (!contains(within, box)) ca.outOfBounds++;
+      }
+      const mt = memberTracks.get(id);
+      if (mt) {
+        mt.presence.add(i);
+        mt.bbox.set(i, {
+          minX: Math.round(box.minX),
+          minY: Math.round(box.minY),
+          maxX: Math.round(box.maxX),
+          maxY: Math.round(box.maxY),
+        });
+      }
+    }
+
+    // Cut 3 - keep the LAST frame's walk (child ink) for the settled LAYOUT_OVERFLOW
+    // check after the loop.
+    lastWalk = frame;
+    lastWalkT = t;
   }
 
   const rendered: SceneDiagnostic[] = [];
@@ -831,16 +909,15 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // during animation does not fire). An overshoot threshold (>0.5px, mirroring
   // TEXT_OVERFLOW) drops sub-pixel noise from the last-frame geometry.
   for (const [id, within] of containBoxes) {
-    const a = agg.get(id);
+    const a = containAgg.get(id);
     if (!a || a.onStage === 0) {
-      // A KNOWN node (ingest verified it exists) that produced NO own rendered box across
-      // the whole timeline → a container Group (which emits no draw command, so it has no
-      // own box) or a node gated off its entire span. Fail loud rather than silently guard
-      // nothing — matching the ingest unknown-id throw + validateRegion's box fail-loud.
-      // (Cut 3 will let a Group resolve to its composed-children box; until then, declare
-      // the leaf ids that carry the box.)
+      // A KNOWN node (ingest verified it exists) whose COMPOSED box was empty every frame
+      // → it drew nothing AND has no drawn descendant (a truly-empty container Group, or a
+      // fill-less / hidden node). Cut 3 lets a Group resolve to its composed-children box,
+      // so this now fires ONLY for the genuinely-boxless case. Fail loud rather than
+      // silently guard nothing — matching the ingest unknown-id throw + the box fail-loud.
       throw new CritiqueError(
-        `critique containBounds: node '${id}' produced no rendered box across the timeline — it is likely a container Group (which has no own box) or a node hidden its whole span. Declare its leaf node ids (e.g. the background/label that carry the box) instead. A keep-within box on a boxless node silently guards nothing.`,
+        `critique containBounds: node '${id}' produced no rendered box — it and its descendants drew nothing (an empty Group or a hidden/fill-less node). Give it a drawn child, or declare a leaf id that carries the box.`,
       );
     }
     if (a.outOfBounds !== a.onStage) continue; // drifted out its WHOLE on-stage life
@@ -854,16 +931,17 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // exceeds tolerance. The settled-frame selection is a pure integer adjacent-frame
   // compare (the HOLD, not a transient) — deterministic run-to-run.
   for (const g of opts.alignGroups ?? []) {
-    // A member that NEVER produced a rendered box across the timeline (empty presence) —
-    // a container Group (emits no draw command → no own box) or a fill-less / hidden leaf
-    // — can't be measured for alignment. Fail loud naming the REAL cause, matching Cut-1's
-    // containBounds verbatim, BEFORE the settle check below (which would otherwise
-    // misdiagnose a fully-static no-box member as "never at rest" and send the author down
-    // a timing rabbit hole). Cut 3 will let a Group resolve to its composed-children box.
+    // A member whose COMPOSED box was empty every frame (empty presence) — it AND any
+    // descendants drew nothing (a truly-empty container Group, or a fill-less / hidden
+    // node) — can't be measured for alignment. Cut 3 resolves a container Group to its
+    // drawn children, so this fires ONLY for the genuinely-boxless case; a Group WITH
+    // drawn children is measured via that composed box. Fail loud naming the REAL cause,
+    // BEFORE the settle check (which would otherwise misdiagnose a fully-static no-box
+    // member as "never at rest" and send the author down a timing rabbit hole).
     for (const id of g.members) {
       if (memberTracks.get(id)!.presence.size === 0) {
         throw new CritiqueError(
-          `critique alignGroups: member '${id}' produced no rendered box across the timeline — it is likely a container Group (which has no own box) or a fill-less / hidden node. Declare its leaf node ids (e.g. the background) instead of the container.`,
+          `critique alignGroups: member '${id}' produced no rendered box — it and its descendants drew nothing (an empty Group or a hidden/fill-less node). Give it a drawn child, or declare a leaf id that carries the box.`,
         );
       }
     }
@@ -874,6 +952,38 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       );
     }
     for (const d of alignGroupDiagnostics(g, memberTracks, settled, alignTolerance, gapTolerance)) rendered.push(d);
+  }
+
+  // LAYOUT_OVERFLOW - a Layout child whose rendered ink exceeds its computed flex slot at
+  // the SETTLED (last sampled) frame. Runs automatically - no declaration; the slot IS the
+  // author's declared intent, mapped to device via the Layout's captured world matrix (the
+  // space the child ink lives in). The >0.5px threshold drops sub-pixel noise; a pure read.
+  if (lastWalk !== undefined) {
+    const est = { estimate: true } as const;
+    for (const layoutId of layoutIds) {
+      const layout = scene.nodes.get(layoutId) as Layout;
+      // world matrix + slots + size + flowable child ids at the settled frame's time.
+      // worldMatrix() is the CTM the Layout's draw() composed its child boxes under.
+      // evaluateAt resolves an ANIMATED Layout at t; {estimate:true} matches
+      // #computeUncached's per-child opt-in (the memoized compute the render used).
+      const probe = evaluateAt(scene.playhead, lastWalkT, () => ({
+        m: layout.worldMatrix(),
+        boxes: layout.computedBoxes(measurer, est),
+        size: layout.computedSize(measurer, est),
+        ids: layout.children.filter((c) => c.intrinsicSize(measurer, est) !== null).map((c) => c.id),
+      }));
+      const ox = -probe.size.w / 2; // container center-origin (draw() places boxes from -size/2)
+      const oy = -probe.size.h / 2;
+      probe.boxes.forEach((b, ci) => {
+        const childId = probe.ids[ci];
+        const ink = childId !== undefined ? lastWalk!.nodes.get(childId) : undefined;
+        if (childId === undefined || ink === undefined) return; // unnamed / didn't draw
+        // slot rect in the Layout's LOCAL space (M maps it to device), as draw() composes it.
+        const slot = accumulateRect(null, probe.m, ox + b.x, oy + b.y, ox + b.x + b.w, oy + b.y + b.h)!;
+        const over = maxOvershoot(ink.bounds, slot);
+        if (over > 0.5) rendered.push(layoutOverflowDiagnostic(layoutId, childId, lastFrame, ink.bounds, slot, over));
+      });
+    }
   }
 
   const diagnostics = sortDiagnostics([...staticDiags, ...rendered]);
@@ -922,7 +1032,7 @@ function offCanvasDiagnostic(scene: Scene, id: string, a: NodeAgg, w: number, h:
       `Adjust its position/anchor to bring the box on-frame${need}.`,
     detail: {
       frame: a.lastFrame,
-      bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
+      bounds: intBox(b),
       size: { w, h },
       // 0.63 per-lever fix classes — moving the box on-frame is pure GEOMETRY, so
       // OFF_CANVAS is always auto-fixable (the loop adjusts position/anchor).
@@ -1088,12 +1198,7 @@ function occlusionDiagnostic(scene: Scene, id: string, a: NodeAgg): SceneDiagnos
       ...(a.occluderId !== undefined ? { occluder: a.occluderId } : {}),
       ...(a.occluderBounds
         ? {
-            occluderBounds: {
-              minX: round(a.occluderBounds.minX),
-              minY: round(a.occluderBounds.minY),
-              maxX: round(a.occluderBounds.maxX),
-              maxY: round(a.occluderBounds.maxY),
-            },
+            occluderBounds: intBox(a.occluderBounds),
           }
         : {}),
     },
@@ -1151,8 +1256,8 @@ function captionCollisionDiagnostic(scene: Scene, id: string, a: NodeAgg, sa: Sa
       `whole on-stage lifetime. Move it above the band top (y < ${r.minY}) or out of the reserved region.`,
     detail: {
       frame: a.lastFrame,
-      bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
-      region: { minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY },
+      bounds: intBox(b),
+      region: { ...r },
       ...(sa.owner !== undefined ? { owner: sa.owner } : {}),
       // 0.64 per-lever fix class — moving the node out of the reserved band is pure
       // GEOMETRY, so CAPTION_COLLISION is always auto-fixable.
@@ -1179,7 +1284,12 @@ function maxOvershoot(b: Bounds, r: Region): number {
  *  its whole on-stage span (the inverse of CAPTION_COLLISION). The fix is pure GEOMETRY —
  *  move it back in (`position`) or shrink it to fit (`scale`/`fontSize`) — so it is always
  *  auto-fixable. Names the edge(s) it exits + by how many device px. */
-function outOfBoundsDiagnostic(scene: Scene, id: string, a: NodeAgg, r: Region): SceneDiagnostic {
+function outOfBoundsDiagnostic(
+  scene: Scene,
+  id: string,
+  a: { lastBounds: Bounds; lastFrame: number; lastT: number },
+  r: Region,
+): SceneDiagnostic {
   const b = a.lastBounds;
   // Dominant exit edge + magnitude (device px past that edge) — the OFF_CANVAS style.
   const edges: readonly [string, number][] = [
@@ -1211,8 +1321,8 @@ function outOfBoundsDiagnostic(scene: Scene, id: string, a: NodeAgg, r: Region):
       `exits ${dir} for its whole on-stage lifetime. Move it back inside the box or shrink it to fit.`,
     detail: {
       frame: a.lastFrame,
-      bounds: { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) },
-      region: { minX: r.minX, minY: r.minY, maxX: r.maxX, maxY: r.maxY },
+      bounds: intBox(b),
+      region: { ...r },
       overshoot,
       // 0.77 per-lever fix classes — both bringing the node back in (position) and
       // shrinking it to fit (scale / fontSize) are pure GEOMETRY, so OUT_OF_BOUNDS is
@@ -1221,6 +1331,41 @@ function outOfBoundsDiagnostic(scene: Scene, id: string, a: NodeAgg, r: Region):
         { lever: 'position', fixClass: 'geometry', hint: 'move the node back inside the keep-within box' },
         { lever: 'scale', fixClass: 'geometry', hint: 'shrink the node (scale) to fit the box' },
         { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize (Text) to fit the box' },
+      ] satisfies FixHint[],
+    },
+  };
+}
+
+// ── Cut 3: Layout slot overflow (LAYOUT_OVERFLOW) ────────────────────────────────
+
+function layoutOverflowDiagnostic(
+  layoutId: string,
+  childId: string,
+  frame: number,
+  ink: Bounds,
+  slot: Bounds,
+  overRaw: number,
+): SceneDiagnostic {
+  const over = round(overRaw);
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'LAYOUT_OVERFLOW',
+    severity: 'warning',
+    source: 'critique',
+    node: childId,
+    message:
+      `Layout '${layoutId}' child '${childId}' overflows its slot by ${round(over)}px. Shrink it, or grow the slot.`,
+    detail: {
+      frame,
+      node: childId,
+      layout: layoutId,
+      ink: intBox(ink),
+      slot: intBox(slot),
+      overflow: over,
+      // both levers are pure GEOMETRY -> LAYOUT_OVERFLOW is always auto-fixable.
+      fixHints: [
+        { lever: 'size', fixClass: 'geometry', hint: 'shrink the child to its slot' },
+        { lever: 'padding', fixClass: 'geometry', hint: 'grow the slot (padding/gap/size)' },
       ] satisfies FixHint[],
     },
   };
@@ -1523,6 +1668,10 @@ function vec2At(scene: Scene, target: string, t: number): [number, number] | und
   return Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number'
     ? [v[0], v[1]]
     : undefined;
+}
+
+function intBox(b: Bounds): Region {
+  return { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) };
 }
 
 function round(n: number): number {

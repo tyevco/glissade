@@ -12,9 +12,10 @@
  * a confident verdict (identity-distinct from the estimating fallback); a separate
  * case exercises the MEASURER_FALLBACK downgrade with the estimating measurer.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { type Timeline, timeline, track, key } from '@glissade/core';
 import { createScene, Rect, Text, Group } from '../src/index.js';
+import { Row, loadYogaLayoutEngine } from '../src/layout.js';
 import { critique, sortDiagnostics, CritiqueError } from '../src/diagnostics.js';
 import { describe as apiDescribe } from '../src/describe.js';
 import { type TextMeasurer } from '../src/text.js';
@@ -398,9 +399,10 @@ describe('critique — OUT_OF_BOUNDS (keep-WITHIN box, whole-span, the inverse o
     expect(() => critique(scene, empty, { containBounds: [{ node: 'crad', within }] })).toThrow(/unknown node id/);
   });
 
-  it('FAILS LOUD on a container GROUP id (no own box → would silently guard nothing; declare its leaf ids)', () => {
-    // 'card' is a Group: indexed in the scene, but it emits no draw command, so it has no
-    // own device box. A keep-within box on it must fail loud, not silently no-op.
+  it('Cut 3: a container GROUP with a drawn child RESOLVES to its composed-children box (no throw)', () => {
+    // 'card' is a Group with a drawn child 'card-bg'. Cut 3 lets the Group resolve to the
+    // union of its rendered descendants, so a keep-within box on the Group no longer fails
+    // loud — it is checked against the composed box (retires Cut-2's leaf-only workaround).
     const scene = createScene({
       size,
       children: [
@@ -411,12 +413,19 @@ describe('critique — OUT_OF_BOUNDS (keep-WITHIN box, whole-span, the inverse o
       ],
     });
     scene.setTextMeasurer(stub);
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).not.toThrow();
+  });
+
+  it('Cut 3: a TRULY-EMPTY group (no drawn descendant) STILL fails loud (accurate distinct cause)', () => {
+    // 'card' is a Group with NO drawn descendant — it (and its subtree) produce no box at
+    // all. That genuinely-boxless case must still fail loud rather than silently guard nothing.
+    const scene = createScene({
+      size,
+      children: [new Group({ id: 'card', children: [] })],
+    });
+    scene.setTextMeasurer(stub);
     expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).toThrow(CritiqueError);
-    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).toThrow(/no rendered box|container Group/);
-    // the LEAF that carries the box works (declare 'card-bg' instead) — no throw.
-    expect(() =>
-      critique(scene, empty, { containBounds: [{ node: 'card-bg', within }] }),
-    ).not.toThrow();
+    expect(() => critique(scene, empty, { containBounds: [{ node: 'card', within }] })).toThrow(/produced no rendered box/);
   });
 
   it('describe() exposes the ContainBound type + lists containBounds on the critique options schema', () => {
@@ -605,15 +614,14 @@ describe('critique — MISALIGNED + UNEVEN_SPACING (explicit alignGroups, settle
     );
   });
 
-  it('FAILS LOUD naming the CONTAINER GROUP cause when a member has no own box (NOT the settle-timing message)', () => {
-    // 'grp' is a Group (emits no draw command → no own box); its child 'grp-bg' draws.
-    // Aligning the Group must fail loud with the container cause (Cut-1-consistent), NOT
-    // "no settled frame" (which would misdiagnose a fully-static no-box member as a timing
-    // problem — the 3-seat-measured rabbit hole).
+  it('Cut 3: a TRULY-EMPTY member group (no drawn descendant) still fails loud (NOT the settle-timing message)', () => {
+    // 'grp' is a Group with NO drawn descendant → genuinely boxless. Aligning it must fail
+    // loud with the boxless cause, NOT "no settled frame" (which would misdiagnose a
+    // static no-box member as a timing problem — the 3-seat-measured rabbit hole).
     const scene = createScene({
       size,
       children: [
-        new Group({ id: 'grp', children: [new Rect({ id: 'grp-bg', position: [50, 50], width: 30, height: 20, fill: '#3366ff' })] }),
+        new Group({ id: 'grp', children: [] }),
         new Rect({ id: 'c2', position: [100, 50], width: 30, height: 20, fill: '#33aa66' }),
       ],
     });
@@ -621,9 +629,7 @@ describe('critique — MISALIGNED + UNEVEN_SPACING (explicit alignGroups, settle
     const call = () => critique(scene, empty, { alignGroups: [{ members: ['grp', 'c2'] }] });
     expect(call).toThrow(CritiqueError);
     expect(call).toThrow(/produced no rendered box/);
-    expect(call).not.toThrow(/no settled frame/); // must blame the container, not timing
-    // declaring the drawn leaf child instead works (no throw, aligned)
-    expect(() => critique(scene, empty, { alignGroups: [{ members: ['grp-bg', 'c2'] }] })).not.toThrow();
+    expect(call).not.toThrow(/no settled frame/); // must blame the boxless member, not timing
   });
 
   it('FAILS LOUD on a non-integer alignTolerance', () => {
@@ -732,5 +738,188 @@ describe('critique — canonical sort + sort-invariance', () => {
     });
     scene2.setTextMeasurer(stub);
     expect(critique(scene1, empty).diagnostics).toEqual(critique(scene2, empty).diagnostics);
+  });
+});
+
+describe('critique — Cut 3 composed (group→children) box for containBounds + alignGroups', () => {
+  // a keep-within box confined to the LEFT half; a card centered at x=150 pokes RIGHT out.
+  const leftHalf = { minX: 0, minY: 0, maxX: 100, maxY: 100 };
+  const cardGroup = (): ReturnType<typeof createScene> => {
+    const scene = createScene({
+      size,
+      children: [
+        new Group({
+          id: 'card',
+          children: [new Rect({ id: 'card-bg', position: [150, 50], width: 60, height: 30, fill: '#3366ff' })],
+        }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    return scene;
+  };
+
+  it('a containBounds GROUP fires OUT_OF_BOUNDS identically to declaring its drawn leaf (composed box)', () => {
+    const grpRes = critique(cardGroup(), empty, { containBounds: [{ node: 'card', within: leftHalf }] });
+    const leafRes = critique(cardGroup(), empty, { containBounds: [{ node: 'card-bg', within: leftHalf }] });
+    const gd = grpRes.diagnostics.find((x) => x.code === 'OUT_OF_BOUNDS');
+    const ld = leafRes.diagnostics.find((x) => x.code === 'OUT_OF_BOUNDS');
+    expect(gd, 'container Group resolves to its composed-children box → fires').toBeDefined();
+    expect(ld).toBeDefined();
+    // SAME geometry verdict; only the reported node differs by which id was declared.
+    const gdd = gd!.detail as { overshoot: number; region: typeof leftHalf; bounds: unknown };
+    const ldd = ld!.detail as { overshoot: number; region: typeof leftHalf; bounds: unknown };
+    expect(gdd.overshoot).toBe(ldd.overshoot);
+    expect(gdd.region).toEqual(ldd.region);
+    expect(gdd.bounds).toEqual(ldd.bounds);
+    expect(gd!.node).toBe('card');
+    expect(ld!.node).toBe('card-bg');
+  });
+
+  it('aligning GROUP members gives the same MISALIGNED verdict as their drawn leaves (composed box)', () => {
+    // three cards, each a Group wrapping a bg Rect; the middle card is nudged 6px low.
+    const build = (): ReturnType<typeof createScene> => {
+      const scene = createScene({
+        size,
+        children: [
+          new Group({ id: 'g1', children: [new Rect({ id: 'b1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' })] }),
+          new Group({ id: 'g2', children: [new Rect({ id: 'b2', position: [100, 56], width: 30, height: 20, fill: '#33aa66' })] }),
+          new Group({ id: 'g3', children: [new Rect({ id: 'b3', position: [160, 50], width: 30, height: 20, fill: '#aa6633' })] }),
+        ],
+      });
+      scene.setTextMeasurer(stub);
+      return scene;
+    };
+    const grp = critique(build(), empty, { alignGroups: [{ id: 'row', members: ['g1', 'g2', 'g3'] }] }).diagnostics.find((x) => x.code === 'MISALIGNED');
+    const leaf = critique(build(), empty, { alignGroups: [{ id: 'row', members: ['b1', 'b2', 'b3'] }] }).diagnostics.find((x) => x.code === 'MISALIGNED');
+    expect(grp, 'Group members resolve to their composed boxes → MISALIGNED fires').toBeDefined();
+    expect(leaf).toBeDefined();
+    expect((grp!.detail as { spread: number }).spread).toBe((leaf!.detail as { spread: number }).spread);
+    expect((grp!.detail as { axis: string }).axis).toBe((leaf!.detail as { axis: string }).axis);
+    expect(grp!.node).toBe('g2'); // the composed group offender
+    expect(leaf!.node).toBe('b2');
+  });
+
+  it('a GROUP whose drawn child animates forever has NO settled frame (the accurate distinct cause)', () => {
+    // 'grp' wraps a Rect that slides then is CULLED (opacity→0) before the end, while c2 is
+    // static. Its composed box moves while co-present and is absent at the last frame → no
+    // frame is both present-and-still → the honest "no settled frame" (not the boxless cause).
+    const scene = createScene({
+      size,
+      children: [
+        new Group({ id: 'grp', children: [new Rect({ id: 'grp-bg', position: [20, 50], width: 30, height: 20, fill: '#3366ff' })] }),
+        new Rect({ id: 'c2', position: [100, 50], width: 30, height: 20, fill: '#33aa66' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const doc = timeline({
+      fps: 10,
+      duration: 2,
+      tracks: [
+        track('grp-bg/position', 'vec2', [key(0, [20, 50]), key(0.8, [120, 50])]),
+        track('grp-bg/opacity', 'number', [key(0, 1), key(0.8, 1), key(0.85, 0)]),
+      ],
+    });
+    const call = () => critique(scene, doc, { fps: 10, alignGroups: [{ id: 'row', members: ['grp', 'c2'] }] });
+    expect(call).toThrow(/no settled frame/);
+    expect(call).not.toThrow(/produced no rendered box/); // it DID draw — not the boxless cause
+  });
+});
+
+describe('critique — Cut 3 Layout accessors (computedBoxes/computedGaps/computedPadding) + LAYOUT_OVERFLOW', () => {
+  beforeAll(async () => {
+    await loadYogaLayoutEngine();
+  });
+
+  it('computedBoxes/computedGaps/computedPadding read the SAME memoized compute (one-source)', () => {
+    const row = Row({
+      id: 'bar',
+      width: 'auto',
+      height: 'auto',
+      gap: 10,
+      padding: 5,
+      children: [
+        new Rect({ id: 'a', width: 60, height: 40, fill: '#3366ff' }),
+        new Rect({ id: 'b', width: 80, height: 40, fill: '#33aa66' }),
+      ],
+    });
+    const boxes = row.computedBoxes(stub);
+    expect(boxes.length).toBe(2);
+    // padding inset + child intrinsic size preserved (the boxes the flow actually placed)
+    expect(boxes[0]).toMatchObject({ x: 5, y: 5, w: 60, h: 40 });
+    expect(boxes[1]).toMatchObject({ w: 80, h: 40 });
+    // the ACTUAL inter-child gap along the main axis = computedGaps
+    expect(boxes[1]!.x - (boxes[0]!.x + boxes[0]!.w)).toBe(10);
+    expect(row.computedGaps(stub)).toEqual([10]);
+    expect(row.computedPadding()).toBe(5);
+  });
+
+  it('LAYOUT_OVERFLOW FIRES on a child whose ink (a fat stroke) exceeds its computed slot', () => {
+    const scene = createScene({
+      size: { w: 400, h: 200 },
+      children: [
+        Row({
+          id: 'bar',
+          position: [200, 100],
+          width: 'auto',
+          height: 'auto',
+          gap: 10,
+          padding: 5,
+          children: [
+            new Rect({ id: 'plain', width: 60, height: 40, fill: '#3366ff' }),
+            // a 20px stroke overhangs the stroke-free 60×40 slot by 10px each side.
+            new Rect({ id: 'fat', width: 60, height: 40, fill: '#111111', stroke: '#ff0000', strokeWidth: 20 }),
+          ],
+        }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty);
+    const d = res.diagnostics.find((x) => x.code === 'LAYOUT_OVERFLOW');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('fat');
+    expect(d!.source).toBe('critique');
+    expect(d!.severity).toBe('warning');
+    const detail = d!.detail as { layout: string; overflow: number; slot: unknown; ink: unknown; fixHints: { fixClass: string }[] };
+    expect(detail.layout).toBe('bar');
+    expect(detail.overflow).toBeGreaterThan(0.5);
+    expect(detail.slot).toBeDefined();
+    expect(detail.ink).toBeDefined();
+    expect(detail.fixHints.some((h) => h.fixClass === 'geometry')).toBe(true);
+    // the plain child fits its slot exactly → no overflow reported for it
+    expect(res.diagnostics.some((x) => x.code === 'LAYOUT_OVERFLOW' && x.node === 'plain')).toBe(false);
+  });
+
+  it('LAYOUT_OVERFLOW is CLEAN when every child fits its slot (byte-for-byte fit)', () => {
+    const scene = createScene({
+      size: { w: 400, h: 200 },
+      children: [
+        Row({
+          id: 'bar',
+          position: [200, 100],
+          width: 'auto',
+          height: 'auto',
+          gap: 10,
+          padding: 5,
+          children: [
+            new Rect({ id: 'a', width: 60, height: 40, fill: '#3366ff' }),
+            new Rect({ id: 'b', width: 60, height: 40, fill: '#33aa66' }),
+          ],
+        }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    expect(critique(scene, empty).diagnostics.some((x) => x.code === 'LAYOUT_OVERFLOW')).toBe(false);
+  });
+
+  it('describe() lists the Layout instance methods (computedSize/intrinsicSize/computedBoxes/computedPadding/computedGaps)', () => {
+    const m = apiDescribe();
+    const layout = m.nodes.Layout;
+    expect(layout?.methods, 'Layout node should carry a methods table').toBeDefined();
+    const byName = new Map((layout!.methods ?? []).map((x) => [x.name, x]));
+    for (const n of ['computedSize', 'intrinsicSize', 'computedBoxes', 'computedPadding', 'computedGaps']) {
+      expect(byName.has(n), `methods should list ${n}`).toBe(true);
+      expect(byName.get(n)!.purpose.length).toBeGreaterThan(0);
+      expect(byName.get(n)!.returns.length).toBeGreaterThan(0);
+    }
   });
 });

@@ -38,6 +38,7 @@ import goldenGauge from '../../examples/src/scenes/golden-gauge.js';
 import goldenExpr from '../../examples/src/scenes/golden-expr.js';
 import goldenCompositing from '../../examples/src/scenes/golden-compositing.js';
 import goldenLayoutCritique from '../../examples/src/scenes/golden-layout-critique.js';
+import goldenLayoutOverflow from '../../examples/src/scenes/golden-layout-overflow.js';
 import goldenBoxText from '../../examples/src/scenes/golden-boxtext.js';
 import goldenComponent from '../../examples/src/scenes/golden-component.js';
 import goldenMotionPathMorph from '../../examples/src/scenes/golden-motionpath-morph.js';
@@ -212,6 +213,11 @@ const CORPUS: { name: string; mod: SceneModule }[] = [
   // (UNEVEN_SPACING) — the RENDERED pixel proof of the defect critique() reports.
   // No tracks → one deterministic frame across the grid, byte-stable on Skia.
   { name: 'layout-critique', mod: goldenLayoutCritique },
+  // Cut 3 LAYOUT_OVERFLOW showcase: a STATIC real Row of three cells where the middle
+  // cell's fat stroke ink bleeds out of the flex slot Yoga reserved from its stroke-free
+  // intrinsic box — the RENDERED pixel proof of the defect critique() reports. Needs the
+  // Yoga engine (loaded above); no tracks → one deterministic frame, byte-stable on Skia.
+  { name: 'layout-overflow', mod: goldenLayoutOverflow },
   // 0.35 Text box-valign: baseline-anchored vs ink-centered pills
   { name: 'boxtext', mod: goldenBoxText },
   // 0.36 defineComponent: one LowerThird component instanced 3× (independent namespaces)

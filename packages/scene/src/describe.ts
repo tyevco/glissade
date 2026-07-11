@@ -106,6 +106,30 @@ export interface DescribedNode {
    * `@glissade/scene/layout`). Omitted for base-index nodes.
    */
   subpath?: string;
+  /**
+   * Cut 3 — public INSTANCE methods on this node worth discovering (beyond the
+   * construction `props` + animatable `bindable` surface): the read-accessors an
+   * agent calls on a built node instance (e.g. `Layout.computedSize()` /
+   * `computedBoxes()`). Curated + machine-discoverable so these aren't invisible in
+   * the manifest. Present only where a node exposes such methods (absent for the
+   * plain shapes); a manifest captured before Cut 3 omits it.
+   */
+  methods?: readonly DescribedMethod[];
+}
+
+/**
+ * Cut 3 — one public instance method surfaced on a {@link DescribedNode.methods}
+ * list: its `name`, a one-line `purpose`, and the `returns` value shape. These are
+ * READ-accessors on a node instance (not `window.glissade.<name>` globals), so they
+ * are discovered here rather than on the helper/surface tables.
+ */
+export interface DescribedMethod {
+  /** The method name (call it on the node instance, e.g. `layout.computedBoxes()`). */
+  name: string;
+  /** One line: what it returns / what it's for. */
+  purpose: string;
+  /** The return-value shape (e.g. `{ w, h }`, `readonly { x, y, w, h }[]`, `number`). */
+  returns: string;
 }
 
 /**
@@ -867,8 +891,23 @@ function describeLayoutNode(): DescribedNode {
     if (spec === undefined) throw new Error(`describe(): Layout construction prop '${prop}' has no type metadata`);
     props[prop] = { type: spec.type, animatable: false, ...(spec.required ? { required: true } : {}) };
   }
-  return { props, positionAnchor: 'top-left', bindable: bindableProps(props), subpath: LAYOUT_SUBPATH };
+  return { props, positionAnchor: 'top-left', bindable: bindableProps(props), subpath: LAYOUT_SUBPATH, methods: LAYOUT_METHODS };
 }
+
+/**
+ * The public READ-accessor methods on a `Layout` instance (Cut 3). `computedSize`/
+ * `intrinsicSize` shipped earlier but were UNDOCUMENTED in describe(); listed here
+ * retroactively alongside the Cut-3 `computedBoxes`/`computedPadding`/`computedGaps`
+ * so the whole read surface is machine-discoverable. Drift-guarded by describe.test.ts
+ * (each name resolves to a real method on the imported `Layout`).
+ */
+const LAYOUT_METHODS: readonly DescribedMethod[] = [
+  { name: 'computedSize', purpose: 'resolved container size', returns: '{ w, h }' },
+  { name: 'intrinsicSize', purpose: 'content-driven size for parent flow', returns: '{ w, h }' },
+  { name: 'computedBoxes', purpose: 'per-flowable-child boxes placed', returns: 'readonly { x, y, w, h }[]' },
+  { name: 'computedPadding', purpose: 'resolved padding inset', returns: 'number' },
+  { name: 'computedGaps', purpose: 'inter-child gaps on the main axis', returns: 'readonly number[]' },
+];
 
 // The built-in node taxonomy members that have a concrete class on the base scene
 // index (Layout lives on the budgeted ./layout entry; Custom adds no props of its

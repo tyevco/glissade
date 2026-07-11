@@ -104,6 +104,17 @@ export type DiagnosticCode =
   //   source:'critique' (heuristic). Both fire only from a declared alignGroup.
   | 'MISALIGNED'
   | 'UNEVEN_SPACING'
+  // Cut 3 critique() RENDERED code — additive to the wire contract (no schema bump).
+  // LAYOUT_OVERFLOW: a Layout (Row/Column/Stack) child whose RENDERED ink box exceeds
+  // its COMPUTED flex SLOT (the box the LayoutEngine assigned it) by more than a fixed
+  // threshold — content bigger than the layout reserved for it (a stroked/over-sized
+  // child pokes past its cell). Runs AUTOMATICALLY over every Layout node (the slot is
+  // the author's declared intent, no opt-in). The slot is mapped to device via the SAME
+  // world matrix the child rendered under (computedBoxes() reads the one memoized compute
+  // the DisplayList origins came from), so ink and slot are compared in one space. A
+  // composed-geometry check like OFF_CANVAS, so validateScene (static LOCAL positions
+  // only) does NOT emit it. source:'critique' (heuristic).
+  | 'LAYOUT_OVERFLOW'
   // 0.61 static export-fidelity code — additive to the wire contract (no schema
   // bump). RENDER_ONLY_EXPORT: a node uses a RENDER-ONLY feature (motionBlur /
   // echo / shake / camera-shake / mesh fill / text-cursor / reveal mask) that the
