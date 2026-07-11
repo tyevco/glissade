@@ -186,6 +186,10 @@ export {
   // `catch (e) { if (e instanceof glissade.CritiqueError) … }` against the IIFE —
   // matching every other error class on the surface (KenBurnsError/MeasurerRequiredError/…).
   type ContainBound,
+  // Cut 2 — the EXPLICIT sibling-alignment group type (MISALIGNED + UNEVEN_SPACING).
+  // A no-build author declares an alignGroup against window.glissade; the type on the
+  // IIFE lets tooling/typedoc name it (mirrors ContainBound/SafeArea).
+  type AlignGroup,
   CritiqueError,
 } from '@glissade/scene/diagnostics';
 // 0.61 — the interchange/edit half of the verification suite on the IIFE: diff(a,b)

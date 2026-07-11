@@ -4,6 +4,7 @@
 
 ```ts
 
+import { AlignGroup } from '@glissade/scene/diagnostics';
 import { assess } from '@glissade/scene/diagnostics';
 import { AssessOptions } from '@glissade/scene/diagnostics';
 import { AssessResult } from '@glissade/scene/diagnostics';
@@ -121,6 +122,8 @@ import { TypeOnOpts } from '@glissade/scene/type';
 import { TypeOnResult } from '@glissade/scene/type';
 import { validateScene } from '@glissade/scene/diagnostics';
 import { ValidateSceneResult } from '@glissade/scene/diagnostics';
+
+export { AlignGroup }
 
 export { assess }
 

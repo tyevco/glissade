@@ -83,6 +83,9 @@ export {
   // thrown when its `node` doesn't resolve to a node with its own box (typo / container
   // Group), instanceof-catchable on window.glissade like RegionError.
   type ContainBound,
+  // Cut 2 — the EXPLICIT sibling-alignment group (MISALIGNED + UNEVEN_SPACING). A set
+  // of >= 2 member node ids checked at the group's settled frame. A pure critique input.
+  type AlignGroup,
   CritiqueError,
 } from './critique.js';
 

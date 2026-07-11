@@ -13,7 +13,7 @@
  * case exercises the MEASURER_FALLBACK downgrade with the estimating measurer.
  */
 import { describe, expect, it } from 'vitest';
-import { type Timeline, timeline } from '@glissade/core';
+import { type Timeline, timeline, track, key } from '@glissade/core';
 import { createScene, Rect, Text, Group } from '../src/index.js';
 import { critique, sortDiagnostics, CritiqueError } from '../src/diagnostics.js';
 import { describe as apiDescribe } from '../src/describe.js';
@@ -426,6 +426,208 @@ describe('critique — OUT_OF_BOUNDS (keep-WITHIN box, whole-span, the inverse o
     const opt = entry?.options?.find((o) => o.name === 'containBounds');
     expect(opt, 'critique options should list containBounds').toBeDefined();
     expect(opt!.type).toBe('ContainBound[]');
+  });
+});
+
+describe('critique — MISALIGNED + UNEVEN_SPACING (explicit alignGroups, settled-frame)', () => {
+  // a top-aligned, evenly-spaced row of 3 same-size rects (position = box CENTER).
+  // centers cy=50 for all; boxes [25,55] [85,115] [145,175]; gaps 30, 30.
+  const cleanRow = (): ReturnType<typeof createScene> => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [100, 50], width: 30, height: 20, fill: '#33aa66' }),
+        new Rect({ id: 'c3', position: [160, 50], width: 30, height: 20, fill: '#aa6633' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    return scene;
+  };
+  const group = { id: 'row', members: ['c1', 'c2', 'c3'] };
+
+  it('does NOT fire for a clean top-aligned, evenly-spaced row (the control)', () => {
+    const res = critique(cleanRow(), empty, { alignGroups: [group] });
+    expect(res.diagnostics.some((x) => x.code === 'MISALIGNED')).toBe(false);
+    expect(res.diagnostics.some((x) => x.code === 'UNEVEN_SPACING')).toBe(false);
+  });
+
+  it('FIRES MISALIGNED when one member is nudged off the cross-axis (> alignTolerance)', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [100, 56], width: 30, height: 20, fill: '#33aa66' }), // 6px low
+        new Rect({ id: 'c3', position: [160, 50], width: 30, height: 20, fill: '#aa6633' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { alignGroups: [group] });
+    const d = res.diagnostics.find((x) => x.code === 'MISALIGNED');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('c2');
+    expect(d!.severity).toBe('warning');
+    expect(d!.source).toBe('critique');
+    const detail = d!.detail as { axis: string; spread: number; group: string; fixHints: { lever: string; fixClass: string }[] };
+    expect(detail.axis).toBe('row'); // axis inferred (horizontally spread) as 'row'
+    expect(detail.spread).toBeGreaterThan(2); // > alignTolerance default 2
+    expect(detail.fixHints.some((h) => h.lever === 'position' && h.fixClass === 'geometry')).toBe(true);
+    // spacing is untouched (x unchanged) → no UNEVEN_SPACING
+    expect(res.diagnostics.some((x) => x.code === 'UNEVEN_SPACING')).toBe(false);
+  });
+
+  it('FIRES UNEVEN_SPACING when one gap is widened (> gapTolerance), naming the offending member + pair', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [100, 50], width: 30, height: 20, fill: '#33aa66' }),
+        new Rect({ id: 'c3', position: [170, 50], width: 30, height: 20, fill: '#aa6633' }), // gap widened
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { alignGroups: [group] });
+    const d = res.diagnostics.find((x) => x.code === 'UNEVEN_SPACING');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('c3'); // the member AFTER the offending gap
+    expect(d!.source).toBe('critique');
+    const detail = d!.detail as { axis: string; spread: number; gap: number; pair: string[]; fixHints: { lever: string }[] };
+    expect(detail.axis).toBe('row');
+    expect(detail.spread).toBeGreaterThan(2);
+    expect(detail.pair).toEqual(['c2', 'c3']); // the gap bounded by c2→c3
+    expect(detail.fixHints.some((h) => h.lever === 'gap')).toBe(true);
+    // cross-axis is clean (all cy=50) → no MISALIGNED
+    expect(res.diagnostics.some((x) => x.code === 'MISALIGNED')).toBe(false);
+  });
+
+  it('infers a COLUMN axis + fires MISALIGNED on the horizontal center when members are vertically spread', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'k1', position: [100, 20], width: 30, height: 16, fill: '#3366ff' }),
+        new Rect({ id: 'k2', position: [108, 50], width: 30, height: 16, fill: '#33aa66' }), // 8px right
+        new Rect({ id: 'k3', position: [100, 80], width: 30, height: 16, fill: '#aa6633' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { alignGroups: [{ id: 'col', members: ['k1', 'k2', 'k3'] }] });
+    const d = res.diagnostics.find((x) => x.code === 'MISALIGNED');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('k2');
+    expect((d!.detail as { axis: string }).axis).toBe('column');
+  });
+
+  it('WHOLE-POINT settled-frame: a staggered slide-IN that HOLDS aligned does NOT false-positive', () => {
+    // three rects whose RESTING positions form the clean row; each slides in from the
+    // left on a staggered entrance, then holds. The settled frame is the HOLD (all
+    // still), not any transient slide-in frame → clean.
+    const scene = cleanRow();
+    const doc = timeline((tl) =>
+      tl
+        .to('c1/position.x', 40, { from: -60, duration: 0.5 })
+        .to('c2/position.x', 100, { from: -60, at: 0.2, duration: 0.5 })
+        .to('c3/position.x', 160, { from: -60, at: 0.4, duration: 0.5 }),
+    );
+    const res = critique(scene, doc, { fps: 10, alignGroups: [group] });
+    expect(res.diagnostics.some((x) => x.code === 'MISALIGNED')).toBe(false);
+    expect(res.diagnostics.some((x) => x.code === 'UNEVEN_SPACING')).toBe(false);
+  });
+
+  it('FAILS LOUD on an unknown / typo’d member id', () => {
+    expect(() => critique(cleanRow(), empty, { alignGroups: [{ members: ['c1', 'cX'] }] })).toThrow(CritiqueError);
+    expect(() => critique(cleanRow(), empty, { alignGroups: [{ members: ['c1', 'cX'] }] })).toThrow(/unknown node id/);
+  });
+
+  it('FAILS LOUD on a 1-member group (needs >= 2 to check alignment)', () => {
+    expect(() => critique(cleanRow(), empty, { alignGroups: [{ members: ['c1'] }] })).toThrow(CritiqueError);
+    expect(() => critique(cleanRow(), empty, { alignGroups: [{ members: ['c1'] }] })).toThrow(/at least 2/);
+  });
+
+  it('FAILS LOUD when a group has no settled frame (a member animates + is culled while co-present)', () => {
+    // c1 static the whole time; c2 slides continuously AND fades out (opacity→0) before
+    // the end → it is co-present with c1 early but never at rest while present, and absent
+    // at the last frame. No frame has BOTH present-and-still → fail loud.
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [50, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [20, 50], width: 30, height: 20, fill: '#33aa66' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    // explicit doc (absolute keyframe times): c2 slides x 20→120 over [0,0.8] then holds,
+    // but its opacity drops to 0 at t=0.85 → c2 is culled frames 9..20 while c1 (untracked,
+    // static) is present the whole time. duration 2 → the LAST frame (20) has c2 absent, so
+    // the settled-at-end clamp can't settle it; and while co-present (0..8) c2 is moving.
+    const doc = timeline({
+      fps: 10,
+      duration: 2,
+      tracks: [
+        track('c2/position', 'vec2', [key(0, [20, 50]), key(0.8, [120, 50])]),
+        track('c2/opacity', 'number', [key(0, 1), key(0.8, 1), key(0.85, 0)]),
+      ],
+    });
+    expect(() => critique(scene, doc, { fps: 10, alignGroups: [{ id: 'row', members: ['c1', 'c2'] }] })).toThrow(
+      /no settled frame/,
+    );
+  });
+
+  it('FAILS LOUD on a non-integer alignTolerance', () => {
+    expect(() => critique(cleanRow(), empty, { alignGroups: [group], alignTolerance: 1.5 })).toThrow(CritiqueError);
+    expect(() => critique(cleanRow(), empty, { alignGroups: [group], alignTolerance: 1.5 })).toThrow(/finite integer/);
+  });
+
+  it('FAILS LOUD on a negative gapTolerance', () => {
+    expect(() => critique(cleanRow(), empty, { alignGroups: [group], gapTolerance: -1 })).toThrow(CritiqueError);
+  });
+
+  it('a raised tolerance suppresses a small misalignment (the slack knob works)', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [100, 54], width: 30, height: 20, fill: '#33aa66' }), // 4px low
+        new Rect({ id: 'c3', position: [160, 50], width: 30, height: 20, fill: '#aa6633' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    // default tolerance 2 → fires; raised to 5 → suppressed
+    expect(critique(scene, empty, { alignGroups: [group] }).diagnostics.some((x) => x.code === 'MISALIGNED')).toBe(true);
+    expect(
+      critique(scene, empty, { alignGroups: [group], alignTolerance: 5 }).diagnostics.some((x) => x.code === 'MISALIGNED'),
+    ).toBe(false);
+  });
+
+  it('emits NOTHING without alignGroups (opt-in; byte-identical to prior behaviour)', () => {
+    const res = critique(cleanRow(), empty);
+    expect(res.diagnostics.some((x) => x.code === 'MISALIGNED' || x.code === 'UNEVEN_SPACING')).toBe(false);
+  });
+
+  it('sort-invariance holds with the new codes (shuffle-then-sort ≡ emit)', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 'c1', position: [40, 50], width: 30, height: 20, fill: '#3366ff' }),
+        new Rect({ id: 'c2', position: [100, 58], width: 30, height: 20, fill: '#33aa66' }), // off cross-axis
+        new Rect({ id: 'c3', position: [175, 50], width: 30, height: 20, fill: '#aa6633' }), // gap widened
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const emitted = critique(scene, empty, { alignGroups: [group] }).diagnostics;
+    expect(emitted.some((x) => x.code === 'MISALIGNED')).toBe(true);
+    expect(emitted.some((x) => x.code === 'UNEVEN_SPACING')).toBe(true);
+    expect(sortDiagnostics([...emitted].reverse())).toEqual(emitted);
+  });
+
+  it('describe() exposes the AlignGroup type + lists alignGroups/alignTolerance/gapTolerance on critique options', () => {
+    const m = apiDescribe();
+    expect(m.types?.AlignGroup).toEqual({ id: 'string?', members: 'string[]', axis: "'row' | 'column' (optional)" });
+    const entry = (m.surface ?? []).find((e) => e.name === 'critique');
+    const opt = entry?.options?.find((o) => o.name === 'alignGroups');
+    expect(opt, 'critique options should list alignGroups').toBeDefined();
+    expect(opt!.type).toBe('AlignGroup[]');
+    expect(entry?.options?.some((o) => o.name === 'alignTolerance')).toBe(true);
+    expect(entry?.options?.some((o) => o.name === 'gapTolerance')).toBe(true);
   });
 });
 

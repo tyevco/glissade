@@ -454,6 +454,10 @@ const STRUCTURED_TYPES: { [typeName: string]: { [field: string]: string } } = {
   // 0.77 — the keep-WITHIN box for critique's containBounds (the inverse of SafeArea).
   // `node` is a node id; `within` is the shared integer Region (validateRegion-ingested).
   ContainBound: { node: 'string', within: 'Region' },
+  // Cut 2 — an EXPLICIT sibling-alignment group for critique's alignGroups
+  // (MISALIGNED + UNEVEN_SPACING). `members` are node ids (>= 2); `axis` is omitted
+  // to infer from geometry at the settled frame.
+  AlignGroup: { id: 'string?', members: 'string[]', axis: "'row' | 'column' (optional)" },
 };
 
 /**
@@ -555,6 +559,24 @@ const SURFACE_OPTIONS: { [name: string]: SurfaceOption[] } = {
       type: 'ContainBound[]',
       summary:
         'keep-WITHIN boxes (the inverse of safeAreas): a node whose rendered box drifts fully outside its declared `within` box for its whole on-stage span raises OUT_OF_BOUNDS',
+    },
+    {
+      name: 'alignGroups',
+      type: 'AlignGroup[]',
+      summary:
+        'EXPLICIT sibling-alignment groups (>= 2 member node ids, optional row/column axis): checked at the group’s settled frame, a cross-axis center spread beyond alignTolerance raises MISALIGNED and an uneven main-axis gap spread beyond gapTolerance raises UNEVEN_SPACING',
+    },
+    {
+      name: 'alignTolerance',
+      type: 'number',
+      default: 2,
+      summary: 'cross-axis alignment slack in integer px (default 2); a group whose member centers span more raises MISALIGNED',
+    },
+    {
+      name: 'gapTolerance',
+      type: 'number',
+      default: 2,
+      summary: 'inter-member spacing slack in integer px (default 2); a group whose main-axis gaps span more raises UNEVEN_SPACING',
     },
   ],
 };

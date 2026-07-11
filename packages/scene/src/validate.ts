@@ -89,6 +89,21 @@ export type DiagnosticCode =
   // validateScene (static LOCAL positions only) does NOT emit it. Only nodes with a
   // declared box participate. source:'critique' (heuristic).
   | 'OUT_OF_BOUNDS'
+  // Cut 2 critique() RENDERED codes — additive to the wire contract (no schema bump).
+  // Both are EXPLICIT-group sibling diagnostics: an author declares an
+  // `opts.alignGroups` group (>= 2 member node ids, optional row/column axis), and
+  // critique() reads the members' INTEGER device boxes at the group's SETTLED frame
+  // (the max grid frame where every member is present AND its integer bbox equals the
+  // next frame's — the HOLD, excluding entrance/exit/rotation transients).
+  // - MISALIGNED: the members' cross-axis centers span more than `alignTolerance` px
+  //   (a row not sharing a baseline / a column not sharing an x). Names the offender
+  //   (furthest from the median center). A composed-geometry check like OFF_CANVAS, so
+  //   validateScene (static LOCAL positions only) does NOT emit it. source:'critique'.
+  // - UNEVEN_SPACING: the inter-member gaps along the main axis span more than
+  //   `gapTolerance` px (unequal spacing). Names the offending gap's trailing member.
+  //   source:'critique' (heuristic). Both fire only from a declared alignGroup.
+  | 'MISALIGNED'
+  | 'UNEVEN_SPACING'
   // 0.61 static export-fidelity code — additive to the wire contract (no schema
   // bump). RENDER_ONLY_EXPORT: a node uses a RENDER-ONLY feature (motionBlur /
   // echo / shake / camera-shake / mesh fill / text-cursor / reveal mask) that the

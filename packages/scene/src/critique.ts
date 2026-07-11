@@ -87,6 +87,27 @@ export interface ContainBound {
 }
 
 /**
+ * Cut 2 — an author-declared alignment GROUP: a set of sibling node ids whose
+ * rendered boxes are EXPECTED to align (share a cross-axis center) and be evenly
+ * spaced along a main axis. The EXPLICIT-declaration form (auto-inference of groups
+ * is deferred): the author lists the ids they intend to read as a row/column, and
+ * critique() checks MISALIGNED / UNEVEN_SPACING against the members' INTEGER device
+ * boxes at the group's SETTLED frame. A PURE critique input — never a render input,
+ * so every golden stays byte-identical.
+ */
+export interface AlignGroup {
+  /** Optional label used in the diagnostic message + `detail.group` (else the
+   *  member id list is used). */
+  id?: string;
+  /** The node ids whose boxes should align / be evenly spaced (>= 2). Every id must
+   *  resolve to a node in the scene (fail-loud on a typo). */
+  members: string[];
+  /** The main axis. Omitted ⇒ INFERRED from the members' geometry at the settled
+   *  frame (the axis with the larger spread of box centers; a tie prefers 'row'). */
+  axis?: 'row' | 'column';
+}
+
+/**
  * 0.77 — thrown when a critique() input cannot be resolved, the fail-loud twin of
  * validateRegion's {@link RegionError} on a malformed box. `containBounds` fails loud
  * when its `node` id does NOT resolve to a node with its own rendered box — a typo'd
@@ -160,6 +181,29 @@ export interface CritiqueOptions {
    * input — never a render input, so every golden stays byte-identical.
    */
   containBounds?: readonly ContainBound[];
+  /**
+   * Cut 2 — EXPLICIT sibling-alignment groups (MISALIGNED + UNEVEN_SPACING). Each
+   * group lists >= 2 member node ids (fail-loud on an unknown id) whose rendered
+   * boxes are read at the group's SETTLED frame (the max grid frame where every
+   * member is present AND at rest — its integer bbox equals the next frame's, so
+   * entrance/exit/rotation transients are excluded). A member group that never
+   * simultaneously settles fails loud. Empty ⇒ byte-identical behaviour (no group is
+   * checked). Auto-inference of groups is deferred — declare the group explicitly.
+   */
+  alignGroups?: readonly AlignGroup[];
+  /**
+   * Cut 2 — the cross-axis alignment slack (integer px, default 2). A group whose
+   * members' cross-axis centers span MORE than this raises MISALIGNED. Must be a
+   * finite integer >= 0 (fail-loud otherwise, mirroring validateRegion's integer
+   * discipline).
+   */
+  alignTolerance?: number;
+  /**
+   * Cut 2 — the inter-member spacing slack (integer px, default 2). A group whose
+   * main-axis gaps span MORE than this raises UNEVEN_SPACING. Must be a finite
+   * integer >= 0 (fail-loud otherwise).
+   */
+  gapTolerance?: number;
 }
 
 /**
@@ -469,6 +513,23 @@ interface NodeAgg {
   outOfBounds: number;
 }
 
+/** Cut 2 — an INTEGER-quantized device bbox (the geometry the alignment checks read;
+ *  no float ever reaches a compare). */
+interface IntBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Cut 2 — per alignment-group MEMBER tracking across the sample grid: the frames it
+ *  was on-stage (`presence`) and its integer bbox at each (`bbox`). Keyed by node id
+ *  so a member shared by two groups is tracked once. */
+interface MemberTrack {
+  presence: Set<number>;
+  bbox: Map<number, IntBox>;
+}
+
 // ── the primitive ─────────────────────────────────────────────────────────────
 
 /**
@@ -532,6 +593,32 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     }
     containBoxes.set(entry.node, validateRegion(entry.within, 'critique containBounds'));
   }
+  // Cut 2 — the alignment groups (MISALIGNED + UNEVEN_SPACING). FAIL LOUD BEFORE the
+  // sample loop (fast, symmetric with the containBounds ingest): every member id must
+  // resolve (a typo silently checks nothing) and a group needs >= 2 members. Then a
+  // per-member track (presence Set + integer-quantized bbox per on-stage frame) is
+  // primed so the sample loop records it. The settled-frame selection + the actual
+  // checks run AFTER the loop. Empty ⇒ byte-identical behaviour (no member tracked).
+  const alignTolerance = validateTolerance(opts.alignTolerance, 'alignTolerance');
+  const gapTolerance = validateTolerance(opts.gapTolerance, 'gapTolerance');
+  const memberTracks = new Map<string, MemberTrack>();
+  for (const g of opts.alignGroups ?? []) {
+    for (const id of g.members) {
+      if (!scene.nodes.has(id)) {
+        throw new CritiqueError(
+          `critique alignGroups: unknown node id '${id}' — it must match a node id in the scene (check for a typo). An alignment-group member that resolves to nothing can't be checked.`,
+        );
+      }
+    }
+    if (g.members.length < 2) {
+      throw new CritiqueError(
+        `critique alignGroups: group ${groupLabel(g)} needs at least 2 members to check alignment (got ${g.members.length}).`,
+      );
+    }
+    for (const id of g.members) {
+      if (!memberTracks.has(id)) memberTracks.set(id, { presence: new Set<number>(), bbox: new Map<number, IntBox>() });
+    }
+  }
   const duration = compileTimeline(timeline).duration;
   const lastFrame = Math.max(0, Math.floor(duration * fps));
 
@@ -586,6 +673,19 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       // region containment; deterministic). Nodes without a declared box don't participate.
       const within = containBoxes.get(id);
       if (within !== undefined && !contains(within, fn.bounds)) a.outOfBounds++;
+      // Cut 2 — record this member's presence + INTEGER-quantized device bbox at this
+      // frame (SAME "produces a rendered box" onStage semantics). The integer box is
+      // the geometry the settled-frame compare + the diagnostics read (no float ever).
+      const mt = memberTracks.get(id);
+      if (mt) {
+        mt.presence.add(i);
+        mt.bbox.set(i, {
+          minX: Math.round(fn.bounds.minX),
+          minY: Math.round(fn.bounds.minY),
+          maxX: Math.round(fn.bounds.maxX),
+          maxY: Math.round(fn.bounds.maxY),
+        });
+      }
       // OCCLUSION: on-frame AND fully covered by a single opaque occluder above it.
       if (intersectsFrame(fn.bounds, w, h)) {
         let cover: Occluder | undefined;
@@ -746,6 +846,21 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     if (a.outOfBounds !== a.onStage) continue; // drifted out its WHOLE on-stage life
     if (maxOvershoot(a.lastBounds, within) <= 0.5) continue; // sub-pixel noise guard
     rendered.push(outOfBoundsDiagnostic(scene, id, a, within));
+  }
+
+  // MISALIGNED + UNEVEN_SPACING — EXPLICIT alignment groups. For each group, select
+  // the SETTLED frame (fail loud if none), read the members' integer boxes there, and
+  // emit the two sibling diagnostics where the cross-axis center spread / gap spread
+  // exceeds tolerance. The settled-frame selection is a pure integer adjacent-frame
+  // compare (the HOLD, not a transient) — deterministic run-to-run.
+  for (const g of opts.alignGroups ?? []) {
+    const settled = settledFrame(g, memberTracks, lastFrame);
+    if (settled < 0) {
+      throw new CritiqueError(
+        `critique alignGroups: group ${groupLabel(g)} has no settled frame — its members are never simultaneously present and at rest, so alignment can't be checked. Ensure the group holds still (no member moving) on at least one sampled frame.`,
+      );
+    }
+    for (const d of alignGroupDiagnostics(g, memberTracks, settled, alignTolerance, gapTolerance)) rendered.push(d);
   }
 
   const diagnostics = sortDiagnostics([...staticDiags, ...rendered]);
@@ -1093,6 +1208,238 @@ function outOfBoundsDiagnostic(scene: Scene, id: string, a: NodeAgg, r: Region):
         { lever: 'position', fixClass: 'geometry', hint: 'move the node back inside the keep-within box' },
         { lever: 'scale', fixClass: 'geometry', hint: 'shrink the node (scale) to fit the box' },
         { lever: 'fontSize', fixClass: 'geometry', hint: 'reduce fontSize (Text) to fit the box' },
+      ] satisfies FixHint[],
+    },
+  };
+}
+
+// ── Cut 2: alignment groups (MISALIGNED + UNEVEN_SPACING) ────────────────────────
+
+/** Validate an optional integer-px tolerance (default 2). Mirrors validateRegion's
+ *  integer discipline: a float / negative / non-finite value fails loud. */
+function validateTolerance(v: number | undefined, name: string): number {
+  if (v === undefined) return 2;
+  if (typeof v !== 'number' || !Number.isFinite(v) || !Number.isInteger(v) || v < 0) {
+    throw new CritiqueError(
+      `critique alignGroups: ${name} must be a finite integer >= 0 px (got ${JSON.stringify(v)}).`,
+    );
+  }
+  return v;
+}
+
+/** A group's label for messages / `detail.group`: its `id`, else its member list. */
+function groupLabel(g: AlignGroup): string {
+  return g.id !== undefined ? `'${g.id}'` : `[${g.members.join(', ')}]`;
+}
+
+/**
+ * THE load-bearing determinism piece. `settledFrame` = the MAXIMUM grid frame f in
+ * [0, lastFrame] such that EVERY member is PRESENT at f AND SETTLED at f, where
+ * SETTLED = its integer bbox[f] equals bbox[f+1] (the four ints deep-equal), with
+ * bbox[lastFrame+1] clamped to bbox[lastFrame] (a member static at the end is settled
+ * at lastFrame). A member absent at f or f+1 is not settled at f. A PURE integer
+ * adjacent-frame compare — it selects the HOLD (entrance-stagger / exit-whoosh /
+ * rotation-settle all MOVE the integer bbox → excluded). Returns -1 if none exists.
+ */
+function settledFrame(g: AlignGroup, tracks: Map<string, MemberTrack>, lastFrame: number): number {
+  const boxAt = (id: string, f: number): IntBox | undefined => {
+    const ff = f > lastFrame ? lastFrame : f; // clamp bbox[lastFrame+1] := bbox[lastFrame]
+    return tracks.get(id)!.bbox.get(ff);
+  };
+  const presentAt = (id: string, f: number): boolean => {
+    const ff = f > lastFrame ? lastFrame : f; // presence[lastFrame+1] := presence[lastFrame]
+    return tracks.get(id)!.presence.has(ff);
+  };
+  const settledAt = (id: string, f: number): boolean => {
+    if (!presentAt(id, f) || !presentAt(id, f + 1)) return false;
+    const b0 = boxAt(id, f);
+    const b1 = boxAt(id, f + 1);
+    if (!b0 || !b1) return false;
+    return b0.minX === b1.minX && b0.minY === b1.minY && b0.maxX === b1.maxX && b0.maxY === b1.maxY;
+  };
+  for (let f = lastFrame; f >= 0; f--) {
+    if (g.members.every((id) => settledAt(id, f))) return f;
+  }
+  return -1;
+}
+
+/** The MEDIAN of a list of integers. Odd count → the middle; EVEN count → the
+ *  LOWER-median (the lower of the two middle values) — chosen for a deterministic
+ *  integer reference that is an actual member value. */
+function median(vals: number[]): number {
+  const s = [...vals].sort((a, b) => a - b);
+  const n = s.length;
+  return n % 2 === 1 ? s[(n - 1) / 2]! : s[n / 2 - 1]!;
+}
+
+/**
+ * The MISALIGNED + UNEVEN_SPACING diagnostics for one group at its settled frame.
+ * Reads each member's integer box, infers the axis when omitted (larger center
+ * spread; tie → 'row'), and emits where the cross-axis center spread exceeds
+ * `alignTol` / the main-axis gap spread exceeds `gapTol`. Deterministic integer reads;
+ * offender by max deviation from the median, tie-broken by node id.
+ */
+function alignGroupDiagnostics(
+  g: AlignGroup,
+  tracks: Map<string, MemberTrack>,
+  frame: number,
+  alignTol: number,
+  gapTol: number,
+): SceneDiagnostic[] {
+  const out: SceneDiagnostic[] = [];
+  const label = groupLabel(g);
+  const boxes = g.members.map((id) => ({ id, b: tracks.get(id)!.bbox.get(frame)! }));
+  const cx = (b: IntBox): number => Math.round((b.minX + b.maxX) / 2);
+  const cy = (b: IntBox): number => Math.round((b.minY + b.maxY) / 2);
+
+  // axis — declared, else inferred from the larger center spread (tie → 'row').
+  let axis: 'row' | 'column';
+  if (g.axis !== undefined) {
+    axis = g.axis;
+  } else {
+    const xs = boxes.map((m) => cx(m.b));
+    const ys = boxes.map((m) => cy(m.b));
+    const spreadX = Math.max(...xs) - Math.min(...xs);
+    const spreadY = Math.max(...ys) - Math.min(...ys);
+    axis = spreadX >= spreadY ? 'row' : 'column';
+  }
+
+  // MISALIGNED — cross-axis centers (row ⇒ cy, column ⇒ cx).
+  const crossCenter = (b: IntBox): number => (axis === 'row' ? cy(b) : cx(b));
+  const crosses = boxes.map((m) => ({ id: m.id, c: crossCenter(m.b) }));
+  const crossVals = crosses.map((c) => c.c);
+  const refCenter = median(crossVals);
+  const spreadC = Math.max(...crossVals) - Math.min(...crossVals);
+  if (spreadC > alignTol) {
+    let off = crosses[0]!;
+    for (const c of crosses) {
+      const d = Math.abs(c.c - refCenter);
+      const bd = Math.abs(off.c - refCenter);
+      if (d > bd || (d === bd && c.id < off.id)) off = c;
+    }
+    out.push(misalignedDiagnostic(label, axis, off.id, Math.abs(off.c - refCenter), refCenter, spreadC, alignTol, frame));
+  }
+
+  // UNEVEN_SPACING — inter-member gaps along the main axis. Sort by (main start, id).
+  const mainStart = (b: IntBox): number => (axis === 'row' ? b.minX : b.minY);
+  const mainEnd = (b: IntBox): number => (axis === 'row' ? b.maxX : b.maxY);
+  const sorted = [...boxes].sort((A, B) => {
+    const sa = mainStart(A.b);
+    const sb = mainStart(B.b);
+    if (sa !== sb) return sa - sb;
+    return A.id < B.id ? -1 : A.id > B.id ? 1 : 0;
+  });
+  const gaps: { gap: number; before: string; after: string }[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    gaps.push({ gap: mainStart(sorted[i + 1]!.b) - mainEnd(sorted[i]!.b), before: sorted[i]!.id, after: sorted[i + 1]!.id });
+  }
+  if (gaps.length >= 1) {
+    const gapVals = gaps.map((gg) => gg.gap);
+    const refGap = median(gapVals);
+    const spreadG = Math.max(...gapVals) - Math.min(...gapVals);
+    if (spreadG > gapTol) {
+      let offGap = gaps[0]!;
+      for (const gg of gaps) {
+        const d = Math.abs(gg.gap - refGap);
+        const bd = Math.abs(offGap.gap - refGap);
+        if (d > bd || (d === bd && gg.after < offGap.after)) offGap = gg;
+      }
+      out.push(unevenSpacingDiagnostic(label, axis, offGap, refGap, spreadG, gapTol, frame));
+    }
+  }
+  return out;
+}
+
+/** Cut 2 MISALIGNED builder — a group's members do not share a cross-axis center.
+ *  The fix is pure GEOMETRY (nudge the offender to the shared center). */
+function misalignedDiagnostic(
+  label: string,
+  axis: 'row' | 'column',
+  offender: string,
+  off: number,
+  reference: number,
+  spread: number,
+  tolerance: number,
+  frame: number,
+): SceneDiagnostic {
+  const crossName = axis === 'row' ? 'vertical' : 'horizontal';
+  const crossAxisProp = axis === 'row' ? 'y' : 'x';
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'MISALIGNED',
+    severity: 'warning',
+    source: 'critique',
+    node: offender,
+    message:
+      `align group ${label}: member '${offender}' is ${round(off)}px off the ${axis}'s ${crossName} alignment ` +
+      `(spread ${round(spread)}px > tolerance ${tolerance}px). Nudge it to the group's shared ${crossName} center ` +
+      `(${crossAxisProp}=${round(reference)}) so the ${axis} lines up.`,
+    detail: {
+      frame,
+      axis,
+      group: label,
+      offender,
+      reference: round(reference),
+      spread: round(spread),
+      tolerance,
+      // moving the offender to the shared cross-axis center is pure GEOMETRY, so
+      // MISALIGNED is always auto-fixable.
+      fixHints: [
+        {
+          lever: 'position',
+          fixClass: 'geometry',
+          hint: `move '${offender}' to the group's shared ${crossName} center (${crossAxisProp}=${round(reference)})`,
+        },
+      ] satisfies FixHint[],
+    },
+  };
+}
+
+/** Cut 2 UNEVEN_SPACING builder — a group's inter-member gaps are unequal. The fix is
+ *  pure GEOMETRY (re-space the offender / even the group's gaps). */
+function unevenSpacingDiagnostic(
+  label: string,
+  axis: 'row' | 'column',
+  offGap: { gap: number; before: string; after: string },
+  reference: number,
+  spread: number,
+  tolerance: number,
+  frame: number,
+): SceneDiagnostic {
+  const along = axis === 'row' ? 'horizontal' : 'vertical';
+  return {
+    schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
+    code: 'UNEVEN_SPACING',
+    severity: 'warning',
+    source: 'critique',
+    node: offGap.after,
+    message:
+      `align group ${label}: the gap before member '${offGap.after}' is ${round(offGap.gap)}px vs the group's ` +
+      `typical ${round(reference)}px (spread ${round(spread)}px > tolerance ${tolerance}px) along the ${along} ${axis}. ` +
+      `Even out the spacing between '${offGap.before}' and '${offGap.after}'.`,
+    detail: {
+      frame,
+      axis,
+      group: label,
+      offender: offGap.after,
+      reference: round(reference),
+      spread: round(spread),
+      tolerance,
+      gap: round(offGap.gap),
+      pair: [offGap.before, offGap.after],
+      // re-spacing the offender (or evening the whole group) is pure GEOMETRY, so
+      // UNEVEN_SPACING is always auto-fixable. A `gap` lever is offered alongside.
+      fixHints: [
+        {
+          lever: 'position',
+          fixClass: 'geometry',
+          hint: `move '${offGap.after}' so its gap matches the group's ${round(reference)}px spacing`,
+        },
+        {
+          lever: 'gap',
+          fixClass: 'geometry',
+          hint: `even out the group's spacing to ~${round(reference)}px between members`,
+        },
       ] satisfies FixHint[],
     },
   };
