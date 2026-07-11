@@ -1,5 +1,16 @@
 # glissade
 
+## 0.78.0
+
+### Patch Changes
+
+- Updated dependencies [a8ea513]
+- Updated dependencies [ff3052b]
+- Updated dependencies [0cb5f9b]
+  - @glissade/scene@0.78.0
+  - @glissade/player@0.78.0
+  - @glissade/core@0.78.0
+
 ## 0.78.0-pre.2
 
 ### Patch Changes

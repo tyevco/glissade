@@ -1,5 +1,24 @@
 # @glissade/scene
 
+## 0.78.0
+
+### Minor Changes
+
+- ff3052b: critique — layout-critique arc Cut 2: `MISALIGNED` + `UNEVEN_SPACING` sibling diagnostics via EXPLICIT declared groups.
+
+  `critique(scene, timeline, { alignGroups })` now checks author-declared alignment groups. Each `AlignGroup` (`{ id?, members: string[] (>= 2), axis?: 'row' | 'column' }`) is read at its **settled frame** — the maximum grid frame where every member is present AND at rest (its integer device bbox equals the next frame's, so entrance-stagger / exit-whoosh / rotation-settle transients are excluded; a member never simultaneously present-and-still fails loud). At that frame:
+
+  - **`MISALIGNED`** — the members' cross-axis centers span more than `alignTolerance` px (default 2). Names the offender furthest from the median center; `detail.axis` is the declared axis, else inferred from the larger center spread (tie → `'row'`). Pure-geometry `position` fixHint.
+  - **`UNEVEN_SPACING`** — the inter-member gaps along the main axis span more than `gapTolerance` px (default 2). Names the trailing member of the offending gap + the bounding pair; `position` + `gap` fixHints.
+
+  Both are `severity:'warning'`, `source:'critique'`, off the render path (never mutate a node → goldens byte-identical), on integer geometry with a deterministic median-reference / max-deviation offender (tie-broken by node id) and canonical `detail.frame` sort. Unknown member ids, sub-2-member groups, and non-integer/negative tolerances fail loud with `CritiqueError`. New `AlignGroup` type on `@glissade/scene/diagnostics` and re-exported onto the browser IIFE; new `alignGroups`/`alignTolerance`/`gapTolerance` options + the `AlignGroup` type registered in `describe()`. Auto-inference of groups is deferred — declare them explicitly. Adds a `layout-critique` golden showcasing the caught defect.
+
+### Patch Changes
+
+- a8ea513: critique `alignGroups`: fail loud with the RIGHT cause when a member has no own rendered box. A member that never produces a draw command — a container `Group`, or a fill-less / hidden leaf — now throws a `CritiqueError` naming the real cause ("member 'X' produced no rendered box across the timeline — it is likely a container Group … declare its leaf node ids"), matching Cut-1's `containBounds` verbatim, instead of the misleading "no settled frame" (which blamed a _timing_ problem on a fully-static member and sent authors chasing a non-existent settle issue). "No settled frame" is now reserved for genuinely-never-still _drawn_ members. Three-seat measured on 0.78.0-pre.0 (a static container-Group member + a fill-less leaf both misdiagnosed). The composed-children-box resolution (declare the natural Group id) lands in Cut 3.
+- 0cb5f9b: critique `MISALIGNED`: mode-aware alignment reference (instead of center-only). Members are "aligned" if they share ANY of the three cross-axis references — start edge, center, or end edge (row → top/center/bottom, column → left/center/right). `MISALIGNED` fires only when all three integer spreads exceed `alignTolerance` (a genuinely-scattered row). This passes a legitimately top-/bottom-aligned row of different-sized members (real UI center- or edge-aligns a button↔chip / icon↔label), which the shipped center-only check would false-fire. The reported reference is the min-spread one (a spread tie prefers center, then start, then end — canonical); the offender is furthest-from-median on that reference, tie-broken by node id. `detail.alignMode` names the nearest-shared reference. All-integer device-px, deterministic; a strict superset of center-only. Three-seat measured on shipped 0.78.0-pre.0 (a top-aligned different-height pair false-fired under center-only).
+  - @glissade/core@0.78.0
+
 ## 0.78.0-pre.2
 
 ### Patch Changes
