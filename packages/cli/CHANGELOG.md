@@ -1,5 +1,21 @@
 # @glissade/cli
 
+## 0.79.0
+
+### Patch Changes
+
+- Updated dependencies [bf2a9f3]
+- Updated dependencies [5c3d208]
+  - @glissade/scene@0.79.0
+  - @glissade/backend-skia@0.79.0
+  - @glissade/interact@0.79.0
+  - @glissade/lottie@0.79.0
+  - @glissade/narrate@0.79.0
+  - @glissade/player@0.79.0
+  - @glissade/svg@0.79.0
+  - @glissade/core@0.79.0
+  - @glissade/sfx@0.79.0
+
 ## 0.79.0-pre.1
 
 ### Patch Changes
