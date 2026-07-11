@@ -923,3 +923,66 @@ describe('critique — Cut 3 Layout accessors (computedBoxes/computedGaps/comput
     }
   });
 });
+
+describe('critique — Cut 3 LAYOUT_OVERFLOW settled-hold frame (animated Layouts)', () => {
+  beforeAll(async () => {
+    await loadYogaLayoutEngine();
+  });
+  const size2 = { w: 400, h: 200 };
+  // A single-child Row; the child is a Rect whose STROKE (ignored by the flex slot, so it
+  // enlarges only the rendered ink) is the overflow lever — measurer-independent.
+  const rowWith = (child: Rect): ReturnType<typeof createScene> => {
+    const s = createScene({
+      size: size2,
+      children: [Row({ id: 'bar', position: [200, 100], width: 'auto', height: 'auto', padding: 5, children: [child] })],
+    });
+    s.setTextMeasurer(stub);
+    return s;
+  };
+
+  it('(a) a STATIC Layout child overflow still FIRES (settled hold = the only/last frame)', () => {
+    const res = critique(rowWith(new Rect({ id: 'c', width: 60, height: 40, fill: '#111', stroke: '#f00', strokeWidth: 24 })), empty);
+    const d = res.diagnostics.find((x) => x.code === 'LAYOUT_OVERFLOW');
+    expect(d).toBeDefined();
+    expect(d!.node).toBe('c');
+  });
+
+  it('(b) a transient overflow that SETTLES to FIT (holds fit at its hold) does NOT false-fire', () => {
+    // stroke starts big (overflow), shrinks to 0 by t=0.5, then HOLDS 0 (fits) to the end. The
+    // settled hold is the still stroke-0 tail → fits → no fire (the early transient is ignored).
+    const s = rowWith(new Rect({ id: 'c', width: 60, height: 40, fill: '#111', stroke: '#f00' }));
+    const doc = timeline({ fps: 10, duration: 1, tracks: [track('c/strokeWidth', 'number', [key(0, 40), key(0.5, 0), key(1, 0)])] });
+    const res = critique(s, doc, { fps: 10 });
+    expect(res.diagnostics.some((x) => x.code === 'LAYOUT_OVERFLOW')).toBe(false);
+  });
+
+  it('(c) overflow at a SETTLED HOLD earlier than the last frame FIRES (settled catches it; a last-frame check would MISS it)', () => {
+    // static stroke (persistent overflow) but the child is CULLED (opacity→0) before the end →
+    // its settled HOLD is an EARLY frame (still + overflowing) and it is ABSENT at the last
+    // sampled frame. A last-frame check finds no ink there and misses it; the settled hold fires.
+    const s = rowWith(new Rect({ id: 'c', width: 60, height: 40, fill: '#111', stroke: '#f00', strokeWidth: 24 }));
+    const doc = timeline({ fps: 10, duration: 1, tracks: [track('c/opacity', 'number', [key(0, 1), key(0.6, 1), key(0.65, 0)])] });
+    const res = critique(s, doc, { fps: 10 });
+    const d = res.diagnostics.find((x) => x.code === 'LAYOUT_OVERFLOW');
+    expect(d, 'the settled-hold overflow should fire even though the child is absent at the last sampled frame').toBeDefined();
+    expect(d!.node).toBe('c');
+    expect((d!.detail as { frame: number }).frame).toBeLessThan(10); // an EARLIER hold, not frame 10
+  });
+
+  it('(d) a Layout whose child NEVER settles is SILENT-skipped (no diagnostic, no throw)', () => {
+    // stroke grows continuously (bbox never still) AND the child is culled before the end → no
+    // frame is both present-and-still → settledFrame = -1 → silent skip (best-effort auto, NOT a
+    // declared guard, so NEVER a CritiqueError — the alignGroups no-settle path throws; this one does not).
+    const s = rowWith(new Rect({ id: 'c', width: 60, height: 40, fill: '#111', stroke: '#f00' }));
+    const doc = timeline({
+      fps: 10,
+      duration: 1,
+      tracks: [
+        track('c/strokeWidth', 'number', [key(0, 0), key(0.8, 40)]),
+        track('c/opacity', 'number', [key(0, 1), key(0.8, 1), key(0.85, 0)]),
+      ],
+    });
+    expect(() => critique(s, doc, { fps: 10 })).not.toThrow();
+    expect(critique(s, doc, { fps: 10 }).diagnostics.some((x) => x.code === 'LAYOUT_OVERFLOW')).toBe(false);
+  });
+});

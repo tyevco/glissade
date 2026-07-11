@@ -694,10 +694,22 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // Detect a Layout by its pinned `describeType` marker (minification-safe; avoids a
   // runtime import of the ./layout Yoga entry). Its worldMatrix() maps a computed flex
   // slot into the child's device-ink space at the settled frame.
+  const est = { estimate: true } as const;
   const layoutIds = new Set<string>();
   for (const [id, node] of scene.nodes) if (node.describeType === 'Layout') layoutIds.add(id);
-  let lastWalk: FrameWalk | undefined;
-  let lastWalkT = 0;
+  // Per Layout: its FLOWABLE children in child order (undefined slot = unnamed child, kept
+  // for index-alignment with computedBoxes). Each IDED flowable child gets a MemberTrack so
+  // the sample loop records its per-frame presence + integer device bbox — the input the
+  // SETTLED-HOLD frame is found over (the alignGroups discipline, applied per Layout).
+  const layoutFlowIds = new Map<string, (string | undefined)[]>();
+  const layoutChildTracks = new Map<string, MemberTrack>();
+  for (const layoutId of layoutIds) {
+    const layout = scene.nodes.get(layoutId) as Layout;
+    const flowIds = layout.children.filter((c) => c.intrinsicSize(measurer, est) !== null).map((c) => c.id);
+    layoutFlowIds.set(layoutId, flowIds);
+    for (const cid of flowIds)
+      if (cid !== undefined && !layoutChildTracks.has(cid)) layoutChildTracks.set(cid, { presence: new Set<number>(), bbox: new Map<number, IntBox>() });
+  }
 
   let sampledFrames = 0;
   for (let i = 0; i <= lastFrame; i++) {
@@ -767,19 +779,18 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
       const mt = memberTracks.get(id);
       if (mt) {
         mt.presence.add(i);
-        mt.bbox.set(i, {
-          minX: Math.round(box.minX),
-          minY: Math.round(box.minY),
-          maxX: Math.round(box.maxX),
-          maxY: Math.round(box.maxY),
-        });
+        mt.bbox.set(i, intQuant(box));
       }
     }
 
-    // Cut 3 - keep the LAST frame's walk (child ink) for the settled LAYOUT_OVERFLOW
-    // check after the loop.
-    lastWalk = frame;
-    lastWalkT = t;
+    // Cut 3 - track each Layout flowable child's own integer device bbox this frame, so the
+    // SETTLED HOLD frame (its bbox still) can be selected post-loop (the alignGroups path).
+    for (const [childId, track] of layoutChildTracks) {
+      const fn = frame.nodes.get(childId);
+      if (fn === undefined) continue;
+      track.presence.add(i);
+      track.bbox.set(i, intQuant(fn.bounds));
+    }
   }
 
   const rendered: SceneDiagnostic[] = [];
@@ -945,7 +956,7 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
         );
       }
     }
-    const settled = settledFrame(g, memberTracks, lastFrame);
+    const settled = settledFrame(g.members, memberTracks, lastFrame);
     if (settled < 0) {
       throw new CritiqueError(
         `critique alignGroups: group ${groupLabel(g)} has no settled frame — its members each render but are never simultaneously present and at rest, so alignment can't be checked. Ensure the group holds still (no member moving) on at least one sampled frame.`,
@@ -954,36 +965,40 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
     for (const d of alignGroupDiagnostics(g, memberTracks, settled, alignTolerance, gapTolerance)) rendered.push(d);
   }
 
-  // LAYOUT_OVERFLOW - a Layout child whose rendered ink exceeds its computed flex slot at
-  // the SETTLED (last sampled) frame. Runs automatically - no declaration; the slot IS the
-  // author's declared intent, mapped to device via the Layout's captured world matrix (the
-  // space the child ink lives in). The >0.5px threshold drops sub-pixel noise; a pure read.
-  if (lastWalk !== undefined) {
-    const est = { estimate: true } as const;
-    for (const layoutId of layoutIds) {
-      const layout = scene.nodes.get(layoutId) as Layout;
-      // world matrix + slots + size + flowable child ids at the settled frame's time.
-      // worldMatrix() is the CTM the Layout's draw() composed its child boxes under.
-      // evaluateAt resolves an ANIMATED Layout at t; {estimate:true} matches
-      // #computeUncached's per-child opt-in (the memoized compute the render used).
-      const probe = evaluateAt(scene.playhead, lastWalkT, () => ({
-        m: layout.worldMatrix(),
-        boxes: layout.computedBoxes(measurer, est),
-        size: layout.computedSize(measurer, est),
-        ids: layout.children.filter((c) => c.intrinsicSize(measurer, est) !== null).map((c) => c.id),
-      }));
-      const ox = -probe.size.w / 2; // container center-origin (draw() places boxes from -size/2)
-      const oy = -probe.size.h / 2;
-      probe.boxes.forEach((b, ci) => {
-        const childId = probe.ids[ci];
-        const ink = childId !== undefined ? lastWalk!.nodes.get(childId) : undefined;
-        if (childId === undefined || ink === undefined) return; // unnamed / didn't draw
-        // slot rect in the Layout's LOCAL space (M maps it to device), as draw() composes it.
-        const slot = accumulateRect(null, probe.m, ox + b.x, oy + b.y, ox + b.x + b.w, oy + b.y + b.h)!;
-        const over = maxOvershoot(ink.bounds, slot);
-        if (over > 0.5) rendered.push(layoutOverflowDiagnostic(layoutId, childId, lastFrame, ink.bounds, slot, over));
-      });
-    }
+  // LAYOUT_OVERFLOW - a Layout child whose rendered ink exceeds its computed flex slot at the
+  // Layout's SETTLED HOLD frame: the max grid frame where every flowable child's integer bbox
+  // is still (the SAME discipline MISALIGNED/UNEVEN_SPACING use), so a child still moving at
+  // the last sampled frame is judged at its hold, not a mid-transient. Runs automatically - no
+  // declaration; the slot IS the author's intent, mapped to device via worldMatrix(). A Layout
+  // whose children never simultaneously settle is SILENT-skipped (best-effort auto, never a
+  // throw). The >0.5px threshold drops sub-pixel noise; a pure read (render-neutral).
+  for (const layoutId of layoutIds) {
+    const flowIds = layoutFlowIds.get(layoutId)!;
+    const members = flowIds.filter((x): x is string => x !== undefined);
+    if (members.length === 0) continue; // no trackable (ided) flowable child
+    const settled = settledFrame(members, layoutChildTracks, lastFrame);
+    if (settled < 0) continue; // never simultaneously still -> silent-skip (not a declared guard)
+    const layout = scene.nodes.get(layoutId) as Layout;
+    // slots + size + world matrix at the SETTLED frame's time. evaluateAt resolves an ANIMATED
+    // Layout at its hold; worldMatrix() is the CTM its draw() composed the child boxes under;
+    // {estimate:true} matches #computeUncached's per-child opt-in (the memoized compute rendered).
+    const probe = evaluateAt(scene.playhead, settled / fps, () => ({
+      m: layout.worldMatrix(),
+      boxes: layout.computedBoxes(measurer, est),
+      size: layout.computedSize(measurer, est),
+    }));
+    const ox = -probe.size.w / 2; // container center-origin (draw() places boxes from -size/2)
+    const oy = -probe.size.h / 2;
+    probe.boxes.forEach((b, ci) => {
+      const childId = flowIds[ci];
+      if (childId === undefined) return; // unnamed child -> no tracked ink
+      const ink = layoutChildTracks.get(childId)!.bbox.get(settled); // integer ink bbox AT the hold
+      if (ink === undefined) return; // child not present at the settled frame
+      // slot rect in the Layout's LOCAL space (M maps it to device), as draw() composes it.
+      const slot = accumulateRect(null, probe.m, ox + b.x, oy + b.y, ox + b.x + b.w, oy + b.y + b.h)!;
+      const over = maxOvershoot(ink, slot);
+      if (over > 0.5) rendered.push(layoutOverflowDiagnostic(layoutId, childId, settled, ink, slot, over));
+    });
   }
 
   const diagnostics = sortDiagnostics([...staticDiags, ...rendered]);
@@ -1399,7 +1414,7 @@ function groupLabel(g: AlignGroup): string {
  * adjacent-frame compare — it selects the HOLD (entrance-stagger / exit-whoosh /
  * rotation-settle all MOVE the integer bbox → excluded). Returns -1 if none exists.
  */
-function settledFrame(g: AlignGroup, tracks: Map<string, MemberTrack>, lastFrame: number): number {
+function settledFrame(members: readonly string[], tracks: Map<string, MemberTrack>, lastFrame: number): number {
   const boxAt = (id: string, f: number): IntBox | undefined => {
     const ff = f > lastFrame ? lastFrame : f; // clamp bbox[lastFrame+1] := bbox[lastFrame]
     return tracks.get(id)!.bbox.get(ff);
@@ -1416,7 +1431,7 @@ function settledFrame(g: AlignGroup, tracks: Map<string, MemberTrack>, lastFrame
     return b0.minX === b1.minX && b0.minY === b1.minY && b0.maxX === b1.maxX && b0.maxY === b1.maxY;
   };
   for (let f = lastFrame; f >= 0; f--) {
-    if (g.members.every((id) => settledAt(id, f))) return f;
+    if (members.every((id) => settledAt(id, f))) return f;
   }
   return -1;
 }
@@ -1672,6 +1687,11 @@ function vec2At(scene: Scene, target: string, t: number): [number, number] | und
 
 function intBox(b: Bounds): Region {
   return { minX: round(b.minX), minY: round(b.minY), maxX: round(b.maxX), maxY: round(b.maxY) };
+}
+
+/** Cut 3 - integer-quantize a device box (Math.round) for settled-hold bbox tracking. */
+function intQuant(b: Bounds): IntBox {
+  return { minX: Math.round(b.minX), minY: Math.round(b.minY), maxX: Math.round(b.maxX), maxY: Math.round(b.maxY) };
 }
 
 function round(n: number): number {

@@ -1,0 +1,5 @@
+---
+'@glissade/scene': patch
+---
+
+critique `LAYOUT_OVERFLOW`: check the integer-bbox-settled HOLD frame, not the last-sampled frame. Each Layout's overflow is now judged at the last frame where its flowable children's integer device bboxes are still (`bbox[f]==bbox[f+1]`) — the same `settledFrame` discipline MISALIGNED/UNEVEN_SPACING use — so a child mid-transition at the final sample is judged at its hold (no spurious overflow), and a persistent overflow at a hold that isn't the last frame is no longer missed (the develops-and-persists case a last-frame check would drop). A Layout whose children never settle → silent-skip (LAYOUT_OVERFLOW is best-effort/auto, unlike the declared alignGroups guard which fails loud). `settledFrame` is refactored to take a `members[]` list so both callers share the identical determinism logic. Render-neutral (critique off the render path — every golden byte-identical). Off-base convenience budgets `scene/diagnostics` 21→22 and `scene/layoutCtors` 4→5 lifted with CI gz-delta headroom (the ~0.16 kB delta applies to Node subpath budgets too, not just the browser IIFE — the sacred base embed held at 38.83).

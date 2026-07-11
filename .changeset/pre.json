@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.78.0"
   },
   "changesets": [
-    "critique-cut3"
+    "critique-cut3",
+    "critique-layout-overflow-settled"
   ]
 }
