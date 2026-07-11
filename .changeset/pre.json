@@ -26,6 +26,7 @@
     "@glissade/vite-plugin": "0.77.0"
   },
   "changesets": [
+    "critique-align-nobox-message",
     "critique-align-spacing",
     "critique-mode-aware-misaligned"
   ]

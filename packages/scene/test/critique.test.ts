@@ -605,6 +605,27 @@ describe('critique — MISALIGNED + UNEVEN_SPACING (explicit alignGroups, settle
     );
   });
 
+  it('FAILS LOUD naming the CONTAINER GROUP cause when a member has no own box (NOT the settle-timing message)', () => {
+    // 'grp' is a Group (emits no draw command → no own box); its child 'grp-bg' draws.
+    // Aligning the Group must fail loud with the container cause (Cut-1-consistent), NOT
+    // "no settled frame" (which would misdiagnose a fully-static no-box member as a timing
+    // problem — the 3-seat-measured rabbit hole).
+    const scene = createScene({
+      size,
+      children: [
+        new Group({ id: 'grp', children: [new Rect({ id: 'grp-bg', position: [50, 50], width: 30, height: 20, fill: '#3366ff' })] }),
+        new Rect({ id: 'c2', position: [100, 50], width: 30, height: 20, fill: '#33aa66' }),
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const call = () => critique(scene, empty, { alignGroups: [{ members: ['grp', 'c2'] }] });
+    expect(call).toThrow(CritiqueError);
+    expect(call).toThrow(/produced no rendered box/);
+    expect(call).not.toThrow(/no settled frame/); // must blame the container, not timing
+    // declaring the drawn leaf child instead works (no throw, aligned)
+    expect(() => critique(scene, empty, { alignGroups: [{ members: ['grp-bg', 'c2'] }] })).not.toThrow();
+  });
+
   it('FAILS LOUD on a non-integer alignTolerance', () => {
     expect(() => critique(cleanRow(), empty, { alignGroups: [group], alignTolerance: 1.5 })).toThrow(CritiqueError);
     expect(() => critique(cleanRow(), empty, { alignGroups: [group], alignTolerance: 1.5 })).toThrow(/finite integer/);

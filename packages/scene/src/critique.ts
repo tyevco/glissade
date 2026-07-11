@@ -854,10 +854,23 @@ export function critique(scene: Scene, timeline: Timeline, opts: CritiqueOptions
   // exceeds tolerance. The settled-frame selection is a pure integer adjacent-frame
   // compare (the HOLD, not a transient) — deterministic run-to-run.
   for (const g of opts.alignGroups ?? []) {
+    // A member that NEVER produced a rendered box across the timeline (empty presence) —
+    // a container Group (emits no draw command → no own box) or a fill-less / hidden leaf
+    // — can't be measured for alignment. Fail loud naming the REAL cause, matching Cut-1's
+    // containBounds verbatim, BEFORE the settle check below (which would otherwise
+    // misdiagnose a fully-static no-box member as "never at rest" and send the author down
+    // a timing rabbit hole). Cut 3 will let a Group resolve to its composed-children box.
+    for (const id of g.members) {
+      if (memberTracks.get(id)!.presence.size === 0) {
+        throw new CritiqueError(
+          `critique alignGroups: member '${id}' produced no rendered box across the timeline — it is likely a container Group (which has no own box) or a fill-less / hidden node. Declare its leaf node ids (e.g. the background) instead of the container.`,
+        );
+      }
+    }
     const settled = settledFrame(g, memberTracks, lastFrame);
     if (settled < 0) {
       throw new CritiqueError(
-        `critique alignGroups: group ${groupLabel(g)} has no settled frame — its members are never simultaneously present and at rest, so alignment can't be checked. Ensure the group holds still (no member moving) on at least one sampled frame.`,
+        `critique alignGroups: group ${groupLabel(g)} has no settled frame — its members each render but are never simultaneously present and at rest, so alignment can't be checked. Ensure the group holds still (no member moving) on at least one sampled frame.`,
       );
     }
     for (const d of alignGroupDiagnostics(g, memberTracks, settled, alignTolerance, gapTolerance)) rendered.push(d);
