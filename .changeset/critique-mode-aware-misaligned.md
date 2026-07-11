@@ -1,0 +1,5 @@
+---
+'@glissade/scene': patch
+---
+
+critique `MISALIGNED`: mode-aware alignment reference (instead of center-only). Members are "aligned" if they share ANY of the three cross-axis references — start edge, center, or end edge (row → top/center/bottom, column → left/center/right). `MISALIGNED` fires only when all three integer spreads exceed `alignTolerance` (a genuinely-scattered row). This passes a legitimately top-/bottom-aligned row of different-sized members (real UI center- or edge-aligns a button↔chip / icon↔label), which the shipped center-only check would false-fire. The reported reference is the min-spread one (a spread tie prefers center, then start, then end — canonical); the offender is furthest-from-median on that reference, tie-broken by node id. `detail.alignMode` names the nearest-shared reference. All-integer device-px, deterministic; a strict superset of center-only. Three-seat measured on shipped 0.78.0-pre.0 (a top-aligned different-height pair false-fired under center-only).

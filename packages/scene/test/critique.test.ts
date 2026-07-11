@@ -517,6 +517,39 @@ describe('critique — MISALIGNED + UNEVEN_SPACING (explicit alignGroups, settle
     expect((d!.detail as { axis: string }).axis).toBe('column');
   });
 
+  it('MODE-AWARE: a TOP-aligned row of DIFFERENT-height members does NOT fire (shares the top edge, not the center)', () => {
+    // same top edge (minY=20) but different heights → centers span 10px. A center-only
+    // check (shipped 0.78.0-pre.0) false-fired here; the 3-edge-min passes on the top edge.
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 't1', position: [40, 30], width: 30, height: 20, fill: '#3366ff' }), // h20 → minY 20
+        new Rect({ id: 't2', position: [100, 35], width: 30, height: 30, fill: '#33aa66' }), // h30 → minY 20
+        new Rect({ id: 't3', position: [160, 40], width: 30, height: 40, fill: '#aa6633' }), // h40 → minY 20
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { alignGroups: [{ id: 'row', members: ['t1', 't2', 't3'] }] });
+    expect(res.diagnostics.some((x) => x.code === 'MISALIGNED')).toBe(false); // shares the TOP edge
+  });
+
+  it('MODE-AWARE: a fully-scattered row (shares no top, center, OR bottom) FIRES', () => {
+    const scene = createScene({
+      size,
+      children: [
+        new Rect({ id: 's1', position: [40, 30], width: 30, height: 20, fill: '#3366ff' }), // top20 c30 bot40
+        new Rect({ id: 's2', position: [100, 70], width: 30, height: 20, fill: '#33aa66' }), // top60 c70 bot80
+        new Rect({ id: 's3', position: [160, 50], width: 30, height: 20, fill: '#aa6633' }), // top40 c50 bot60
+      ],
+    });
+    scene.setTextMeasurer(stub);
+    const res = critique(scene, empty, { alignGroups: [{ id: 'row', members: ['s1', 's2', 's3'] }] });
+    // all three references (top/center/bottom) span 40px → shares none → fires.
+    const d = res.diagnostics.find((x) => x.code === 'MISALIGNED');
+    expect(d).toBeDefined();
+    expect((d!.detail as { alignMode: string }).alignMode).toBeDefined(); // reports the nearest-shared ref
+  });
+
   it('WHOLE-POINT settled-frame: a staggered slide-IN that HOLDS aligned does NOT false-positive', () => {
     // three rects whose RESTING positions form the clean row; each slides in from the
     // left on a staggered entrance, then holds. The settled frame is the HOLD (all

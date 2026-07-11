@@ -1304,20 +1304,36 @@ function alignGroupDiagnostics(
     axis = spreadX >= spreadY ? 'row' : 'column';
   }
 
-  // MISALIGNED — cross-axis centers (row ⇒ cy, column ⇒ cx).
-  const crossCenter = (b: IntBox): number => (axis === 'row' ? cy(b) : cx(b));
-  const crosses = boxes.map((m) => ({ id: m.id, c: crossCenter(m.b) }));
-  const crossVals = crosses.map((c) => c.c);
-  const refCenter = median(crossVals);
-  const spreadC = Math.max(...crossVals) - Math.min(...crossVals);
-  if (spreadC > alignTol) {
-    let off = crosses[0]!;
-    for (const c of crosses) {
+  // MISALIGNED — MODE-AWARE: members are "aligned" if they share ANY of the three
+  // cross-axis references {start edge, center, end edge} (row ⇒ minY/cy/maxY, column
+  // ⇒ minX/cx/maxX). Fire only when ALL THREE spreads exceed alignTol — i.e. the row is
+  // genuinely scattered, sharing NO common edge or center. This passes center-aligned
+  // AND top-/bottom-aligned different-sized members (real UI aligns button↔chip on any
+  // of the three); center-only would false-fire the top/bottom-aligned case. All-integer
+  // device-px, deterministic. The REPORTED reference = the MIN-spread one; on a spread
+  // tie prefer center, then start edge, then end edge (canonical precedence).
+  const crossRefs: { mode: 'center' | 'start' | 'end'; at: (b: IntBox) => number }[] = [
+    { mode: 'center', at: (b) => (axis === 'row' ? cy(b) : cx(b)) },
+    { mode: 'start', at: (b) => (axis === 'row' ? b.minY : b.minX) },
+    { mode: 'end', at: (b) => (axis === 'row' ? b.maxY : b.maxX) },
+  ];
+  let best!: { mode: 'center' | 'start' | 'end'; vals: { id: string; c: number }[]; spread: number };
+  for (const r of crossRefs) {
+    const vals = boxes.map((m) => ({ id: m.id, c: r.at(m.b) }));
+    const arr = vals.map((v) => v.c);
+    const spread = Math.max(...arr) - Math.min(...arr);
+    // strict `<` keeps the earliest (center-preferred) reference on a spread tie.
+    if (best === undefined || spread < best.spread) best = { mode: r.mode, vals, spread };
+  }
+  if (best.spread > alignTol) {
+    const refCenter = median(best.vals.map((v) => v.c));
+    let off = best.vals[0]!;
+    for (const c of best.vals) {
       const d = Math.abs(c.c - refCenter);
       const bd = Math.abs(off.c - refCenter);
       if (d > bd || (d === bd && c.id < off.id)) off = c;
     }
-    out.push(misalignedDiagnostic(label, axis, off.id, Math.abs(off.c - refCenter), refCenter, spreadC, alignTol, frame));
+    out.push(misalignedDiagnostic(label, axis, off.id, Math.abs(off.c - refCenter), refCenter, best.spread, alignTol, frame, best.mode));
   }
 
   // UNEVEN_SPACING — inter-member gaps along the main axis. Sort by (main start, id).
@@ -1350,8 +1366,9 @@ function alignGroupDiagnostics(
   return out;
 }
 
-/** Cut 2 MISALIGNED builder — a group's members do not share a cross-axis center.
- *  The fix is pure GEOMETRY (nudge the offender to the shared center). */
+/** Cut 2 MISALIGNED builder — a group's members share NO common cross-axis reference
+ *  (not their start edge, center, OR end edge). The fix is pure GEOMETRY (nudge the
+ *  offender to the reference the group MOST-nearly shares — the min-spread one). */
 function misalignedDiagnostic(
   label: string,
   axis: 'row' | 'column',
@@ -1361,9 +1378,23 @@ function misalignedDiagnostic(
   spread: number,
   tolerance: number,
   frame: number,
+  mode: 'center' | 'start' | 'end',
 ): SceneDiagnostic {
-  const crossName = axis === 'row' ? 'vertical' : 'horizontal';
   const crossAxisProp = axis === 'row' ? 'y' : 'x';
+  // the human name of the reference the group most-nearly shares (row: top/center/bottom;
+  // column: left/center/right) — the alignment the author most likely intended.
+  const refName =
+    mode === 'center'
+      ? axis === 'row'
+        ? 'vertical center'
+        : 'horizontal center'
+      : axis === 'row'
+        ? mode === 'start'
+          ? 'top edge'
+          : 'bottom edge'
+        : mode === 'start'
+          ? 'left edge'
+          : 'right edge';
   return {
     schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
     code: 'MISALIGNED',
@@ -1371,24 +1402,26 @@ function misalignedDiagnostic(
     source: 'critique',
     node: offender,
     message:
-      `align group ${label}: member '${offender}' is ${round(off)}px off the ${axis}'s ${crossName} alignment ` +
-      `(spread ${round(spread)}px > tolerance ${tolerance}px). Nudge it to the group's shared ${crossName} center ` +
-      `(${crossAxisProp}=${round(reference)}) so the ${axis} lines up.`,
+      `align group ${label}: member '${offender}' is ${round(off)}px off the ${axis}'s alignment ` +
+      `(spread ${round(spread)}px > tolerance ${tolerance}px; nearest shared reference: ${refName}). Nudge it to the ` +
+      `group's shared ${refName} (${crossAxisProp}=${round(reference)}) so the ${axis} lines up.`,
     detail: {
       frame,
       axis,
       group: label,
       offender,
+      // the cross-axis reference the group most-nearly shares (min-spread of the three).
+      alignMode: mode,
       reference: round(reference),
       spread: round(spread),
       tolerance,
-      // moving the offender to the shared cross-axis center is pure GEOMETRY, so
-      // MISALIGNED is always auto-fixable.
+      // moving the offender to the shared reference is pure GEOMETRY, so MISALIGNED is
+      // always auto-fixable.
       fixHints: [
         {
           lever: 'position',
           fixClass: 'geometry',
-          hint: `move '${offender}' to the group's shared ${crossName} center (${crossAxisProp}=${round(reference)})`,
+          hint: `move '${offender}' to the group's shared ${refName} (${crossAxisProp}=${round(reference)})`,
         },
       ] satisfies FixHint[],
     },
